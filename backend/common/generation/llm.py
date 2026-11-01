@@ -1,10 +1,13 @@
 """The LLM provider client for the generating services (docs/auth-users-split.md, 8, 15.5).
 
-Today's `app/services/llm_service.py`, as a class a service builds once: OpenAI, Anthropic
-or Gemini (the first configured, unless one is asked for), JSON output only, a timeout on
-every call. Each call logs one structured `llm_call` line (circle, provider, model, tokens,
-duration, outcome), which the Logs Insights cost query sums. Prompts and answers are never
-logged.
+A class a service builds once: OpenAI, Anthropic or Gemini (the first configured, unless
+one is asked for), JSON output only, a timeout and an output-token cap on every call. Each
+call logs one structured `llm_call` line (circle, provider, model, tokens, duration,
+outcome), which the Logs Insights cost query sums. Prompts and answers are never logged.
+
+The SDKs' own retries are off: a generation job already retries a failed call (its
+attempts, common.generation.jobs), so SDK retries on top would multiply the calls one job
+can make, and their cost (production-readiness review, JOB-02).
 
 The provider SDKs come with the `[generation]` extra; only the workers of discover, grow,
 transform and release get LLM keys.
@@ -37,6 +40,10 @@ class LlmConfigError(Exception):
 
 class LlmResponseError(ValueError):
     """The provider answered with nothing usable (empty, filtered, not JSON). Retryable."""
+
+
+# The JSON would be cut off, so it's refused before parsing, with the reason in the log.
+_CAPPED = "{provider} stopped at the output-token cap (LlmConfig.max_output_tokens)"
 
 
 @dataclass(frozen=True)
@@ -116,14 +123,14 @@ class LlmClient:
             return None
         from openai import AsyncOpenAI
 
-        return AsyncOpenAI(api_key=self.config.openai_api_key)
+        return AsyncOpenAI(api_key=self.config.openai_api_key, max_retries=0)
 
     def _build_anthropic(self) -> Any:
         if not self.config.anthropic_api_key:
             return None
         import anthropic
 
-        return anthropic.AsyncAnthropic(api_key=self.config.anthropic_api_key)
+        return anthropic.AsyncAnthropic(api_key=self.config.anthropic_api_key, max_retries=0)
 
     def _build_gemini(self) -> Any:
         if not self.config.gemini_api_key:
@@ -204,12 +211,16 @@ class LlmClient:
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
+            # max_completion_tokens, not max_tokens: reasoning models accept only this one.
+            max_completion_tokens=self.config.max_output_tokens,
             timeout=self.config.timeout_seconds,
         )
         if not completion.choices:
             raise LlmResponseError(
                 "openai returned no choices (the response may have been filtered)"
             )
+        if getattr(completion.choices[0], "finish_reason", None) == "length":
+            raise LlmResponseError(_CAPPED.format(provider="openai"))
         usage = getattr(completion, "usage", None)
         return LlmResult(
             _parse_json(completion.choices[0].message.content, "openai"),
@@ -227,6 +238,8 @@ class LlmClient:
             messages=[{"role": "user", "content": prompt}],
             timeout=self.config.timeout_seconds,
         )
+        if getattr(message, "stop_reason", None) == "max_tokens":
+            raise LlmResponseError(_CAPPED.format(provider="anthropic"))
         block = message.content[0] if message.content else None
         usage = getattr(message, "usage", None)
         return LlmResult(
@@ -240,10 +253,15 @@ class LlmClient:
     async def _call_gemini(self, prompt: str, system: str, model: str) -> LlmResult:
         def call() -> Any:
             generative = self._gemini.GenerativeModel(model_name=model, system_instruction=system)
+            # retry=None turns off the SDK's own retry (on 503, for up to 600 s), which would
+            # also keep this thread running after the wait_for below has given up on it.
             return generative.generate_content(
                 prompt,
-                generation_config={"response_mime_type": "application/json"},
-                request_options={"timeout": self.config.timeout_seconds},
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": self.config.max_output_tokens,
+                },
+                request_options={"timeout": self.config.timeout_seconds, "retry": None},
             )
 
         # The Gemini SDK is synchronous; a thread keeps the worker's event loop free.

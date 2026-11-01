@@ -42,7 +42,9 @@ case "$1 $2" in
       total=$(wc -l < "$st"); [ "$n" -gt "$total" ] && n=$total
       sed -n "${n}p" "$st"
     else echo "arn:aws:ecs:ap-south-1:1:task-definition/live:7"; fi ;;
-  "ecs update-service") echo '{"serviceName":"x"}' ;;
+  "ecs update-service")
+    if [ -n "${FAKE_NO_DEPLOYMENT:-}" ]; then echo '{"serviceName":"x","deployment":null}'
+    else echo '{"serviceName":"x","status":"ACTIVE","desiredCount":2,"deployment":"ecs-svc/new"}'; fi ;;
   *) echo "fake aws: unexpected call: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -61,9 +63,14 @@ check() { local name="$1" got="$2" want="$3"; [ "$got" = "$want" ] && ok "$name"
 BASE="/superpower/prod/backend/ap-south-1"
 MANIFEST='[{"name":"backend","service":"superpower-backend-prod","family":"superpower-backend-prod","container":"backend"},{"name":"worker","service":"superpower-worker-prod","family":"superpower-worker-prod","container":"worker"},{"name":"reports","service":"superpower-reports-prod","family":"superpower-reports-prod","container":"reports"}]'
 echo "$MANIFEST" > "$FAKE/ssm/$(tr '/' '_' <<<"$BASE/ecs_services")"
-STABLE='{"deployments":[{"rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
-ROLLING='{"deployments":[{"rolloutState":"IN_PROGRESS"},{"rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":1,"desiredCount":2}'
-FAILED='{"deployments":[{"rolloutState":"FAILED"}],"runningCount":1,"pendingCount":0,"desiredCount":2}'
+# ecs-svc/new is the deployment update-service starts; ecs-svc/old the one it replaces.
+STABLE='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
+ROLLING='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"IN_PROGRESS"},{"id":"ecs-svc/old","status":"ACTIVE","rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":1,"desiredCount":2}'
+FAILED='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"FAILED"}],"runningCount":1,"pendingCount":0,"desiredCount":2}'
+# The circuit breaker's rollback: a new PRIMARY of the old revision, the failed one behind it,
+# then the rollback alone, every task running (what used to pass as a success).
+ROLLING_BACK='{"deployments":[{"id":"ecs-svc/rollback","status":"PRIMARY","rolloutState":"IN_PROGRESS"},{"id":"ecs-svc/new","status":"ACTIVE","rolloutState":"FAILED"}],"runningCount":1,"pendingCount":1,"desiredCount":2}'
+ROLLED_BACK='{"deployments":[{"id":"ecs-svc/rollback","status":"PRIMARY","rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
 reset_polls() { rm -f "$FAKE"/polls-* "$FAKE"/states-* "$FAKE/calls"; }
 
 # -- resolve_services ----------------------------------------------------------
@@ -108,13 +115,30 @@ if live_image cluster superpower-backend-prod nope >/dev/null 2>&1; then fail "l
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"
-wait_stable cluster svc 5 0 >/dev/null && check "waits through a rollout until stable" "$(cat "$FAKE/polls-svc")" "2" || fail "waits through a rollout until stable"
+wait_stable cluster svc ecs-svc/new 5 0 >/dev/null && check "waits through a rollout until stable" "$(cat "$FAKE/polls-svc")" "2" || fail "waits through a rollout until stable"
 reset_polls; printf '%s\n' "$FAILED" > "$FAKE/states"
-if out=$(wait_stable cluster svc 5 0 2>&1); then fail "FAILED rollout is an error"; else
+if out=$(wait_stable cluster svc ecs-svc/new 5 0 2>&1); then fail "FAILED rollout is an error"; else
   [[ "$out" == *"rollout FAILED"* ]] && ok "FAILED rollout fails at once" || fail "FAILED message" "$out"; fi
+reset_polls; printf '%s\n' "$ROLLING_BACK" > "$FAKE/states"
+if out=$(wait_stable cluster svc ecs-svc/new 5 0 2>&1); then fail "a rollback in progress is an error"; else
+  [[ "$out" == *"rollout FAILED"* ]] && check "a failed deployment behind the rollback fails at once" "$(cat "$FAKE/polls-svc")" "1" || fail "rollback message" "$out"; fi
+reset_polls; printf '%s\n' "$ROLLED_BACK" > "$FAKE/states"
+if out=$(wait_stable cluster svc ecs-svc/new 5 0 2>&1); then fail "a finished rollback is an error, not a success"; else
+  [[ "$out" == *"deployment ecs-svc/new is no longer listed"* ]] && ok "a finished rollback (old revision, all tasks running) is an error" || fail "rolled-back message" "$out"; fi
 reset_polls; printf '%s\n' "$ROLLING" > "$FAKE/states"
-if out=$(wait_stable cluster svc 3 0 2>&1); then fail "timeout is an error"; else
+if out=$(wait_stable cluster svc ecs-svc/new 3 0 2>&1); then fail "timeout is an error"; else
   [[ "$out" == *"did not stabilise"* ]] && check "gives up after ATTEMPTS polls" "$(cat "$FAKE/polls-svc")" "3" || fail "timeout message" "$out"; fi
+
+# -- roll_out ------------------------------------------------------------------
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
+roll_out cluster svc arn:td:99 >/dev/null && grep -q -- '--service svc --task-definition arn:td:99' "$FAKE/calls" \
+  && ok "roll_out points the service at the new revision" || fail "roll_out with a task definition"
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
+roll_out cluster svc >/dev/null && grep -q -- '--service svc --force-new-deployment' "$FAKE/calls" \
+  && ok "roll_out without one forces a new deployment (restart)" || fail "roll_out without a task definition"
+reset_polls
+if out=$(FAKE_NO_DEPLOYMENT=1 roll_out cluster svc arn:td:99 2>&1); then fail "no deployment id is an error"; else
+  [[ "$out" == *"returned no PRIMARY deployment"* ]] && ok "no deployment id is an error" || fail "no deployment message" "$out"; fi
 
 # -- deploy_image --------------------------------------------------------------
 for s in worker reports; do

@@ -129,45 +129,68 @@ live_image() {
   printf '%s\n' "$image"
 }
 
-# wait_stable CLUSTER SERVICE [ATTEMPTS] [INTERVAL] — poll until the service
-# has one deployment with every desired task running, for up to
+# wait_stable CLUSTER SERVICE DEPLOYMENT_ID [ATTEMPTS] [INTERVAL] — poll until
+# DEPLOYMENT_ID (the one update-service created) is the service's only
+# deployment, PRIMARY and COMPLETED, with every desired task running, for up to
 # ATTEMPTS × INTERVAL seconds (default 60 × 15 s = 15 minutes; `aws ecs wait
-# services-stable` has a hard 10-minute ceiling). Fails as soon as the ECS
-# circuit breaker reports the rollout FAILED (it has already rolled back).
+# services-stable` has a hard 10-minute ceiling).
+# It follows that deployment, not .deployments[0]: when the ECS circuit breaker
+# rolls back, it starts a new PRIMARY deployment of the old revision and moves the
+# failed one behind it, so "one deployment, all tasks running" would otherwise
+# report the old version as a success (production-readiness review, CI-11). So it
+# fails as soon as that deployment is FAILED, or is no longer listed.
 wait_stable() {
-  local cluster="$1" service="$2" attempts="${3:-60}" interval="${4:-15}" i info deployments running pending desired rollout
-  echo "Waiting for $service to reach steady state (up to $((attempts * interval / 60)) minutes)..."
+  local cluster="$1" service="$2" id="$3" attempts="${4:-60}" interval="${5:-15}"
+  local i info deployment deployments running pending desired rollout status
+  echo "Waiting for $service deployment $id to complete (up to $((attempts * interval / 60)) minutes)..."
   for ((i = 1; i <= attempts; i++)); do
     info=$(aws ecs describe-services --cluster "$cluster" --services "$service" --query 'services[0]' --output json) || return 1
     deployments=$(jq '.deployments | length' <<<"$info")
     running=$(jq '.runningCount' <<<"$info")
     pending=$(jq '.pendingCount' <<<"$info")
     desired=$(jq '.desiredCount' <<<"$info")
-    rollout=$(jq -r '.deployments[0].rolloutState' <<<"$info")
+    deployment=$(jq -c --arg id "$id" 'first(.deployments[] | select(.id == $id)) // empty' <<<"$info")
 
+    if [ -z "$deployment" ]; then
+      echo "ERROR: $service deployment $id is no longer listed: ECS replaced it (a rollback, or another deployment). The service isn't running this release." >&2
+      return 1
+    fi
+    rollout=$(jq -r '.rolloutState' <<<"$deployment")
+    status=$(jq -r '.status' <<<"$deployment")
     if [ "$rollout" = "FAILED" ]; then
       echo "ERROR: $service rollout FAILED — the ECS circuit breaker has rolled back. Check ECS events and CloudWatch logs." >&2
       return 1
     fi
-    if [ "$deployments" -eq 1 ] && [ "$running" -eq "$desired" ] && [ "$pending" -eq 0 ] && [ "$desired" -gt 0 ]; then
+    if [ "$status" = "PRIMARY" ] && [ "$rollout" = "COMPLETED" ] && [ "$deployments" -eq 1 ] \
+      && [ "$running" -eq "$desired" ] && [ "$pending" -eq 0 ] && [ "$desired" -gt 0 ]; then
       echo "$service is stable ($running/$desired tasks running)."
       return 0
     fi
-    echo "[$i/$attempts] $service — deployments: $deployments, running: $running, pending: $pending, desired: $desired, rollout: $rollout — retrying in ${interval}s..."
+    echo "[$i/$attempts] $service — deployment: $status/$rollout, deployments: $deployments, running: $running, pending: $pending, desired: $desired — retrying in ${interval}s..."
     sleep "$interval"
   done
-  echo "ERROR: $service did not stabilise in time (deployments: $deployments, running: $running, pending: $pending, desired: $desired)." >&2
+  echo "ERROR: $service did not stabilise in time (deployment: $status/$rollout, deployments: $deployments, running: $running, pending: $pending, desired: $desired)." >&2
   return 1
 }
 
-# roll_out CLUSTER SERVICE TASK_DEFINITION_ARN — point SERVICE at the new
-# revision and wait until it's stable.
+# roll_out CLUSTER SERVICE [TASK_DEFINITION_ARN] — point SERVICE at the new
+# revision (or, without one, replace its tasks on the current revision) and wait
+# until the deployment that starts is complete.
 roll_out() {
-  local cluster="$1" service="$2" td="$3"
-  aws ecs update-service --cluster "$cluster" --service "$service" --task-definition "$td" \
-    --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-    --output json | cat
-  wait_stable "$cluster" "$service"
+  local cluster="$1" service="$2" td="${3:-}" result id
+  local -a change=(--force-new-deployment)
+  [ -n "$td" ] && change=(--task-definition "$td")
+  # shellcheck disable=SC2016  # backticks are JMESPath literals, not shell
+  result=$(aws ecs update-service --cluster "$cluster" --service "$service" "${change[@]}" \
+    --query '{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount, deployment: service.deployments[?status==`PRIMARY`] | [0].id}' \
+    --output json) || return 1
+  printf '%s\n' "$result"
+  id=$(jq -r '.deployment // empty' <<<"$result")
+  if [ -z "$id" ]; then
+    echo "ERROR: update-service returned no PRIMARY deployment for $service." >&2
+    return 1
+  fi
+  wait_stable "$cluster" "$service" "$id"
 }
 
 # deploy_one CLUSTER SERVICE_ENTRY_JSON IMAGE_FOR — register one service's

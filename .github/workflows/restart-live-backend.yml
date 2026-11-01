@@ -150,10 +150,5 @@ jobs:
           echo "Cluster: $CLUSTER"
           echo "Service ($SERVICE_NAME): $SERVICE"
 
-          aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --force-new-deployment \
-            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-            --output json | cat
-          wait_stable "$CLUSTER" "$SERVICE"
+          # No task definition: --force-new-deployment, then wait for that deployment.
+          roll_out "$CLUSTER" "$SERVICE"

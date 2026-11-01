@@ -17,9 +17,11 @@ from common.generation.llm_limit import LlmHourlyLimit
 
 
 class FakeOpenAI:
-    def __init__(self, content: str | None = '{"ok": true}', choices: bool = True) -> None:
+    def __init__(
+        self, content: str | None = '{"ok": true}', choices: bool = True, finish: str = "stop"
+    ) -> None:
         self.calls: list[dict[str, Any]] = []
-        self.content, self.choices = content, choices
+        self.content, self.choices, self.finish = content, choices, finish
         self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._create))
         self.closed = False
 
@@ -27,7 +29,9 @@ class FakeOpenAI:
         self.calls.append(kwargs)
         message = types.SimpleNamespace(content=self.content)
         return types.SimpleNamespace(
-            choices=[types.SimpleNamespace(message=message)] if self.choices else [],
+            choices=[types.SimpleNamespace(message=message, finish_reason=self.finish)]
+            if self.choices
+            else [],
             usage=types.SimpleNamespace(prompt_tokens=11, completion_tokens=7),
         )
 
@@ -36,16 +40,18 @@ class FakeOpenAI:
 
 
 class FakeAnthropic:
-    def __init__(self, text: str | None = '{"ok": 1}') -> None:
+    def __init__(self, text: str | None = '{"ok": 1}', stop: str = "end_turn") -> None:
         self.calls: list[dict[str, Any]] = []
-        self.text = text
+        self.text, self.stop = text, stop
         self.messages = types.SimpleNamespace(create=self._create)
 
     async def _create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
         content = [types.SimpleNamespace(text=self.text)] if self.text is not None else []
         return types.SimpleNamespace(
-            content=content, usage=types.SimpleNamespace(input_tokens=5, output_tokens=3)
+            content=content,
+            stop_reason=self.stop,
+            usage=types.SimpleNamespace(input_tokens=5, output_tokens=3),
         )
 
 
@@ -53,6 +59,7 @@ class FakeGemini:
     def __init__(self, text: str = '{"ok": "g"}', delay: float = 0) -> None:
         self.text, self.delay = text, delay
         self.models: list[dict[str, Any]] = []
+        self.options: list[dict[str, Any]] = []
 
     def GenerativeModel(self, **kwargs: Any) -> Any:  # noqa: N802 - the SDK's name
         self.models.append(kwargs)
@@ -60,6 +67,7 @@ class FakeGemini:
 
         class Model:
             def generate_content(self, prompt: str, **options: Any) -> Any:
+                outer.options.append(options)
                 if outer.delay:
                     import time
 
@@ -89,6 +97,7 @@ def test_openai_is_first_and_logs_one_line_without_the_prompt(caplog):
     call = openai.calls[0]
     assert call["model"] == "gpt-5.4-mini" and call["timeout"] == 5
     assert call["response_format"] == {"type": "json_object"}
+    assert call["max_completion_tokens"] == 4096  # the cap; reasoning models reject max_tokens
     assert "OUTPUT SCHEMA" in call["messages"][0]["content"]
     line = json.loads(next(r.getMessage() for r in caplog.records if "llm_call" in r.getMessage()))[
         "llm_call"
@@ -111,6 +120,9 @@ def test_anthropic_and_gemini():
     result = asyncio.run(_client(gemini_module=gemini).invoke("p"))
     assert (result.provider, result.data, result.input_tokens) == ("gemini", {"ok": "g"}, 2)
     assert gemini.models[0]["model_name"] == "gemini-3-flash"
+    options = gemini.options[0]
+    assert options["generation_config"]["max_output_tokens"] == 4096
+    assert options["request_options"] == {"timeout": 5, "retry": None}  # no SDK retries
 
 
 def test_a_preferred_provider_must_be_configured():
@@ -130,6 +142,8 @@ def test_a_preferred_provider_must_be_configured():
         ({"openai_client": FakeOpenAI(content="not json")}, "non-JSON"),
         ({"openai_client": FakeOpenAI(content="[1]")}, "isn't an object"),
         ({"anthropic_client": FakeAnthropic(text=None)}, "no content"),
+        ({"openai_client": FakeOpenAI(finish="length")}, "openai stopped at the output-token cap"),
+        ({"anthropic_client": FakeAnthropic(stop="max_tokens")}, "anthropic stopped at the"),
     ],
 )
 def test_unusable_answers_are_retryable_errors(clients, message, caplog):
@@ -180,6 +194,8 @@ def test_config_from_env_and_real_sdk_clients():
     )
     client = LlmClient(config, circle="grow")  # builds the SDK clients; no network
     assert client.available() == {"openai": True, "anthropic": True, "gemini": True}
+    # The job retries a failed call; SDK retries on top would multiply its calls (JOB-02).
+    assert (client._openai.max_retries, client._anthropic.max_retries) == (0, 0)
     asyncio.run(client.aclose())
     assert LlmClient(LlmConfig.from_env({}), circle="grow").available() == dict.fromkeys(
         llm.PRIORITY, False

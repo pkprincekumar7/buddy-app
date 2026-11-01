@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 30 partly done, 38 open and 1 moot. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now).
+> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 31 partly done, 37 open and 1 moot. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -67,8 +67,7 @@ What still stands in the way:
 - **Pipelines:**
   - prod can be deployed or applied from any branch (CI-01);
   - plan and apply run in one job (CI-02);
-  - the image CI scans isn't the image deployed (CI-03);
-  - a rolled-back deploy can still be reported as success (CI-11).
+  - the image CI scans isn't the image deployed (CI-03).
 - **Identity and secrets:**
   - the OIDC trust is documented as a wildcard on an admin role (SEC-04);
   - secrets sit in Terraform state, now including the service-token private keys (SEC-01);
@@ -80,7 +79,7 @@ What still stands in the way:
   - the WAF's 8 KB body rule blocks larger requests (WAF-01).
 - **Remaining backend items:**
   - synchronous Valkey calls in the rate limiter (APP-05);
-  - SDK retries and missing output-token caps on the LLM path (JOB-02, JOB-03);
+  - no LLM spend metric or kill switch, and no dead-job alarm (JOB-02, JOB-03);
   - the refresh token in the response body and the `Domain` cookie (AUTH-05);
   - no fail-fast config check for stg and prod (AUTH-07).
 
@@ -155,7 +154,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
-| APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path); SDK retries and an overall time budget open |
+| APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path), SDK retries off; an overall time budget open |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | 🟡 Latch fixed (Valkey retried after 30 s); degraded metric and alarm open |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ⬜ Open — moved to `backend/common/limiter.py` |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | 🟡 Workers finish the current job on SIGTERM; `stopTimeout` and worker health check open |
@@ -172,8 +171,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
 | DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Deletes transactional and event-retried; startup has no retry; failover untested |
 | JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
-| JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | 🟡 Attempts counted at claim, failed jobs kept 7 days; SDK retries and dead-job alarm open |
-| JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | 🟡 Hourly limit at job start, server-built prompts; OpenAI/Gemini `max_tokens` and spend metric open |
+| JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | 🟡 Attempts counted at claim, failed jobs kept 7 days, SDK retries off; dead-job alarm open |
+| JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | 🟡 Hourly limit at job start, server-built prompts, output cap on every provider; spend metric and kill switch open |
 | JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ⬜ Open |
 | JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ⬜ Open — 2 s frontend poll against 60/min per route |
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
@@ -212,12 +211,12 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ⬜ Open |
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open |
-| CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`; its CI-11 part is open) |
+| CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ⬜ Open |
 | CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | 🟡 `images.json` read with jq instead of sourced; still `docker save` artifacts |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | ⬜ Open |
-| CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | ⬜ Open |
+| CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
 | CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | ⬜ Open |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ⬜ Open |
@@ -724,7 +723,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-03 — LLM calls >60 s return 504 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. There's no synchronous `/llm/invoke` any more: LLM calls run inside worker jobs (for example `backend/discover/app/generation.py:132`), so the 504 path is gone. `deregistration_delay` is `llm_timeout + 30` (`alb.tf:43`). Still open: SDK `max_retries` isn't set (`backend/common/generation/llm.py:119,126`), there's no overall time budget, and Gemini uses the deprecated `google.generativeai` (`:131`).
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. There's no synchronous `/llm/invoke` any more: LLM calls run inside worker jobs (for example `backend/discover/app/generation.py:132`), so the 504 path is gone. `deregistration_delay` is `llm_timeout + 30` (`alb.tf:43`). SDK retries are now off (JOB-02). Still open: there's no overall time budget, and Gemini uses the deprecated `google.generativeai`.
 
 **Where:**
 - `infra-live-backend/terraform/tfvars/prod.tfvars:29` (`llm_timeout_seconds = 90`) and `backend/app/routers/llm.py:54` (synchronous `/llm/invoke`).
@@ -1187,7 +1186,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-02 — Retries multiply LLM cost; poison jobs; no DLQ 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Attempts are counted at claim time, `exhausted()` stops retries, and failed jobs are kept 7 days by TTL (`jobs.py:250,257-260`). Still open: SDK `max_retries` isn't set to 0 (`backend/common/generation/llm.py:114-126`), so one job can make up to 3×3 provider calls, and there's no dead-job alarm.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. Attempts are counted at claim time, `exhausted()` stops retries, and failed jobs are kept 7 days by TTL (`jobs.py:250,257-260`). The SDKs' own retries are now off (`max_retries=0` for OpenAI and Anthropic, `retry: None` for Gemini, in `backend/common/generation/llm.py`), so a job makes at most one provider call per attempt. Still open: there's no dead-job alarm.
 
 **Where:** `backend/worker.py:132-136`, `backend/app/database.py:142` (TTL on finished jobs).
 
@@ -1214,7 +1213,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-03 — Job path bypasses LLM cost controls 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The hourly limit is enforced at job start (`grow/app/main.py:582`, `discover/app/main.py:318`); prompts are built server-side and the provider isn't client-chosen. Still open: only Anthropic sets `max_tokens` (`llm.py:225`), not OpenAI or Gemini, and there's no spend metric or kill switch.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. The hourly limit is enforced at job start (`grow/app/main.py:582`, `discover/app/main.py:318`); prompts are built server-side and the provider isn't client-chosen. Every provider is now capped at `LlmConfig.max_output_tokens` (4096): `max_completion_tokens` for OpenAI, `max_tokens` for Anthropic, `max_output_tokens` for Gemini. An answer that stops at the cap is refused as `LlmResponseError` (logged as `bad_response`) instead of failing to parse. Still open: a spend metric and a kill switch.
 
 **Where:** `backend/app/routers/jobs.py:120-140` (`enqueue_job`: route limit `30/minute`; an in-flight cap of 2 per **(user, child, type)** at `:223-244`; but **no** call to `llm_rate_limiter.enforce`), `backend/app/schemas/jobs.py:168-180` (32k-char client prompt; `provider: str | None` at `:170`), `backend/app/services/llm_service.py:142,180` (no output-token cap for OpenAI/Gemini).
 
@@ -2214,7 +2213,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-06 — Polling and register-TD scripts duplicated 🟡
 
-> 🔄 **Current code (2026-11-01):** ✅ Done, as a shared script rather than composite actions. `scripts/ecs-services.sh` (`register_with_image:96`, `wait_stable:137`, `deploy_image:196`) is the one implementation; deploy, promote and restart use it, and CI tests it (`check.yml:378`). The fix below says the CI-11 fix was "already applied in Phase 1": it wasn't, and CI-11 is still open.
+> 🔄 **Current code (2026-11-01):** ✅ Done, as a shared script rather than composite actions. `scripts/ecs-services.sh` (`register_with_image:96`, `wait_stable:137`, `deploy_image:196`) is the one implementation; deploy, promote and restart use it, and CI tests it (`check.yml:378`). The CI-11 fix is in the same script.
 
 **Where:** the ~25-line 15-minute wait loop (`for i in $(seq 1 60) … sleep 15`):
 
@@ -2322,7 +2321,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-11 — A rolled-back deploy can be reported as success 🟠 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `wait_stable` (`scripts/ecs-services.sh:146-152`) still reads `deployments[0].rolloutState` and `deployments == 1`, and never compares against the new task definition. The test fixture covers only `FAILED` at index 0 (`ecs-services.test.sh:66`).
+> 🔄 **Current code (2026-11-01):** 🟡 Code done; the acceptance check below needs a deployed environment. `roll_out` (`scripts/ecs-services.sh`) takes the ID of the PRIMARY deployment that `update-service` starts, and `wait_stable CLUSTER SERVICE DEPLOYMENT_ID` follows that deployment. It fails when it's `FAILED` (even behind the rollback) or no longer listed, and succeeds only when it's the one deployment left, PRIMARY and `COMPLETED`, with every task running. Restart (`restart-live-backend.yml`) uses `roll_out` without a task definition, so it waits on its `--force-new-deployment` the same way. `ecs-services.test.sh` covers the rollback in progress and the finished rollback (the old revision with every task running, which used to pass).
 
 **Where:** all 5 wait loops (CI-06 table), e.g. `deploy-live-backend.yml:321` (`ROLLOUT=… .deployments[0].rolloutState`) and `:328` (success when `DEPLOYMENTS -eq 1 && RUNNING == DESIRED`).
 
