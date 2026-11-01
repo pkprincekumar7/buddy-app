@@ -1,10 +1,10 @@
+import { account, firstName as firstNameOf, type Profile } from '@/api/account';
 import React from 'react';
 import { Text, View } from 'react-native';
 import Animated, { Easing, Keyframe, ZoomIn } from 'react-native-reanimated';
 import Svg, { Line, Path } from 'react-native-svg';
 import { MessageSquare, Sparkles, Target } from 'lucide-react-native';
 import { Button } from '@/components/ui/button';
-import { api } from '@/api/client';
 import { color, glow, raw } from '@/theme';
 
 const FEATURES = [
@@ -49,7 +49,7 @@ const leaf = raw['logo-leaf'];
 interface WelcomePhaseProps {
   onContinue: () => void;
   isAuthenticated?: boolean;
-  user?: { full_name?: string | null; email?: string | null } | null;
+  user?: { profile?: Profile | null; email?: string | null } | null;
 }
 
 export default function WelcomePhase({
@@ -57,10 +57,10 @@ export default function WelcomePhase({
   isAuthenticated,
   user,
 }: WelcomePhaseProps) {
-  const firstName = user?.full_name?.split(' ')[0] ?? 'there';
+  const firstName = firstNameOf(user) ?? 'there';
 
   const handleGoogleLogin = () => {
-    void api.auth.redirectToLogin();
+    void account.redirectToLogin();
   };
 
   return (

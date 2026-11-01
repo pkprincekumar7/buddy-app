@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useNavigate } from '@/lib/router';
-import { api } from '@/api/client';
+import { children as childrenApi } from '@/api/children';
 import ChildCard from '@/components/shared/ChildCard';
 import PageLoader from '@/components/shared/PageLoader';
 import PageScroll from '@/components/layout/PageScroll';
@@ -213,7 +213,7 @@ export default function Home() {
 
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
-    queryFn: () => api.entities.Child.list('-created_date'),
+    queryFn: () => childrenApi.list(),
   });
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 

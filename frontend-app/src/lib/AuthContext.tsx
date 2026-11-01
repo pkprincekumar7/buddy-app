@@ -10,7 +10,6 @@ import React, {
 import type { ReactNode } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { useLocation } from '@/lib/router';
 import { toast } from '@/lib/toast';
 import {
   api,
@@ -19,10 +18,9 @@ import {
   resolveAuthExpiry,
 } from '@/api/client';
 import { ApiError } from '@/api/errors';
-import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import type { UserRecord } from '@/types/api';
+import { account, type CurrentUser } from '@/api/account';
 
-type UserData = UserRecord;
+type UserData = CurrentUser;
 
 interface AuthErrorUnknown {
   type: 'unknown';
@@ -46,8 +44,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const BLOCKED_REDIRECT_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
-
 /**
  * Same session logic as the web AuthContext. Navigation differs on purpose:
  * the web navigates to /Login or /Home when auth state changes; here the
@@ -55,7 +51,6 @@ const BLOCKED_REDIRECT_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
  * src/navigation/index.tsx), so flipping `isAuthenticated` IS the redirect.
  */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const location = useLocation();
   const [user, setUser] = useState<UserData | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -72,13 +67,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoadingAuth(true);
       }
       try {
-        const currentUser = await api.auth.me();
+        const currentUser = await account.current();
         setUser(currentUser);
         setIsAuthenticated(true);
       } catch (error) {
         console.error('Auth check failed:', error);
         if (error instanceof ApiError && error.status === 401) {
-          void api.auth.logout();
+          void account.logout();
           setUser(null);
           setIsAuthenticated(false);
           setAuthError(null);
@@ -115,7 +110,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (message && message !== 'Session expired') {
         toast.error(message);
       }
-      void api.auth.logout().catch(() => {});
+      void account.logout();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
@@ -159,21 +154,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const timer = setTimeout(() => {
-      if (BLOCKED_REDIRECT_PATHS.includes(location.pathname)) return;
-      api.preferences
-        .patch({ last_visited_path: location.pathname + location.search })
-        .catch(() => {});
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [location.pathname, location.search, isAuthenticated]);
-
   // `shouldRedirect` is kept for API parity with the web; the redirect to
   // Login happens implicitly when isAuthenticated flips to false.
   const logout = useCallback(async (_shouldRedirect = true) => {
-    await api.auth.logout();
+    // The session ends on the server best-effort; the local sign-out happens either way.
+    await account.logout();
     // Also drop the native Google session so the account picker shows next time.
     await GoogleSignin.signOut().catch(() => {});
     setUser(null);

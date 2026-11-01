@@ -3,9 +3,14 @@ import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import Animated, { Keyframe } from 'react-native-reanimated';
 import { useNavigate, useLocation, useParams } from '@/lib/router';
 import { toast } from '@/lib/toast';
-import { ApiError } from '@/api/errors';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import {
+  children,
+  CHILD_ERRORS,
+  type Child,
+  type ChildIn,
+} from '@/api/children';
+import { httpErrorMessage } from '@/lib/apiError';
 import Spinner from '@/components/shared/Spinner';
 import PageScroll from '@/components/layout/PageScroll';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
@@ -43,23 +48,19 @@ export default function Onboarding() {
 
     let cancelled = false;
 
-    const applyChildData = (raw: Record<string, unknown>) => {
+    const applyChildData = (child: Child) => {
       const prefill: Partial<ChildFormData> = {};
-      if (typeof raw.name === 'string' && raw.name) prefill.name = raw.name;
-      if (typeof raw.age === 'string') prefill.age = raw.age;
-      else if (typeof raw.age === 'number') prefill.age = String(raw.age);
-      if (typeof raw.gender === 'string' && raw.gender) {
+      if (child.name) prefill.name = child.name;
+      if (child.age !== null) prefill.age = String(child.age);
+      if (child.gender) {
         const g =
-          raw.gender.charAt(0).toUpperCase() +
-          raw.gender.slice(1).toLowerCase();
+          child.gender.charAt(0).toUpperCase() +
+          child.gender.slice(1).toLowerCase();
         if (g === 'Male' || g === 'Female' || g === 'Other') prefill.gender = g;
       }
-      if (typeof raw.school === 'string' && raw.school)
-        prefill.school = raw.school;
-      if (typeof raw.avatar_id === 'string' && raw.avatar_id)
-        prefill.avatarId = raw.avatar_id;
-      if (typeof raw.avatar_url === 'string' && raw.avatar_url)
-        prefill.avatarUrl = raw.avatar_url;
+      if (child.school) prefill.school = child.school;
+      if (child.avatar_id) prefill.avatarId = child.avatar_id;
+      if (child.avatar_url) prefill.avatarUrl = child.avatar_url;
       setPrefillData(prefill);
     };
 
@@ -69,14 +70,10 @@ export default function Onboarding() {
       // Authorization is determined by the API response (404 → redirect to /Home).
       void (async () => {
         try {
-          const child = await api.entities.Child.get(childIdParam);
+          const child = await children.get(childIdParam);
           if (cancelled) return;
-          if (!child) {
-            void navigate('/Home', { replace: true });
-            return;
-          }
-          setChildComplete(!!child.onboarding_completed);
-          applyChildData({ ...child });
+          setChildComplete(child.progress.conversation);
+          applyChildData(child);
         } catch (err) {
           console.warn('[Onboarding] Could not load child data:', err);
           if (!cancelled) void navigate('/Home', { replace: true });
@@ -96,14 +93,12 @@ export default function Onboarding() {
 
     void (async () => {
       try {
-        const list = await api.entities.Child.list('-created_date', 1);
+        const [child] = await children.list('-created_at', 1);
         if (cancelled) return;
-        const listArr = Array.isArray(list) ? list : [];
-        const child = listArr[0];
         if (child) {
           setChildId(child.id);
-          setChildComplete(!!child.onboarding_completed);
-          applyChildData({ ...child });
+          setChildComplete(child.progress.conversation);
+          applyChildData(child);
         }
       } catch (err) {
         console.warn('[Onboarding] Preload failed:', err);
@@ -133,7 +128,7 @@ export default function Onboarding() {
       setIsSaving(true);
       try {
         // When the user arrived via /Onboarding/:childId (explicit edit), always reuse
-        // that child regardless of onboarding_completed. Only gate on childComplete for
+        // that child even when its onboarding chat is done. Only gate on childComplete for
         // the auto-flow (/Onboarding with no childId) so we don't create a duplicate
         // every time a completed child's parent revisits the wizard.
         let targetId = childIdParam
@@ -142,73 +137,50 @@ export default function Onboarding() {
           ? childId
           : undefined;
 
-        if (!targetId) {
-          const created = await api.entities.Child.create({
-            onboarding_phase: 1,
-            onboarding_completed: false,
-          });
-          const createdId: unknown = (created as Record<string, unknown> | null)
-            ?.id;
-          if (typeof createdId === 'string' && createdId) {
-            setChildId(createdId);
-            targetId = createdId;
-          }
-        }
-
+        // Only the child's own fields (build plan 7.4); children sets `progress.profile`
+        // itself once name, age and gender are all there. An emoji avatar is saved with
+        // them; a photo is uploaded afterwards and saved by its key.
+        const school = formData.school.trim();
+        const fields: ChildIn = {
+          name: formData.name.trim(),
+          age: Number(formData.age),
+          gender: formData.gender,
+          school: school === '' ? null : school,
+          ...(formData.avatarId ? { avatar_id: formData.avatarId } : {}),
+        };
         if (targetId) {
-          // Upload photo first if provided, then include the URL in the single PATCH
-          let avatarUrl: string | undefined;
-          if (photoFile) {
-            try {
-              const result = await api.entities.Child.uploadAvatar(
-                targetId,
-                photoFile.uri,
-                photoFile.mimeType,
-              );
-              avatarUrl = result.avatar_url;
-            } catch (uploadErr) {
-              console.warn(
-                '[Onboarding] Photo upload failed, continuing without photo:',
-                uploadErr,
-              );
-              toast.error(
-                'Photo upload failed — profile saved without a photo.',
-              );
-            }
-          }
-
-          await api.entities.Child.update(targetId, {
-            name: formData.name.trim(),
-            age: Number(formData.age),
-            gender: formData.gender,
-            ...(formData.school ? { school: formData.school.trim() } : {}),
-            // Always clear the field that was NOT chosen so the DB never holds both.
-            ...(formData.avatarId
-              ? { avatar_id: formData.avatarId, avatar_url: null }
-              : avatarUrl
-              ? { avatar_url: avatarUrl, avatar_id: null }
-              : !photoFile
-              ? { avatar_id: null } // keeping existing photo — clean up any stale avatar_id
-              : {}), // upload was attempted but failed — leave DB untouched
-          });
-          // Marks the first step of the Personality Journey progression chain —
-          // required before conversational_onboarding_completed can be set
-          // (see backend/app/schemas/children.py's ChildResponse comment).
-          api.entities.Child.markProgress(
-            targetId,
-            'onboarding_profile_completed',
-          ).catch(console.error);
-          void navigate(`/ConversationalOnboarding/${targetId}`);
-        }
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 422) {
-          toast.error(
-            "You've reached the maximum of 10 children. Delete one to add another.",
-          );
+          await children.update(targetId, fields);
         } else {
-          toast.error('Something went wrong. Please try again.');
-          console.warn('[Onboarding] Could not create/update child:', err);
+          targetId = (await children.create(fields)).id;
+          setChildId(targetId);
         }
+
+        if (photoFile) {
+          try {
+            const photo = await (await fetch(photoFile.uri)).blob();
+            await children.uploadAvatar(targetId, photo, photoFile.mimeType);
+          } catch (uploadErr) {
+            console.warn(
+              '[Onboarding] Photo upload failed, continuing without photo:',
+              uploadErr,
+            );
+            toast.error(
+              `${httpErrorMessage(uploadErr as Error, {
+                codeMessages: CHILD_ERRORS,
+                fallback: 'Photo upload failed.',
+              })} The profile was saved without it.`,
+            );
+          }
+        }
+        void navigate(`/ConversationalOnboarding/${targetId}`);
+      } catch (err) {
+        toast.error(
+          httpErrorMessage(err as Error, {
+            codeMessages: CHILD_ERRORS,
+            fallback: 'Something went wrong. Please try again.',
+          }),
+        );
+        console.warn('[Onboarding] Could not create/update child:', err);
       } finally {
         setIsSaving(false);
       }

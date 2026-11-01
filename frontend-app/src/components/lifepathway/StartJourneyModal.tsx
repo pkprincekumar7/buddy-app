@@ -31,11 +31,7 @@ import {
   TRACK,
 } from '@/lib/startJourneyPlans';
 import type { Plan } from '@/lib/startJourneyPlans';
-import {
-  useNinetyDayPlan,
-  type PersonalityProfile,
-} from '@/hooks/useNinetyDayPlan';
-import type { ChildRecord } from '@/types/api';
+import { useNinetyDayPlan } from '@/hooks/useNinetyDayPlan';
 import { color, css, gradient, rgb } from '@/theme';
 import DashboardStep from './DashboardStep';
 import TrackStep from './TrackStep';
@@ -99,8 +95,6 @@ interface StartJourneyModalProps {
   childName: string;
   childGender: string | null;
   childId: string | undefined;
-  childData: ChildRecord | null;
-  profile: PersonalityProfile | null;
 }
 
 const INTEREST_CHIPS = [
@@ -177,8 +171,6 @@ export default function StartJourneyModal({
   childName,
   childGender,
   childId,
-  childData,
-  profile,
 }: StartJourneyModalProps) {
   const [step, setStep] = useState<Step>(0);
   const [busy, setBusy] = useState(false);
@@ -198,7 +190,7 @@ export default function StartJourneyModal({
 
   const t = (text: string) => fillTemplate(text, childName, childGender);
 
-  const progress = useNinetyDayPlan({ childId, childData, profile });
+  const progress = useNinetyDayPlan({ childId });
 
   // Every open resets the payment-form fields (never persisted, and
   // shouldn't be), and decides the opening step exactly once per open: a
@@ -267,22 +259,20 @@ export default function StartJourneyModal({
 
   const interest = useMemo(() => readInterest(progress.ask), [progress.ask]);
 
-  // Fires generate_event_tracker once the parent locks in a Day-90 target —
-  // guarded on hasTrackSteps/isGeneratingTrackSteps so it's a no-op on resume
-  // (already generated) and can't double-fire while a job is in flight.
+  // Generates the tracker once the parent locks in a Day-90 target — guarded on
+  // hasTrackSteps/isGeneratingTrackSteps so it's a no-op on resume (already
+  // generated) and can't double-fire while a job is in flight, and on trackerFailed
+  // so a failure isn't retried in a loop. Transform builds it around the saved event.
   useEffect(() => {
     if (
       !progress.evSet ||
       progress.hasTrackSteps ||
-      progress.isGeneratingTrackSteps
+      progress.isGeneratingTrackSteps ||
+      progress.trackerFailed
     )
       return;
-    progress.generateTrackSteps(
-      progress.evName,
-      progress.evDate,
-      interest.label,
-    );
-  }, [progress, interest.label]);
+    progress.generateTrackSteps();
+  }, [progress]);
   const plan = useMemo(
     () => (progress.doc?.plan as Plan | null | undefined) ?? getPlan(interest),
     [progress.doc?.plan, interest],

@@ -49,7 +49,7 @@ import {
 } from '@/lib/lifePathwayData';
 import type { Milestone } from '@/lib/lifePathwayData';
 import { css } from '@/theme';
-import type { CompletedArea } from '@/types/api';
+import type { TransformArea } from '@/api/transform';
 
 /** Root background (radial layers; the final solid layer is the background color). */
 const ROOT_BG_IMAGE = css(
@@ -70,7 +70,7 @@ export default function LifePathway() {
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
 
-  const { childData, profile, isLoading, completedAreas } =
+  const { childData, viewModel, profile, isLoading, completedAreas } =
     useLifePathwayData(childId);
   const [showSplash, startTimer] = useStageSplash(0);
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
@@ -90,31 +90,23 @@ export default function LifePathway() {
 
   // ── Derived child facts ────────────────────────────────────────────────────
 
-  const childName = typeof childData?.name === 'string' ? childData.name : '';
-  const gender =
-    typeof childData?.gender === 'string' ? childData.gender : null;
-  const currentAge = useMemo(
-    () => Number.parseInt(String(childData?.age ?? ''), 10) || 10,
-    [childData],
-  );
+  const childName = childData?.name ?? '';
+  const gender = childData?.gender ?? null;
+  const currentAge = useMemo(() => childData?.age ?? 10, [childData]);
   const ages = useMemo(
     () => AGE_OFFSETS.map(o => currentAge + o),
     [currentAge],
   );
   const journeyEndAge = ages[ages.length - 1] ?? currentAge;
   const archetype = profile?.personality_type ?? null;
-  const strengths = useMemo(
-    () => (profile?.top_strengths ?? []).map(s => String(s)).filter(Boolean),
-    [profile],
-  );
   const traits = useMemo(() => {
-    const rawTraits = childData?.personality?.view_model?.profile?.traits;
+    const rawTraits = viewModel?.profile.traits;
     if (!Array.isArray(rawTraits)) return [];
     return rawTraits
       .map(v => String(v))
       .filter(Boolean)
       .slice(0, 3);
-  }, [childData]);
+  }, [viewModel]);
 
   /** Voice tokens for this child, for the few places that need one pronoun alone. */
   const voice = useMemo(() => copyTokensFor(gender), [gender]);
@@ -162,13 +154,8 @@ export default function LifePathway() {
     progressMessage,
   } = useLifePathwayArea({
     childId,
-    child: childData,
     area: selectedArea,
-    completedArea: selected?.completed ?? null,
     areas: completedAreas,
-    archetype,
-    personalityNarrative: profile?.summary ?? null,
-    strengths,
     ages,
     enabled: !isLoading && !showSplash,
   });
@@ -207,7 +194,7 @@ export default function LifePathway() {
       ? areaOptions
       : GROWTH_AREAS.map(g => ({
           area: g,
-          completed: null as CompletedArea | null,
+          completed: null as TransformArea | null,
         }));
     return source
       .map(({ area, completed }) => {
@@ -360,8 +347,6 @@ export default function LifePathway() {
           childName={childName}
           childGender={gender}
           childId={childId}
-          childData={childData}
-          profile={profile}
         />
       )}
 

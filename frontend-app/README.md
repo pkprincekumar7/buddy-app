@@ -89,15 +89,16 @@ yarn install
 Create the `.env` file at `frontend-app/.env`:
 
 ```
-API_URL=http://localhost:8000
-CDN_BASE_URL=http://localhost:8000
+API_URL=http://localhost:8088
 GOOGLE_CLIENT_ID=
 IOS_CLIENT_ID=
+# CDN_BASE_URL: leave unset in dev (it falls back to the web Vite dev server on port 5173)
 ```
 
-> **Android emulator:** `localhost` works after running `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` once per emulator boot (see Daily Workflow below).
-> **iOS simulator:** `localhost:8000` works directly — no tunnel needed; the simulator shares the Mac's network stack.
-> **Physical device (Android or iOS):** Replace `localhost` with your Mac's LAN IP e.g. `http://192.168.1.10:8000` and rebuild.
+> `8088` is the local gateway (`docker compose up -d --build` from the repo root), which routes each `/api/*` path to its service.
+> **Android emulator:** `localhost` works after running `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8088 tcp:8088` once per emulator boot (see Daily Workflow below).
+> **iOS simulator:** `localhost:8088` works directly — no tunnel needed; the simulator shares the Mac's network stack.
+> **Physical device (Android or iOS):** Replace `localhost` with your Mac's LAN IP e.g. `http://192.168.1.10:8088` and rebuild.
 
 ---
 
@@ -154,7 +155,7 @@ yarn start
 
 # ADB tunnels + build (Terminal 2 — emulator must be running)
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 yarn android
 ```
 
@@ -239,7 +240,7 @@ Start the emulator in Android Studio first, then open **two terminals**:
 # Terminal 1 — ADB tunnels + Metro
 cd frontend-app
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 yarn start
 
 # Terminal 2 — build, install, and launch the app
@@ -258,7 +259,7 @@ Every time you come back to work, follow these steps in order:
 **Step 1 — Start the backend**
 
 ```bash
-docker compose up
+docker compose up -d --build   # from the repo root; see docs/getting-started.md
 ```
 
 **Step 2 — Start the Android emulator**
@@ -269,10 +270,10 @@ Open Android Studio → Device Manager → click the play button on your virtual
 
 ```bash
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 ```
 
-This makes `localhost:8081` (Metro) and `localhost:8000` (backend) inside the emulator point to your Mac. **Run both once every time the emulator starts** — without `8081` the app shows a blank screen; without `8000` API calls fail with "Network request failed".
+This makes `localhost:8081` (Metro) and `localhost:8088` (the API gateway) inside the emulator point to your Mac. **Run both once every time the emulator starts** — without `8081` the app shows a blank screen; without `8088` API calls fail with "Network request failed".
 
 **Step 4 — Start Metro**
 
@@ -380,7 +381,7 @@ adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 adb install -r app/build/outputs/apk/debug/app-x86_64-debug.apk
 ```
 
-> **Using a physical device?** Update `.env` to use your Mac's LAN IP (`http://192.168.x.x:8000`) instead of `localhost`, then rebuild the APK. No `adb reverse` is needed for physical devices.
+> **Using a physical device?** Update `.env` to use your Mac's LAN IP (`http://192.168.x.x:8088`) instead of `localhost`, then rebuild the APK. No `adb reverse` is needed for physical devices.
 
 ---
 
@@ -566,7 +567,7 @@ xcrun simctl list devices available
 **Step 1 — Start the backend**
 
 ```bash
-docker compose up
+docker compose up -d --build   # from the repo root; see docs/getting-started.md
 ```
 
 **Step 2 — Start Metro (Terminal 1)**
@@ -966,8 +967,8 @@ Managed by `react-native-config`. File location: `frontend-app/.env`
 
 | Variable           | Description                               | Local dev value           |
 | ------------------ | ----------------------------------------- | ------------------------- |
-| `API_URL`          | Backend base URL                          | `http://localhost:8000`   |
-| `CDN_BASE_URL`     | CDN base URL for static assets            | `http://localhost:8000`   |
+| `API_URL`          | API base URL (the local gateway)          | `http://localhost:8088`   |
+| `CDN_BASE_URL`     | CDN base URL for static assets            | unset (Vite dev server, port 5173) |
 | `GOOGLE_CLIENT_ID` | Google Web OAuth 2.0 Client ID            | from Google Cloud Console |
 | `IOS_CLIENT_ID`    | Google iOS OAuth 2.0 Client ID (iOS only) | from Google Cloud Console |
 
@@ -975,8 +976,8 @@ Managed by `react-native-config`. File location: `frontend-app/.env`
 
 - Changing `.env` always requires a **native rebuild** (`yarn android` for Android, `yarn ios` for iOS)
 - `yarn start --reset-cache` alone is **not** enough after a `.env` change
-- For Android emulator, always run `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` after starting the emulator — `8081` is Metro (blank screen without it), `8000` is the backend API
-- For a real physical device (Android or iOS), replace `localhost` with your Mac's LAN IP: `http://192.168.x.x:8000`
+- For Android emulator, always run `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8088 tcp:8088` after starting the emulator — `8081` is Metro (blank screen without it), `8088` is the API gateway
+- For a real physical device (Android or iOS), replace `localhost` with your Mac's LAN IP: `http://192.168.x.x:8088`
 
 ---
 
@@ -1102,7 +1103,7 @@ The Google sign-in sheet makes a network call back through the app. Make sure th
 
 ```bash
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 ```
 
 ---
@@ -1130,14 +1131,15 @@ adb reverse tcp:8000 tcp:8000
 **Most likely cause:** The ADB reverse tunnel is not set up, or the backend is not running.
 
 ```bash
-# 1. Confirm backend is running
-curl http://localhost:8000/api/health
+# 1. Confirm the stack is running (the gateway, then shared's health through it)
+curl http://localhost:8088/gateway/health
+curl http://localhost:8088/api/health
 
 # 2. Set up the ADB reverse tunnels (run once every time the emulator starts)
 #    8081 → Metro bundler (without this the app shows a blank screen)
-#    8000 → backend API (without this ALL network calls — including login — will fail)
+#    8088 → the API gateway (without this ALL network calls — including login — will fail)
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 
 # 3. If .env was recently changed, rebuild the app
 cd frontend-app

@@ -21,7 +21,7 @@ interface Options {
 
 /**
  * On-device speech-to-text — the native equivalent of the web VoiceInput's
- * webkitSpeechRecognition path (the web's MediaRecorder + /audio/transcribe
+ * webkitSpeechRecognition path (the web's MediaRecorder + /speech/transcriptions
  * fallback isn't needed: iOS and Android both ship a recognizer).
  */
 export function useVoiceRecognition({

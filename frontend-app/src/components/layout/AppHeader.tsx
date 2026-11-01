@@ -1,3 +1,4 @@
+import { displayName } from '@/api/account';
 import React, { useEffect, useState } from 'react';
 import { AppState, Modal, Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
@@ -8,6 +9,7 @@ import {
   LogOut,
   Mail,
   RotateCcw,
+  Settings,
   Volume2,
   VolumeX,
 } from 'lucide-react-native';
@@ -69,7 +71,7 @@ export default function AppHeader({
   }, []);
 
   const circleLabel = CIRCLE_LABELS[currentPageName];
-  const initials = getInitials(user?.full_name ?? user?.email ?? '?');
+  const initials = getInitials(displayName(user) ?? user?.email ?? '?');
 
   return (
     <View
@@ -211,7 +213,7 @@ export default function AppHeader({
                         className="font-semibold text-card-foreground"
                         numberOfLines={1}
                       >
-                        {user?.full_name ?? 'User'}
+                        {displayName(user) ?? 'User'}
                       </Text>
                       <View className="flex-row items-center gap-1">
                         <Mail size={12} color={color['muted-foreground']} />
@@ -249,6 +251,28 @@ export default function AppHeader({
                     onPress={() => {
                       setProfileOpen(false);
                       navigate('/Home');
+                    }}
+                  />
+                  <PanelRow
+                    icon={
+                      <Settings
+                        size={16}
+                        color={
+                          currentPageName === 'AccountSettings'
+                            ? color.primary
+                            : color['muted-foreground']
+                        }
+                      />
+                    }
+                    label="Account settings"
+                    textClassName={
+                      currentPageName === 'AccountSettings'
+                        ? 'text-primary'
+                        : 'text-muted-foreground'
+                    }
+                    onPress={() => {
+                      setProfileOpen(false);
+                      navigate('/AccountSettings');
                     }}
                   />
                   <PanelRow
