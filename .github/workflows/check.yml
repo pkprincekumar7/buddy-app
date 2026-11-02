@@ -356,6 +356,9 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
 
       # shared/routing.json is the single source of truth for country → location →
       # region; the backend and both frontends commit generated copies of it.
@@ -388,6 +391,10 @@ jobs:
       - name: Run frontend-publish.sh tests
         run: bash scripts/frontend-publish.test.sh
 
+      # The reusable workflows' input checks (SEC-07): environment, action, regions.
+      - name: Run workflow-inputs.sh tests
+        run: bash scripts/workflow-inputs.test.sh
+
       # The scheduler's GitHub dispatcher (SCH-01): standard library only, so the
       # runner's Python is enough; no AWS or GitHub access.
       - name: Run scheduler dispatcher tests
@@ -399,7 +406,7 @@ jobs:
         run: bash scripts/check-service-lists.sh
 
       - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh
+        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh scripts/workflow-inputs.sh scripts/workflow-inputs.test.sh
 
   terraform-lint:
     name: Terraform Lint
@@ -414,6 +421,9 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
@@ -761,7 +771,7 @@ jobs:
       - name: Build the service images
         run: |
           for svc in $(python backend/tools/services.py); do
-            docker build --build-arg GIT_SHA=${{ github.sha }} --build-arg SERVICE="$svc" \
+            docker build --build-arg GIT_SHA="${GITHUB_SHA}" --build-arg SERVICE="$svc" \
               -t "superpower-$svc:scan" -f backend/Dockerfile .
           done
 
@@ -848,32 +858,57 @@ jobs:
       # ── fail gate: surface all check results before failing the job ──────────
       - name: Fail if any security check failed
         if: always()
+        env:
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          HADOLINT_BACKEND_OUTCOME: ${{ steps.hadolint_backend.outcome }}
+          HADOLINT_FRONTEND_OUTCOME: ${{ steps.hadolint_frontend.outcome }}
+          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
+          SEMGREP_OUTCOME: ${{ steps.semgrep.outcome }}
+          PIP_AUDIT_OUTCOME: ${{ steps.pip_audit.outcome }}
+          CHECKOV_OUTCOME: ${{ steps.checkov.outcome }}
+          NPM_AUDIT_OUTCOME: ${{ steps.npm_audit.outcome }}
+          YARN_AUDIT_FRONTEND_APP_OUTCOME: ${{ steps.yarn_audit_frontend_app.outcome }}
+          RETIRE_OUTCOME: ${{ steps.retire.outcome }}
+          RETIRE_FRONTEND_APP_OUTCOME: ${{ steps.retire_frontend_app.outcome }}
+          TRIVY_BACKEND_VULN_OUTCOME: ${{ steps.trivy_backend_vuln.outcome }}
+          TRIVY_FRONTEND_VULN_OUTCOME: ${{ steps.trivy_frontend_vuln.outcome }}
+          TRIVY_FRONTEND_APP_VULN_OUTCOME: ${{ steps.trivy_frontend_app_vuln.outcome }}
+          TRIVY_BACKEND_LICENSE_OUTCOME: ${{ steps.trivy_backend_license.outcome }}
+          TRIVY_FRONTEND_LICENSE_OUTCOME: ${{ steps.trivy_frontend_license.outcome }}
+          TRIVY_FRONTEND_APP_LICENSE_OUTCOME: ${{ steps.trivy_frontend_app_license.outcome }}
+          TRIVY_CONFIG_BACKEND_OUTCOME: ${{ steps.trivy_config_backend.outcome }}
+          TRIVY_CONFIG_EDGE_OUTCOME: ${{ steps.trivy_config_edge.outcome }}
+          TRIVY_CONFIG_FRONTEND_OUTCOME: ${{ steps.trivy_config_frontend.outcome }}
+          TRIVY_CONFIG_SCHEDULER_OUTCOME: ${{ steps.trivy_config_scheduler.outcome }}
+          TRIVY_CONFIG_MODULES_OUTCOME: ${{ steps.trivy_config_modules.outcome }}
+          TRIVY_IMAGE_OUTCOME: ${{ steps.trivy_image.outcome }}
+          DOCKLE_OUTCOME: ${{ steps.dockle.outcome }}
         run: |
           FAILED_CHECKS=()
-          [[ "${{ steps.gitleaks.outcome }}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
-          [[ "${{ steps.hadolint_backend.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
-          [[ "${{ steps.hadolint_frontend.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
-          [[ "${{ steps.bandit.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
-          [[ "${{ steps.semgrep.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
-          [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
-          [[ "${{ steps.checkov.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
-          [[ "${{ steps.npm_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
-          [[ "${{ steps.yarn_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
-          [[ "${{ steps.retire.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
-          [[ "${{ steps.retire_frontend_app.outcome }}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
-          [[ "${{ steps.trivy_backend_vuln.outcome }}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
-          [[ "${{ steps.trivy_frontend_vuln.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
-          [[ "${{ steps.trivy_frontend_app_vuln.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
-          [[ "${{ steps.trivy_backend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
-          [[ "${{ steps.trivy_frontend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
-          [[ "${{ steps.trivy_frontend_app_license.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
-          [[ "${{ steps.trivy_config_backend.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
-          [[ "${{ steps.trivy_config_edge.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
-          [[ "${{ steps.trivy_config_frontend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
-          [[ "${{ steps.trivy_config_scheduler.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
-          [[ "${{ steps.trivy_config_modules.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
-          [[ "${{ steps.trivy_image.outcome }}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
-          [[ "${{ steps.dockle.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
+          [[ "${GITLEAKS_OUTCOME}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
+          [[ "${HADOLINT_BACKEND_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
+          [[ "${HADOLINT_FRONTEND_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
+          [[ "${BANDIT_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
+          [[ "${SEMGREP_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
+          [[ "${PIP_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
+          [[ "${CHECKOV_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
+          [[ "${NPM_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
+          [[ "${YARN_AUDIT_FRONTEND_APP_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
+          [[ "${RETIRE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
+          [[ "${RETIRE_FRONTEND_APP_OUTCOME}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
+          [[ "${TRIVY_BACKEND_VULN_OUTCOME}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
+          [[ "${TRIVY_FRONTEND_VULN_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
+          [[ "${TRIVY_FRONTEND_APP_VULN_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
+          [[ "${TRIVY_BACKEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
+          [[ "${TRIVY_FRONTEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
+          [[ "${TRIVY_FRONTEND_APP_LICENSE_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
+          [[ "${TRIVY_CONFIG_BACKEND_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
+          [[ "${TRIVY_CONFIG_EDGE_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
+          [[ "${TRIVY_CONFIG_FRONTEND_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
+          [[ "${TRIVY_CONFIG_SCHEDULER_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
+          [[ "${TRIVY_CONFIG_MODULES_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
+          [[ "${TRIVY_IMAGE_OUTCOME}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
+          [[ "${DOCKLE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
             echo "Failed security checks: ${FAILED_CHECKS[*]}"
             exit 1
@@ -996,10 +1031,13 @@ jobs:
       # ── fail gate ────────────────────────────────────────────────────────────
       - name: Fail if any DAST check failed
         if: always()
+        env:
+          SPECTRAL_SERVICES_OUTCOME: ${{ steps.spectral_services.outcome }}
+          NUCLEI_OUTCOME: ${{ steps.nuclei.outcome }}
         run: |
           FAILED_CHECKS=()
-          [[ "${{ steps.spectral_services.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral-services)
-          [[ "${{ steps.nuclei.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
+          [[ "${SPECTRAL_SERVICES_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(spectral-services)
+          [[ "${NUCLEI_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
             echo "Failed DAST checks: ${FAILED_CHECKS[*]}"
             exit 1

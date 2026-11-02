@@ -56,9 +56,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate promotion direction
+        env:
+          SOURCE_ENV: ${{ inputs.source_env }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
-          SOURCE="${{ inputs.source_env }}"
-          TARGET="${{ inputs.target_env }}"
+          SOURCE="${SOURCE_ENV}"
+          TARGET="${TARGET_ENV}"
 
           if [ "$SOURCE" = "$TARGET" ]; then
             echo "::error::Source and target environments must differ."
@@ -101,13 +104,14 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          SOURCE_ENV: ${{ inputs.source_env }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.source_env }}' GitHub environment and re-run."
+            echo "Add them to the '${SOURCE_ENV}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -120,21 +124,24 @@ jobs:
 
       - name: Resolve source git ref
         id: resolve
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          SOURCE_ENV: ${{ inputs.source_env }}
         run: |
           RESOLVED=$(aws ssm get-parameter \
             --region us-east-1 \
-            --name "/${{ vars.APP_NAME }}/${{ inputs.source_env }}/edge/deployed_git_sha" \
+            --name "/${APP_NAME}/${SOURCE_ENV}/edge/deployed_git_sha" \
             --query "Parameter.Value" --output text 2>/dev/null || echo "")
 
           if [ -z "$RESOLVED" ]; then
-            echo "ERROR: No deployed git SHA found in SSM for source env=${{ inputs.source_env }}."
+            echo "ERROR: No deployed git SHA found in SSM for source env=${SOURCE_ENV}."
             echo "Run deploy-live-frontend for that environment successfully before promoting."
             exit 1
           fi
           # The value comes from SSM, not from this repo: accept only a full commit SHA, so
           # nothing else reaches the checkout or a later run: block.
           if [[ ! "$RESOLVED" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "ERROR: the deployed git SHA in SSM for env=${{ inputs.source_env }} isn't a 40-character commit SHA."
+            echo "ERROR: the deployed git SHA in SSM for env=${SOURCE_ENV} isn't a 40-character commit SHA."
             exit 1
           fi
 
@@ -159,6 +166,7 @@ jobs:
           SUBDOMAIN:             ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME:           ${{ vars.DOMAIN_NAME }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN (variable)")
@@ -168,19 +176,9 @@ jobs:
           [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.target_env }}' GitHub environment and re-run."
+            echo "Add them to the '${TARGET_ENV}' GitHub environment and re-run."
             exit 1
           fi
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
-        with:
-          role-to-assume: ${{ vars.ROLE_ARN }}
-          role-session-name: promote-frontend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
-          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
-          aws-region: us-east-1
-          # The target environment's deploy role — only target-environment
-          # resources are touched here (the source SHA comes from source_ref).
 
       # -------------------------------------------------------------------------
       # VITE_API_URL is the public CloudFront origin for the TARGET environment.
@@ -193,50 +191,17 @@ jobs:
         env:
           SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
-          if [[ "${{ inputs.target_env }}" == "prod" ]]; then
+          if [[ "${TARGET_ENV}" == "prod" ]]; then
             FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
           else
-            FQDN="${SUBDOMAIN}-${{ inputs.target_env }}.${DOMAIN_NAME}"
+            FQDN="${SUBDOMAIN}-${TARGET_ENV}.${DOMAIN_NAME}"
           fi
           echo "VITE_API_URL=https://${FQDN}" >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
-      # Resolve deployment targets before checkout and the Node.js build so the
-      # workflow fails fast if edge infra has not been applied yet — avoiding a
-      # wasted git checkout + npm install before hitting the SSM error.
-      # SSM parameters are written automatically by terraform-live-edge.yml
-      # after every successful apply — no manual secret copying needed.
-      # -------------------------------------------------------------------------
-      - name: Resolve deployment targets
-        id: tf_outputs
-        run: |
-          # SSM params are always written to us-east-1 (control-plane region).
-          get_ssm() {
-            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
-          }
-
-          S3_BUCKET=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/s3_bucket_name")
-          CF_DIST_ID=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/cloudfront_distribution_id")
-
-          if [ -z "$S3_BUCKET" ]; then
-            echo "ERROR: S3 bucket not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-edge workflow (apply) for that environment first."
-            exit 1
-          fi
-          if [ -z "$CF_DIST_ID" ]; then
-            echo "ERROR: CloudFront distribution ID not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-edge workflow (apply) for that environment first."
-            exit 1
-          fi
-
-          echo "s3_bucket=$S3_BUCKET"   >> "$GITHUB_OUTPUT"
-          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
-          echo "S3 bucket:               $S3_BUCKET"
-          echo "CloudFront distribution: $CF_DIST_ID"
-
-      # -------------------------------------------------------------------------
       # Check out the exact git ref deployed in the source environment.
-      # All resolution steps run first so a misconfigured environment fails
-      # before the cost of a git checkout + npm install is incurred.
       # -------------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -278,9 +243,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # --ignore-scripts: no package's install script runs (the only ones are
+      # husky's git hook setup and macOS-only fsevents; neither is needed here).
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Build
         working-directory: frontend
@@ -288,6 +255,55 @@ jobs:
           VITE_API_URL:          ${{ env.VITE_API_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
+
+      # -------------------------------------------------------------------------
+      # AWS credentials only from here on (CI-13): npm ci and the build run
+      # third-party package code, which must never hold the deploy role.
+      # Without them a missing edge apply fails after the build (about a
+      # minute later) rather than before it.
+      # -------------------------------------------------------------------------
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        with:
+          role-to-assume: ${{ vars.ROLE_ARN }}
+          role-session-name: promote-frontend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
+          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
+          aws-region: us-east-1
+          # The target environment's deploy role — only target-environment
+          # resources are touched here (the source SHA comes from source_ref).
+
+      # -------------------------------------------------------------------------
+      # Where the build goes: read from SSM, once AWS credentials exist.
+      # SSM parameters are written automatically by terraform-live-edge.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          TARGET_ENV: ${{ inputs.target_env }}
+        run: |
+          # SSM params are always written to us-east-1 (control-plane region).
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          S3_BUCKET=$(get_ssm "/${APP_NAME}/${TARGET_ENV}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${APP_NAME}/${TARGET_ENV}/edge/cloudfront_distribution_id")
+
+          if [ -z "$S3_BUCKET" ]; then
+            echo "ERROR: S3 bucket not found in SSM for env=${TARGET_ENV}. Run terraform-live-edge workflow (apply) for that environment first."
+            exit 1
+          fi
+          if [ -z "$CF_DIST_ID" ]; then
+            echo "ERROR: CloudFront distribution ID not found in SSM for env=${TARGET_ENV}. Run terraform-live-edge workflow (apply) for that environment first."
+            exit 1
+          fi
+
+          echo "s3_bucket=$S3_BUCKET"   >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "S3 bucket:               $S3_BUCKET"
+          echo "CloudFront distribution: $CF_DIST_ID"
 
       # Old hashed chunks are kept, index.html goes up last, and only the unhashed files
       # are invalidated, so a deploy never breaks an open page or the next load (CI-07).
@@ -324,14 +340,16 @@ jobs:
       - name: Record deployed git SHA
         env:
           GIT_SHA: ${{ needs.source_ref.outputs.git_sha }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
           aws ssm put-parameter \
             --region us-east-1 \
-            --name "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/deployed_git_sha" \
+            --name "/${APP_NAME}/${TARGET_ENV}/edge/deployed_git_sha" \
             --value "$GIT_SHA" \
             --type String \
             --overwrite
-          echo "Recorded deployed git SHA for ${{ inputs.target_env }}: $GIT_SHA"
+          echo "Recorded deployed git SHA for ${TARGET_ENV}: $GIT_SHA"
 
       # Last, once the new build is live: chunks it doesn't use and that are over 30 days
       # old. A page open from before that is the only thing that could still want one.

@@ -75,13 +75,14 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -97,9 +98,11 @@ jobs:
         env:
           FIRST_REGION: ${{ fromJson(inputs.aws_regions)[0] }}
           SELECTION: ${{ inputs.service }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           source scripts/ecs-services.sh
-          SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
+          SERVICES=$(resolve_services "/${APP_NAME}/${ENVIRONMENT}/backend/$FIRST_REGION" "$SELECTION")
           echo "services=$(jq -c '[.[].name]' <<<"$SERVICES")" >> "$GITHUB_OUTPUT"
           echo "Restarting: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
 

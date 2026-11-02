@@ -96,7 +96,9 @@ jobs:
       TF_IN_AUTOMATION: "1"
       TF_VAR_app_name:            ${{ vars.APP_NAME }}
       TF_VAR_environment:         ${{ inputs.environment }}
-      TF_VAR_github_pat:          ${{ secrets.GIT_ACTIONS_PAT }}
+      # TF_VAR_github_pat is set on the plan, apply and destroy steps only
+      # (SEC-06): a job-level secret reaches every step, third-party
+      # actions included.
       TF_VAR_schedule_enabled:    ${{ inputs.schedule_enabled }}
       # Overrides the tfvars file's value below only if tfvars doesn't also
       # set this variable — it no longer does (see tfvars/*.tfvars), so this
@@ -136,16 +138,25 @@ jobs:
 
       # Derive GitHub repo owner and name from runtime context — no hardcoding.
       - name: Resolve Terraform variables
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
         run: |
-          echo "TF_VAR_github_repo_owner=${{ github.repository_owner }}"     >> "$GITHUB_ENV"
-          echo "TF_VAR_github_repo_name=${{ github.event.repository.name }}" >> "$GITHUB_ENV"
+          echo "TF_VAR_github_repo_owner=${GITHUB_REPOSITORY_OWNER}"     >> "$GITHUB_ENV"
+          echo "TF_VAR_github_repo_name=${REPOSITORY_NAME}" >> "$GITHUB_ENV"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
 
       - name: Terraform Init
+        env:
+          STATE_BUCKET: ${{ vars.STATE_BUCKET }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           # -lockfile=readonly: use exactly the provider versions and hashes in
           # the committed .terraform.lock.hcl (TF-01). A provider upgrade is a
@@ -153,8 +164,8 @@ jobs:
           # silent change in CI.
           terraform init \
             -lockfile=readonly \
-            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ vars.APP_NAME }}/${{ inputs.environment }}/scheduler/us-east-1/terraform.tfstate"
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=terraform-state-files/${APP_NAME}/${ENVIRONMENT}/scheduler/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -164,13 +175,18 @@ jobs:
 
       - name: Terraform Plan
         if: inputs.action == 'plan'
-        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_github_pat: ${{ secrets.GIT_ACTIONS_PAT }}
+        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Show plan summary
         if: inputs.action == 'plan'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           {
-            echo "### Terraform Plan — scheduler (${{ inputs.environment }})"
+            echo "### Terraform Plan — scheduler (${ENVIRONMENT})"
             echo '```'
             terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
@@ -189,17 +205,25 @@ jobs:
 
       - name: Terraform Apply
         if: inputs.action == 'apply'
-        run: terraform apply -auto-approve -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_github_pat: ${{ secrets.GIT_ACTIONS_PAT }}
+        run: terraform apply -auto-approve -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Terraform Plan (destroy)
         if: inputs.action == 'plan-destroy'
-        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_github_pat: ${{ secrets.GIT_ACTIONS_PAT }}
+        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Show destroy plan summary
         if: inputs.action == 'plan-destroy'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           {
-            echo "### Terraform Destroy Plan — scheduler (${{ inputs.environment }})"
+            echo "### Terraform Destroy Plan — scheduler (${ENVIRONMENT})"
             echo '```'
             terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
@@ -215,4 +239,7 @@ jobs:
 
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
-        run: terraform apply -destroy -auto-approve -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_github_pat: ${{ secrets.GIT_ACTIONS_PAT }}
+        run: terraform apply -destroy -auto-approve -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"

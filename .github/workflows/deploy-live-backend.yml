@@ -73,6 +73,30 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Checks the inputs first, before any environment's secrets are loaded
+  # (SEC-07): a workflow_call input is free text, not one of the dispatch
+  # choices. A step can't do this — environment: and its secrets are
+  # resolved before a job's first step. See scripts/workflow-inputs.sh.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGIONS:     ${{ inputs.aws_regions }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          check_regions "$REGIONS"
+
   # ---------------------------------------------------------------------------
   # Resolve once, before building: which runtimes the selection covers, which
   # images they need (one per service: a worker runs its service's), and the
@@ -81,6 +105,7 @@ jobs:
   # ---------------------------------------------------------------------------
   resolve:
     name: Resolve services and images
+    needs: validate
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     outputs:
@@ -99,13 +124,14 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -122,9 +148,11 @@ jobs:
         env:
           FIRST_REGION: ${{ fromJson(inputs.aws_regions)[0] }}
           SELECTION: ${{ inputs.service }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           source scripts/ecs-services.sh
-          SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
+          SERVICES=$(resolve_services "/${APP_NAME}/${ENVIRONMENT}/backend/$FIRST_REGION" "$SELECTION")
           SERVICES=$(image_runtimes "$SERVICES" "$SELECTION")
           IMAGES=$(image_services "$SERVICES")
           echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
@@ -180,11 +208,13 @@ jobs:
         env:
           REGIONS: ${{ inputs.aws_regions }}
           IMAGE_SERVICE: ${{ matrix.image_service }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           source scripts/ecs-services.sh
           : > ecr_targets.txt
           for REGION in $(jq -r '.[]' <<<"$REGIONS"); do
-            SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$REGION" all)
+            SERVICES=$(resolve_services "/${APP_NAME}/${ENVIRONMENT}/backend/$REGION" all)
             REPO=$(repository_for "$SERVICES" "$IMAGE_SERVICE")
             echo "$REGION $REPO" >> ecr_targets.txt
             echo "ECR ($REGION): $REPO"

@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 28 are done, 30 partly done, 27 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 30 are done, 31 partly done, 24 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -145,8 +145,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open · ⏸ Deferred |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | 🟡 Secret reads fail closed (fix 1); per-key merge open |
-| SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ⬜ Open |
-| SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ⬜ Open |
+| SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ✅ Done — secrets on the Terraform plan/apply steps only, `terraform_wrapper: false` |
+| SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ✅ Done — no expression in any `run:`; reusable workflows validate inputs in a first job |
 | SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open · ⏸ Deferred |
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
@@ -215,7 +215,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
 | CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
-| CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | ⬜ Open |
+| CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | 🟡 Build (`npm ci --ignore-scripts`) before credentials; the two-job split (drops `id-token` from the build) ⏸ deferred |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ⬜ Open |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
 | CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | 🟡 Every `check.yml` job has a timeout; the other 12 workflows have none |
@@ -574,7 +574,7 @@ custom_error_response {
 
 ### SEC-06 — Secrets exposed job-wide to every step 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Job-level `env:` blocks still expose secrets to every step: `terraform-live-backend.yml:95,104`, `terraform-live-edge.yml:128,131`, `terraform-live-scheduler.yml:99`. `GITHUB_ENV` now carries non-secret values only.
+> 🔄 **Current code (2026-11-02):** ✅ Done. No job- or workflow-level `env:` holds a secret. `TF_VAR_origin_verify_secret(_next)` are set on the backend and edge `terraform plan` and `plan -destroy` steps only (their applies use the saved plan), and `TF_VAR_github_pat` on the scheduler's plan, apply, plan-destroy and destroy steps (it applies without a saved plan). The rotation warning reads `ORIGIN_VERIFY_SECRET_NEXT` in its script, since a step's `if:` can't read secrets. `GITHUB_ENV` carries non-secret values only, and every `setup-terraform` has `terraform_wrapper: false`. Rules in `docs/ci-cd.md` ("Rules every workflow follows").
 
 **Where:** Terraform workflows set `TF_VAR_*` secrets in job-level `env:` (e.g. `terraform-live-backend.yml:85-99`) and through `GITHUB_ENV` (`:196-302`).
 
@@ -591,7 +591,7 @@ custom_error_response {
 
 ### SEC-07 — `${{ }}` interpolated directly into `run:` 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. For example `terraform-live-edge.yml:251`, `terraform-live-backend.yml:336,389` and `terraform-live-frontend.yml:152,181` (`-var-file=…${{ inputs.environment }}`). Most line numbers below are stale.
+> 🔄 **Current code (2026-11-02):** ✅ Done. No `run:` script in any of the 13 workflows contains `${{ }}`: every value (inputs, `vars.*`, `matrix.*`, step outcomes) is mapped in the step's `env:` and used quoted, including `-var-file="tfvars/${ENVIRONMENT}.tfvars"`; `github.sha` and `github.repository_owner` use the runner's `GITHUB_*` variables. The five reusable workflows (`terraform-live-backend`, `-edge`, `-frontend`, `deploy-live-backend`, `-frontend`) start with a `validate` job without `environment:` that checks `environment`, `action`, the regions against `shared/routing.json` and the edge's `bootstrap_region` (`scripts/workflow-inputs.sh`, 30 tests in `workflow-inputs.test.sh`, run by `check.sh` and `check.yml`). Checked with a YAML scan of every `run:` (no expressions) and actionlint (no new findings); zizmor wasn't run locally. The "Where" list below is the pre-fix state.
 
 **Where (representative; fix every occurrence):**
 - `terraform-live-edge.yml:144,171,216,222` (`echo '${{ inputs.backend_regions }}'`)
@@ -2469,7 +2469,9 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-13 — `npm ci` runs with prod AWS credentials loaded 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. AWS credentials are still configured before `npm ci`: `deploy-live-frontend.yml:65` then `:130`, and `promote-live-frontend.yml:170` then `:249`.
+> 🔄 **Current code (2026-11-02):** 🟡 Partial. `deploy-live-frontend` and `promote-live-frontend` now run `npm ci --ignore-scripts` and the build before "Configure AWS Credentials", which comes right before the SSM, S3 and CloudFront steps (a missing edge apply now fails after the build). `--ignore-scripts` is safe: the only install scripts in the lock file are husky's hook setup and macOS-only `fsevents`. **Open:** the job still has `id-token: write`, so package code in a build step could request its own OIDC token for the deploy role. Closing that needs the two-job split (build without `id-token`, then deploy). Because `VITE_GOOGLE_CLIENT_ID`, `SUBDOMAIN` and `DOMAIN_NAME` are environment variables, that build job would need `environment:` too, which adds a second approval wherever the environment requires reviewers. Moving those three values to a repository variable would avoid that.
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** the two-job split. No environment has required reviewers today (checked 2026-11-02), so either form of the split would add no approval yet.
 
 **Where:** `deploy-live-frontend.yml:64-70` (configure credentials) runs before `:130` (`npm ci`). Similarly, `promote-live-frontend.yml:169` runs before `:249`.
 

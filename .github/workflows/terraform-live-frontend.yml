@@ -49,8 +49,33 @@ env:
   # All resources are hardcoded to us-east-1 (S3 bucket policy, SSM reads).
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Checks the inputs first, before any environment's secrets are loaded
+  # (SEC-07): a workflow_call input is free text, not one of the dispatch
+  # choices. A step can't do this — environment: and its secrets are
+  # resolved before a job's first step. See scripts/workflow-inputs.sh.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION:      ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          check_action "$ACTION"
+
   terraform:
     name: Terraform Live Frontend ${{ inputs.action }}
+    needs: validate
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     defaults:
@@ -71,6 +96,7 @@ jobs:
           APP_NAME:             ${{ vars.APP_NAME }}
           STATE_BUCKET:         ${{ vars.STATE_BUCKET }}
           SPA_BUCKET_NAME: ${{ vars.SPA_BUCKET_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"             ]] && missing+=("ROLE_ARN (variable)")
@@ -79,7 +105,7 @@ jobs:
           [[ -z "$SPA_BUCKET_NAME" ]] && missing+=("SPA_BUCKET_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -95,10 +121,17 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
 
       - name: Verify SSM parameters exist and are readable
         id: ssm
         if: inputs.action == 'plan' || inputs.action == 'apply'
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION: ${{ inputs.action }}
         run: |
           # A missing parameter fails apply. A plan instead skips the Terraform
           # plan with a notice: on a brand-new environment infra-live-edge
@@ -115,14 +148,14 @@ jobs:
             fi
             echo "OK: $name"
           }
-          APP="${{ vars.APP_NAME }}"
-          ENV="${{ inputs.environment }}"
+          APP="${APP_NAME}"
+          ENV="${ENVIRONMENT}"
           check_ssm "/$APP/$ENV/edge/cloudfront_arn"
           check_ssm "/$APP/$ENV/edge/s3_bucket_name"
 
           if [[ "$missing" -eq 0 ]]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ inputs.action }}" == "plan" ]]; then
+          elif [[ "${ACTION}" == "plan" ]]; then
             echo "::notice::infra-live-edge is not applied for this environment yet — skipping the plan. Apply it first, then plan this stack."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
@@ -131,6 +164,10 @@ jobs:
           fi
 
       - name: Terraform Init
+        env:
+          STATE_BUCKET: ${{ vars.STATE_BUCKET }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           # -lockfile=readonly: use exactly the provider versions and hashes in
           # the committed .terraform.lock.hcl (TF-01). A provider upgrade is a
@@ -138,8 +175,8 @@ jobs:
           # silent change in CI.
           terraform init \
             -lockfile=readonly \
-            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ vars.APP_NAME }}/${{ inputs.environment }}/frontend/us-east-1/terraform.tfstate"
+            -backend-config="bucket=${STATE_BUCKET}" \
+            -backend-config="key=terraform-state-files/${APP_NAME}/${ENVIRONMENT}/frontend/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -149,13 +186,17 @@ jobs:
 
       - name: Terraform Plan
         if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
-        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Show plan summary
         if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           {
-            echo "### Terraform Plan — frontend / ${{ inputs.environment }}"
+            echo "### Terraform Plan — frontend / ${ENVIRONMENT}"
             echo '```'
             terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
@@ -178,13 +219,17 @@ jobs:
 
       - name: Terraform Plan (destroy)
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
-        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Show destroy plan summary
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           {
-            echo "### Terraform Destroy Plan — frontend / ${{ inputs.environment }}"
+            echo "### Terraform Destroy Plan — frontend / ${ENVIRONMENT}"
             echo '```'
             terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'

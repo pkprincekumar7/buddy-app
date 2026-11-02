@@ -73,9 +73,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate promotion direction
+        env:
+          SOURCE_ENV: ${{ inputs.source_env }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
-          SOURCE="${{ inputs.source_env }}"
-          TARGET="${{ inputs.target_env }}"
+          SOURCE="${SOURCE_ENV}"
+          TARGET="${TARGET_ENV}"
 
           if [ "$SOURCE" = "$TARGET" ]; then
             echo "::error::Source and target environments must differ."
@@ -122,13 +125,14 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          SOURCE_ENV: ${{ inputs.source_env }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.source_env }}' GitHub environment and re-run."
+            echo "Add them to the '${SOURCE_ENV}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -154,12 +158,13 @@ jobs:
         env:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.source_env }}/backend/${{ matrix.aws_region }}
           SELECTION: ${{ inputs.service }}
+          SOURCE_ENV: ${{ inputs.source_env }}
         run: |
           source scripts/ecs-services.sh
 
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
           if [ -z "$CLUSTER" ]; then
-            echo "ERROR: Source ECS cluster not found in SSM for env=${{ inputs.source_env }}. Run terraform-live-backend workflow (apply) for that environment first."
+            echo "ERROR: Source ECS cluster not found in SSM for env=${SOURCE_ENV}. Run terraform-live-backend workflow (apply) for that environment first."
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$SELECTION")
@@ -180,10 +185,12 @@ jobs:
           echo "$IMAGES" > promote/images.json
 
       - name: Pull and save source images
+        env:
+          REGION: ${{ matrix.aws_region }}
         run: |
           mapfile -t IMAGES < <(jq -r '[.[].image] | unique | .[]' promote/images.json)
           REGISTRY="${IMAGES[0]%%/*}"   # <account>.dkr.ecr.<region>.amazonaws.com
-          aws ecr get-login-password --region "${{ matrix.aws_region }}" \
+          aws ecr get-login-password --region "${REGION}" \
             | docker login --username AWS --password-stdin "$REGISTRY"
           for REF in "${IMAGES[@]}"; do
             docker pull "$REF"
@@ -226,13 +233,14 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.target_env }}' GitHub environment and re-run."
+            echo "Add them to the '${TARGET_ENV}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -266,12 +274,14 @@ jobs:
       - name: Promote services
         env:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.target_env }}/backend/${{ matrix.aws_region }}
+          TARGET_ENV: ${{ inputs.target_env }}
+          REGION: ${{ matrix.aws_region }}
         run: |
           source scripts/ecs-services.sh
 
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
           if [ -z "$CLUSTER" ]; then
-            echo "ERROR: Target ECS cluster not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
+            echo "ERROR: Target ECS cluster not found in SSM for env=${TARGET_ENV}. Run terraform-live-backend workflow (apply) for that environment first."
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$(jq -r '[.[].name] | join(",")' promote/images.json)")
@@ -285,9 +295,9 @@ jobs:
             REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
             REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/<service>
             TAG="${SRC##*:}"
-            aws ecr get-login-password --region "${{ matrix.aws_region }}" \
+            aws ecr get-login-password --region "${REGION}" \
               | docker login --username AWS --password-stdin "$REGISTRY"
-            if aws ecr describe-images --region "${{ matrix.aws_region }}" --repository-name "$REPO_NAME" \
+            if aws ecr describe-images --region "${REGION}" --repository-name "$REPO_NAME" \
                  --image-ids imageTag="$TAG" --output text &>/dev/null; then
               echo "$REPO:$TAG already exists in target ECR — skipping push."
             else

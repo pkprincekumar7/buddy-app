@@ -32,8 +32,31 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Checks the inputs first, before any environment's secrets are loaded
+  # (SEC-07): a workflow_call input is free text, not one of the dispatch
+  # choices. A step can't do this — environment: and its secrets are
+  # resolved before a job's first step. See scripts/workflow-inputs.sh.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+
   deploy:
     name: Deploy Live Frontend
+    needs: validate
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
 
@@ -48,6 +71,7 @@ jobs:
           SUBDOMAIN:             ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME:           ${{ vars.DOMAIN_NAME }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN (variable)")
@@ -57,17 +81,9 @@ jobs:
           [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
-        with:
-          role-to-assume: ${{ vars.ROLE_ARN }}
-          role-session-name: deploy-live-frontend-${{ inputs.environment }}
-          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
-          aws-region: us-east-1
 
       # -------------------------------------------------------------------------
       # VITE_API_URL is the public CloudFront origin — the same FQDN logic used
@@ -78,31 +94,67 @@ jobs:
         env:
           SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+          if [[ "${ENVIRONMENT}" == "prod" ]]; then
             FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
           else
-            FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
+            FQDN="${SUBDOMAIN}-${ENVIRONMENT}.${DOMAIN_NAME}"
           fi
           echo "VITE_API_URL=https://${FQDN}" >> "$GITHUB_ENV"
 
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # --ignore-scripts: no package's install script runs (the only ones are
+      # husky's git hook setup and macOS-only fsevents; neither is needed here).
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ env.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: npm run build
+
       # -------------------------------------------------------------------------
-      # Resolve deployment targets before the Node.js build so the workflow
-      # fails fast if edge infra has not been applied yet — avoiding a wasted
-      # npm install + build before hitting the SSM error.
+      # AWS credentials only from here on (CI-13): npm ci and the build run
+      # third-party package code, which must never hold the deploy role.
+      # Without them a missing edge apply fails after the build (about a
+      # minute later) rather than before it.
+      # -------------------------------------------------------------------------
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        with:
+          role-to-assume: ${{ vars.ROLE_ARN }}
+          role-session-name: deploy-live-frontend-${{ inputs.environment }}
+          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
+          aws-region: us-east-1
+
+      # -------------------------------------------------------------------------
+      # Where the build goes: read from SSM, once AWS credentials exist.
       # SSM parameters are written automatically by terraform-live-edge.yml
       # after every successful apply — no manual secret copying needed.
       # -------------------------------------------------------------------------
       - name: Resolve deployment targets
         id: tf_outputs
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           # SSM params are always written to us-east-1 (control-plane region).
           get_ssm() {
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          S3_BUCKET=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.environment }}/edge/s3_bucket_name")
-          CF_DIST_ID=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.environment }}/edge/cloudfront_distribution_id")
+          S3_BUCKET=$(get_ssm "/${APP_NAME}/${ENVIRONMENT}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${APP_NAME}/${ENVIRONMENT}/edge/cloudfront_distribution_id")
 
           if [ -z "$S3_BUCKET" ]; then
             echo "ERROR: S3 bucket not found in SSM. Run terraform-live-edge workflow (apply) first."
@@ -117,24 +169,6 @@ jobs:
           echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
           echo "S3 bucket:               $S3_BUCKET"
           echo "CloudFront distribution: $CF_DIST_ID"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build
-        working-directory: frontend
-        env:
-          VITE_API_URL: ${{ env.VITE_API_URL }}
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
-        run: npm run build
 
       # Old hashed chunks are kept, index.html goes up last, and only the unhashed files
       # are invalidated, so a deploy never breaks an open page or the next load (CI-07).
@@ -171,14 +205,17 @@ jobs:
       # (terraform-live-edge grants ssm:PutParameter on /$APP_NAME/$ENV/edge/*).
       # -------------------------------------------------------------------------
       - name: Record deployed git SHA
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           aws ssm put-parameter \
             --region us-east-1 \
-            --name "/${{ vars.APP_NAME }}/${{ inputs.environment }}/edge/deployed_git_sha" \
-            --value "${{ github.sha }}" \
+            --name "/${APP_NAME}/${ENVIRONMENT}/edge/deployed_git_sha" \
+            --value "${GITHUB_SHA}" \
             --type String \
             --overwrite
-          echo "Recorded deployed git SHA: ${{ github.sha }}"
+          echo "Recorded deployed git SHA: ${GITHUB_SHA}"
 
       # Last, once the new build is live: chunks it doesn't use and that are over 30 days
       # old. A page open from before that is the only thing that could still want one.

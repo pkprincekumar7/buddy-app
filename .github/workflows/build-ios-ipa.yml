@@ -53,6 +53,7 @@ jobs:
           IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           IOS_APPLE_TEAM_ID:               ${{ secrets.IOS_APPLE_TEAM_ID }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$SUBDOMAIN"                       ]] && missing+=("SUBDOMAIN (variable)")
@@ -67,7 +68,7 @@ jobs:
           [[ -z "$IOS_APPLE_TEAM_ID"               ]] && missing+=("IOS_APPLE_TEAM_ID")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -80,11 +81,12 @@ jobs:
         env:
           SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+          if [[ "${ENVIRONMENT}" == "prod" ]]; then
             FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
           else
-            FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
+            FQDN="${SUBDOMAIN}-${ENVIRONMENT}.${DOMAIN_NAME}"
           fi
           echo "FQDN=${FQDN}" >> "$GITHUB_ENV"
           echo "Resolved FQDN: ${FQDN}"
@@ -119,8 +121,8 @@ jobs:
           IOS_CLIENT_ID:    ${{ secrets.IOS_CLIENT_ID }}
         run: |
           {
-            echo "API_URL=https://${{ env.FQDN }}"
-            echo "CDN_BASE_URL=https://${{ env.FQDN }}"
+            echo "API_URL=https://${FQDN}"
+            echo "CDN_BASE_URL=https://${FQDN}"
             echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
             echo "IOS_CLIENT_ID=${IOS_CLIENT_ID}"
           } > .env
@@ -312,7 +314,7 @@ jobs:
           # Restore the default search list first, then delete the temp keychain.
           # Without this, the search list retains a dead path after deletion.
           security list-keychains -d user -s login.keychain-db 2>/dev/null || true
-          security delete-keychain "${{ env.KEYCHAIN_PATH }}" 2>/dev/null || true
+          security delete-keychain "${KEYCHAIN_PATH}" 2>/dev/null || true
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
