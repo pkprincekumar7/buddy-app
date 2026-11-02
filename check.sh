@@ -247,6 +247,9 @@ run "ecs-services.sh tests (scripts)" \
 # a fake aws CLI (fake values only).
 run "fill-service-secrets.sh tests (scripts)" \
     bash "$ROOT/scripts/fill-service-secrets.test.sh"
+# The frontend deploy's S3 sync, invalidation and asset pruning (CI-07), against a fake aws CLI.
+run "frontend-publish.sh tests (scripts)" \
+    bash "$ROOT/scripts/frontend-publish.test.sh"
 # The scheduler's GitHub dispatcher (SCH-01), standard library only: no AWS or GitHub.
 run "scheduler dispatcher tests (infra-live-scheduler)" \
     "$VENV_BIN/python" "$ROOT/infra-live-scheduler/lambda/test_dispatcher.py"
@@ -258,7 +261,8 @@ if command -v shellcheck >/dev/null 2>&1; then
   run "shellcheck (scripts/ecs-services.sh)" \
       shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh" \
         "$ROOT/scripts/fill-service-secrets.sh" "$ROOT/scripts/fill-service-secrets.test.sh" \
-        "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh"
+        "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh" \
+        "$ROOT/scripts/frontend-publish.sh" "$ROOT/scripts/frontend-publish.test.sh"
 fi
 
 # shared/routing.json → generated backend/common/regions_data.py, backend/auth/countries_data.py

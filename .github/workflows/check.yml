@@ -383,6 +383,11 @@ jobs:
       - name: Run fill-service-secrets.sh tests
         run: bash scripts/fill-service-secrets.test.sh
 
+      # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07),
+      # against a fake aws CLI.
+      - name: Run frontend-publish.sh tests
+        run: bash scripts/frontend-publish.test.sh
+
       # The scheduler's GitHub dispatcher (SCH-01): standard library only, so the
       # runner's Python is enough; no AWS or GitHub access.
       - name: Run scheduler dispatcher tests
@@ -394,7 +399,7 @@ jobs:
         run: bash scripts/check-service-lists.sh
 
       - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh
+        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh
 
   terraform-lint:
     name: Terraform Lint

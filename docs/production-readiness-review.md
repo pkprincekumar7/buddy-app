@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 22 are done, 34 partly done, 29 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 23 are done, 34 partly done, 28 open and 1 moot; DR-01, CI-01, CI-02, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -66,7 +66,7 @@ What still stands in the way:
 - **The database:** the prod cluster isn't provisioned yet. The plan is dedicated M10+, with dev, sbx and stg on M0 by design. It stays single-region in ap-south-1 until the Global Cluster (DB-01, DEC-01, DEC-02).
 - **Pipelines:**
   - prod can be deployed or applied from any branch (CI-01, deferred);
-  - plan and apply run in one job (CI-02);
+  - plan and apply run in one job (CI-02, deferred);
   - the image CI scans isn't the image deployed (CI-03).
 - **Identity and secrets:**
   - the OIDC trust is documented as a wildcard on an admin role (SEC-04, deferred);
@@ -147,7 +147,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | 🟡 Secret reads fail closed (fix 1); per-key merge open |
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ⬜ Open |
 | SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ⬜ Open |
-| SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open |
+| SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open · ⏸ Deferred |
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
@@ -178,7 +178,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | ✅ Done (certs cached per Google's max-age, 5 s timeout, own thread pool) |
 | AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | 🟡 Family revoked on reuse after the 30 s grace; no atomic consume inside it |
 | AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ✅ Done |
-| AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | 🟡 Throttle per (email, IP); per-account limit, bcrypt pool and 72-byte cap open |
+| AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | ✅ Done (per-account backoff across IPs, bcrypt on its own pool, 72-byte cut made explicit) |
 | AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ⬜ Open |
 | AUTH-06 | 🟡 Medium | Auth | Session-cleanup task can die silently; runs in every region | ⚪ Moot (sessions expire by TTL index; the cleanup task is gone) |
 | AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ✅ Done (unsafe stg/prod settings stop every runtime at startup, exit 1) |
@@ -204,12 +204,12 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (CRS body rule counts; own 8 KB rule exempts the four large-body routes); rate rules, version pins, count-mode switch open |
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Timeout, no async retries and a managed log group done; failure alert and idempotency check open |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
-| CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open |
+| CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | 🟡 Actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, Dependabot added; image digests open |
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
-| CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ⬜ Open |
+| CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | 🟡 Old chunks kept, unhashed-only invalidation, old unused chunks pruned; rollback workflow open |
 | CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | 🟡 `images.json` read with jq instead of sourced; still `docker save` artifacts |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
@@ -619,7 +619,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### SEC-08 — GuardDuty Runtime Monitoring doesn't cover Fargate 🟠 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Neither `infra-live-backend/terraform/security.tf:26-31` nor `infra-live-edge/terraform/security.tf:35` enables `ECS_FARGATE_AGENT_MANAGEMENT`.
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-02): to do later, not before the next releases. ⬜ Open. Neither `infra-live-backend/terraform/security.tf:26-31` nor `infra-live-edge/terraform/security.tf:35` enables `ECS_FARGATE_AGENT_MANAGEMENT`.
 
 **Where:** `infra-live-backend/terraform/security.tf:26-31`, and the same pattern in the edge stack's us-east-1 detector.
 
@@ -1408,7 +1408,14 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-04 — Brute force only per-IP; bcrypt cost and 72-byte truncation 🟡
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The throttle is per (email, IP), not per account across IPs (`backend/auth/app/throttle.py`). bcrypt runs on the default thread pool. Passwords may be 128 characters (`auth/app/main.py:202`), and bcrypt silently uses only the first 72 bytes.
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Per-account backoff** (`backend/auth/app/throttle.py`): on top of 5 failures per (email, IP), 10 failures for one email in 15 minutes, from any IPs, slow its logins to one attempt a minute until the window ends. It's a backoff, not a lockout, so nobody can lock the owner out on purpose.
+> - **Own pool:** bcrypt runs on its own bounded thread pool (`tokens._bcrypt_pool`, 2–4 threads), not the default one.
+> - **72 bytes:** hashing and checking cut the UTF-8 password at 72 bytes themselves (`BCRYPT_MAX_BYTES`), exactly as bcrypt 4.x did silently. Every existing hash still matches, long passwords included, and bcrypt 5.x (which raises past 72) won't break login. Registration refuses passwords over 72 bytes; both apps' forms check the same.
+> - **Checked:**
+>   - `auth/tests/test_auth_passwords.py`: an old long-password hash, a simulated bcrypt 5, bytes versus characters, the pool, the register limit, 20 failures from 20 IPs;
+>   - auth's suite at 100%;
+>   - on the local stack, a 73-byte password gets a 422 and the account-deletion e2e passes.
 
 **Where:** slowapi route limits (login 10/min, register and google 5/min, per IP), `backend/app/auth_utils.py` (bcrypt, default 12 rounds), `requirements.txt` (bcrypt 4.2.1).
 
@@ -2154,7 +2161,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-02 — Plan and apply in one job; scheduler applies with no plan 🔴
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Plan and apply still share a job: backend `:336/:362`, edge `:284/:312`, frontend `:152/:177`. The scheduler applies with no plan (`terraform-live-scheduler.yml:192,218`).
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-02): to do later, not before the next releases. ⬜ Open. Plan and apply still share a job: backend `:336/:362`, edge `:284/:312`, frontend `:152/:177`. The scheduler applies with no plan (`terraform-live-scheduler.yml:192,218`).
 
 **Where:**
 - Backend: plan `terraform-live-backend.yml:321-323`, apply `:346-348`.
@@ -2295,7 +2302,17 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-07 — Frontend deploy deletes live chunks; no rollback 🟠 (v2: raised)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Frontend deploys still use `--delete` and a `/*` invalidation (`deploy-live-frontend.yml:145,159`, `promote-live-frontend.yml:264,278`). There's no rollback workflow.
+> 🔄 **Current code (2026-11-02):** 🟡 Partial: fixes 1 and 3, and pruning in place of fix 2's releases.
+> - **One script:** deploy and promote both publish through `scripts/frontend-publish.sh`. Promote checks out the script from its own commit, since the commit being promoted can predate it.
+> - **Fix 1:** `assets/` (Vite's hashed chunks) is synced **without** `--delete`, before `index.html` and the other unhashed files (which keep `--delete`). The live `index.html` and tabs opened before a deploy keep finding their chunks.
+> - **Fix 3:** only the unhashed files (and `/`) are invalidated, not `/*`. App routes are cached as `/index.html`, because `spa_rewrite` runs on viewer request.
+> - **Pruning:** after a successful deploy, a last step deletes chunks the new build doesn't contain *and* that are over 30 days old. That counts age from upload but never touches the current build, so the age-based-expiry problem in fix 2 doesn't arise.
+> - **Tests:** `scripts/frontend-publish.test.sh` (fake aws; in `check.sh` and `check.yml`) covers the sync order and flags, the invalidation paths, and pruning (only old unused chunks, an empty bucket, and batches of 1,000).
+>
+> Still open:
+> - fix 4: a rollback workflow;
+> - promote still rebuilds from source, so prod isn't byte-identical to stg;
+> - the deploy roles need `s3:ListBucket`/`s3:DeleteObject` on the bucket, which they already use for `sync --delete`; check them on the first deploy.
 
 **Where:** `deploy-live-frontend.yml:142` (`aws s3 sync frontend/dist/assets/ … --delete`), `:148` (`index.html` and the rest, `--exclude "assets/*"`), `:159` (invalidation `/*`). The same at `promote-live-frontend.yml:261,267`.
 

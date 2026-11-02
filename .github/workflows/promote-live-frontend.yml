@@ -244,6 +244,16 @@ jobs:
           ref: ${{ needs.source_ref.outputs.git_sha }}
           fetch-depth: 0  # full history, for the ancestry check below
 
+      # The publish helpers come from this workflow's own commit: the commit being promoted
+      # (checked out above) can predate them.
+      - name: Checkout the publish helpers
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          path: publish-tools
+          sparse-checkout: scripts/frontend-publish.sh
+          sparse-checkout-cone-mode: false
+
       # Only a commit already on the default branch is promoted: a SHA that a branch
       # deploy recorded, or that was written to SSM by hand, stops here (review, CI-10).
       - name: Verify the commit is on the default branch
@@ -279,37 +289,32 @@ jobs:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 
+      # Old hashed chunks are kept, index.html goes up last, and only the unhashed files
+      # are invalidated, so a deploy never breaks an open page or the next load (CI-07).
+      # Helpers and the reasons: scripts/frontend-publish.sh.
       - name: Sync to S3
+        env:
+          S3_BUCKET: ${{ steps.tf_outputs.outputs.s3_bucket }}
         run: |
-          # Upload hashed assets (JS/CSS) with long-lived cache headers
-          aws s3 sync frontend/dist/assets/ \
-            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/assets/ \
-            --cache-control "public,max-age=31536000,immutable" \
-            --delete
-
-          # Upload everything else (index.html, manifest.json, etc.) with no-cache
-          aws s3 sync frontend/dist/ \
-            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/ \
-            --exclude "assets/*" \
-            --cache-control "no-cache,no-store,must-revalidate" \
-            --delete
+          source publish-tools/scripts/frontend-publish.sh
+          publish_files frontend/dist "$S3_BUCKET"
 
       - name: Invalidate CloudFront cache
         id: invalidate
+        env:
+          CF_DIST_ID: ${{ steps.tf_outputs.outputs.cf_dist_id }}
         run: |
-          INVALIDATION_ID=$(aws cloudfront create-invalidation \
-            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
-            --paths "/*" \
-            --query "Invalidation.Id" \
-            --output text)
+          source publish-tools/scripts/frontend-publish.sh
+          INVALIDATION_ID=$(invalidate "$CF_DIST_ID" frontend/dist)
           echo "Invalidation ID: $INVALIDATION_ID"
           echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for invalidation to complete
+        env:
+          CF_DIST_ID: ${{ steps.tf_outputs.outputs.cf_dist_id }}
+          INVALIDATION_ID: ${{ steps.invalidate.outputs.invalidation_id }}
         run: |
-          aws cloudfront wait invalidation-completed \
-            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
-            --id "${{ steps.invalidate.outputs.invalidation_id }}"
+          aws cloudfront wait invalidation-completed --distribution-id "$CF_DIST_ID" --id "$INVALIDATION_ID"
           echo "CloudFront cache invalidation complete."
 
       # -------------------------------------------------------------------------
@@ -327,3 +332,12 @@ jobs:
             --type String \
             --overwrite
           echo "Recorded deployed git SHA for ${{ inputs.target_env }}: $GIT_SHA"
+
+      # Last, once the new build is live: chunks it doesn't use and that are over 30 days
+      # old. A page open from before that is the only thing that could still want one.
+      - name: Prune old assets
+        env:
+          S3_BUCKET: ${{ steps.tf_outputs.outputs.s3_bucket }}
+        run: |
+          source publish-tools/scripts/frontend-publish.sh
+          echo "Pruned $(prune_assets frontend/dist "$S3_BUCKET" 30) old assets."
