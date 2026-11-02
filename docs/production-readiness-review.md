@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 34 are done, 31 partly done, 20 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04, SEC-08 and MOB-01 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 34 are done, 32 partly done, 19 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08 and MOB-01 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -164,7 +164,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ⬜ Open |
 | DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ⬜ Open |
 | DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ✅ Done (claim reads an index in order, jittered idle poll, 30 s socket timeout; connection budget with DB-01) |
-| DB-03 | 🟡 Medium | Database | Index creation at startup in every task | ⬜ Open — every task creates indexes at startup (`runtime.prepare()`) |
+| DB-03 | 🟡 Medium | Database | Index creation at startup in every task | 🟡 Code done (indexes built in the background once per release, others verify, `index-problems` alarm); acceptance needs a deployed env |
 | DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
 | DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Deletes transactional and event-retried; startup has no retry; failover untested |
 | JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
@@ -207,7 +207,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | 🟡 No direct prod deploy; each pushed image scanned and marked, promote requires the marker; signing, provenance, digest-pinned base and registry copy open |
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | 🟡 Actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, Dependabot added; image digests open |
-| CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open |
+| CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open · ⏸ Deferred |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | 🟡 Old chunks kept, unhashed-only invalidation, old unused chunks pruned; rollback workflow open |
 | CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
@@ -1126,7 +1126,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DB-03 — Index creation at startup in every task 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open, moved: every HTTP and worker task runs `runtime.prepare()` at startup, which creates indexes (for example `grow/app/main.py:134`, `grow/worker.py:67`). There's no migration task.
+> 🔄 **Current code (2026-11-02):** 🟡 Code done (buddy-common 0.25.0); the acceptance check needs a deployed environment. The leader-locked background option, not a migration task:
+> - **Startup makes only the collections.** Every service's `Runtime.prepare()` now hands its `ensure_*` functions to `common.index_builds.prepare_database`. That creates the collections and validators at once (still needed before serving), but each `create_index` is only recorded.
+> - **One build per release.** With a release (`GIT_SHA`, set in every image), a background task claims `index_builds/<service>:<release>` in the service's database, so once across every task and region, and runs one `createIndexes` per collection. Every other task waits for that build, then only checks the indexes exist (`list_indexes`). A restart or a promote of the same image builds nothing.
+> - **Recovery.** A build left running for 30 minutes is taken over, and a failed one is retried by the next start, so `restart-live-backend` is the retry.
+> - **Nothing stops a task.** A failed build (an option conflict, duplicates under a new unique index) or a missing index is logged with a top-level `index_problem` field, and the task keeps serving. Each runtime's log metric filter feeds `Superpower/mongo` `IndexProblems`, and the `index-problems` alarm (stg, prod) fires on any.
+> - **Locally and in tests** (no `GIT_SHA`) the indexes are built at once, as before.
+> - **Tests:** 13 in `common/tests/test_index_builds.py`, against a real Mongo: one builder among five concurrent starts, a re-start skipping, a failure logged then retried after the fix, a missing index, a stale takeover, a follower's wait and time-out, a failing check. Plus the stack test, and all eight services' suites at 100% coverage.
+> - **Runbook:** `docs/infra-operations.md` ("MongoDB indexes: built once per release").
+> - **Not done:** proving the acceptance criterion (a new index on a 10M-document collection deploys with no task restarts) needs a deployed environment with that much data. Until a new index is built, queries that need it run unindexed, and a new unique rule isn't enforced.
 
 **Where:** `backend/app/main.py:133` (`init_indexes()` in lifespan, unguarded). The worker never ensures indexes.
 
@@ -2308,6 +2316,8 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 ---
 
 ### CI-05 — All regions deployed at once; no canary/bake 🟠
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
 
 > 🔄 **Current code (2026-11-01):** ⬜ Open. Regions still deploy in one `fail-fast: false` matrix (`deploy-live-backend.yml:253`), and there's no ECS `alarms {}` block in `modules/ecs-service/main.tf`.
 

@@ -465,6 +465,18 @@ run "prod_stack_wiring" {
     )
     error_message = "Every runtime but the collector counts its Valkey fallbacks into one ValkeyDegraded metric, with one alarm (APP-04)."
   }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_log_metric_filter.index_problems)) == toset([for k, s in local.services : k if s.kind != "collector"]) &&
+      alltrue([for k, f in aws_cloudwatch_log_metric_filter.index_problems : (
+        f.log_group_name == aws_cloudwatch_log_group.service[k].name && f.pattern == "{ $.index_problem = * }" &&
+        f.metric_transformation[0].name == "IndexProblems" && f.metric_transformation[0].namespace == "Superpower/mongo"
+      )]) &&
+      aws_cloudwatch_metric_alarm.index_problems[0].metric_name == "IndexProblems" &&
+      aws_cloudwatch_metric_alarm.index_problems[0].threshold == 1
+    )
+    error_message = "Every runtime but the collector counts its index build problems into one IndexProblems metric, with one alarm (DB-03)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -509,8 +521,8 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     error_message = "Dev: no Valkey or ALB alarms."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) + length(aws_cloudwatch_metric_alarm.valkey_degraded) == 0
-    error_message = "Dev: no generation, runtime or Valkey-fallback alarms."
+    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) + length(aws_cloudwatch_metric_alarm.valkey_degraded) + length(aws_cloudwatch_metric_alarm.index_problems) == 0
+    error_message = "Dev: no generation, runtime, Valkey-fallback or index alarms."
   }
   assert {
     condition     = length(aws_cloudwatch_log_metric_filter.llm_tokens) == 2 * length(local.generating_services)

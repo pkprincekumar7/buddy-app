@@ -41,6 +41,9 @@ class ServiceSettings(BaseSettings):
     )
     app_env: AppEnv = Field(default="local", validation_alias="APP_ENV")
     aws_region: str = Field(default="ap-south-1", validation_alias="AWS_REGION")
+    # The image's commit (backend/Dockerfile sets GIT_SHA). Indexes are built once per
+    # release with it (common.index_builds, DB-03), and at every start without one.
+    release: str | None = Field(default=None, validation_alias="GIT_SHA")
 
     # ── MongoDB (section 4) ──
     mongodb_uri: str = Field(validation_alias="MONGODB_URI")

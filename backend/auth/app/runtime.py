@@ -10,6 +10,7 @@ cache) instead of calling itself (9.3).
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from common.audit import AuditLog
 from common.authz import AuthzConfig, AuthzEntry
 from common.deletion import PARTICIPANTS
 from common.events.store import Db
+from common.index_builds import Outcome, prepare_database, stop_index_build
 from common.internal_client import InternalClient, ServiceTokenVerifier, public_keys_from_env
 from common.limiter import RateLimits
 from common.settings_base import ServiceSettings
@@ -123,6 +125,9 @@ class Runtime:
     authorizer: AuthAuthorizer = field(init=False)
     audit: AuditTrail = field(init=False)
 
+    # The background index build this task started, if any (prepare).
+    index_build: asyncio.Task[Outcome] | None = None
+
     def __post_init__(self) -> None:
         self.issuer.check_published(self.authz_config)
         self.audit = AuditTrail(self.db, self.audit_log)
@@ -185,10 +190,19 @@ class Runtime:
         )
 
     async def prepare(self) -> None:
-        """Create the collections before serving (none is created inside a transaction)."""
-        await ensure_collections(self.db)
+        """Create the collections before serving, and their indexes in the background once
+        per release (common.index_builds, DB-03). Creating a collection inside a transaction
+        (an implicit create on first insert) conflicts with any concurrent create of it."""
+
+        async def ensure(db: Db) -> None:
+            await ensure_collections(db)
+
+        self.index_build = await prepare_database(
+            self.db, ensure, service=SERVICE, release=self.settings.release
+        )
 
     async def aclose(self) -> None:
+        stop_index_build(self.index_build)
         await self.audit.flush()
         await self.internal.aclose()
         await self.client.close()

@@ -7,6 +7,7 @@ image still starts with no configuration.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from pymongo import AsyncMongoClient
 
 from common.authz import Authorizer, AuthzConfig
 from common.events.store import Db, ensure_outbox, ensure_tombstones
+from common.index_builds import Outcome, prepare_database, stop_index_build
 from common.internal_client import (
     InternalClient,
     ServiceTokenVerifier,
@@ -54,6 +56,9 @@ class Runtime:
     # The relay's OldestUnpublishedOutboxAgeSeconds (15.5); None in tests.
     cloudwatch: Any = None
     cache: Any = None
+
+    # The background index build this task started, if any (prepare).
+    index_build: asyncio.Task[Outcome] | None = None
 
     @property
     def db(self) -> Db:
@@ -94,14 +99,22 @@ class Runtime:
         )
 
     async def prepare(self) -> None:
-        """Create the collections before serving. Creating one inside a transaction (an
-        implicit create on first insert) conflicts with any concurrent create of it."""
-        await ensure_conversations(self.db)
-        await ensure_child_access(self.db)
-        await ensure_outbox(self.db)
-        await ensure_tombstones(self.db)
+        """Create the collections before serving, and their indexes in the background once
+        per release (common.index_builds, DB-03). Creating a collection inside a transaction
+        (an implicit create on first insert) conflicts with any concurrent create of it."""
+
+        async def ensure(db: Db) -> None:
+            await ensure_conversations(db)
+            await ensure_child_access(db)
+            await ensure_outbox(db)
+            await ensure_tombstones(db)
+
+        self.index_build = await prepare_database(
+            self.db, ensure, service=SERVICE, release=self.settings.release
+        )
 
     async def aclose(self) -> None:
+        stop_index_build(self.index_build)
         await self.internal.aclose()
         await self.client.close()
         if self.cache is not None:

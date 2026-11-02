@@ -752,3 +752,47 @@ resource "aws_cloudwatch_metric_alarm" "valkey_degraded" {
     Name = "${var.app_name}-valkey-degraded-${var.environment}"
   }
 }
+
+# DB-03: indexes are built in the background, once per release (common.index_builds),
+# so a failed build or a missing index no longer stops a task; it logs a line with a
+# top-level index_problem field ("failed" or "missing") instead. The same runtimes
+# count them into one metric, in every environment.
+resource "aws_cloudwatch_log_metric_filter" "index_problems" {
+  for_each = local.valkey_clients
+
+  name           = "${var.app_name}-${each.key}-index-problems-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service[each.key].name
+  pattern        = "{ $.index_problem = * }"
+
+  metric_transformation {
+    name          = "IndexProblems"
+    namespace     = "Superpower/mongo"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Any: a build that failed (an option conflict, a duplicate key on a new unique index)
+# or an index still missing after it means queries run unindexed, or a unique rule isn't
+# enforced, until it's fixed.
+resource "aws_cloudwatch_metric_alarm" "index_problems" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-index-problems-${var.environment}"
+  alarm_description   = "A release's MongoDB index build failed, or an index is missing after it. The services keep serving. Their log lines with an index_problem field name the service, the release and the index; the index_builds collection in that service's database has the build's status and error. Fix the cause (for example drop the conflicting index), then restart the service (restart-live-backend): the next start retries the build."
+  namespace           = "Superpower/mongo"
+  metric_name         = "IndexProblems"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-index-problems-${var.environment}"
+  }
+}

@@ -465,6 +465,32 @@ role-change alarm watches. A manual edit does none of them.
 
 ---
 
+## MongoDB indexes: built once per release
+
+Each service's indexes are declared in its `ensure_*` functions (`backend/CLAUDE.md`, "MongoDB &
+indexes"). A task's startup creates the collections and validators only. The indexes are built in
+the background (`common/index_builds.py`, DB-03): a new index on a large collection no longer
+holds up startup or fails the health check, and an option conflict no longer crash-loops tasks.
+
+- **Once per release:** the first task of a release (its `GIT_SHA`) to claim the
+  `<service>:<release>` document in the service's `index_builds` collection builds them, with one
+  `createIndexes` per collection. Every other task, in every region, waits for that build, then
+  only checks that each index exists. Restarts and promotes of the same image build nothing.
+- **A stopped builder:** a build still `running` after 30 minutes is taken over by the next task
+  that starts.
+- **Problems:** a failed build (an option conflict, or duplicates under a new unique index) or an
+  index missing afterwards is logged with a top-level `index_problem` field (`failed` or
+  `missing`). The tasks keep serving. In stg and prod, the `index-problems` alarm emails.
+  1. Find the service, release and error in that service's log, or in
+     `db.index_builds.find({status: "failed"})` in its database.
+  2. Fix the cause (for example, drop the conflicting index, or remove the duplicates).
+  3. Restart the service (`restart-live-backend`): the next start retries a failed build.
+- **Until a new index exists,** queries that need it run unindexed, and a new unique rule isn't
+  enforced. On a large collection, check the build finished (`index_builds` status `done`)
+  before relying on it.
+
+---
+
 ## Pausing LLM generation (the kill switch)
 
 When LLM spend runs away (the `llm-tokens` alarm, a loop, abuse) or a provider misbehaves, pause generation in a region without a deploy. Each backend stack has one switch, an SSM parameter that Terraform creates as `true` and never resets (`infra-live-backend/terraform/generation_switch.tf`):

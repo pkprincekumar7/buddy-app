@@ -9,6 +9,7 @@ the photo routes answer 503 `uploads_not_configured`.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from children.app.store import ensure_children
 from common import upload_tracking
 from common.authz import Authorizer, AuthzConfig
 from common.events.store import Db, ensure_outbox, ensure_tombstones
+from common.index_builds import Outcome, prepare_database, stop_index_build
 from common.internal_client import (
     InternalClient,
     ServiceTokenVerifier,
@@ -58,6 +60,9 @@ class Runtime:
     cloudwatch: Any = None
     cache: Any = None
     uploads: Uploads | None = None
+
+    # The background index build this task started, if any (prepare).
+    index_build: asyncio.Task[Outcome] | None = None
 
     @property
     def db(self) -> Db:
@@ -101,14 +106,22 @@ class Runtime:
         )
 
     async def prepare(self) -> None:
-        """Create the collections before serving. Creating one inside a transaction (an
-        implicit create on first insert) conflicts with any concurrent create of it."""
-        await ensure_children(self.db)
-        await upload_tracking.ensure_pending_uploads(self.db)
-        await ensure_outbox(self.db)
-        await ensure_tombstones(self.db)
+        """Create the collections before serving, and their indexes in the background once
+        per release (common.index_builds, DB-03). Creating a collection inside a transaction
+        (an implicit create on first insert) conflicts with any concurrent create of it."""
+
+        async def ensure(db: Db) -> None:
+            await ensure_children(db)
+            await upload_tracking.ensure_pending_uploads(db)
+            await ensure_outbox(db)
+            await ensure_tombstones(db)
+
+        self.index_build = await prepare_database(
+            self.db, ensure, service=SERVICE, release=self.settings.release
+        )
 
     async def aclose(self) -> None:
+        stop_index_build(self.index_build)
         await self.internal.aclose()
         await self.client.close()
         if self.cache is not None:

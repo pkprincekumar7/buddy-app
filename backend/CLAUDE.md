@@ -126,6 +126,11 @@ on-demand audit that checks a file against this same list. The design behind the
   `common/models.py` and `common/events/store.py`), called from `Runtime.prepare()` on startup:
   its `$jsonSchema` validator (`ensure_validated_collection`) and all its indexes live there, not
   ad hoc in a route. Comment *why* an index is shaped the way it is.
+- `prepare()` passes those functions to `common.index_builds.prepare_database`. It creates the
+  collections and validators at once, and builds the indexes in the background, once per release
+  (`GIT_SHA`; DB-03). Locally and in tests there's no release, so they're built at once.
+  Create indexes only with `create_index` on a collection the `ensure_*` function was given
+  (that's what is recorded), never in a route or with `create_indexes` directly.
 - Sharded collections carry `location` and lead their indexes with the zone-sharding key
   `{location: 1, _id: 1}`; `tools/atlas_zone_ranges.py` prints the zone commands per service
   database. Scoping fields (`user_id`, `location`) are set server-side, never taken from the
