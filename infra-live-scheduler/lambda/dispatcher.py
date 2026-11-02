@@ -5,6 +5,11 @@ import urllib.request
 
 import boto3
 
+# Seconds to wait for GitHub, well inside the function's 30 s. A dispatch that hangs fails
+# once and is not retried (the function's async retries are off, lambda.tf), so a slow
+# GitHub can't start the same apply or destroy twice (production-readiness review, SCH-01).
+GITHUB_TIMEOUT_SECONDS = 10
+
 
 def lambda_handler(event, context):
     secret_arn   = os.environ["GITHUB_PAT_SECRET_ARN"]
@@ -34,7 +39,7 @@ def lambda_handler(event, context):
     )
 
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=GITHUB_TIMEOUT_SECONDS) as resp:
             print(f"GitHub API responded with HTTP {resp.status}")
             return {"statusCode": resp.status}
     except urllib.error.HTTPError as exc:

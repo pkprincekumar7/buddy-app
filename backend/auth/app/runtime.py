@@ -10,7 +10,6 @@ cache) instead of calling itself (9.3).
 
 from __future__ import annotations
 
-import asyncio
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -22,6 +21,7 @@ from pymongo import AsyncMongoClient
 
 from auth.app.audit import AuditTrail, AuthAuthorizer
 from auth.app.authz_cache import entry_from_account, write_entry
+from auth.app.google import verify_google_token
 from auth.app.store import AUTH, ensure_collections
 from auth.app.throttle import LoginThrottle
 from auth.app.tokens import TokenIssuer
@@ -100,21 +100,6 @@ class AuthSettings(ServiceSettings):
                 "an account deletion would leave their data behind"
             )
         return problems
-
-
-async def verify_google_token(token: str, client_id: str) -> dict[str, Any]:  # pragma: no cover
-    """Google's own check: signature against Google's keys, audience, issuer and expiry.
-    Calls Google, so tests pass their own verifier."""
-    from google.auth.transport import requests as google_requests
-    from google.oauth2 import id_token
-
-    def verify() -> dict[str, Any]:
-        claims: dict[str, Any] = id_token.verify_oauth2_token(
-            token, google_requests.Request(), client_id, clock_skew_in_seconds=60
-        )
-        return claims
-
-    return await asyncio.to_thread(verify)
 
 
 @dataclass

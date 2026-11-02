@@ -136,6 +136,7 @@ run "worker_like_service" {
       secrets           = []
       log_group_name    = "/ecs/superpower-worker-prod"
       log_stream_prefix = "worker"
+      stop_timeout      = 120
     }
     target_tracking_policies = {
       cpu = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_out_cooldown = 60, disable_scale_in = true }
@@ -178,8 +179,9 @@ run "worker_like_service" {
       environment      = [{ name = "APP_ENV", value = "prod" }]
       secrets          = []
       logConfiguration = { logDriver = "awslogs", options = { "awslogs-group" = "/ecs/superpower-worker-prod", "awslogs-region" = "ap-south-1", "awslogs-stream-prefix" = "worker" } }
+      stopTimeout      = 120
     }]
-    error_message = "Worker container JSON: command, no portMappings, no healthCheck, no sidecar."
+    error_message = "Worker container JSON: command, stopTimeout, no portMappings, no healthCheck, no sidecar."
   }
   assert {
     condition     = length(aws_ecs_service.this.load_balancer) == 0 && aws_ecs_service.this.health_check_grace_period_seconds == null
@@ -532,4 +534,25 @@ run "internal_port_must_be_a_tcp_port" {
   }
 
   expect_failures = [var.internal_port]
+}
+
+run "stop_timeout_over_fargates_maximum_is_refused" {
+  command = plan
+
+  variables {
+    role               = "worker"
+    scaling_name       = "worker"
+    security_group_ids = ["sg-worker"]
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+      stop_timeout      = 121
+    }
+  }
+
+  expect_failures = [var.container]
 }

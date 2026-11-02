@@ -247,6 +247,9 @@ run "ecs-services.sh tests (scripts)" \
 # a fake aws CLI (fake values only).
 run "fill-service-secrets.sh tests (scripts)" \
     bash "$ROOT/scripts/fill-service-secrets.test.sh"
+# The scheduler's GitHub dispatcher (SCH-01), standard library only: no AWS or GitHub.
+run "scheduler dispatcher tests (infra-live-scheduler)" \
+    "$VENV_BIN/python" "$ROOT/infra-live-scheduler/lambda/test_dispatcher.py"
 # The service names listed in those workflows' `service` input descriptions
 # must match services.tf (they're the help text people pick names from).
 run "service lists match services.tf (scripts)" \

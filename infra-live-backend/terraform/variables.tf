@@ -215,6 +215,13 @@ variable "gemini_model" {
 
 variable "llm_timeout_seconds" {
   type = number
+
+  # A stopping worker gets this + 30 s to finish its LLM call (services.tf, stop_timeout),
+  # and Fargate allows at most 120 s.
+  validation {
+    condition     = var.llm_timeout_seconds >= 10 && var.llm_timeout_seconds <= 90
+    error_message = "llm_timeout_seconds must be 10–90: a stopping worker gets it + 30 s, and Fargate's stop timeout is at most 120 s."
+  }
 }
 
 variable "llm_hourly_limit" {

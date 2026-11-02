@@ -40,6 +40,7 @@ locals {
     var.container.command != null ? { command = var.container.command } : {},
     length(local.port_mappings) > 0 ? { portMappings = local.port_mappings } : {},
     var.container.health_check != null ? { healthCheck = var.container.health_check } : {},
+    var.container.stop_timeout != null ? { stopTimeout = var.container.stop_timeout } : {},
   )
 
   # ADOT collector sidecar — exports X-Ray traces and CloudWatch metrics.

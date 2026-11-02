@@ -124,6 +124,15 @@ run "prod_stack_wiring" {
     error_message = "9 HTTP services, 8 workers (none for shared) and the collector."
   }
   assert {
+    condition = alltrue([
+      for k, s in local.services : s.kind == "worker" ? (
+        jsondecode(module.service[k].container_definitions)[0].stopTimeout == 90 &&
+        strcontains(jsondecode(module.service[k].container_definitions)[0].healthCheck.command[1], "worker-heartbeat")
+      ) : !contains(keys(jsondecode(module.service[k].container_definitions)[0]), "stopTimeout")
+    ])
+    error_message = "Every worker gets llm_timeout_seconds + 30 to stop (APP-06) and a heartbeat health check; HTTP services and the collector keep ECS's default."
+  }
+  assert {
     condition     = module.service["users"].service_name == "superpower-users-prod" && module.service["users-worker"].task_definition_family == "superpower-users-worker-prod"
     error_message = "ECS names are <app>-<runtime>-<env>."
   }

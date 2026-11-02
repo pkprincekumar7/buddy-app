@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 20 are done, 34 partly done, 31 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 22 are done, 33 partly done, 30 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -154,7 +154,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path), SDK retries off; an overall time budget open |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | 🟡 Latch fixed (Valkey retried after 30 s); degraded metric and alarm open |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ✅ Done (rate limits and the login throttle count through `limits.aio`) |
-| APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | 🟡 Workers finish the current job on SIGTERM; `stopTimeout` and worker health check open |
+| APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ✅ Done (workers finish the job in hand on SIGTERM, get `llm_timeout_seconds` + 30 s to stop, and have a heartbeat health check) |
 | APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | 🟡 Size checked after upload, orphan sweep, replaced objects deleted; no S3-side size cap |
 | APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | 🟡 Photos limited to the child's own uploads (EDGE-05); CSP `img-src` not tightened |
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ✅ Done (1 MiB body cap in every service) |
@@ -175,7 +175,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
 | JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
 | JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⬜ Open (matters only if DEC-01 = B) |
-| AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | 🟡 Runs in a thread; cert cache and timeout open |
+| AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | ✅ Done (certs cached per Google's max-age, 5 s timeout, own thread pool) |
 | AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | 🟡 Family revoked on reuse after the 30 s grace; no atomic consume inside it |
 | AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ✅ Done |
 | AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | 🟡 Throttle per (email, IP); per-account limit, bcrypt pool and 72-byte cap open |
@@ -193,7 +193,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | ⬜ Open (alarms now per service; still email only) |
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | 🟡 Stuck alarm uses `OldestRunningJobAgeSeconds`; pending-age metric open |
-| OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | 🟡 Leader-per-region metrics and a missing-data alarm (prod); `RunningTaskCount` alarm and worker health check open |
+| OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | 🟡 Leader-per-region metrics, a missing-data alarm (prod) and worker health checks (APP-06); `RunningTaskCount` alarm open |
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
@@ -202,7 +202,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (CRS body rule counts; own 8 KB rule exempts the four large-body routes); rate rules, version pins, count-mode switch open |
-| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | ⬜ Open |
+| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Timeout, no async retries and a managed log group done; failure alert and idempotency check open |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
@@ -799,7 +799,15 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-06 — Worker has no graceful shutdown 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Each `backend/<service>/worker.py` stops on SIGTERM after the current job and closes its clients (for example `discover/worker.py:86-91`). Still open: no `stopTimeout` in `modules/ecs-service` (the default 30 s is under prod's 90 s LLM timeout), and workers have no health check (`services.tf:370`). `WORKER_CONCURRENCY` and `claim_token` don't exist; jobs fence with `claim_id`.
+> 🔄 **Current code (2026-11-01):** ✅ Done.
+> - **Shutdown:** each `backend/<service>/worker.py` stops on SIGTERM after the job in hand and closes its clients. `WORKER_CONCURRENCY` and `claim_token` don't exist; jobs fence with `claim_id` (JOB-01).
+> - **Stop timeout:** workers get `stopTimeout = min(llm_timeout_seconds + 30, 120)`, set in `infra-live-backend/terraform/services.tf` through a new `container.stop_timeout` in `modules/ecs-service` (validated to 2–120). That's 90 s in dev, sbx and stg and 120 s in prod: enough for an LLM call and the consumer's 20 s long poll, where ECS's default 30 s would kill a job mid-call. `llm_timeout_seconds` is now validated to 10–90, so the 120 s cap always covers it. HTTP services keep the default: the ALB drains them first (`deregistration_delay`).
+> - **Health check:** workers have one now. `common/heartbeat.py` touches `<temp dir>/worker-heartbeat` every 15 s, and the container is unhealthy once the file is 60 s old.
+> - **Checked:**
+>   - module and stack `terraform test` (worker `stopTimeout` and health check; HTTP and collector unchanged; 121 refused);
+>   - `common/tests/test_heartbeat.py` and every worker service's suite;
+>   - on the local stack, the health check exits 0 in the grow, users and auth workers and 1 on a stale file;
+>   - an idle worker stops cleanly on SIGTERM in 9 s.
 
 **Where:** `backend/worker.py` has no SIGTERM handler. The worker task definition has no `stopTimeout` (default 30 s; the Fargate maximum is 120 s).
 
@@ -1327,7 +1335,13 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-01 — Google token verification blocks the event loop 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Verification now runs in a thread (`backend/auth/app/runtime.py:94-106`). It still builds a new `google_requests.Request()` per call, with no cert cache and no timeout.
+> 🔄 **Current code (2026-11-01):** ✅ Done, in `backend/auth/app/google.py`. No new dependency was needed.
+> - **Cache and timeout:** `CachedCertsRequest`, a subclass of google-auth's requests transport, keeps one `requests.Session`, waits at most 5 s for Google (google-auth's default is 120 s), and caches a successful GET for its `Cache-Control: max-age`, capped at a day. Google currently sends about 6.5–7 h; `no-store`, `no-cache`, errors and non-GETs aren't cached.
+> - **Own pool:** `verify_google_token` runs on its own 4-thread pool, so a slow Google can't take the default pool's threads that bcrypt uses for password logins.
+> - **Unchanged:** the `aud`, `iss`, expiry and `email_verified` checks.
+> - **Checked:**
+>   - `auth/tests/test_auth_google_certs.py` (one fetch per max-age, the 5 s timeout, what isn't cached, the cap, the pool);
+>   - in the rebuilt auth container, against Google's real certs endpoint: one fetch, then served from the cache; an invalid token refused (400 on `/api/v1/auth/google`).
 
 **Where:** `backend/app/routers/auth.py:497` calls the **sync** `verify_google_token` (`backend/app/services/google_auth.py:33-38`) inside an async route.
 
@@ -1772,7 +1786,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### OBS-03 — Dead workers raise no alarm 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. One leader per region emits the job metrics (`grow/app/generation.py:19`, `discover/app/generation.py:12`), and `pending_jobs_missing` breaches on missing data (`cloudwatch.tf:106-123`), but only where `enable_all_alarms` is on (prod). Still open: no ECS `RunningTaskCount` alarm, and workers have no container health check (`services.tf:370-382`).
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. One leader per region emits the job metrics (`grow/app/generation.py:19`, `discover/app/generation.py:12`), and `pending_jobs_missing` breaches on missing data (`cloudwatch.tf:106-123`), but only where `enable_all_alarms` is on (prod). Workers now have a heartbeat health check (APP-06), so a hung worker is replaced. Still open: no ECS `RunningTaskCount` alarm.
 
 **Where:** `backend/worker.py:430`: only the workers emit `PendingJobCount`. All the related alarms use `treat_missing_data = "notBreaching"` (`autoscaling.tf`).
 
@@ -2077,7 +2091,17 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### SCH-01 — Duplicate dispatch via Lambda async retries; no timeout/alarm 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Still no timeout (`infra-live-scheduler/lambda/dispatcher.py:37`) and no `aws_lambda_function_event_invoke_config` (`lambda.tf:67,79`, `scheduler.tf:99,140`). The references below are accurate.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial: fixes 1, 2 (without the destination and alarm) and 4 are done.
+> - **1:** `dispatcher.py` calls GitHub with `timeout=GITHUB_TIMEOUT_SECONDS` (10 s, inside the function's 30 s).
+> - **2:** `aws_lambda_function_event_invoke_config.dispatcher` (`infra-live-scheduler/terraform/lambda.tf`) sets `maximum_retry_attempts = 0` and `maximum_event_age_in_seconds = 300`, so a failed or timed-out invocation never runs again and can't start a second apply or destroy. The CKV_AWS_116 skip now gives that reason.
+> - **4:** the function logs to a Terraform-managed group with 30-day retention, `/<app>/<env>/scheduler/github-dispatcher` (through `logging_config`). It isn't the default `/aws/lambda/…` name, which Lambda creates itself and which would clash on apply. The role can only write to that group, and the unused `aws_caller_identity` data source is gone.
+> - **Tests:** `infra-live-scheduler/lambda/test_dispatcher.py` (standard library only) checks the request, the timeout, and that GitHub errors and timeouts fail the invocation. It runs in `check.sh` and `check.yml`.
+>
+> Still open:
+> - an `on_failure` destination and an alarm on the function's `Errors`, because the stack has no alarm topic yet;
+> - fix 3, the optional idempotency check against recent workflow runs;
+> - fix 5 (SEC-03);
+> - the acceptance check (one run and one alert after a simulated timeout), which needs an applied environment.
 
 **Where:**
 - `infra-live-scheduler/lambda/dispatcher.py:37` (`urlopen(req)` with no timeout).
@@ -2515,7 +2539,7 @@ The "Where" column is from 2026-10-18; the status column gives the current locat
 | L9 | `ecs.tf:123,259` | ADOT image `v0.40.0` hard-coded twice | Variable/local; keep current. **v7:** the image now lives in one place (`modules/ecs-service`), and the sidecar is **off everywhere** because the app isn't instrumented; see [auth-users-split.md](auth-users-split.md) 15.5. | ✅ Variable (`variables.tf:181`) |
 | L10 | `vpc.tf:10` | VPC flow logs disabled (CKV2_AWS_11) | Enable in prod (S3, Parquet) | ⬜ Open (`modules/network/main.tf:49`) |
 | L11 | `autoscaling.tf` | SNS topic unencrypted (CKV_AWS_26) | **Customer-managed** KMS key whose policy allows `cloudwatch.amazonaws.com`. The AWS-managed `alias/aws/sns` key **can't** be used with CloudWatch alarms (v1's suggestion was wrong) | ⬜ Open: the alarm topic (`cloudwatch.tf:9`); the events topics are KMS-encrypted |
-| L12 | `ecs.tf` (API + worker) | No `readonlyRootFilesystem`, no `stopTimeout`. The container is already non-root (`Dockerfile:42-45`) | Read-only root plus a task-level ephemeral `volume` (no host path) mounted at `/tmp`; Fargate doesn't support `linuxParameters.tmpfs`. `stopTimeout` ≤ 120 (the Fargate maximum); worker see APP-06 | ⬜ Open (`modules/ecs-service/main.tf:74`); non-root is now `Dockerfile:97` |
+| L12 | `ecs.tf` (API + worker) | No `readonlyRootFilesystem`, no `stopTimeout`. The container is already non-root (`Dockerfile:42-45`) | Read-only root plus a task-level ephemeral `volume` (no host path) mounted at `/tmp`; Fargate doesn't support `linuxParameters.tmpfs`. `stopTimeout` ≤ 120 (the Fargate maximum); worker see APP-06 | 🟡 Workers' `stopTimeout` done (APP-06); `readonlyRootFilesystem` open; non-root is now `Dockerfile:97` |
 | L13 | — | v1 said `.DS_Store` files were committed: **wrong**, they're gitignored and untracked | No action | — No action |
 | L14 | `terraform-live-backend.yml:139-141,279-283`; `docs/ci-cd.md:214-218` | Non-secret config stored as **secrets**: model names, `APP_NAME`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, ACM ARNs, bucket names, `STATE_BUCKET`, `JWT_PUBLIC_KEYS`. They show as `***` in logs (hard to review) but appear unmasked in the `tfplan.txt` artifact (the ACM ARNs reveal the account ID) | Move to environment **variables** (`vars.*`) | ✅ Moved to `vars.*` (`terraform-live-backend.yml:90`) |
 | L15 | `jwt-validator-lambda.js.tpl:56,60,96` | `${kid}`, `${jwt_key_id}`, `${region}` interpolated into single-quoted JS without `jsonencode` | Use `jsonencode` (as `:87` already does) | 🟡 `${region}` still un-encoded (`jwt-validator-lambda.js.tpl:136`); the others fixed |

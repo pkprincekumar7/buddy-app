@@ -46,7 +46,7 @@ variable "task_role_arn" {
 }
 
 variable "container" {
-  description = "The main container. `command`, `port` and `health_check` are left out of the task definition entirely when null."
+  description = "The main container. `command`, `port`, `health_check` and `stop_timeout` are left out of the task definition entirely when null."
   type = object({
     name              = string
     image             = string
@@ -63,7 +63,14 @@ variable "container" {
       retries     = number
       startPeriod = number
     }))
+    # Seconds between SIGTERM and SIGKILL (ECS defaults to 30). Fargate allows up to 120.
+    stop_timeout = optional(number)
   })
+
+  validation {
+    condition     = var.container.stop_timeout == null ? true : (var.container.stop_timeout >= 2 && var.container.stop_timeout <= 120)
+    error_message = "container.stop_timeout must be 2–120 seconds (Fargate's maximum is 120)."
+  }
 }
 
 variable "enable_adot_sidecar" {

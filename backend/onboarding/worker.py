@@ -16,6 +16,7 @@ import sys
 from typing import Any
 
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
+from common.heartbeat import heartbeat
 from common.metrics import outbox_metrics
 from common.telemetry import setup_observability
 from onboarding.app import lifecycle
@@ -56,6 +57,7 @@ async def run(runtime: Runtime, stop: asyncio.Event, *, wait_seconds: int = 20) 
         build_consumer(runtime).run(
             runtime.sqs, settings.events_queue_url, stop, wait_seconds=wait_seconds
         ),
+        heartbeat(stop),
     )
 
 

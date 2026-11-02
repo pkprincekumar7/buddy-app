@@ -383,6 +383,11 @@ jobs:
       - name: Run fill-service-secrets.sh tests
         run: bash scripts/fill-service-secrets.test.sh
 
+      # The scheduler's GitHub dispatcher (SCH-01): standard library only, so the
+      # runner's Python is enough; no AWS or GitHub access.
+      - name: Run scheduler dispatcher tests
+        run: python3 infra-live-scheduler/lambda/test_dispatcher.py
+
       # The service names in deploy/restart/promote's `service` input
       # descriptions (help text) must match services.tf, in deploy_order.
       - name: Service lists match services.tf

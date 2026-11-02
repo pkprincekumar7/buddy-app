@@ -21,6 +21,7 @@ from children.app import lifecycle
 from children.app.runtime import SERVICE, Runtime
 from common import upload_tracking
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
+from common.heartbeat import heartbeat
 from common.metrics import outbox_metrics
 from common.regions import locations_for_region
 from common.telemetry import setup_observability
@@ -96,6 +97,7 @@ async def run(
             runtime.sqs, settings.events_queue_url, stop, wait_seconds=wait_seconds
         ),
         run_purge(runtime, stop, interval=purge_interval),
+        heartbeat(stop),
     )
 
 

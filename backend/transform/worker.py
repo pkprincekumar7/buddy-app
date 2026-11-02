@@ -22,6 +22,7 @@ from typing import Any
 from common import upload_tracking
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
 from common.generation.llm import LlmClient, LlmConfig
+from common.heartbeat import heartbeat
 from common.metrics import outbox_metrics
 from common.telemetry import setup_observability
 from transform.app import generation, lifecycle
@@ -106,6 +107,7 @@ async def run(
         ),
         generation.run_jobs(runtime, llm, stop, poll=poll),
         run_sweep(runtime, stop, interval=sweep_interval),
+        heartbeat(stop),
     )
 
 

@@ -22,6 +22,7 @@ from auth.app.authz_stream import AuthzStream
 from auth.app.reaper import Reaper
 from auth.app.runtime import SERVICE, Runtime
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
+from common.heartbeat import heartbeat
 from common.metrics import outbox_metrics
 from common.regions import locations_for_region
 from common.telemetry import setup_observability
@@ -85,6 +86,7 @@ async def run(
             runtime.sqs, settings.events_queue_url, stop, wait_seconds=wait_seconds
         ),
         report_stuck(runtime, stop, interval=stuck_interval),
+        heartbeat(stop),
     )
 
 

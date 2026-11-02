@@ -379,7 +379,20 @@ locals {
         timeout     = 5
         retries     = 3
         startPeriod = 30
-      } : null
+        } : {
+        # A worker has no port: it touches a heartbeat file every 15 s while its event loop
+        # runs (common/heartbeat.py), and is unhealthy once the file is 60 s old (APP-06).
+        command     = ["CMD-SHELL", "python -c \"import os, sys, tempfile, time; sys.exit(time.time() - os.path.getmtime(os.path.join(tempfile.gettempdir(), 'worker-heartbeat')) > 60)\" || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+      }
+
+      # How long a stopping worker may take: the job in hand finishes its LLM call (up to
+      # llm_timeout_seconds) and the consumer's long poll (20 s) ends, with room to spare.
+      # ECS's default (30 s) would kill a job mid-call (APP-06). Fargate's maximum is 120.
+      stop_timeout = r.kind == "worker" ? min(var.llm_timeout_seconds + 30, 120) : null
 
       task_policies = local.task_policies[k]
 

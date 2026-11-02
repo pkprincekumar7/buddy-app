@@ -79,6 +79,7 @@ module "service" {
     log_group_name    = aws_cloudwatch_log_group.service[each.key].name
     log_stream_prefix = each.key
     health_check      = each.value.health_check
+    stop_timeout      = each.value.stop_timeout
   }
 
   cluster_id             = aws_ecs_cluster.backend.id
