@@ -189,21 +189,24 @@ class LlmClient:
             outcome = "bad_response"
             raise
         finally:
+            # A top-level `llm_call` field of the JSON log line (common.logging), so the
+            # CloudWatch metric filters can sum its tokens per circle (JOB-03) and Logs
+            # Insights queries read it as fields.
+            call = {
+                "circle": self.circle,
+                "provider": resolved,
+                "model": model,
+                "input_tokens": result.input_tokens if result else None,
+                "output_tokens": result.output_tokens if result else None,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+                "outcome": outcome,
+            }
             _logger.info(
-                json.dumps(
-                    {
-                        "llm_call": {
-                            "circle": self.circle,
-                            "provider": resolved,
-                            "model": model,
-                            "input_tokens": result.input_tokens if result else None,
-                            "output_tokens": result.output_tokens if result else None,
-                            "duration_ms": round((time.monotonic() - started) * 1000),
-                            "outcome": outcome,
-                        }
-                    },
-                    sort_keys=True,
-                )
+                "llm_call circle=%s provider=%s outcome=%s",
+                self.circle,
+                resolved,
+                outcome,
+                extra={"llm_call": call},
             )
 
     async def _call_openai(self, prompt: str, system: str, model: str) -> LlmResult:

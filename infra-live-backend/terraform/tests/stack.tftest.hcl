@@ -399,6 +399,52 @@ run "prod_stack_wiring" {
     )
     error_message = "Valkey CPU, memory and eviction alarms, each over every node."
   }
+
+  # -- generation and runtime alarms (OBS-02, JOB-02, JOB-03, OBS-03) -------------
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_metric_alarm.pending_age)) == toset(local.generating_services) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.pending_age : a.metric_name == "OldestPendingJobAgeSeconds" && a.namespace == "Superpower/${k}"])
+    )
+    error_message = "A jobs-waiting alarm per generating service (OBS-02)."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_log_metric_filter.failed_jobs)) == toset(local.generating_services) &&
+      alltrue([for k, f in aws_cloudwatch_log_metric_filter.failed_jobs : f.pattern == "\"outcome=failed\"" && f.log_group_name == aws_cloudwatch_log_group.service["${k}-worker"].name]) &&
+      length(aws_cloudwatch_metric_alarm.failed_jobs) == length(local.generating_services)
+    )
+    error_message = "Failed jobs counted from each generating worker's log, with an alarm (JOB-02)."
+  }
+  assert {
+    condition = (
+      length(aws_cloudwatch_log_metric_filter.llm_tokens) == 2 * length(local.generating_services) &&
+      aws_cloudwatch_log_metric_filter.llm_tokens["grow-output"].pattern == "{ $.llm_call.output_tokens > 0 }" &&
+      one(aws_cloudwatch_log_metric_filter.llm_tokens["grow-output"].metric_transformation).value == "$.llm_call.output_tokens" &&
+      length(aws_cloudwatch_metric_alarm.llm_tokens[0].metric_query) == 2 * length(local.generating_services) + 1 &&
+      aws_cloudwatch_metric_alarm.llm_tokens[0].threshold == var.llm_tokens_alarm_per_hour
+    )
+    error_message = "LLM input and output tokens per circle, and one hourly spend alarm over them all (JOB-03)."
+  }
+  assert {
+    condition = (
+      aws_ssm_parameter.generation_switch.name == "/superpower/prod/backend/ap-south-1/llm_generation_enabled" &&
+      aws_ssm_parameter.generation_switch.value == "true" &&
+      alltrue([for k, s in local.services : (
+        contains(local.generating_services, coalesce(s.service, "-")) ==
+        contains([for e in jsondecode(module.service[k].container_definitions)[0].environment : e.name], "LLM_SWITCH_PARAMETER")
+      ) if s.kind != "collector"]) &&
+      alltrue([for k, r in local.runtime_kinds : contains(keys(local.task_policies[k]), "generation-switch") == contains(local.generating_services, coalesce(r.service, "-"))])
+    )
+    error_message = "The generation switch: one parameter, given (and readable) to the generating services only (JOB-03)."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_metric_alarm.no_tasks)) == toset(keys(local.services)) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.no_tasks : a.treat_missing_data == "breaching" && a.dimensions.ServiceName == module.service[k].service_name])
+    )
+    error_message = "A no-running-task alarm for every runtime, missing data breaching (OBS-03)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -441,6 +487,14 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.valkey) == 0 && length(aws_cloudwatch_metric_alarm.alb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.alb_slow) == 0
     error_message = "Dev: no Valkey or ALB alarms."
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) == 0
+    error_message = "Dev: no generation or runtime alarms."
+  }
+  assert {
+    condition     = length(aws_cloudwatch_log_metric_filter.llm_tokens) == 2 * length(local.generating_services)
+    error_message = "Dev still counts LLM tokens (for its own reports)."
   }
   assert {
     condition     = module.redis.node_count == 1

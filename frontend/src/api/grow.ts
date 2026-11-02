@@ -109,5 +109,6 @@ export const GROW_ERRORS: Record<string, string> = {
   unknown_question: 'These answers don’t match the questions. Please reopen the area.',
   needs_answers: 'Please answer the questions first.',
   llm_limit: 'Lots of requests right now. Please try again in a little while.',
+  generation_paused: 'Generating is paused for a little while. Please try again later.',
   generation_unavailable: 'We couldn’t start that just now. Please try again.',
 };

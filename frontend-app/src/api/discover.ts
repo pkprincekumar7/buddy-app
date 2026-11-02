@@ -127,6 +127,8 @@ export async function settlePersonality(
 export const DISCOVER_ERRORS: Record<string, string> = {
   circle_locked: 'Finish the chat about your child first.',
   llm_limit: 'Lots of requests right now. Please try again in a little while.',
+  generation_paused:
+    'Generating is paused for a little while. Please try again later.',
   already_generated: 'The personality is already there.',
   personality_not_ready: 'The personality isn’t ready yet.',
   generation_unavailable:

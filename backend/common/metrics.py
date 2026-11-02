@@ -1,8 +1,9 @@
 """The custom CloudWatch metrics, published straight to CloudWatch (docs/auth-users-split.md, 15.5).
 
-Only metrics an alarm or a scaling policy needs, 16 per environment per region:
+Only metrics an alarm or a scaling policy needs, 20 per environment per region:
 - `PendingJobCount` (4 generating services): worker scaling and the "pending high" alarm;
   published by one leader per region in the circle's HTTP service (`RegionLeader`);
+- `OldestPendingJobAgeSeconds` (4): the "jobs waiting" alarm (OBS-02);
 - `OldestRunningJobAgeSeconds` (4): the "processing stuck" alarm;
 - `OldestUnpublishedOutboxAgeSeconds` (8): the "outbox stale" alarm, published by the relay;
   it publishes 0 when idle, so a missing datapoint means a dead relay.
@@ -27,10 +28,16 @@ from common.events.store import OUTBOX, Db
 
 NAMESPACE_PREFIX = "Superpower"
 METRIC_NAMES: frozenset[str] = frozenset(
-    {"PendingJobCount", "OldestRunningJobAgeSeconds", "OldestUnpublishedOutboxAgeSeconds"}
+    {
+        "PendingJobCount",
+        "OldestPendingJobAgeSeconds",
+        "OldestRunningJobAgeSeconds",
+        "OldestUnpublishedOutboxAgeSeconds",
+    }
 )
 _UNITS = {
     "PendingJobCount": "Count",
+    "OldestPendingJobAgeSeconds": "Seconds",
     "OldestRunningJobAgeSeconds": "Seconds",
     "OldestUnpublishedOutboxAgeSeconds": "Seconds",
 }

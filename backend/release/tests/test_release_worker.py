@@ -442,3 +442,35 @@ def test_a_job_that_crashes_or_stalls_too_often_is_failed(mongo_uri, monkeypatch
         assert doc["error"] == "crashed (RuntimeError)"
 
     live(mongo_uri, test)
+
+
+class _SwitchOff:
+    """The kill switch, turned off (common.generation.switch)."""
+
+    async def enabled(self) -> bool:
+        return False
+
+
+@pytest.mark.live_service
+def test_a_paused_switch_stops_the_job_loop_claiming(mongo_uri, monkeypatch):
+    """JOB-03: with the kill switch off, the worker claims nothing and keeps looking."""
+
+    async def test(r: Running) -> None:
+        from common.generation import jobs
+
+        claims = [0]
+
+        async def counting(*args: Any, **kwargs: Any) -> Any:
+            claims[0] += 1
+            return None
+
+        monkeypatch.setattr(jobs, "claim_next", counting)
+        r.runtime.switch = _SwitchOff()
+        stop = asyncio.Event()
+        task = asyncio.create_task(generation.run_jobs(r.runtime, llm_client(), stop, poll=0.01))
+        await asyncio.sleep(0.1)
+        stop.set()
+        await asyncio.wait_for(task, 5)
+        assert claims[0] == 0
+
+    live(mongo_uri, test)

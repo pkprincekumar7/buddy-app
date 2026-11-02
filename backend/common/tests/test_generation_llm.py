@@ -99,9 +99,9 @@ def test_openai_is_first_and_logs_one_line_without_the_prompt(caplog):
     assert call["response_format"] == {"type": "json_object"}
     assert call["max_completion_tokens"] == 4096  # the cap; reasoning models reject max_tokens
     assert "OUTPUT SCHEMA" in call["messages"][0]["content"]
-    line = json.loads(next(r.getMessage() for r in caplog.records if "llm_call" in r.getMessage()))[
-        "llm_call"
-    ]
+    record = next(r for r in caplog.records if hasattr(r, "llm_call"))
+    line = record.llm_call  # a top-level field of the JSON line (JOB-03's metric filters)
+    assert record.getMessage() == "llm_call circle=grow provider=openai outcome=ok"
     assert (line["circle"], line["provider"], line["outcome"], line["input_tokens"]) == (
         "grow",
         "openai",
@@ -152,7 +152,7 @@ def test_unusable_answers_are_retryable_errors(clients, message, caplog):
         pytest.raises(LlmResponseError, match=message),
     ):
         asyncio.run(_client(**clients).invoke("p"))
-    assert '"outcome": "bad_response"' in caplog.text
+    assert "outcome=bad_response" in caplog.text
 
 
 def test_a_slow_gemini_call_times_out(caplog, monkeypatch):
@@ -162,7 +162,7 @@ def test_a_slow_gemini_call_times_out(caplog, monkeypatch):
     )
     with caplog.at_level("INFO", logger="common.generation.llm"), pytest.raises(TimeoutError):
         asyncio.run(client.invoke("p"))
-    assert '"outcome": "timeout"' in caplog.text
+    assert "outcome=timeout" in caplog.text
 
 
 def test_other_errors_are_logged_as_errors(caplog):
@@ -174,7 +174,7 @@ def test_other_errors_are_logged_as_errors(caplog):
     broken.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=broken._create))
     with caplog.at_level("INFO", logger="common.generation.llm"), pytest.raises(ConnectionError):
         asyncio.run(_client(openai_client=broken).invoke("p"))
-    assert '"outcome": "error"' in caplog.text
+    assert "outcome=error" in caplog.text
 
 
 def test_config_from_env_and_real_sdk_clients():

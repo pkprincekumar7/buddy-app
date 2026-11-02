@@ -248,6 +248,8 @@ def test_the_leader_reports_the_job_metrics(mongo_uri):
         await asyncio.wait_for(task, 5)
         assert ("PendingJobCount", 1) in metrics.points
         assert ("OldestRunningJobAgeSeconds", 0.0) in metrics.points
+        # The one pending job has just been made: due for a moment, not 0 exactly.
+        assert any(n == "OldestPendingJobAgeSeconds" and 0 <= v < 5 for n, v in metrics.points)
 
     live(mongo_uri, test)
 
@@ -531,5 +533,37 @@ def test_an_over_long_text_is_clipped_not_failed(mongo_uri):
         personality = await r.db[PERSONALITIES].find_one({"_id": child})
         quote = personality["analysis"]["child_quote"]
         assert len(quote) <= 120 and quote.endswith("…")
+
+    live(mongo_uri, test)
+
+
+class _SwitchOff:
+    """The kill switch, turned off (common.generation.switch)."""
+
+    async def enabled(self) -> bool:
+        return False
+
+
+@pytest.mark.live_service
+def test_a_paused_switch_stops_the_job_loop_claiming(mongo_uri, monkeypatch):
+    """JOB-03: with the kill switch off, the worker claims nothing and keeps looking."""
+
+    async def test(r: Running) -> None:
+        from common.generation import jobs
+
+        claims = [0]
+
+        async def counting(*args: Any, **kwargs: Any) -> Any:
+            claims[0] += 1
+            return None
+
+        monkeypatch.setattr(jobs, "claim_next", counting)
+        r.runtime.switch = _SwitchOff()
+        stop = asyncio.Event()
+        task = asyncio.create_task(generation.run_jobs(r.runtime, llm_client(), stop, poll=0.01))
+        await asyncio.sleep(0.1)
+        stop.set()
+        await asyncio.wait_for(task, 5)
+        assert claims[0] == 0
 
     live(mongo_uri, test)

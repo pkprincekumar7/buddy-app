@@ -767,3 +767,25 @@ def test_a_child_id_must_be_a_uuid(mongo_uri, bad):
         assert response.status_code == 422
 
     live(mongo_uri, test)
+
+
+class _SwitchOff:
+    """The kill switch, turned off (common.generation.switch)."""
+
+    async def enabled(self) -> bool:
+        return False
+
+
+@pytest.mark.live_service
+def test_a_paused_switch_refuses_new_generations(mongo_uri):
+    """JOB-03: with the kill switch off, a start is 503 generation_paused, before the
+    hourly limit is touched."""
+
+    async def test(r: Running) -> None:
+        r.runtime.switch = _SwitchOff()
+        child = await r.ready_child()
+        await _patch(r, child, ask="Skateboarding")
+        paused = await _start(r, child, "plan")
+        assert paused.status_code == 503 and _code(paused) == "generation_paused"
+
+    live(mongo_uri, test)

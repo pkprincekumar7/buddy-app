@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import boto3
@@ -23,6 +23,7 @@ from common import upload_tracking
 from common.authz import Authorizer, AuthzConfig
 from common.events.store import Db, ensure_outbox, ensure_tombstones
 from common.generation.llm_limit import DEFAULT_LIMIT, LlmHourlyLimit
+from common.generation.switch import GenerationSwitch
 from common.internal_client import (
     InternalClient,
     ServiceTokenVerifier,
@@ -55,6 +56,9 @@ class TransformSettings(ServiceSettings):
     aws_endpoint_url: str | None = Field(default=None, validation_alias="AWS_ENDPOINT_URL")
     # The hourly LLM calls per user, shared by every circle (8).
     llm_hourly_limit: int = Field(default=DEFAULT_LIMIT, ge=1, validation_alias="LLM_HOURLY_LIMIT")
+    # The generation kill switch's SSM parameter (common.generation.switch), from
+    # Terraform; unset locally, where generation is always on.
+    llm_switch_parameter: str | None = Field(default=None, validation_alias="LLM_SWITCH_PARAMETER")
 
 
 @dataclass
@@ -71,6 +75,7 @@ class Runtime:
     # The relay's and the jobs' metrics (15.5); None in tests.
     cloudwatch: Any = None
     cache: Any = None
+    switch: GenerationSwitch = field(default_factory=GenerationSwitch.always_on)
     uploads: Uploads | None = None
 
     @property
@@ -112,6 +117,10 @@ class Runtime:
                 redis_options=settings.valkey_options(),
             ),
             llm_limit=LlmHourlyLimit(cache, limit=settings.llm_hourly_limit),
+            switch=GenerationSwitch(
+                settings.llm_switch_parameter,
+                boto3.client("ssm", **aws) if settings.llm_switch_parameter else None,
+            ),
             sns=boto3.client("sns", **aws),
             sqs=boto3.client("sqs", **aws),
             cloudwatch=boto3.client("cloudwatch", **aws),

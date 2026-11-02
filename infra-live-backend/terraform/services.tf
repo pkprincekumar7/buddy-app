@@ -101,6 +101,8 @@ locals {
     { name = "GEMINI_MODEL", value = var.gemini_model },
     { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
     { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
+    # The kill switch (generation_switch.tf).
+    { name = "LLM_SWITCH_PARAMETER", value = local.generation_switch_parameter },
   ]
 
   uploads_environment = [
@@ -235,6 +237,7 @@ locals {
       r.kind != "collector" && r.service != "shared" ? { metrics = local.metrics_policy[r.service] } : {},
       contains(keys(local.uploads_policy), coalesce(r.service, "-")) ? { s3-uploads = local.uploads_policy[r.service] } : {},
       r.kind == "worker" ? { events = local.events_policy[r.service] } : {},
+      contains(local.generating_services, coalesce(r.service, "-")) ? { generation-switch = local.generation_switch_policy } : {},
       r.service == "shared" ? {
         # The APK download link (13.3): the assets bucket's Android prefix only.
         s3-apk = {

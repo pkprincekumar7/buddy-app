@@ -218,6 +218,7 @@ Prices (✓, re-verified 2026-10-23, ap-south-1): log ingestion $0.67/GB (Standa
 - **`enable_basic_alarms`, stg and prod:** +4, one healthy-hosts alarm per HTTP service and one ALB 5xx alarm.
 - **`enable_all_alarms`, prod:** +18. Worker processing-stuck, pending-jobs-high, Redis connections, plus 7 sustained and 8 immediate CPU/memory alarms.
 - **Totals:** dev ≈ 18, sbx ≈ 18, stg ≈ 22, prod ≈ 40. dev, sbx and stg share one account, so one set of 10 free alarms covers all three.
+- **Added 2026-11-02, where `enable_all_alarms` (now stg and prod):** about +31 alarms per backend region. That's ALB p95, 3 Valkey, 4 jobs-waiting, 4 failed-jobs, 1 LLM-tokens and 18 no-running-task alarms. Edge adds 1 CloudFront 5xx alarm in us-east-1 (stg and prod). Together about $3.20/month per environment. Custom metrics add 16, in every environment: 4 `OldestPendingJobAgeSeconds`, 4 `FailedJobs` and 8 LLM token metrics from log filters. That's about $4.80/month. Not yet folded into the totals above.
 
 **Container Insights** is on in prod only (`enable_container_insights`). Nothing in the stack reads its metrics: autoscaling, alarms and the dashboard use the free `AWS/ECS` and `AWS/ApplicationELB` metrics, which ECS publishes either way. With 4 services and 4 task-definition families, it publishes about **112 custom metrics per cluster**:
 - 10 metrics × (cluster + 4 services + 4 families);

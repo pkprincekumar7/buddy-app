@@ -416,8 +416,48 @@ def test_the_metric_inputs(mongo_run):
     mongo_run(body)
 
 
+def test_waiting_jobs_count_only_once_they_are_due(mongo_run):
+    """OBS-02: a job waiting out its retry delay isn't pending work yet."""
+
+    async def body(db, client):
+        await ensure_jobs(db, "discover")
+        now = datetime.now(UTC)
+        assert await jobs.oldest_pending_age(db, locations=["in"]) == 0.0
+        await _job(db, "later", retry_after=now + timedelta(minutes=5))
+        assert await jobs.pending_count(db, locations=["in"]) == 0
+        assert await jobs.oldest_pending_age(db, locations=["in"]) == 0.0
+        # Made 10 minutes ago, but due only since its retry delay ended 2 minutes ago.
+        await _job(
+            db,
+            "retried",
+            created_at=now - timedelta(minutes=10),
+            retry_after=now - timedelta(minutes=2),
+        )
+        assert await jobs.pending_count(db, locations=["in"]) == 1
+        assert 110 < await jobs.oldest_pending_age(db, locations=["in"]) < 200
+        await _job(db, "new", created_at=now - timedelta(minutes=4))
+        assert await jobs.pending_count(db, locations=["in"]) == 2
+        assert 230 < await jobs.oldest_pending_age(db, locations=["in"]) < 320  # the longest wait
+        assert await jobs.oldest_pending_age(db, locations=["eu"]) == 0.0
+
+    mongo_run(body)
+
+
 def test_backoff_doubles_and_is_capped():
     assert [jobs.backoff(n).total_seconds() for n in (0, 1, 2, 3, 10)] == [30, 30, 60, 120, 900]
+
+
+def test_naive_due_times_are_utc():
+    class Cursor:
+        async def to_list(self, length: int) -> list[dict[str, Any]]:
+            return [{"since": (datetime.now(UTC) - timedelta(seconds=40)).replace(tzinfo=None)}]
+
+    class Coll:
+        async def aggregate(self, *args: Any, **kwargs: Any) -> Cursor:
+            return Cursor()
+
+    age = asyncio.run(jobs.oldest_pending_age({"jobs": Coll()}, locations=None))  # type: ignore[arg-type]
+    assert 39 < age < 80
 
 
 def test_naive_claim_times_are_utc():

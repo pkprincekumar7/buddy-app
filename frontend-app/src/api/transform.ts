@@ -112,5 +112,7 @@ export const TRANSFORM_ERRORS: Record<string, string> = {
     'That photo format isn’t supported. Try a JPEG, PNG, WEBP or GIF instead.',
   uploads_not_configured: 'Photo uploads aren’t available right now.',
   llm_limit: 'Lots of requests right now. Please try again in a little while.',
+  generation_paused:
+    'Generating is paused for a little while. Please try again later.',
   generation_unavailable: 'We couldn’t start that just now. Please try again.',
 };

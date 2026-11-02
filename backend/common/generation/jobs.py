@@ -436,9 +436,45 @@ async def cancel_jobs(
 # ── the metrics' inputs (15.5) ─────────────────────────────────────────────────
 
 
+def _due_pending(locations: list[str] | None, now: datetime) -> Doc:
+    """Pending jobs a worker could take now: not ones waiting out a retry delay (OBS-02)."""
+    return {
+        **_region_filter(locations),
+        "status": "pending",
+        "$or": [{"retry_after": None}, {"retry_after": {"$lte": now}}],
+    }
+
+
 async def pending_count(db: Db, *, locations: list[str] | None) -> int:
-    """`PendingJobCount`: this region's jobs waiting for a worker."""
-    return await db[JOBS].count_documents({**_region_filter(locations), "status": "pending"})
+    """`PendingJobCount`: this region's jobs a worker could take now. A job waiting for its
+    retry isn't counted, so a burst of retries doesn't scale workers out for nothing."""
+    return await db[JOBS].count_documents(_due_pending(locations, _now()))
+
+
+async def oldest_pending_age(db: Db, *, locations: list[str] | None) -> float:
+    """`OldestPendingJobAgeSeconds`: how long this region's longest-waiting due job has been
+    due (since it was made, or since its retry delay ended); 0 if none. High means no
+    worker is taking jobs: workers down, stuck, or switched off (OBS-02)."""
+    now = _now()
+    rows = await (
+        await db[JOBS].aggregate(
+            [
+                {"$match": _due_pending(locations, now)},
+                {
+                    "$group": {
+                        "_id": None,
+                        "since": {"$min": {"$ifNull": ["$retry_after", "$created_at"]}},
+                    }
+                },
+            ]
+        )
+    ).to_list(1)
+    if not rows or rows[0]["since"] is None:
+        return 0.0
+    since = rows[0]["since"]
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)
+    return max(0.0, (now - since).total_seconds())
 
 
 async def oldest_processing_age(db: Db, *, locations: list[str] | None) -> float:

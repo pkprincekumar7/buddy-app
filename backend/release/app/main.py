@@ -424,6 +424,11 @@ async def start_generation(
         found = await generation.evidence_for(runtime, id, child["location"])
         if not found.blocks:
             raise error(409, "needs_evidence", "There's nothing to read back yet.")
+        # The kill switch (common.generation.switch): no new LLM spend while it's off.
+        if not await runtime.switch.enabled():
+            raise error(
+                503, "generation_paused", "Generation is paused for now. Please try again later."
+            )
         if not await runtime.llm_limit.take(caller.user_id):
             raise HTTPException(
                 status_code=429,

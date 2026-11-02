@@ -225,6 +225,11 @@ async def run_jobs(
     locations = runtime.locations()
     while not stop.is_set():
         try:
+            if not await runtime.switch.enabled():
+                # Paused (common.generation.switch): jobs wait; look again shortly.
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), jobs.idle_wait(poll))
+                continue
             job = await jobs.claim_next(runtime.db, locations=locations)
             if job is not None:
                 try:
@@ -255,6 +260,10 @@ async def report_jobs(
                 if await leader.try_lead():
                     metrics.put(
                         "PendingJobCount", await jobs.pending_count(runtime.db, locations=locations)
+                    )
+                    metrics.put(
+                        "OldestPendingJobAgeSeconds",
+                        await jobs.oldest_pending_age(runtime.db, locations=locations),
                     )
                     metrics.put(
                         "OldestRunningJobAgeSeconds",

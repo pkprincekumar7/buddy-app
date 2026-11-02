@@ -355,3 +355,13 @@ variable "enable_alb_access_logs" {
   default     = false
 }
 
+variable "llm_tokens_alarm_per_hour" {
+  description = "Alarm when every circle's LLM tokens (input and output) in an hour pass this (JOB-03). Set it a few times above the busiest normal hour."
+  type        = number
+  default     = 5000000
+
+  validation {
+    condition     = var.llm_tokens_alarm_per_hour > 0
+    error_message = "llm_tokens_alarm_per_hour must be positive."
+  }
+}

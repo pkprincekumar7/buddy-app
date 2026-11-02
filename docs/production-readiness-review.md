@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 24 are done, 34 partly done, 27 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 28 are done, 30 partly done, 27 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -168,8 +168,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
 | DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Deletes transactional and event-retried; startup has no retry; failover untested |
 | JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
-| JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | 🟡 Attempts counted at claim, failed jobs kept 7 days, SDK retries off; dead-job alarm open |
-| JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | 🟡 Hourly limit at job start, server-built prompts, output cap on every provider; spend metric and kill switch open |
+| JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | ✅ Done (attempts counted at claim, SDK retries off, failed-jobs alarm per circle) |
+| JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | ✅ Done (hourly limit, output caps, LLM token metrics with an hourly alarm, SSM kill switch) |
 | JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ⬜ Open |
 | JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ✅ Done (status routes 300/min; clients back off to 5 s and retry a 429) |
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
@@ -192,8 +192,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
 | DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | 🟡 stg alerts too; ALB 5xx rate and p95, Valkey, CloudFront 5xx added (email, AWS-only); logs, canary, push open |
-| OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | 🟡 Stuck alarm uses `OldestRunningJobAgeSeconds`; pending-age metric open |
-| OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | 🟡 Leader-per-region metrics, a missing-data alarm (prod) and worker health checks (APP-06); `RunningTaskCount` alarm open |
+| OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ✅ Done (pending count is due jobs only; `OldestPendingJobAgeSeconds` with an alarm) |
+| OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ✅ Done (no-running-task alarm for every runtime, worker health checks) |
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
@@ -1204,7 +1204,9 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-02 — Retries multiply LLM cost; poison jobs; no DLQ 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Attempts are counted at claim time, `exhausted()` stops retries, and failed jobs are kept 7 days by TTL (`jobs.py:250,257-260`). The SDKs' own retries are now off (`max_retries=0` for OpenAI and Anthropic, `retry: None` for Gemini, in `backend/common/generation/llm.py`), so a job makes at most one provider call per attempt. Still open: there's no dead-job alarm.
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Retries:** attempts are counted at claim time, `exhausted()` stops retries, and failed jobs are kept 7 days by TTL (`common/generation/jobs.py`). The SDKs' own retries are off (`common/generation/llm.py`), so a job makes at most one provider call per attempt.
+> - **Failed-jobs alarm:** every job a worker gives up on logs `<circle>.job … outcome=failed`. A log metric filter per generating worker (`FailedJobs`, `infra-live-backend/terraform/cloudwatch.tf`) counts them, and `failed_jobs` alarms on more than 2 in 15 minutes (stg, prod).
 
 **Where:** `backend/worker.py:132-136`, `backend/app/database.py:142` (TTL on finished jobs).
 
@@ -1231,7 +1233,16 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-03 — Job path bypasses LLM cost controls 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The hourly limit is enforced at job start (`grow/app/main.py:582`, `discover/app/main.py:318`); prompts are built server-side and the provider isn't client-chosen. Every provider is now capped at `LlmConfig.max_output_tokens` (4096): `max_completion_tokens` for OpenAI, `max_tokens` for Anthropic, `max_output_tokens` for Gemini. An answer that stops at the cap is refused as `LlmResponseError` (logged as `bad_response`) instead of failing to parse. Still open: a spend metric and a kill switch.
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Already there:** the hourly limit at job start, server-built prompts, a provider the client can't choose, and every provider capped at 4,096 output tokens.
+> - **Token metrics:** each `llm_call` log line now carries a top-level `llm_call` field (circle, provider, model, tokens, outcome). Log metric filters sum `LlmInputTokens` and `LlmOutputTokens` per circle in every environment.
+> - **Spend alarm:** `llm_tokens` alarms when all circles together pass `llm_tokens_alarm_per_hour` (default 5M) in an hour (stg, prod).
+> - **Kill switch:** an SSM parameter per backend stack, `/<app>/<env>/backend/<region>/llm_generation_enabled` (`generation_switch.tf`, read by `common/generation/switch.py` about once a minute). Setting it to `false` pauses generation with no deploy: new starts get `503 generation_paused`, and workers stop claiming. Terraform never resets it. The runbook is in `docs/infra-operations.md` ("Pausing LLM generation").
+> - **Checked:**
+>   - unit tests for the switch;
+>   - 503 and paused-worker tests in all four services;
+>   - against Moto's SSM, `false` takes effect at the next minute's read, and an unreadable parameter keeps the last value;
+>   - the full journey logged a top-level `llm_call` record for every call.
 
 **Where:** `backend/app/routers/jobs.py:120-140` (`enqueue_job`: route limit `30/minute`; an in-flight cap of 2 per **(user, child, type)** at `:223-244`; but **no** call to `llm_rate_limiter.enforce`), `backend/app/schemas/jobs.py:168-180` (32k-char client prompt; `provider: str | None` at `:170`), `backend/app/services/llm_service.py:142,180` (no output-token cap for OpenAI/Gemini).
 
@@ -1791,7 +1802,11 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### OBS-02 — "Processing stuck" alarm will fire constantly 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The stuck alarm now uses `OldestRunningJobAgeSeconds` > 600 (`cloudwatch.tf:87-100`, emitted by `backend/common/generation/jobs.py:425-437`). Still open: there's no `OldestPendingJobAgeSeconds`, and `pending_count` (`jobs.py:420-422`) still counts jobs whose `retry_after` is in the future.
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Stuck jobs:** the stuck alarm uses `OldestRunningJobAgeSeconds` > 600 (`cloudwatch.tf`).
+> - **Due jobs only:** `pending_count` now counts only due jobs (not ones waiting out a retry delay), so retries don't scale workers out.
+> - **Waiting jobs:** a new `OldestPendingJobAgeSeconds` (the longest a due job has waited, since it was made or its retry came due) is published by each circle's leader, with a `jobs-waiting` alarm over 300 s for 3 of 5 minutes (stg, prod).
+> - **Checked:** tests in `common`; on the local stack, all four circles publish it.
 
 **Where:** `infra-live-backend/terraform/cloudwatch.tf:52-63`. It fires when Maximum `ProcessingJobCount > 0` for 10 minutes, which is always true under steady load.
 
@@ -1809,7 +1824,10 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### OBS-03 — Dead workers raise no alarm 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. One leader per region emits the job metrics (`grow/app/generation.py:19`, `discover/app/generation.py:12`), and `pending_jobs_missing` breaches on missing data (`cloudwatch.tf:106-123`), but only where `enable_all_alarms` is on (prod). Workers now have a heartbeat health check (APP-06), so a hung worker is replaced. Still open: no ECS `RunningTaskCount` alarm.
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Job metrics:** one leader per region emits the job metrics, and `pending_jobs_missing` breaches when they stop.
+> - **Health checks:** workers have a heartbeat health check (APP-06), so ECS replaces a hung one.
+> - **No running tasks:** a new `no_tasks` alarm for every runtime (HTTP services, workers, the collector) fires when it has had no running task for 3 minutes. It uses the free `AWS/ECS` CPU metric: missing data is breaching, since ECS publishes it only while a task runs. So it doesn't need Container Insights (on only in prod).
 
 **Where:** `backend/worker.py:430`: only the workers emit `PendingJobCount`. All the related alarms use `treat_missing_data = "notBreaching"` (`autoscaling.tf`).
 

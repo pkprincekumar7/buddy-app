@@ -55,5 +55,6 @@ export const RELEASE_ERRORS: Record<string, string> = {
   unknown_pattern: 'Those patterns changed. Please pick again.',
   needs_evidence: 'There isn’t enough to go on yet: complete a growth area first.',
   llm_limit: 'Lots of requests right now. Please try again in a little while.',
+  generation_paused: 'Generating is paused for a little while. Please try again later.',
   generation_unavailable: 'We couldn’t start that just now. Please try again.',
 };

@@ -440,6 +440,27 @@ role-change alarm watches. A manual edit does none of them.
 
 ---
 
+## Pausing LLM generation (the kill switch)
+
+When LLM spend runs away (the `llm-tokens` alarm, a loop, abuse) or a provider misbehaves, pause generation in a region without a deploy. Each backend stack has one switch, an SSM parameter that Terraform creates as `true` and never resets (`infra-live-backend/terraform/generation_switch.tf`):
+
+```bash
+APP=superpower ENV=prod REGION=ap-south-1
+aws ssm put-parameter --overwrite --region "$REGION" --type String \
+  --name "/$APP/$ENV/backend/$REGION/llm_generation_enabled" --value false
+```
+
+Within about a minute, every task of discover, grow, transform and release has re-read it (`backend/common/generation/switch.py`):
+- new generations get `503 generation_paused`, before the hourly limit is touched;
+- the workers stop claiming jobs: a job already running finishes, and the rest wait.
+
+To resume, run the same command with `--value true`. Waiting jobs are then taken in order. If the pause was long, the `jobs-waiting` alarm will have fired while it was off. That's expected, and it clears once the jobs are taken.
+
+Notes:
+- **Region by region.** Pause every backend region that serves the environment.
+- **A failed read keeps the last value.** If a task can't read the parameter, it keeps the value it last read (on, if it has never read one), so an SSM outage doesn't stop generation by itself.
+- **Local runs don't use it.** They set no `LLM_SWITCH_PARAMETER`, so generation is always on.
+
 ## Key resource settings
 
 What [aws-resources.md](aws-resources.md) doesn't show: *how* the main resources are configured.

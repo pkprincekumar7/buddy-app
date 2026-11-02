@@ -578,3 +578,24 @@ def test_a_start_that_finds_a_job_running_gives_its_llm_slot_back(mongo_uri, mon
             )
 
     live(mongo_uri, test)
+
+
+class _SwitchOff:
+    """The kill switch, turned off (common.generation.switch)."""
+
+    async def enabled(self) -> bool:
+        return False
+
+
+@pytest.mark.live_service
+def test_a_paused_switch_refuses_new_generations(mongo_uri):
+    """JOB-03: with the kill switch off, a start is 503 generation_paused, before the
+    hourly limit is touched."""
+
+    async def test(r: Running) -> None:
+        r.runtime.switch = _SwitchOff()
+        child = await r.ready_child()
+        paused = await r.http.post(_path(child, "/generation"), headers=auth_header())
+        assert paused.status_code == 503 and _code(paused) == "generation_paused"
+
+    live(mongo_uri, test)

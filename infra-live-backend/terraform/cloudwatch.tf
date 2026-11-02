@@ -530,3 +530,176 @@ resource "aws_cloudwatch_metric_alarm" "deletion_stuck" {
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }
+
+# ---------------------------------------------------------------------------
+# Generation and runtime alarms — enable_all_alarms (stg, prod)
+# (production-readiness review: OBS-02, JOB-02, JOB-03, OBS-03)
+# ---------------------------------------------------------------------------
+
+locals {
+  # A due job waiting this long: no worker is taking jobs (down, stuck or switched off).
+  pending_age_alarm_seconds = 300
+  # Failed generations in 15 minutes over this: the LLM provider failing, or a bug. A
+  # job fails only after its retries (common.generation.jobs), so each one is a person
+  # who saw an error.
+  failed_jobs_alarm_per_15_minutes = 2
+  all_runtime_alarms               = { for k, s in local.services : k => s if var.enable_all_alarms }
+}
+
+# OBS-02: the longest a due job has waited (published by each circle's leader).
+resource "aws_cloudwatch_metric_alarm" "pending_age" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-jobs-waiting-${var.environment}"
+  alarm_description   = "A ${each.key} generation job has waited over ${local.pending_age_alarm_seconds} s for a worker: check the ${each.key}-worker tasks, the processing-stuck alarm, and the generation switch (generation_switch.tf)."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "OldestPendingJobAgeSeconds"
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = local.pending_age_alarm_seconds
+  comparison_operator = "GreaterThanThreshold"
+  # pending_jobs_missing alarms on the metric stopping.
+  treat_missing_data = "notBreaching"
+  dimensions         = { Environment = var.environment }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-jobs-waiting-${var.environment}"
+  }
+}
+
+# JOB-02: each job a worker gives up on logs `<circle>.job id=… outcome=failed`.
+resource "aws_cloudwatch_log_metric_filter" "failed_jobs" {
+  for_each = local.generating_alarms
+
+  name           = "${var.app_name}-${each.key}-failed-jobs-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["${each.key}-worker"].name
+  pattern        = "\"outcome=failed\""
+
+  metric_transformation {
+    name          = "FailedJobs"
+    namespace     = "Superpower/${each.key}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "failed_jobs" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-failed-jobs-${var.environment}"
+  alarm_description   = "Over ${local.failed_jobs_alarm_per_15_minutes} ${each.key} generations failed in 15 minutes (after their retries). The ${each.key}-worker log has each job's id and error; llm_call lines show the provider's outcome."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = aws_cloudwatch_log_metric_filter.failed_jobs[each.key].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 900
+  evaluation_periods  = 1
+  threshold           = local.failed_jobs_alarm_per_15_minutes
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-failed-jobs-${var.environment}"
+  }
+}
+
+# JOB-03: LLM tokens per circle, from each llm_call log line (common.generation.llm),
+# in every environment, so the dashboard and cost reports have them too.
+locals {
+  llm_token_metrics = {
+    for pair in setproduct(local.generating_services, ["input", "output"]) :
+    "${pair[0]}-${pair[1]}" => { service = pair[0], kind = pair[1] }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "llm_tokens" {
+  for_each = local.llm_token_metrics
+
+  name           = "${var.app_name}-${each.key}-llm-tokens-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["${each.value.service}-worker"].name
+  pattern        = "{ $.llm_call.${each.value.kind}_tokens > 0 }"
+
+  metric_transformation {
+    name      = "Llm${title(each.value.kind)}Tokens"
+    namespace = "Superpower/${each.value.service}"
+    value     = "$.llm_call.${each.value.kind}_tokens"
+    unit      = "Count"
+  }
+}
+
+# Every circle's tokens together, per hour: spend running away (a loop, abuse, a
+# prompt grown huge). The fix is the generation switch, then the cause.
+resource "aws_cloudwatch_metric_alarm" "llm_tokens" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-llm-tokens-${var.environment}"
+  alarm_description   = "Over ${var.llm_tokens_alarm_per_hour} LLM tokens (input and output, every circle) in an hour. To stop spend at once, set the generation switch to false (generation_switch.tf); then look for the cause in the workers' llm_call lines."
+  evaluation_periods  = 1
+  threshold           = var.llm_tokens_alarm_per_hour
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "total"
+    expression  = "SUM(METRICS())"
+    label       = "LLM tokens (all circles)"
+    return_data = true
+  }
+
+  dynamic "metric_query" {
+    for_each = local.llm_token_metrics
+    content {
+      id = replace("t_${metric_query.key}", "-", "_")
+      metric {
+        namespace   = "Superpower/${metric_query.value.service}"
+        metric_name = aws_cloudwatch_log_metric_filter.llm_tokens[metric_query.key].metric_transformation[0].name
+        stat        = "Sum"
+        period      = 3600
+      }
+    }
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-llm-tokens-${var.environment}"
+  }
+}
+
+# OBS-03: a runtime with no task running. ECS publishes CPUUtilization each minute
+# while any task runs; when none does, the metric stops and missing counts as
+# breaching. A free metric, so it works without Container Insights.
+resource "aws_cloudwatch_metric_alarm" "no_tasks" {
+  for_each = local.all_runtime_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-no-tasks-${var.environment}"
+  alarm_description   = "${each.value.display_name} has no running task for 3 minutes — ECS can't start it (check the service's events and its last task's stopped reason) or it was scaled to 0."
+  namespace           = "AWS/ECS"
+  metric_name         = "CPUUtilization"
+  statistic           = "SampleCount"
+  period              = 60
+  evaluation_periods  = 3
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.backend.name
+    ServiceName = module.service[each.key].service_name
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-no-tasks-${var.environment}"
+  }
+}
