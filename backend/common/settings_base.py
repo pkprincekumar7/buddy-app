@@ -44,6 +44,10 @@ class ServiceSettings(BaseSettings):
     # The image's commit (backend/Dockerfile sets GIT_SHA). Indexes are built once per
     # release with it (common.index_builds, DB-03), and at every start without one.
     release: str | None = Field(default=None, validation_alias="GIT_SHA")
+    # The web app's origins, comma-separated ("https://superpower.example.com"). The public
+    # app refuses cross-site writes carrying the session cookies from anywhere else
+    # (common.origin, AUTH-05); unset, the check is off. common.serve reads the variable.
+    public_origins: str = Field(default="", validation_alias="PUBLIC_ORIGINS")
 
     # ── MongoDB (section 4) ──
     mongodb_uri: str = Field(validation_alias="MONGODB_URI")
@@ -110,6 +114,8 @@ class ServiceSettings(BaseSettings):
         # Every service has this field (Moto, locally); in AWS it must be the real endpoints.
         if getattr(self, "aws_endpoint_url", None):
             problems.append("AWS_ENDPOINT_URL is set: AWS calls would go to a local emulator")
+        if not self.public_origins.strip():
+            problems.append("PUBLIC_ORIGINS is unset: cross-site cookie writes wouldn't be refused")
         return problems
 
     @model_validator(mode="after")

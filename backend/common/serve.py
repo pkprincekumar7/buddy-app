@@ -28,6 +28,7 @@ from fastapi import FastAPI
 
 from common.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimitMiddleware
 from common.logging import RequestIdMiddleware
+from common.origin import OriginCheckMiddleware, parse_origins
 from common.settings_base import STRICT_ENVS
 from common.telemetry import setup_observability
 from common.validation import redact_validation_errors
@@ -83,6 +84,10 @@ def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]: 
             redact_validation_errors(asgi)
     module = importlib.import_module(f"{service}.app.main")
     limit = int(getattr(module, "MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES))
+    public, internal = apps
+    # Only the public app takes browser requests: cross-site writes with the session
+    # cookies are refused there (common.origin, AUTH-05).
+    public = OriginCheckMiddleware(public, parse_origins(os.environ.get("PUBLIC_ORIGINS")))
     return [
         _Server(
             uvicorn.Config(
@@ -92,7 +97,7 @@ def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]: 
                 server_header=False,
             )
         )
-        for asgi, port in zip(apps, (PUBLIC_PORT, INTERNAL_PORT), strict=True)
+        for asgi, port in ((public, PUBLIC_PORT), (internal, INTERNAL_PORT))
     ]
 
 

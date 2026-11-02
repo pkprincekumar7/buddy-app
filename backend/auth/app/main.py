@@ -34,13 +34,7 @@ from auth.app.authz_cache import entry_from_account, write_entry
 from auth.app.deps import Ready, check_user_limit, error, per_ip, per_user
 from auth.app.registration import create_account
 from auth.app.runtime import SERVICE, Runtime
-from auth.app.sessions import (
-    ACCESS_COOKIE,
-    REFRESH_COOKIE,
-    TokenResponse,
-    clear_cookies,
-    sign_in,
-)
+from auth.app.sessions import TokenResponse, clear_cookies, sign_in
 from auth.app.store import ALLOWED_EMAILS, AUTH, EMAIL_INDEX, SESSIONS, authz_change
 from auth.app.tokens import (
     BCRYPT_MAX_BYTES,
@@ -55,7 +49,9 @@ from auth.countries import BLOCKED_COUNTRIES, COUNTRY_TO_REGION, is_blocked, res
 from auth.emails import is_valid_address, log_key, normalise
 from common.audit import AuditEvent, route_template
 from common.authz import Caller, mark_policy, signed_in
+from common.cookies import ACCESS_COOKIE, REFRESH_COOKIE
 from common.internal_client import InvalidServiceToken, allow_callers, get_verifier
+from common.origin import is_browser_request
 from common.routers import PolicyRouter, public
 
 CONCURRENT_REFRESH_WINDOW = timedelta(seconds=30)
@@ -141,8 +137,13 @@ def _bearer(request: Request) -> str | None:
     return value.strip() or None if scheme.lower() == "bearer" else None
 
 
+def _browser(request: Request) -> bool:
+    """A browser: its tokens go in the cookies only, not the body (AUTH-05)."""
+    return is_browser_request(request.headers)
+
+
 def _refresh_token(request: Request) -> str | None:
-    """The `refresh_token` cookie (web), else `Authorization: Bearer` (mobile)."""
+    """The refresh cookie (web; common.cookies), else `Authorization: Bearer` (mobile)."""
     return request.cookies.get(REFRESH_COOKIE) or _bearer(request)
 
 
@@ -307,9 +308,11 @@ def health() -> dict[str, str]:
     status_code=201,
     dependencies=[Depends(public()), Depends(per_ip("5/minute"))],
     description="Create a parent account (allow-listed emails only) and its profile, and "
-    "sign in. Sets the access and refresh token cookies.",
+    "sign in. Sets the access and refresh token cookies; the body has the tokens too only for a client that isn't a browser (the mobile app).",
 )
-async def register(body: RegisterBody, response: Response, runtime: Ready) -> TokenResponse:
+async def register(
+    request: Request, body: RegisterBody, response: Response, runtime: Ready
+) -> TokenResponse:
     if not await _is_allowed(runtime, body.email):
         raise error(403, "registration_closed", "Registration is not open for this email.")
     _reject_blocked(body.country_code)
@@ -322,13 +325,13 @@ async def register(body: RegisterBody, response: Response, runtime: Ready) -> To
         auth_provider="password",
         profile=body.profile(),
     )
-    return (await sign_in(runtime, response, account)).body
+    return (await sign_in(runtime, response, account, browser=_browser(request))).body
 
 
 @router.post(
     "/login",
     dependencies=[Depends(public()), Depends(per_ip("10/minute"))],
-    description="Sign in with email and password. Sets the access and refresh token cookies.",
+    description="Sign in with email and password. Sets the access and refresh token cookies; the body has the tokens too only for a client that isn't a browser (the mobile app).",
 )
 async def login(
     request: Request, body: LoginBody, response: Response, runtime: Ready
@@ -353,16 +356,18 @@ async def login(
         raise error(403, "account_locked", "Your account has been locked. Please contact support.")
     await runtime.throttle.succeeded(key, ip)
     _logger.info("auth.login.ok id=%s location=%s", account["_id"], account["location"])
-    return (await sign_in(runtime, response, account)).body
+    return (await sign_in(runtime, response, account, browser=_browser(request))).body
 
 
 @router.post(
     "/google",
     dependencies=[Depends(public()), Depends(per_ip("5/minute"))],
     description="Sign in with a Google ID token, creating the account on first use "
-    "(allow-listed emails only). Sets the access and refresh token cookies.",
+    "(allow-listed emails only). Sets the access and refresh token cookies; the body has the tokens too only for a client that isn't a browser (the mobile app).",
 )
-async def google(body: GoogleBody, response: Response, runtime: Ready) -> TokenResponse:
+async def google(
+    request: Request, body: GoogleBody, response: Response, runtime: Ready
+) -> TokenResponse:
     client_id = runtime.settings.google_client_id
     if not client_id:
         raise error(503, "google_unavailable", "Google sign-in isn't configured.")
@@ -386,7 +391,7 @@ async def google(body: GoogleBody, response: Response, runtime: Ready) -> TokenR
             raise error(
                 403, "account_locked", "Your account has been locked. Please contact support."
             )
-        return (await sign_in(runtime, response, existing)).body
+        return (await sign_in(runtime, response, existing, browser=_browser(request))).body
 
     if not await _is_allowed(runtime, email):
         raise error(403, "registration_closed", "Registration is not open for this email.")
@@ -407,7 +412,7 @@ async def google(body: GoogleBody, response: Response, runtime: Ready) -> TokenR
         auth_provider="google",
         profile={"first_name": first, "last_name": _google_name(claims.get("family_name"))},
     )
-    return (await sign_in(runtime, response, account)).body
+    return (await sign_in(runtime, response, account, browser=_browser(request))).body
 
 
 async def _revoke(runtime: Runtime, user_id: str, location: str) -> None:
@@ -485,7 +490,9 @@ async def refresh(request: Request, response: Response, runtime: Ready) -> Any:
         return refused or _rejected(runtime, 401, "session_revoked", "Session revoked.")
 
     # The new session first: a crash in between leaves the old token usable.
-    signed = await sign_in(runtime, response, account, family_id=session["family_id"])
+    signed = await sign_in(
+        runtime, response, account, browser=_browser(request), family_id=session["family_id"]
+    )
     if rotated_at is None:
         await sessions.update_one(
             {"_id": jti, "location": location, "rotated_at": None},

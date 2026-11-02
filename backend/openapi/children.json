@@ -894,7 +894,7 @@
       "APIKeyCookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "access_token"
+        "name": "__Host-access_token"
       },
       "HTTPBearer": {
         "type": "http",

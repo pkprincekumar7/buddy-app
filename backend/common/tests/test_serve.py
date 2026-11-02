@@ -37,6 +37,7 @@ async def _internal(scope, receive, send):  # pragma: no cover - never called, o
 
 
 def test_build_servers_puts_each_app_on_its_port(monkeypatch):
+    monkeypatch.setenv("PUBLIC_ORIGINS", "https://app.example.com")
     _fake_service(monkeypatch, "svc_demo", app=_asgi, internal_app=_internal)
     public, internal = serve_mod.build_servers("svc_demo")
     # Each app behind the request-id middleware, so every request (and log line) has one,
@@ -45,7 +46,11 @@ def test_build_servers_puts_each_app_on_its_port(monkeypatch):
     assert all(isinstance(app, serve_mod.RequestIdMiddleware) for app in wrapped)
     capped = [cast(Any, app).app for app in wrapped]
     assert all(isinstance(app, serve_mod.BodyLimitMiddleware) for app in capped)
-    assert [app.app for app in capped] == [_asgi, _internal]
+    # The public app alone also refuses cross-site cookie writes (AUTH-05).
+    checked, plain = (app.app for app in capped)
+    assert isinstance(checked, serve_mod.OriginCheckMiddleware)
+    assert (checked.app, checked.allowed) == (_asgi, frozenset({"https://app.example.com"}))
+    assert plain is _internal
     assert {app.max_bytes for app in capped} == {serve_mod.DEFAULT_MAX_BODY_BYTES}
     _fake_service(monkeypatch, "svc_big", app=_asgi, internal_app=_internal, MAX_BODY_BYTES=5)
     big = serve_mod.build_servers("svc_big")

@@ -461,9 +461,20 @@ def test_the_cookie_wins_over_the_header(client):
     assert response.status_code == 200
 
 
+def test_deployed_the_access_cookie_is_the_prefixed_one(client, monkeypatch):
+    # AUTH-05: __Host-access_token outside APP_ENV=local (common.cookies); the bare name
+    # a sibling subdomain could plant isn't read at all there.
+    monkeypatch.setattr(authz, "ACCESS_COOKIE", "__Host-access_token")
+    assert (
+        client.get("/me", headers={"Cookie": f"__Host-access_token={token()}"}).status_code == 200
+    )
+    assert client.get("/me", headers={"Cookie": f"access_token={token()}"}).status_code == 401
+
+
 def test_openapi_declares_how_to_authenticate(client):
     spec = client.get("/openapi.json").json()
     assert set(spec["components"]["securitySchemes"]) == {"APIKeyCookie", "HTTPBearer"}
+    assert spec["components"]["securitySchemes"]["APIKeyCookie"]["name"] == "__Host-access_token"
     assert spec["paths"]["/me"]["get"]["security"]
 
 

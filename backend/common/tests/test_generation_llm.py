@@ -177,6 +177,110 @@ def test_other_errors_are_logged_as_errors(caplog):
     assert "outcome=error" in caplog.text
 
 
+# ── falling back to the next provider (JOB-04) ─────────────────────────────────
+
+
+class ProviderDown(Exception):
+    """What the SDKs raise for an HTTP error: an exception with a status_code."""
+
+    status_code = 503
+
+
+class DownOpenAI(FakeOpenAI):
+    def __init__(self) -> None:
+        super().__init__()
+        self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._fail))
+
+    async def _fail(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        raise ProviderDown("503 Service Unavailable")
+
+
+class Ticks:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_an_openai_outage_falls_back_to_anthropic_and_skips_openai_for_a_while(caplog):
+    openai, anthropic, clock = DownOpenAI(), FakeAnthropic(), Ticks()
+    client = LlmClient(
+        CONFIG, circle="grow", openai_client=openai, anthropic_client=anthropic, clock=clock
+    )
+    with caplog.at_level("INFO", logger="common.generation.llm"):
+        result = asyncio.run(client.invoke("p"))
+    assert (result.provider, result.data) == ("anthropic", {"ok": 1})
+    lines = [r.llm_call for r in caplog.records if hasattr(r, "llm_call")]
+    assert [(c["provider"], c["outcome"], c["attempt"]) for c in lines] == [
+        ("openai", "error", 1),
+        ("anthropic", "ok", 2),
+    ]
+    assert "LLM openai failed (ProviderDown); trying the next provider" in caplog.text
+    # The breaker: within BREAKER_SECONDS, openai isn't tried at all.
+    clock.now += llm.BREAKER_SECONDS - 1
+    assert asyncio.run(client.invoke("p")).provider == "anthropic"
+    assert len(openai.calls) == 1
+    # After it, openai is tried first again.
+    clock.now += 1
+    assert asyncio.run(client.invoke("p")).provider == "anthropic"
+    assert len(openai.calls) == 2
+
+
+def test_an_unusable_answer_falls_back_without_tripping_the_breaker():
+    openai, gemini = FakeOpenAI(content="not json"), FakeGemini()
+    client = _client(openai_client=openai, gemini_module=gemini)
+    assert asyncio.run(client.invoke("p")).provider == "gemini"
+    assert asyncio.run(client.invoke("p")).provider == "gemini"
+    assert len(openai.calls) == 2  # tried again: one bad answer isn't an outage
+
+
+def test_when_every_provider_fails_the_last_error_is_raised():
+    class SlowAnthropic(FakeAnthropic):
+        async def _create(self, **kwargs: Any) -> Any:
+            raise TimeoutError
+
+    anthropic = SlowAnthropic()
+    anthropic.messages = types.SimpleNamespace(create=anthropic._create)
+    client = _client(openai_client=DownOpenAI(), anthropic_client=anthropic)
+    with pytest.raises(TimeoutError):
+        asyncio.run(client.invoke("p"))
+    # Both breakers are open: rather than no call, both are tried again, in order.
+    assert client.candidates() == ["openai", "anthropic"]
+    with pytest.raises(TimeoutError):
+        asyncio.run(client.invoke("p"))
+
+
+def test_a_provider_asked_for_by_name_has_no_fallback():
+    openai, anthropic = DownOpenAI(), FakeAnthropic()
+    client = _client(openai_client=openai, anthropic_client=anthropic)
+    with pytest.raises(ProviderDown):
+        asyncio.run(client.invoke("p", provider="openai"))
+    assert anthropic.calls == []
+
+
+def test_gemini_runs_on_its_own_threads():
+    names: list[str] = []
+
+    class Recording(FakeGemini):
+        def GenerativeModel(self, **kwargs: Any) -> Any:  # noqa: N802 - the SDK's name
+            model = super().GenerativeModel(**kwargs)
+            real = model.generate_content
+
+            def generate_content(prompt: str, **options: Any) -> Any:
+                import threading
+
+                names.append(threading.current_thread().name)
+                return real(prompt, **options)
+
+            model.generate_content = generate_content
+            return model
+
+    asyncio.run(_client(gemini_module=Recording()).invoke("p"))
+    assert names and names[0].startswith("gemini")  # not asyncio.to_thread's default pool
+
+
 def test_config_from_env_and_real_sdk_clients():
     config = LlmConfig.from_env(
         {

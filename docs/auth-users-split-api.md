@@ -204,12 +204,14 @@ The registration saga (proposal 10.1). Each numbered step either succeeds or the
 }
 ```
 
-The tokens are in the body for the mobile app, which has no cookie jar. The web app uses the cookies:
+The tokens are in the body only for a client that isn't a browser: the mobile app. A browser (a request with `Origin` or any `Sec-Fetch-*` header, which a page's script can't remove) gets `"access_token": null, "refresh_token": null`, and the cookies alone, so injected script can't read the refresh token (production-readiness review, AUTH-05):
 
-| Cookie | Path | Max-Age | Flags |
+| Cookie (deployed; `APP_ENV=local`: `access_token`, `refresh_token`) | Path | Max-Age | Flags |
 |---|---|---|---|
-| `access_token` | `/` | 1,800 s (30 min) | `HttpOnly`; `Secure`, `SameSite` and `Domain` from `COOKIE_SECURE`, `COOKIE_SAMESITE` and `COOKIE_DOMAIN` |
-| `refresh_token` | `/api/v1/auth/` | 86,400 s (24 h) | Same |
+| `__Host-access_token` | `/` | 1,800 s (30 min) | `HttpOnly`; `Secure` and `SameSite` from `COOKIE_SECURE` and `COOKIE_SAMESITE`; host-only (no `Domain`), so other subdomains never receive it |
+| `__Secure-refresh_token` | `/api/v1/auth/` | 86,400 s (24 h) | Same |
+
+Browsers accept the prefixed names only with `Secure` (and, for `__Host-`, `Path=/` and no `Domain`), so no other subdomain can set or overwrite them (`backend/common/cookies.py`). Locally the app runs over plain HTTP, where prefixed cookies are dropped, so the names are bare there; outside `APP_ENV=local`, auth refuses to start with `COOKIE_SECURE=false`. On every service, a `POST`, `PUT`, `PATCH` or `DELETE` that carries either cookie is refused with `403 cross_site_request` when its `Origin` isn't one of `PUBLIC_ORIGINS`, or, without an `Origin`, when `Sec-Fetch-Site` shows another site (`common/origin.py`). A request without either header (the mobile app) isn't checked.
 
 The access token carries `sub`, `location`, `role` (`"parent"`), `iss`, `aud`, `iat`, `iat_ms`, `exp` and `type`. The refresh token adds `jti` and `family_id` (proposal 9.2). The client loads the profile with `GET /api/v1/users/me/profile`.
 

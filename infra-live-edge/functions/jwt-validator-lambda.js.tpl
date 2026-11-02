@@ -18,7 +18,7 @@
 //                               static bootstrap origin (local.bootstrap_region
 //                               in ../terraform/cloudfront.tf) unchanged.
 //   LOCATION_AWARE_PUBLIC_PATHS — refresh, logout: an existing session
-//                               (access_token/refresh_token cookie for the
+//                               (__Host-access_token/__Secure-refresh_token cookie for the
 //                               web app, or an Authorization: Bearer header
 //                               for the mobile app, which has no cookie jar
 //                               at all) usually already carries location —
@@ -99,7 +99,11 @@ function audienceMatches(aud) {
   return Array.isArray(aud) ? aud.includes(EXPECTED_AUD) : aud === EXPECTED_AUD
 }
 
-const COOKIE_NAME = 'access_token'
+// The deployed session cookies' names (backend/common/cookies.py, AUTH-05): the
+// prefixes make browsers refuse them from any other subdomain, so a cookie with the
+// bare name is never read.
+const COOKIE_NAME = '__Host-access_token'
+const REFRESH_COOKIE_NAME = '__Secure-refresh_token'
 const CLIENT_LOCATION_HEADER = 'x-client-location'
 
 const PURE_BYPASS_PATHS = ['/api/v1/auth/login', '/api/v1/auth/google', '/api/health']
@@ -247,7 +251,7 @@ function verifyJwt(token, { ignoreExpiry = false } = {}) {
 
 // Best-effort location hint from an existing session, for the PUBLIC_PATHS
 // that have no fresh access_token to route by otherwise. Tries, in order:
-// the access_token cookie, the refresh_token cookie, then the Authorization
+// the access token cookie, the refresh token cookie, then the Authorization
 // Bearer header — the last one matters for the mobile app, which has no
 // cookie jar at all and sends both its access token (on ordinary calls) and
 // its refresh token (specifically on /auth/refresh) as a Bearer header
@@ -259,7 +263,7 @@ function verifyJwt(token, { ignoreExpiry = false } = {}) {
 // failure; callers must treat null as "no hint" and fall back to the static
 // bootstrap origin, never block the request.
 function locationHintFromSession(request, cookies) {
-  const candidates = [cookies[COOKIE_NAME], cookies['refresh_token']]
+  const candidates = [cookies[COOKIE_NAME], cookies[REFRESH_COOKIE_NAME]]
   const authHeader = ((request.headers['authorization'] || [])[0] || {}).value || ''
   if (authHeader.startsWith('Bearer ')) {
     candidates.push(authHeader.slice(7))

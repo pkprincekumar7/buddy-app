@@ -2,8 +2,14 @@
 
 Every sign-in (register, login, Google, refresh) ends here: a token pair, a `sessions` row
 for the refresh token (its `jti`, in a rotation `family_id`), the HttpOnly cookies for the
-web app (the mobile app takes the tokens from the body), and the account's authz entry
-written to Valkey so the first request doesn't miss.
+web app, and the account's authz entry written to Valkey so the first request doesn't miss.
+
+The tokens are in the response body only for a client that isn't a browser, the mobile app
+(common.origin.is_browser_request). A browser gets them as cookies alone, so a script
+injected into the page can't read the refresh token (production-readiness review, AUTH-05).
+The cookies are host-only (no `Domain=`), so other subdomains of the site never receive
+them, and deployed their names carry the `__Host-` / `__Secure-` prefixes, so none can set
+or overwrite them either (common.cookies).
 
 The session is checked once it's written: if the account's `authz_version` moved since the
 caller read it (a logout-all, lock, role change or deletion in between, each of which ends
@@ -26,16 +32,16 @@ from auth.app.deps import error
 from auth.app.runtime import Runtime
 from auth.app.store import AUTH, SESSIONS
 from auth.app.tokens import IssuedTokens
+from common.cookies import ACCESS_COOKIE, REFRESH_COOKIE
 
-ACCESS_COOKIE = "access_token"
-REFRESH_COOKIE = "refresh_token"
 REFRESH_COOKIE_PATH = "/api/v1/auth/"
 
 
 class TokenResponse(BaseModel):
     status: str = "ok"
-    access_token: str
-    refresh_token: str
+    # Set for the mobile app only; a browser gets the tokens as HttpOnly cookies (AUTH-05).
+    access_token: str | None = None
+    refresh_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,11 +52,11 @@ class SignedIn:
 
 def _cookie_options(runtime: Runtime) -> dict[str, Any]:
     settings = runtime.settings
+    # No domain: host-only cookies, never sent to another subdomain (AUTH-05).
     return {
         "httponly": True,
         "secure": settings.cookie_secure,
         "samesite": settings.cookie_samesite,
-        "domain": settings.cookie_domain,
     }
 
 
@@ -83,9 +89,11 @@ async def sign_in(
     response: Response,
     account: Mapping[str, Any],
     *,
+    browser: bool,
     family_id: str | None = None,
 ) -> SignedIn:
-    """Tokens, a session (a new family unless `family_id`), cookies, and the cache entry."""
+    """Tokens, a session (a new family unless `family_id`), cookies, and the cache entry.
+    `browser`: the caller is a browser, so the body leaves the tokens out."""
     user_id, location = account["_id"], account["location"]
     tokens = runtime.issuer.issue(user_id, location, account["role"], family_id)
     await runtime.db[SESSIONS].insert_one(
@@ -109,7 +117,9 @@ async def sign_in(
     set_cookies(runtime, response, tokens)
     # Best effort: a missed write only means the first request fills from auth (9.3).
     await write_entry(runtime.cache, user_id, entry_from_account(account))
-    return SignedIn(
-        TokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token),
-        tokens.jti,
+    body = (
+        TokenResponse()
+        if browser
+        else TokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
     )
+    return SignedIn(body, tokens.jti)

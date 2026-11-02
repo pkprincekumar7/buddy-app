@@ -205,8 +205,8 @@ run "prod_stack_wiring" {
     # Exactly these env var names, in order.
     condition = [for e in jsondecode(module.service["auth"].container_definitions)[0].environment : e.name] == [
       "SERVICE_NAME", "APP_NAME", "APP_ENV", "AWS_REGION", "MONGODB_DB_NAME", "MONGODB_MAX_POOL_SIZE", "REDIS_URL", "REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID",
-      "INTERNAL_DNS_SUFFIX", "INTERNAL_SIGNING_KID", "INTERNAL_PUBLIC_KEYS", "OTEL_EXPORTER_OTLP_ENDPOINT", "LOG_LEVEL",
-      "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "COOKIE_SECURE", "COOKIE_SAMESITE", "COOKIE_DOMAIN",
+      "INTERNAL_DNS_SUFFIX", "INTERNAL_SIGNING_KID", "INTERNAL_PUBLIC_KEYS", "OTEL_EXPORTER_OTLP_ENDPOINT", "LOG_LEVEL", "PUBLIC_ORIGINS",
+      "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "COOKIE_SECURE", "COOKIE_SAMESITE",
       "DELETION_PARTICIPANTS",
     ]
     error_message = "Auth's HTTP container has exactly its env vars."
@@ -476,6 +476,13 @@ run "prod_stack_wiring" {
       aws_cloudwatch_metric_alarm.index_problems[0].threshold == 1
     )
     error_message = "Every runtime but the collector counts its index build problems into one IndexProblems metric, with one alarm (DB-03)."
+  }
+  assert {
+    condition = alltrue([for k, s in local.services : contains(
+      [for e in jsondecode(module.service[k].container_definitions)[0].environment : "${e.name}=${e.value}"],
+      "PUBLIC_ORIGINS=https://superpower.example.com"
+    ) if s.kind != "collector"])
+    error_message = "Every runtime gets the web app's origin, for the cross-site cookie check (AUTH-05)."
   }
 }
 

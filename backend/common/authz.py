@@ -39,10 +39,10 @@ from redis.exceptions import RedisError
 
 from common import permissions
 from common.audit import AuditEvent, AuditLog, route_template, source_ip
+from common.cookies import ACCESS_COOKIE, DEPLOYED_ACCESS_COOKIE
 from common.regions import location_from_claims
 from common.valkey import degraded
 
-ACCESS_COOKIE = "access_token"
 CACHE_PREFIX = "authz:"
 LOCAL_TTL_SECONDS = 30.0
 LOCAL_MAX_ENTRIES = 10_000
@@ -377,8 +377,9 @@ class Authorizer:
 # ── FastAPI dependencies ───────────────────────────────────────────────────────
 
 # Declared so the OpenAPI spec shows how to authenticate (Spectral requires security on
-# every operation); the token itself is read by extract_token.
-_cookie_scheme = APIKeyCookie(name=ACCESS_COOKIE, auto_error=False)
+# every operation), under the deployed name; the token itself is read by extract_token,
+# under this environment's name (common.cookies).
+_cookie_scheme = APIKeyCookie(name=DEPLOYED_ACCESS_COOKIE, auto_error=False)
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 

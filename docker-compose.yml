@@ -208,7 +208,6 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       COOKIE_SECURE: "false"
       COOKIE_SAMESITE: lax
-      COOKIE_DOMAIN: ""
       # Every service that holds user data (common.deletion.PARTICIPANTS).
       DELETION_PARTICIPANTS: users,children,onboarding,discover,grow,transform,release
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-auth-events

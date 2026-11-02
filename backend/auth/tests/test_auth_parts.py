@@ -280,7 +280,6 @@ def _env(mongo_uri: str) -> dict[str, str]:
         "INTERNAL_SIGNING_KID": "a1",
         "INTERNAL_SIGNING_KEY": AUTH_PRIVATE,
         "INTERNAL_PUBLIC_KEYS": "{}",
-        "COOKIE_DOMAIN": " ",
         "REDIS_URL": "redis://localhost:6379",
         "AWS_ENDPOINT_URL": "http://localhost:5050",
     }
@@ -289,11 +288,11 @@ def _env(mongo_uri: str) -> dict[str, str]:
 def test_from_env_builds_every_part(monkeypatch, tmp_path, fake_aws_credentials):
     # Settings read the process environment and a .env in the working directory too.
     monkeypatch.chdir(tmp_path)
-    for name in ("REDIS_URL", "COOKIE_SECURE", "COOKIE_DOMAIN", "AWS_ENDPOINT_URL"):
+    for name in ("REDIS_URL", "COOKIE_SECURE", "AWS_ENDPOINT_URL"):
         monkeypatch.delenv(name, raising=False)
     runtime = Runtime.from_env(_env("mongodb://localhost:27017/?directConnection=true"))
     assert runtime.settings.service_name == "auth" and runtime.cache is not None
-    assert runtime.settings.cookie_domain is None and runtime.settings.cookie_secure is True
+    assert runtime.settings.cookie_secure is True
     assert runtime.limits.prefix == "auth" and runtime.peppers.current == 1
     assert runtime.sns.meta.endpoint_url == "http://localhost:5050"
     asyncio.run(runtime.aclose())

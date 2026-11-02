@@ -74,6 +74,7 @@ SAFE_ENV = {
     "REDIS_URL": "rediss://valkey.example:6379",
     "REDIS_USERNAME": "grow",
     "REDIS_REPLICATION_GROUP_ID": "superpower-stg",
+    "PUBLIC_ORIGINS": "https://superpower-stg.example.com",
 }
 
 
@@ -83,7 +84,12 @@ class _WithEmulator(ServiceSettings):
 
 @pytest.mark.parametrize("app_env", ["stg", "prod"])
 def test_stg_and_prod_start_with_safe_settings(monkeypatch, tmp_path, app_env):
-    for key in ("REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID", "AWS_ENDPOINT_URL"):
+    for key in (
+        "REDIS_USERNAME",
+        "REDIS_REPLICATION_GROUP_ID",
+        "AWS_ENDPOINT_URL",
+        "PUBLIC_ORIGINS",
+    ):
         monkeypatch.delenv(key, raising=False)
     settings = _settings(monkeypatch, tmp_path, APP_ENV=app_env, **SAFE_ENV)
     assert settings.unsafe_settings() == []
@@ -95,10 +101,11 @@ def test_stg_and_prod_start_with_safe_settings(monkeypatch, tmp_path, app_env):
         ({"REDIS_URL": ""}, "REDIS_URL is unset"),
         ({"REDIS_URL": "redis://valkey.example:6379"}, "REDIS_URL must use TLS"),
         ({"REDIS_USERNAME": "", "REDIS_REPLICATION_GROUP_ID": ""}, "REDIS_USERNAME is unset"),
+        ({"PUBLIC_ORIGINS": " "}, "PUBLIC_ORIGINS is unset"),
     ],
 )
 def test_stg_and_prod_refuse_unsafe_settings(monkeypatch, tmp_path, env, message):
-    for key in ("REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID"):
+    for key in ("REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID", "PUBLIC_ORIGINS"):
         monkeypatch.delenv(key, raising=False)
     with pytest.raises(UnsafeSettingsError, match=f"unsafe settings for APP_ENV=prod: .*{message}"):
         _settings(monkeypatch, tmp_path, APP_ENV="prod", **{**SAFE_ENV, **env})

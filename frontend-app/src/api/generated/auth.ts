@@ -33,7 +33,7 @@ export interface paths {
         put?: never;
         /**
          * Register
-         * @description Create a parent account (allow-listed emails only) and its profile, and sign in. Sets the access and refresh token cookies.
+         * @description Create a parent account (allow-listed emails only) and its profile, and sign in. Sets the access and refresh token cookies; the body has the tokens too only for a client that isn't a browser (the mobile app).
          */
         post: operations["register_api_v1_auth_register_post"];
         delete?: never;
@@ -53,7 +53,7 @@ export interface paths {
         put?: never;
         /**
          * Login
-         * @description Sign in with email and password. Sets the access and refresh token cookies.
+         * @description Sign in with email and password. Sets the access and refresh token cookies; the body has the tokens too only for a client that isn't a browser (the mobile app).
          */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
@@ -73,7 +73,7 @@ export interface paths {
         put?: never;
         /**
          * Google
-         * @description Sign in with a Google ID token, creating the account on first use (allow-listed emails only). Sets the access and refresh token cookies.
+         * @description Sign in with a Google ID token, creating the account on first use (allow-listed emails only). Sets the access and refresh token cookies; the body has the tokens too only for a client that isn't a browser (the mobile app).
          */
         post: operations["google_api_v1_auth_google_post"];
         delete?: never;
@@ -524,9 +524,9 @@ export interface components {
              */
             status: string;
             /** Access Token */
-            access_token: string;
+            access_token?: string | null;
             /** Refresh Token */
-            refresh_token: string;
+            refresh_token?: string | null;
         };
         /** ValidationError */
         ValidationError: {

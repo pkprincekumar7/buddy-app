@@ -9,6 +9,14 @@ The SDKs' own retries are off: a generation job already retries a failed call (i
 attempts, common.generation.jobs), so SDK retries on top would multiply the calls one job
 can make, and their cost (production-readiness review, JOB-02).
 
+A call that fails at one provider is tried at the next one configured, in PRIORITY order
+(JOB-04): an OpenAI 429 or outage no longer fails the job while Anthropic or Gemini could
+answer. A provider whose call errored or timed out is then skipped for BREAKER_SECONDS (a
+circuit breaker, per task), so later calls don't wait on it; an unusable answer falls back
+too but doesn't trip it. A provider asked for by name gets no fallback. Gemini's SDK is
+synchronous: its calls run on their own thread pool, not the default one the boto3 calls
+and other `to_thread` work share, so a slow Gemini can't starve them.
+
 The provider SDKs come with the `[generation]` extra; only the workers of discover, grow,
 transform and release get LLM keys.
 """
@@ -20,7 +28,8 @@ import json
 import logging
 import os
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -30,6 +39,12 @@ ProviderName = Literal["openai", "anthropic", "gemini"]
 PRIORITY: tuple[ProviderName, ...] = ("openai", "anthropic", "gemini")
 # Gemini gets its own timeout as well, on top of the SDK's: its call runs in a thread.
 GEMINI_GRACE_SECONDS = 5.0
+# How long a provider that failed is skipped for (JOB-04).
+BREAKER_SECONDS = 60.0
+# Gemini's own threads (its SDK blocks); a call past its timeout keeps one until the SDK's
+# own timeout ends it, so this caps how many a Gemini slowdown can hold.
+GEMINI_THREADS = 8
+_gemini_pool = ThreadPoolExecutor(max_workers=GEMINI_THREADS, thread_name_prefix="gemini")
 
 _logger = logging.getLogger(__name__)
 
@@ -108,10 +123,13 @@ class LlmClient:
         openai_client: Any = None,
         anthropic_client: Any = None,
         gemini_module: Any = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Clients may be passed in (tests); otherwise each is built from its key, if set."""
         self.config = config
         self.circle = circle
+        self.clock = clock
+        self._down_until: dict[ProviderName, float] = {}
         self._openai = openai_client if openai_client is not None else self._build_openai()
         self._anthropic = (
             anthropic_client if anthropic_client is not None else self._build_anthropic()
@@ -162,6 +180,19 @@ class LlmClient:
             "no LLM provider is configured (OPENAI_API_KEY, ANTHROPIC_API_KEY or GEMINI_API_KEY)"
         )
 
+    def candidates(self, preferred: ProviderName | None = None) -> list[ProviderName]:
+        """The providers to try, in order: the one asked for alone, else every configured
+        one in PRIORITY order without those the breaker skips (all of them, in order, if
+        it skips every one: better a call that may fail than none)."""
+        if preferred is not None:
+            return [self.resolve(preferred)]
+        self.resolve()  # LlmConfigError when none is configured
+        configured = [p for p, ok in self.available().items() if ok]
+        configured.sort(key=PRIORITY.index)
+        now = self.clock()
+        healthy = [p for p in configured if now >= self._down_until.get(p, 0.0)]
+        return healthy or configured
+
     async def invoke(
         self,
         prompt: str,
@@ -169,8 +200,31 @@ class LlmClient:
         schema: dict[str, Any] | None = None,
         provider: ProviderName | None = None,
     ) -> LlmResult:
-        """Run one generation and return its JSON object. Logs one `llm_call` line either way."""
-        resolved = self.resolve(provider)
+        """Run one generation and return its JSON object, falling back to the next provider
+        on a failure (JOB-04). Logs one `llm_call` line per provider tried."""
+        *fallbacks, last = self.candidates(provider)
+        for attempt, resolved in enumerate(fallbacks, start=1):
+            try:
+                return await self._invoke_one(resolved, prompt, schema, attempt)
+            except Exception as exc:
+                self._failed(resolved, exc)
+                _logger.warning(
+                    "LLM %s failed (%s); trying the next provider", resolved, type(exc).__name__
+                )
+        try:
+            return await self._invoke_one(last, prompt, schema, len(fallbacks) + 1)
+        except Exception as exc:
+            self._failed(last, exc)
+            raise
+
+    def _failed(self, provider: ProviderName, exc: Exception) -> None:
+        """Trip the breaker for an outage (an error or timeout), not for one unusable answer."""
+        if not isinstance(exc, LlmResponseError):
+            self._down_until[provider] = self.clock() + BREAKER_SECONDS
+
+    async def _invoke_one(
+        self, resolved: ProviderName, prompt: str, schema: dict[str, Any] | None, attempt: int
+    ) -> LlmResult:
         model = self.config.model(resolved)
         started = time.monotonic()
         outcome, result = "error", None
@@ -200,6 +254,7 @@ class LlmClient:
                 "output_tokens": result.output_tokens if result else None,
                 "duration_ms": round((time.monotonic() - started) * 1000),
                 "outcome": outcome,
+                "attempt": attempt,  # >1: a fallback (JOB-04)
             }
             _logger.info(
                 "llm_call circle=%s provider=%s outcome=%s",
@@ -267,9 +322,12 @@ class LlmClient:
                 request_options={"timeout": self.config.timeout_seconds, "retry": None},
             )
 
-        # The Gemini SDK is synchronous; a thread keeps the worker's event loop free.
+        # The Gemini SDK is synchronous: its own threads keep the event loop, and the default
+        # pool the rest of the task's thread work shares, free (JOB-04).
+        loop = asyncio.get_running_loop()
         response = await asyncio.wait_for(
-            asyncio.to_thread(call), self.config.timeout_seconds + GEMINI_GRACE_SECONDS
+            loop.run_in_executor(_gemini_pool, call),
+            self.config.timeout_seconds + GEMINI_GRACE_SECONDS,
         )
         usage = getattr(response, "usage_metadata", None)
         return LlmResult(

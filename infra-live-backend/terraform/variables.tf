@@ -258,7 +258,7 @@ variable "uploads_url_ttl_seconds" {
 }
 
 variable "cookie_domain" {
-  description = "Cookie domain for session cookies (public CloudFront FQDN, derived in workflow)"
+  description = "The public CloudFront FQDN (derived in the workflow): the web app's origin (PUBLIC_ORIGINS, the uploads bucket's CORS)"
   type        = string
 }
 

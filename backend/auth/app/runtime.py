@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import boto3
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pymongo import AsyncMongoClient
 
 from auth.app.audit import AuditTrail, AuthAuthorizer
@@ -34,7 +34,7 @@ from common.events.store import Db
 from common.index_builds import Outcome, prepare_database, stop_index_build
 from common.internal_client import InternalClient, ServiceTokenVerifier, public_keys_from_env
 from common.limiter import RateLimits
-from common.settings_base import ServiceSettings
+from common.settings_base import ServiceSettings, UnsafeSettingsError
 
 SERVICE = "auth"
 
@@ -59,7 +59,6 @@ class AuthSettings(ServiceSettings):
     cookie_samesite: Literal["lax", "strict", "none"] = Field(
         default="lax", validation_alias="COOKIE_SAMESITE"
     )
-    cookie_domain: str | None = Field(default=None, validation_alias="COOKIE_DOMAIN")
     # The worker's own topic and queue (7.2), from Terraform.
     events_topic_arn: str | None = Field(default=None, validation_alias="EVENTS_TOPIC_ARN")
     events_queue_url: str | None = Field(default=None, validation_alias="EVENTS_QUEUE_URL")
@@ -87,10 +86,16 @@ class AuthSettings(ServiceSettings):
     def participants(self) -> list[str]:
         return self.deletion_participants.split(",")
 
-    @field_validator("cookie_domain", mode="before")
-    @classmethod
-    def _blank_domain(cls, value: Any) -> Any:
-        return None if isinstance(value, str) and not value.strip() else value
+    @model_validator(mode="after")
+    def _secure_cookies_when_deployed(self) -> AuthSettings:
+        # Deployed, the cookies carry the __Host-/__Secure- prefixes (common.cookies), which
+        # browsers accept only with Secure: without it, every sign-in would silently fail.
+        if self.app_env != "local" and not self.cookie_secure:
+            raise UnsafeSettingsError(
+                f"COOKIE_SECURE is false for APP_ENV={self.app_env}: browsers would drop "
+                "the __Host-/__Secure- session cookies (only APP_ENV=local may use plain HTTP)"
+            )
+        return self
 
     def unsafe_settings(self) -> list[str]:
         problems = super().unsafe_settings()

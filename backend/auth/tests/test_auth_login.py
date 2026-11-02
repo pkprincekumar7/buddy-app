@@ -8,9 +8,11 @@ from typing import Any
 import httpx
 import pytest
 import redis.asyncio as aioredis
-from auth_testkit import EMAIL, LOCATION, PASSWORD, Running, claims, running
+from auth_testkit import EMAIL, LOCATION, PASSWORD, Running, claims, running, viewer
 
+from auth.app import main, sessions
 from auth.app.store import AUTH, EMAIL_INDEX, SESSIONS
+from common.origin import OriginCheckMiddleware, parse_origins
 
 
 def live(mongo_uri: str, test: Callable[[Running], Awaitable[None]], **options: Any) -> None:
@@ -285,3 +287,93 @@ def test_logout_all_is_limited_to_3_a_minute(mongo_uri):
 def test_the_password_constant_matches_the_policy():
     assert any(c.isdigit() for c in PASSWORD) and any(c.isalpha() for c in PASSWORD)
     assert EMAIL.lower() != EMAIL
+
+
+# ── browsers get cookies, not tokens; cross-site cookie writes refused (AUTH-05) ──
+
+BROWSER = {"Origin": "https://superpower.example.com", "Sec-Fetch-Mode": "cors"}
+
+
+def _set_cookies(response: httpx.Response) -> list[str]:
+    return response.headers.get_list("set-cookie")
+
+
+@pytest.mark.live_service
+def test_a_browser_gets_host_only_cookies_and_no_tokens_in_the_body(mongo_uri):
+    async def test(r: Running) -> None:
+        await _account(r)
+        r.http.cookies.clear()
+        body = {"email": EMAIL, "password": PASSWORD}
+        login = await r.http.post(
+            "/api/v1/auth/login", json=body, headers={**viewer("203.0.113.9"), **BROWSER}
+        )
+        assert login.status_code == 200
+        assert login.json() == {"status": "ok", "access_token": None, "refresh_token": None}
+        cookies = _set_cookies(login)
+        assert {c.split("=")[0] for c in cookies} == {"access_token", "refresh_token"}
+        assert all("httponly" in c.lower() and "domain=" not in c.lower() for c in cookies)
+        # Refresh from the browser: the cookie, and again no tokens in the body.
+        refreshed = await r.http.post("/api/v1/auth/refresh", headers=BROWSER)
+        assert refreshed.status_code == 200
+        assert refreshed.json()["refresh_token"] is None
+        # The mobile app (no browser headers) still gets them in the body.
+        mobile = await r.login(ip="203.0.113.10")
+        assert claims(mobile.json()["refresh_token"])["sub"]
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_cross_site_refresh_with_the_cookie_is_refused(mongo_uri):
+    async def test(r: Running) -> None:
+        await _account(r)
+        guarded = OriginCheckMiddleware(main.app, parse_origins("https://superpower.example.com"))
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=guarded), base_url="http://a"
+        ) as browser:
+            browser.cookies = r.http.cookies  # register's cookies
+            evil = await browser.post(
+                "/api/v1/auth/refresh", headers={"Origin": "https://evil.example.com"}
+            )
+            assert evil.status_code == 403 and _code(evil) == "cross_site_request"
+            ours = await browser.post("/api/v1/auth/refresh", headers=BROWSER)
+            assert ours.status_code == 200
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_deployed_the_cookies_are_prefixed_secure_and_host_only(mongo_uri, monkeypatch):
+    # Outside APP_ENV=local the names are __Host-/__Secure- (common.cookies), which browsers
+    # take only with Secure (and, for __Host-, Path=/ and no Domain).
+    monkeypatch.setattr(sessions, "ACCESS_COOKIE", "__Host-access_token")
+    monkeypatch.setattr(sessions, "REFRESH_COOKIE", "__Secure-refresh_token")
+    monkeypatch.setattr(main, "REFRESH_COOKIE", "__Secure-refresh_token")
+
+    async def test(r: Running) -> None:
+        await _account(r)
+        r.runtime.settings = r.runtime.settings.model_copy(update={"cookie_secure": True})
+        r.http.cookies.clear()
+        body = {"email": EMAIL, "password": PASSWORD}
+        login = await r.http.post(
+            "/api/v1/auth/login", json=body, headers={**viewer("203.0.113.11"), **BROWSER}
+        )
+        cookies = {c.split("=")[0]: c.lower() for c in _set_cookies(login)}
+        assert set(cookies) == {"__Host-access_token", "__Secure-refresh_token"}
+        assert all(
+            "secure" in c and "httponly" in c and "domain=" not in c for c in cookies.values()
+        )
+        assert "path=/;" in cookies["__Host-access_token"]
+        assert "path=/api/v1/auth/" in cookies["__Secure-refresh_token"]
+        # The refresh reads the prefixed cookie (sent by hand: the test client is plain HTTP,
+        # so it holds Secure cookies back).
+        refresh = login.headers.get_list("set-cookie")
+        value = next(c for c in refresh if c.startswith("__Secure-refresh_token="))
+        r.http.cookies.clear()
+        refreshed = await r.http.post(
+            "/api/v1/auth/refresh",
+            headers={**BROWSER, "Cookie": value.split(";")[0]},
+        )
+        assert refreshed.status_code == 200
+
+    live(mongo_uri, test)

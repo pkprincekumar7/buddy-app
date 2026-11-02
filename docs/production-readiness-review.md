@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 34 are done, 32 partly done, 19 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08 and MOB-01 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 36 are done, 32 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08 and MOB-01 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -170,7 +170,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
 | JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | ✅ Done (attempts counted at claim, SDK retries off, failed-jobs alarm per circle) |
 | JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | ✅ Done (hourly limit, output caps, LLM token metrics with an hourly alarm, SSM kill switch) |
-| JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ⬜ Open |
+| JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ✅ Done — next provider on a failure, per-provider breaker, Gemini on its own threads |
 | JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ✅ Done (status routes 300/min; clients back off to 5 s and retry a 429) |
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
 | JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
@@ -179,7 +179,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | 🟡 Family revoked on reuse after the 30 s grace; no atomic consume inside it |
 | AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ✅ Done |
 | AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | ✅ Done (per-account backoff across IPs, bcrypt on its own pool, 72-byte cut made explicit) |
-| AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ⬜ Open |
+| AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ✅ Done — tokens in the body for the mobile app only, host-only cookies, cross-site cookie writes refused |
 | AUTH-06 | 🟡 Medium | Auth | Session-cleanup task can die silently; runs in every region | ⚪ Moot (sessions expire by TTL index; the cleanup task is gone) |
 | AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ✅ Done (unsafe stg/prod settings stop every runtime at startup, exit 1) |
 | PRIV-01 | 🟠 High | Privacy | Plaintext passwords and child PII written to logs | ✅ Done (not logged; 422s carry no submitted values, `backend/common/validation.py`) |
@@ -1276,7 +1276,12 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-04 — No LLM provider fallback 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Only the first configured provider is used (`backend/common/generation/llm.py:143-156`), with no fallback.
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.26.0; `backend/common/generation/llm.py`).
+> - **Fallback.** `LlmClient.invoke` tries every configured provider in `PRIORITY` order (OpenAI, Anthropic, Gemini) until one answers. Each attempt logs its own `llm_call` line, with a new `attempt` field (2 or more means a fallback). A provider asked for by name gets no fallback.
+> - **Breaker.** A provider whose call errored or timed out is skipped for `BREAKER_SECONDS` (60 s, per task), so later calls don't wait on it. An unusable answer (empty, cut off, not JSON) falls back too but doesn't trip it. If every breaker is open, all providers are tried in order rather than none.
+> - **Gemini's threads.** Its synchronous SDK now runs on its own pool (`gemini-*` threads, at most 8), not the default pool that `asyncio.to_thread` work such as the boto3 calls shares. The deprecated `google.generativeai` SDK is unchanged: moving to `google-genai` is a dependency change of its own.
+> - **Tests:** an OpenAI 503 answered by Anthropic, then OpenAI skipped until the breaker closes; a bad answer falling back without tripping it; every provider failing; no fallback when one is named; Gemini on its own threads. `common` is at 100% coverage.
+> - **Cost:** a fallback is one more LLM call for that attempt, at most one per configured provider.
 
 **Where:** `backend/app/services/llm_service.py:105` (`resolve_provider` picks the first configured provider), `:189` (Gemini sync call via `to_thread` on the shared default pool).
 
@@ -1464,7 +1469,14 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-05 — Refresh token returned to web JS; cookie scope; no Origin check 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. The refresh token is still in the response body for every client, cookies still set `Domain=` from `COOKIE_DOMAIN` (`backend/auth/app/sessions.py:34-37,48-53,112`, `services.tf:121`), and there's no Origin check.
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.26.0).
+> - **No tokens in a browser's body.** Register, login, Google and refresh return `access_token`/`refresh_token` only to a client that isn't a browser (`common.origin.is_browser_request`: no `Origin` and no `Sec-Fetch-*`, headers a page's script can't remove). That's the mobile app, which reads them from the body. A browser gets `null`s and the HttpOnly cookies, so injected script can't read the refresh token. There's no new client header to forge, and installed app builds keep working.
+> - **Host-only, prefixed cookies.** The cookies no longer set `Domain=` (`COOKIE_DOMAIN` is gone), so other subdomains never receive them. Deployed, their names are `__Host-access_token` and `__Secure-refresh_token` (`backend/common/cookies.py`). Browsers accept those only with `Secure` (and, for `__Host-`, `Path=/` and no `Domain`), so a sibling subdomain can't set or overwrite them, and a bare-named cookie it plants is never read. That covers auth, `common.authz` and the Lambda@Edge validator. Locally (`APP_ENV=local`, plain HTTP, where prefixed cookies are dropped) the names are bare, and outside local auth refuses to start with `COOKIE_SECURE=false`.
+> - **Origin check.** Every service's public app (`common.serve`) now has `OriginCheckMiddleware`. A `POST`/`PUT`/`PATCH`/`DELETE` carrying the session cookies is refused (`403 cross_site_request`) when its `Origin` isn't in `PUBLIC_ORIGINS`, or, without `Origin`, when `Sec-Fetch-Site` shows another site.
+>   - A request with neither header can't come from a browser page, so it passes. That matters because React Native keeps a cookie jar, so the mobile app may send the cookies too.
+>   - Cookies are parsed as Starlette parses them: a stricter parser stopped at a malformed cookie planted first and missed the session cookie, a bypass caught while testing.
+>   - `PUBLIC_ORIGINS` (`https://<cookie_domain>`) is set on every runtime by `services.tf`, and stg and prod refuse to start without it.
+> - **Tests:** `common/tests/test_origin.py` (16) and `test_cookies.py`; `common.authz` reading only the prefixed access cookie when deployed; in auth a browser login and refresh with no tokens in the body, host-only cookies, the prefixed names with `Secure` and their paths, and a cross-site refresh refused while our own origin's passes; and in the edge validator's tests (41), the prefixed names, with a bare-named cookie ignored. CloudFront's `/api/*` behaviour forwards all viewer headers (AllViewerExceptHostHeader), so `Origin` and `Sec-Fetch-*` reach the services. Local runs (no `PUBLIC_ORIGINS`) don't check.
 
 **Where:** `backend/app/routers/auth.py:296,354,452,654` (`AuthTokenResponse` returns both tokens in the body for **all** clients), `backend/app/auth_utils.py:137,150` (cookies with `Domain=cookie_domain`).
 
@@ -2252,7 +2264,6 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 >   - base images pinned by digest without `apt-get upgrade` (fix 4);
 >   - a registry-to-registry copy that keeps the digest (fixes 5–6, with CI-09). Today the target can store the same image under a new digest after `docker save`/`load`, and promote notes when it does, so the first acceptance criterion holds for content, not always for the digest.
 >   - `promote-live-frontend` still rebuilds for the target, because `VITE_*` values are baked into the bundle, but only from a commit already deployed to stg.
-> - **First promote after this change:** images deployed before it have no marker, so deploy dev or stg once, then promote.
 
 **Where:**
 - `check.yml:562` builds and scans its own image.

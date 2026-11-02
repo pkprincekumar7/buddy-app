@@ -458,14 +458,18 @@ def test_prod_refuses_insecure_cookies_and_partial_deletion():
         "JWT_PRIVATE_KEY": "x", "EMAIL_HMAC_PEPPER": "x" * 32,
         "REDIS_URL": "rediss://valkey:6379", "REDIS_USERNAME": "auth",
         "REDIS_REPLICATION_GROUP_ID": "superpower-prod",
+        "PUBLIC_ORIGINS": "https://superpower.example.com",
     }  # fmt: skip
     assert AuthSettings.model_validate(prod).unsafe_settings() == []
     with pytest.raises(UnsafeSettingsError, match="COOKIE_SECURE is false"):
         AuthSettings.model_validate({**prod, "COOKIE_SECURE": "false"})
     with pytest.raises(UnsafeSettingsError, match="leaves out children, onboarding"):
         AuthSettings.model_validate({**prod, "DELETION_PARTICIPANTS": "users,discover,grow"})
-    # Outside stg and prod, both are allowed (local runs use plain-HTTP cookies).
-    local = AuthSettings.model_validate(
-        {**prod, "APP_ENV": "dev", "COOKIE_SECURE": "false", "DELETION_PARTICIPANTS": "users"}
-    )
-    assert not local.cookie_secure and local.participants == ["users"]
+    # Outside stg and prod, a partial deletion list is allowed; plain-HTTP cookies only
+    # locally, since deployed cookie names need Secure (common.cookies).
+    dev = AuthSettings.model_validate({**prod, "APP_ENV": "dev", "DELETION_PARTICIPANTS": "users"})
+    assert dev.participants == ["users"]
+    local = AuthSettings.model_validate({**prod, "APP_ENV": "local", "COOKIE_SECURE": "false"})
+    assert not local.cookie_secure
+    with pytest.raises(UnsafeSettingsError, match="COOKIE_SECURE is false for APP_ENV=dev"):
+        AuthSettings.model_validate({**prod, "APP_ENV": "dev", "COOKIE_SECURE": "false"})

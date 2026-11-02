@@ -79,6 +79,10 @@ locals {
       { name = "INTERNAL_PUBLIC_KEYS", value = jsonencode(local.internal_public_keys) },
       { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://otel-collector.${local.internal_dns_namespace}:4318" },
       { name = "LOG_LEVEL", value = "INFO" },
+      # The web app's origin: the public apps refuse cross-site writes carrying the session
+      # cookies from anywhere else, and stg and prod refuse to start without it
+      # (common.origin, production-readiness review AUTH-05).
+      { name = "PUBLIC_ORIGINS", value = "https://${var.cookie_domain}" },
     ]
   }
 
@@ -120,7 +124,6 @@ locals {
     auth = concat([
       { name = "COOKIE_SECURE", value = "true" },
       { name = "COOKIE_SAMESITE", value = "lax" },
-      { name = "COOKIE_DOMAIN", value = var.cookie_domain },
     ], local.deletion_environment)
     children  = local.uploads_environment
     transform = local.uploads_environment
