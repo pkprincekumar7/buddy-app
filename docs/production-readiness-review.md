@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 23 are done, 34 partly done, 28 open and 1 moot; DR-01, CI-01, CI-02, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 24 are done, 33 partly done, 28 open and 1 moot; DR-01, CI-01, CI-02, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -163,7 +163,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | ⬜ Open — prod dedicated M10+ planned (build plan 9.1); dev/sbx/stg on M0 by design |
 | DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ⬜ Open |
 | DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ⬜ Open |
-| DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | 🟡 Client options done; job-claim sort and 2 s poll open |
+| DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ✅ Done (claim reads an index in order, jittered idle poll, 30 s socket timeout; connection budget with DB-01) |
 | DB-03 | 🟡 Medium | Database | Index creation at startup in every task | ⬜ Open — every task creates indexes at startup (`runtime.prepare()`) |
 | DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
 | DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Deletes transactional and event-retried; startup has no retry; failover untested |
@@ -1064,7 +1064,15 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### DB-02 — Mongo poll load, non-indexed claim, client defaults 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Client options are done: pool size 5, `appname`, a 5 s server-selection timeout, async PyMongo (`backend/common/settings_base.py:110-117`). Still open: the job claim (`backend/common/generation/jobs.py:230-253`) is an `$or` sorted by `created_at` against the `(location, status, retry_after)` index (`common/models.py:235-238`), so it sorts in memory. Each worker polls every 2 s with no jitter (`grow/app/generation.py:54,333`). There's no socket timeout or `timeoutMS`. Events no longer poll: SQS long-polls, and the outbox relay uses a change stream.
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.22.0).
+> - **Claim index:** the claim's `(location, status, retry_after)` index is now `(location, status, created_at)` (`backend/common/models.py`). The claim (`common/generation/jobs.py`, `claim_filter` + `CLAIM_SORT`) reads it in order and stops at the oldest due job, instead of sorting every due job in memory. Measured locally with 3,000 jobs (about 600 due): 609 keys / 602 documents read before, 6 / 6 after, with the same job returned. `location` stays first, as the Global Cluster plan needs. A live-Mongo test fails if `explain()` ever shows a `SORT` stage again.
+> - **Poll jitter:** an idle worker waits `jobs.idle_wait(poll)`, 2 s ± 25%, so workers started together don't poll together. Used by discover, grow, transform and release.
+> - **Socket timeout:** `ServiceSettings.mongo_client` sets `socketTimeoutMS=30000` alongside pool size 5, `appname` and the 5 s server selection. It's deliberately not the client-wide `timeoutMS`, which would end the outbox relay's change streams. Retries and write concern stay in the Atlas connection string.
+> - **Checked:**
+>   - every suite;
+>   - on the rebuilt local stack, all four services' `jobs` have the new index, and the full journey completed all 9 generation jobs.
+>
+> Local databases also keep the old index until reset (harmless); environments created from now on get only the new one. The connection budget moves to DB-01 with the prod cluster tier.
 
 **Where:** `backend/worker.py:76,110-141,546`, `backend/app/main.py:131`, `backend/app/database.py:103`.
 
