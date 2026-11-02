@@ -109,15 +109,16 @@ register_with_image() {
 }
 
 # live_image CLUSTER SERVICE CONTAINER → the image CONTAINER runs in SERVICE's
-# PRIMARY (live) deployment — what's actually running, not a stored tag.
+# deployment — what's actually running, not a stored tag. Only a finished
+# rollout counts: the service must have one deployment, PRIMARY and COMPLETED.
+# PRIMARY alone means "newest", which mid-rollout may still fail and be rolled
+# back (production-readiness review, CI-14).
 live_image() {
-  local cluster="$1" service="$2" container="$3" td image
-  # Multiple PRIMARY deployments are near-impossible; take the first.
-  # shellcheck disable=SC2016  # backticks are JMESPath literals, not shell
-  td=$(aws ecs describe-services --cluster "$cluster" --services "$service" \
-    --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' --output text | head -n1)
-  if [ -z "$td" ] || [ "$td" = "None" ]; then
-    echo "ERROR: no live (PRIMARY) task definition for $service." >&2
+  local cluster="$1" service="$2" container="$3" info td image
+  info=$(aws ecs describe-services --cluster "$cluster" --services "$service" --query 'services[0]' --output json) || return 1
+  if ! td=$(jq -er '.deployments | select(length == 1) | .[0]
+      | select(.status == "PRIMARY" and .rolloutState == "COMPLETED") | .taskDefinition' <<<"$info" 2>/dev/null); then
+    echo "ERROR: $service isn't settled on one completed deployment (now: $(jq -r '[.deployments[]? | "\(.status)/\(.rolloutState)"] | join(", ") | if . == "" then "none" else . end' <<<"$info")). Promote it once its rollout has finished." >&2
     return 1
   fi
   image=$(aws ecs describe-task-definition --task-definition "$td" \
@@ -127,6 +128,24 @@ live_image() {
     return 1
   fi
   printf '%s\n' "$image"
+}
+
+# same_release IMAGES_JSON... — promote's per-region exports (each a file of
+# [{name, image, image_service}]) must list the same services at the same tags,
+# or the target's regions would get different releases (CI-14). Each file's
+# directory name labels it in the error (promote-images-<region>). The
+# registry part of an image differs per region (ECR is regional), so only the
+# tag is compared: deploy-live-backend pushes one build under one tag everywhere.
+same_release() {
+  local f
+  if jq -se 'map(map({name, tag: (.image | sub("^.*:"; ""))}) | sort_by(.name)) | unique | length == 1' "$@" >/dev/null; then
+    return 0
+  fi
+  echo "ERROR: the source regions don't run the same release, so promote would give the target's regions different images. Deploy one release to every region first:" >&2
+  for f in "$@"; do
+    echo "  $(basename "$(dirname "$f")"): $(jq -r 'sort_by(.name) | map("\(.name)=\(.image | sub("^.*:"; ""))") | join(", ")' "$f")" >&2
+  done
+  return 1
 }
 
 # wait_stable CLUSTER SERVICE DEPLOYMENT_ID [ATTEMPTS] [INTERVAL] — poll until

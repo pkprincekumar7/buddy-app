@@ -110,8 +110,33 @@ if out=$(register_with_image superpower-backend-prod nope repo:new 2>&1); then f
 
 # -- live_image ----------------------------------------------------------------
 cp "$FAKE/td-superpower-backend-prod.json" "$FAKE/td-live.json"
+LIVE='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"COMPLETED","taskDefinition":"arn:td:7"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
+reset_polls; printf '%s\n' "$LIVE" > "$FAKE/states"
 check "live image of a container" "$(live_image cluster superpower-backend-prod backend)" "repo:old"
+grep -q -- '--task-definition arn:td:7' "$FAKE/calls" && ok "read from the completed deployment's task definition" || fail "reads the completed deployment's task definition"
 if live_image cluster superpower-backend-prod nope >/dev/null 2>&1; then fail "live image of a missing container is an error"; else ok "live image of a missing container is an error"; fi
+# CI-14: only a finished rollout is promoted.
+for state in ROLLING FAILED ROLLING_BACK; do
+  reset_polls; printf '%s\n' "${!state}" > "$FAKE/states"
+  if out=$(live_image cluster superpower-backend-prod backend 2>&1); then fail "a $state source is refused"; else
+    [[ "$out" == *"isn't settled on one completed deployment"* ]] && ok "a $state source is refused" || fail "$state message" "$out"; fi
+done
+reset_polls; printf '%s\n' '{"deployments":[]}' > "$FAKE/states"
+if out=$(live_image cluster superpower-backend-prod backend 2>&1); then fail "no deployment is refused"; else
+  [[ "$out" == *"(now: none)"* ]] && ok "no deployment is refused, saying so" || fail "no deployment message" "$out"; fi
+
+# -- same_release --------------------------------------------------------------
+mkdir -p "$WORK/rel/promote-images-ap-south-1" "$WORK/rel/promote-images-eu-west-1"
+A="$WORK/rel/promote-images-ap-south-1/images.json"; E="$WORK/rel/promote-images-eu-west-1/images.json"
+echo '[{"name":"users","image":"1.dkr.ecr.ap-south-1.amazonaws.com/sp/users:abc","image_service":"users"},{"name":"shared","image":"1.dkr.ecr.ap-south-1.amazonaws.com/sp/shared:abc","image_service":"shared"}]' > "$A"
+echo '[{"name":"shared","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/shared:abc","image_service":"shared"},{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:abc","image_service":"users"}]' > "$E"
+same_release "$A" "$E" && ok "the same tags in every region pass (registry and order aside)" || fail "matching regions pass"
+same_release "$A" && ok "one region passes" || fail "one region passes"
+echo '[{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:def","image_service":"users"},{"name":"shared","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/shared:abc","image_service":"shared"}]' > "$E"
+if out=$(same_release "$A" "$E" 2>&1); then fail "a different tag is refused"; else
+  [[ "$out" == *"promote-images-eu-west-1: shared=abc, users=def"* ]] && ok "a different tag is refused, naming each region's tags" || fail "different tag message" "$out"; fi
+echo '[{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:abc","image_service":"users"}]' > "$E"
+if same_release "$A" "$E" >/dev/null 2>&1; then fail "a missing service is refused"; else ok "a service missing in one region is refused"; fi
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"

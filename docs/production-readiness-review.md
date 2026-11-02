@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 30 are done, 31 partly done, 24 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 31 are done, 31 partly done, 23 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -216,7 +216,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
 | CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | 🟡 Build (`npm ci --ignore-scripts`) before credentials; the two-job split (drops `id-token` from the build) ⏸ deferred |
-| CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ⬜ Open |
+| CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ✅ Done — only a single COMPLETED deployment is promoted; source regions must match |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
 | CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | 🟡 Every `check.yml` job has a timeout; the other 12 workflows have none |
 | CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | 🟡 (d) done, (f) moot; (a), (b), (c), (e) open; (g) now three environment-bound jobs |
@@ -2487,7 +2487,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-14 — Promote reads PRIMARY even while it's still rolling out 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `live_image` reads the PRIMARY deployment with no `COMPLETED` check (`scripts/ecs-services.sh:113-118`). Each region exports its own image (`promote-live-backend.yml:112`).
+> 🔄 **Current code (2026-11-02):** ✅ Done. `live_image` (`scripts/ecs-services.sh`) promotes only a service with exactly one deployment that is `PRIMARY` and `COMPLETED`, so a run mid-rollout or mid-rollback fails, naming the deployment states. Each export also uploads its `images.json`, and a new `same_release` job (no environment) compares them before anything is pushed: every source region must list the same services at the same tags, or promote stops and prints each region's tags. Tags are compared rather than digests, because deploy-live-backend pushes one build under one tag to every region. Promoting by a digest recorded at deploy time is still CI-03. Tests: 10 new cases in `scripts/ecs-services.test.sh`, plus a dry run of the comparison step.
 
 **Where:** `promote-live-backend.yml:200-203` (``deployments[?status==`PRIMARY`]``). The comment at `:179-182` claims this is the stable image.
 

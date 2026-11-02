@@ -148,8 +148,9 @@ jobs:
 
       # -------------------------------------------------------------------------
       # Read the image each selected service is running RIGHT NOW in the
-      # source (its PRIMARY deployment's task definition) — promote exactly
-      # what is live, not a tag that was built but never reached steady state.
+      # source — promote exactly what is live, not a tag that was built but
+      # never reached steady state. A service still rolling out (or rolling
+      # back) stops the run: only one COMPLETED deployment counts (CI-14).
       # Services come from the source's ecs_services list (terraform-live-backend,
       # services.tf); the collector (a pinned image Terraform sets) isn't
       # promoted. Helpers: scripts/ecs-services.sh.
@@ -207,6 +208,46 @@ jobs:
           # A "Re-run all jobs" uploads under the same name in the same run.
           overwrite: true
 
+      # The image list alone, for same_release to compare without downloading
+      # every region's images.
+      - name: Upload the image list
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promote-images-${{ matrix.aws_region }}
+          path: promote/images.json
+          retention-days: 1
+          overwrite: true
+
+  # -------------------------------------------------------------------------
+  # Every source region must run the same release (the same tag for each
+  # service), or the target's regions would get different images (CI-14).
+  # Nothing is pushed or rolled out unless they match.
+  # -------------------------------------------------------------------------
+  same_release:
+    name: Check Source Regions Match
+    needs: export
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Each artifact lands in its own directory, images/promote-images-<region>/.
+      - name: Download the image lists
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: promote-images-*
+          path: images/
+
+      - name: Compare the regions
+        run: |
+          set -euo pipefail
+          source scripts/ecs-services.sh
+          LISTS=(images/*/images.json)
+          same_release "${LISTS[@]}"
+          echo "All ${#LISTS[@]} source region(s) run the same release:"
+          jq -r 'sort_by(.name)[] | "  \(.name): \(.image | sub("^.*:"; ""))"' "${LISTS[0]}"
+
   # -------------------------------------------------------------------------
   # promote runs in the TARGET environment once export succeeds: it pushes
   # the exported image(s) into the target's own ECR (same tag), then rolls
@@ -214,7 +255,7 @@ jobs:
   # -------------------------------------------------------------------------
   promote:
     name: Promote Live Backend (${{ matrix.aws_region }})
-    needs: export
+    needs: [export, same_release]
     runs-on: ubuntu-latest
     # One parallel instance per selected region. fail-fast: false — an
     # in-flight rollout in one region must never be cancelled just
