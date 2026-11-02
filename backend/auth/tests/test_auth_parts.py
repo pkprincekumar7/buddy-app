@@ -236,7 +236,7 @@ def test_the_throttle_counts_failures_and_clears_on_success():
     asyncio.run(main())
 
 
-def test_the_throttle_falls_back_per_task_and_retries_valkey():
+def test_the_throttle_falls_back_per_task_and_retries_valkey(caplog):
     class Broken:
         calls = 0
 
@@ -260,6 +260,9 @@ def test_the_throttle_falls_back_per_task_and_retries_valkey():
         assert Broken.calls == 2
 
     asyncio.run(main())
+    assert [getattr(r, "valkey_degraded", None) for r in caplog.records].count(
+        "login_throttle"
+    ) >= 1  # APP-04
     assert LoginThrottle("redis://localhost:6390")._primary is not None
 
 

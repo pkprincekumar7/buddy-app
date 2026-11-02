@@ -703,3 +703,52 @@ resource "aws_cloudwatch_metric_alarm" "no_tasks" {
     Name = "${var.app_name}-${each.key}-no-tasks-${var.environment}"
   }
 }
+
+# APP-04: a runtime that can't reach Valkey falls back to counting its rate limits,
+# login throttle and LLM limit per task (as many times looser as there are tasks) and
+# asks auth for every authz check. Each fallback logs a line with a top-level
+# valkey_degraded field (common.valkey.degraded); every runtime but the collector
+# counts them into one metric, in every environment.
+locals {
+  valkey_clients = { for k, s in local.services : k => s if s.kind != "collector" }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "valkey_degraded" {
+  for_each = local.valkey_clients
+
+  name           = "${var.app_name}-${each.key}-valkey-degraded-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service[each.key].name
+  pattern        = "{ $.valkey_degraded = * }"
+
+  metric_transformation {
+    name          = "ValkeyDegraded"
+    namespace     = "Superpower/valkey"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Two 5-minute periods in a row, so one blip (a failover, a reconnect) doesn't alarm.
+# While Valkey stays unreachable, each limiter logs again every 30 s per task.
+resource "aws_cloudwatch_metric_alarm" "valkey_degraded" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-valkey-degraded-${var.environment}"
+  alarm_description   = "Runtimes can't reach Valkey for 10 minutes: rate limits, the login throttle and the LLM hourly limit are counted per task (looser by the number of tasks) and authz checks go to auth. Check the Valkey alarms and the services' 'Valkey unreachable' log lines (the valkey_degraded field names what fell back)."
+  namespace           = "Superpower/valkey"
+  metric_name         = "ValkeyDegraded"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-valkey-degraded-${var.environment}"
+  }
+}

@@ -411,7 +411,9 @@ jobs:
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # validate inits every stack and module (CI-15); the provider cache below cuts
+    # the repeat AWS provider downloads.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -428,22 +430,46 @@ jobs:
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
 
+      # Shared by the inits below. Terraform reuses a cached provider only where the
+      # lock file has its Linux hash (the stacks do); elsewhere it downloads it again.
+      - name: Share the Terraform provider cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/tf-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tf-plugin-cache" >> "$GITHUB_ENV"
+
+      # A misspelled argument or attribute, a wrong type or a missing reference fails
+      # here (CI-15), not at plan time in an environment. -backend=false: no state, no
+      # credentials; the committed lock files pick the provider versions.
+      - name: Terraform validate (every stack and module)
+        run: |
+          for d in infra-live-*/terraform/ modules/*/; do
+            echo "── terraform validate $d"
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate -no-color)
+          done
+
       - name: Set up TFLint
         uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
         with:
           tflint_version: v0.62.1
 
+      # The plugins .tflint.hcl names (the AWS ruleset, CI-15), at their pinned versions.
+      # The token only raises GitHub's API rate limit for the download.
+      - name: Install TFLint plugins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+
       - name: TFLint (infra-live-backend)
-        run: tflint --chdir=infra-live-backend/terraform
+        run: tflint --chdir=infra-live-backend/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       - name: TFLint (infra-live-edge)
-        run: tflint --chdir=infra-live-edge/terraform
+        run: tflint --chdir=infra-live-edge/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       - name: TFLint (infra-live-frontend)
-        run: tflint --chdir=infra-live-frontend/terraform
+        run: tflint --chdir=infra-live-frontend/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       - name: TFLint (infra-live-scheduler)
-        run: tflint --chdir=infra-live-scheduler/terraform
+        run: tflint --chdir=infra-live-scheduler/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       # Shared modules (TF-01) — linted on their own as well as through the
       # stacks that call them.
@@ -451,7 +477,7 @@ jobs:
         run: |
           for m in modules/*/; do
             echo "── tflint $m"
-            tflint --chdir="$m"
+            tflint --chdir="$m" --config="$GITHUB_WORKSPACE/.tflint.hcl"
           done
 
       # terraform test against a mock AWS provider: no credentials, nothing is

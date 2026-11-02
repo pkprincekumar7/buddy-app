@@ -453,6 +453,18 @@ run "prod_stack_wiring" {
     )])
     error_message = "The regional logging bucket refuses plain HTTP, on the bucket and its objects (TF-05)."
   }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_log_metric_filter.valkey_degraded)) == toset([for k, s in local.services : k if s.kind != "collector"]) &&
+      alltrue([for k, f in aws_cloudwatch_log_metric_filter.valkey_degraded : (
+        f.log_group_name == aws_cloudwatch_log_group.service[k].name &&
+        f.metric_transformation[0].name == "ValkeyDegraded" && f.metric_transformation[0].namespace == "Superpower/valkey"
+      )]) &&
+      aws_cloudwatch_metric_alarm.valkey_degraded[0].metric_name == "ValkeyDegraded" &&
+      aws_cloudwatch_metric_alarm.valkey_degraded[0].evaluation_periods == 2
+    )
+    error_message = "Every runtime but the collector counts its Valkey fallbacks into one ValkeyDegraded metric, with one alarm (APP-04)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -497,8 +509,8 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     error_message = "Dev: no Valkey or ALB alarms."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) == 0
-    error_message = "Dev: no generation or runtime alarms."
+    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) + length(aws_cloudwatch_metric_alarm.valkey_degraded) == 0
+    error_message = "Dev: no generation, runtime or Valkey-fallback alarms."
   }
   assert {
     condition     = length(aws_cloudwatch_log_metric_filter.llm_tokens) == 2 * length(local.generating_services)

@@ -156,8 +156,9 @@ brew install shellcheck   # optional
 | `backend/openapi/<service>.json` up to date ⁴ | `tools/export-openapi.py --service` | Per HTTP service — exports the spec from the app (no running server needed); if the committed copy differs, writes the fresh one and fails so you can review and commit it |
 | spectral (`<service>`) ⁴ | spectral (via `frontend/node_modules/.bin/`) | Per HTTP service — lints `backend/openapi/<service>.json` against `.spectral.yaml` (errors fail: security schemes, unique `operationId`) |
 | terraform fmt check ¹ | terraform | Whole repo — formatting check (`-check -recursive`) |
+| terraform validate ¹ | terraform | Every `infra-live-*/terraform/` and `modules/*/` (`init -backend=false`): misspelled arguments, wrong types, missing references |
 | terraform test ¹ | terraform | Each `modules/*/` and `infra-live-backend/terraform/`, against a mock AWS provider |
-| tflint ¹ | tflint | `infra-live-backend`, `infra-live-edge`, `infra-live-frontend`, `infra-live-scheduler` and each `modules/*/` — deprecated syntax, wrong types, best-practice violations |
+| tflint ¹ | tflint | `infra-live-backend`, `infra-live-edge`, `infra-live-frontend`, `infra-live-scheduler` and each `modules/*/` — deprecated syntax, wrong types, best-practice violations, and the AWS ruleset's checks (config: `.tflint.hcl`; `check.sh` runs `tflint --init` first, which downloads the plugin once, about 17 MB) |
 
 ¹ Required — `check.sh` fails with an install hint if `terraform` / `tflint` is not found in `PATH`.
 ² Required — `check.sh` fails with an install hint if the respective tool (`gitleaks` or `hadolint`) is not found in `PATH`.

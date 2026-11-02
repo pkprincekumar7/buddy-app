@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 32 are done, 31 partly done, 22 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 34 are done, 30 partly done, 21 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -152,7 +152,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path), SDK retries off; an overall time budget open |
-| APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | 🟡 Latch fixed (Valkey retried after 30 s); degraded metric and alarm open |
+| APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ✅ Done — Valkey retried after 30 s; `ValkeyDegraded` metric and alarm |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ✅ Done (rate limits and the login throttle count through `limits.aio`) |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ✅ Done (workers finish the job in hand on SIGTERM, get `llm_timeout_seconds` + 30 s to stop, and have a heartbeat health check) |
 | APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | 🟡 Size checked after upload, orphan sweep, replaced objects deleted; no S3-side size cap |
@@ -217,7 +217,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | 🟡 Build (`npm ci --ignore-scripts`) before credentials; the two-job split (drops `id-token` from the build) ⏸ deferred |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ✅ Done — only a single COMPLETED deployment is promoted; source regions must match |
-| CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
+| CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ✅ Done — `terraform validate` on every stack and module; tflint with the AWS ruleset |
 | CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ✅ Done — every job in every workflow has a timeout; recovery runbook |
 | CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | 🟡 (d) done, (f) moot; (a), (b), (c), (e) open; (g) now three environment-bound jobs |
 | DOC-01 | 🟢 Low | Docs | Documentation drift | 🟡 Several fixed; five drifts remain (see the note) |
@@ -750,7 +750,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-04 — LLM limiter's Redis init latch is permanent 🟡 (new in v2; corrected in v3)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The latch is fixed: Valkey is retried after 30 s (`backend/common/generation/llm_limit.py:57,67,82`, `backend/common/limiter.py:55-69`). There's no `RedisDegraded` metric or alarm yet.
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.24.0). The latch is fixed: every Valkey user retries Valkey after 30 s (`backend/common/generation/llm_limit.py`, `backend/common/limiter.py`, `backend/auth/app/throttle.py`), and `common/tests/test_ops.py` brings Valkey back and sees the limits counted there again. Every fallback's log line now has a top-level `valkey_degraded` field (`common.valkey.degraded`) naming what fell back: `rate_limits`, `llm_limit`, `login_throttle` or `authz_cache`. In the backend stack, a log metric filter on every runtime but the collector counts those lines into one metric, `Superpower/valkey` `ValkeyDegraded`, in every environment. The `valkey-degraded` alarm (where `enable_all_alarms`, so stg and prod) fires on two 5-minute periods in a row with any, so a single failover blip doesn't alarm. Tests: the four fallback tests assert the field, and the stack test asserts the filters and the alarm. The socket timeout stays 2 s: with the 30-second back-off, only the first request after Valkey goes away waits for it.
 
 > v3 correction: v2 blamed slowapi. slowapi actually **recovers on its own**: `extension.py:599-605` re-probes with 2ⁿ-second backoff and clears `_storage_dead`. The middleware probes on non-decorated requests for `limiter`, and the decorated `refresh`/`logout` routes recover `user_limiter`. The `_hit()` latch is only temporary.
 
@@ -2506,7 +2506,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-15 — Terraform CI checks thinner than documented 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `check.yml` has no `terraform validate` step, and there's no `.tflint.hcl` anywhere.
+> 🔄 **Current code (2026-11-02):** ✅ Done. `check.yml`'s Terraform Lint job and `check.sh` now run `terraform init -backend=false` and `terraform validate` on all four stacks and five modules, with a shared provider cache in CI and the job timeout raised to 20 minutes. A repo-root `.tflint.hcl` enables the AWS ruleset (`tflint-ruleset-aws` 0.49.0, pinned) next to the recommended Terraform preset. Every tflint run passes it with `--config`, after `tflint --init`. All nine directories pass both. On a scratch config, validate refused a misspelled argument ("Unsupported argument") and tflint refused an invalid ElastiCache node type. `docs/ci-cd.md` and `docs/code-quality.md` list the checks. Not done: `deep_check` (needs AWS credentials, which Check doesn't have), and the PR plan, which stays with the deferred CI-02.
 
 **Where:** `check.yml` (terraform-lint job): no `terraform validate`; `tflint` runs with no `.tflint.hcl` and no AWS ruleset. `docs/ci-cd.md` overstates the coverage.
 

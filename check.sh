@@ -525,6 +525,13 @@ TERRAFORM=""; TFLINT=""
 if require_tool terraform TERRAFORM "brew install terraform"; then
   run "terraform fmt check" \
       bash -c "cd '$ROOT' && '$TERRAFORM' fmt -check -recursive"
+  # Every stack and module type-checks (CI-15): a misspelled argument or attribute fails
+  # here rather than at plan time in an environment.
+  for d in "$ROOT"/infra-live-*/terraform/ "$ROOT"/modules/*/; do
+    name="${d#"$ROOT/"}"
+    run "terraform validate (${name%/})" \
+        bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' validate -no-color"
+  done
   # Mock AWS provider — no credentials, nothing created (TF-01).
   for d in "$ROOT"/modules/*/ "$ROOT/infra-live-backend/terraform/"; do
     name="${d#"$ROOT/"}"
@@ -534,17 +541,22 @@ if require_tool terraform TERRAFORM "brew install terraform"; then
 fi
 
 if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
+  # One config for every run (.tflint.hcl: the AWS ruleset, CI-15). --init installs its
+  # plugin into ~/.tflint.d the first time (about 17 MB from GitHub); later runs find it.
+  TFLINT_CONFIG="$ROOT/.tflint.hcl"
+  run "tflint plugins (.tflint.hcl)" \
+      bash -c "'$TFLINT' --init --config='$TFLINT_CONFIG'"
   run "tflint (infra-live-backend)" \
-      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-backend/terraform'"
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-backend/terraform' --config='$TFLINT_CONFIG'"
   run "tflint (infra-live-edge)" \
-      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-edge/terraform'"
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-edge/terraform' --config='$TFLINT_CONFIG'"
   run "tflint (infra-live-frontend)" \
-      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-frontend/terraform'"
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-frontend/terraform' --config='$TFLINT_CONFIG'"
   run "tflint (infra-live-scheduler)" \
-      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-scheduler/terraform'"
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-scheduler/terraform' --config='$TFLINT_CONFIG'"
   for m in "$ROOT"/modules/*/; do
     name="${m#"$ROOT/"}"
-    run "tflint (${name%/})" bash -c "'$TFLINT' --chdir='$m'"
+    run "tflint (${name%/})" bash -c "'$TFLINT' --chdir='$m' --config='$TFLINT_CONFIG'"
   done
 fi
 

@@ -16,6 +16,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from common.valkey import degraded
+
 WINDOW_SECONDS = 3600
 DEFAULT_LIMIT = 200  # today's LLM_HOURLY_LIMIT
 RETRY_PRIMARY_AFTER_SECONDS = 30.0
@@ -81,7 +83,9 @@ class LlmHourlyLimit:
             except Exception as exc:
                 self._primary_down_until = self.monotonic() + RETRY_PRIMARY_AFTER_SECONDS
                 _logger.warning(
-                    "LLM limit: Valkey unreachable (%s); counting per task", type(exc).__name__
+                    "LLM limit: Valkey unreachable (%s); counting per task",
+                    type(exc).__name__,
+                    extra=degraded("llm_limit"),
                 )
         calls = self._memory.setdefault(user_id, deque())
         while calls and calls[0] <= now - self.window:
@@ -100,7 +104,9 @@ class LlmHourlyLimit:
                 return
             except Exception as exc:
                 _logger.warning(
-                    "LLM limit: Valkey unreachable (%s); nothing given back", type(exc).__name__
+                    "LLM limit: Valkey unreachable (%s); nothing given back",
+                    type(exc).__name__,
+                    extra=degraded("llm_limit"),
                 )
                 return
         calls = self._memory.get(user_id)

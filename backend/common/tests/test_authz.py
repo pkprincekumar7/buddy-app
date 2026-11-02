@@ -361,9 +361,14 @@ def test_a_miss_with_auth_down_is_503(client, auth):
     assert response.headers["retry-after"] == "5"
 
 
-def test_valkey_down_asks_auth_and_keeps_the_answer_for_30_seconds(client, cache, auth, clock):
+def test_valkey_down_asks_auth_and_keeps_the_answer_for_30_seconds(
+    client, cache, auth, clock, caplog
+):
     cache.down = True
     assert call(client, "/me").status_code == 200
+    assert [getattr(r, "valkey_degraded", None) for r in caplog.records].count(
+        "authz_cache"
+    ) >= 1  # APP-04
     assert call(client, "/me").status_code == 200
     assert auth.calls == [USER]  # one internal call for the burst
 

@@ -234,11 +234,14 @@ def test_the_limit_counts_per_task_without_valkey():
     assert asyncio.run(limit.take("u"))  # the window slid
 
 
-def test_valkey_down_falls_back_then_retries():
+def test_valkey_down_falls_back_then_retries(caplog):
     clock, mono = Clock(), Clock()
     limit = LlmHourlyLimit(DownRedis(), limit=1, clock=clock, monotonic=mono)
     assert asyncio.run(limit.take("u"))
     assert not asyncio.run(limit.take("u"))  # counted in process while Valkey is down
+    assert [getattr(r, "valkey_degraded", None) for r in caplog.records].count(
+        "llm_limit"
+    ) >= 1  # APP-04
 
 
 def test_give_back_undoes_one_take():

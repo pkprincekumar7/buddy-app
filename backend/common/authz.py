@@ -40,6 +40,7 @@ from redis.exceptions import RedisError
 from common import permissions
 from common.audit import AuditEvent, AuditLog, route_template, source_ip
 from common.regions import location_from_claims
+from common.valkey import degraded
 
 ACCESS_COOKIE = "access_token"
 CACHE_PREFIX = "authz:"
@@ -270,7 +271,11 @@ class Authorizer:
         try:
             raw = await self.cache.get(CACHE_PREFIX + user_id)
         except (RedisError, OSError, TimeoutError):
-            _logger.warning("authz cache unreachable; asking auth directly", exc_info=True)
+            _logger.warning(
+                "authz cache unreachable; asking auth directly",
+                exc_info=True,
+                extra=degraded("authz_cache"),
+            )
             return await self._entry_without_cache(user_id)
         if raw is not None:
             try:

@@ -32,6 +32,7 @@ from limits.aio.strategies import FixedWindowRateLimiter
 
 from common.audit import route_template, source_ip
 from common.authz import Caller, current_caller
+from common.valkey import degraded
 
 RETRY_PRIMARY_AFTER_SECONDS = 30.0
 
@@ -73,7 +74,9 @@ class RateLimits:
             except Exception as exc:
                 self._primary_down_until = self.clock() + RETRY_PRIMARY_AFTER_SECONDS
                 _logger.warning(
-                    "rate limits: Valkey unreachable (%s); counting per task", type(exc).__name__
+                    "rate limits: Valkey unreachable (%s); counting per task",
+                    type(exc).__name__,
+                    extra=degraded("rate_limits"),
                 )
         return await self._memory.hit(item, self.prefix, *identifiers)
 

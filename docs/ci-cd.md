@@ -71,11 +71,13 @@ The install step runs `pip install -r requirements-dev.txt -r requirements-lint.
 | Step | Tool | What it checks |
 |---|---|---|
 | `terraform fmt -check -recursive` | Terraform 1.16.4 | Formatting across all four infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`) — fails if any `.tf` file is unformatted |
-| `tflint (infra-live-backend)` | tflint 0.62.1 | Deprecated syntax, unused variables, wrong argument types and best-practice violations in backend infra |
-| `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
-| `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
-| `tflint (infra-live-scheduler)` | tflint 0.62.1 | Same for scheduler infra (EventBridge Scheduler) |
-| `tflint (modules)` | tflint 0.62.1 | Each shared module under `modules/` on its own |
+| `terraform validate` | Terraform 1.16.4 | Every stack and module (`init -backend=false`, no credentials): misspelled arguments or attributes, wrong types, missing references (CI-15) |
+| `tflint --init` | tflint 0.62.1 | Installs the plugins [`.tflint.hcl`](../.tflint.hcl) names: the AWS ruleset (`tflint-ruleset-aws` 0.49.0) |
+| `tflint (infra-live-backend)` | tflint 0.62.1 + AWS ruleset | Deprecated syntax, unused variables, wrong argument types and best-practice violations, plus AWS values Terraform can't check itself (invalid instance and node types, engine versions, enum values) in backend infra |
+| `tflint (infra-live-edge)` | tflint 0.62.1 + AWS ruleset | Same for edge infra (CloudFront / WAF / DNS) |
+| `tflint (infra-live-frontend)` | tflint 0.62.1 + AWS ruleset | Same for frontend infra (S3 bucket policy) |
+| `tflint (infra-live-scheduler)` | tflint 0.62.1 + AWS ruleset | Same for scheduler infra (EventBridge Scheduler) |
+| `tflint (modules)` | tflint 0.62.1 + AWS ruleset | Each shared module under `modules/` on its own |
 | `terraform test` | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, against a mock AWS provider (no credentials, nothing created) |
 
 ### `lambda-edge-test` (Node.js 22)

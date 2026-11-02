@@ -495,7 +495,7 @@ class SlowStorage(MemoryStorage):
         return await super().incr(*args, **kwargs)
 
 
-def test_limits_count_in_valkey_then_per_task_while_it_is_down():
+def test_limits_count_in_valkey_then_per_task_while_it_is_down(caplog):
     async def main() -> None:
         storage, clock = FlakyStorage(), Clock()
         limits = RateLimits(None, prefix="t", primary=storage, clock=clock)
@@ -504,6 +504,9 @@ def test_limits_count_in_valkey_then_per_task_while_it_is_down():
 
         storage.down = True
         assert await limits.allow(item, "k2")  # counted in process now
+        assert [getattr(r, "valkey_degraded", None) for r in caplog.records].count(
+            "rate_limits"
+        ) >= 1  # APP-04
         storage.down = False
         # Still in process: 30 s not up.
         assert [await limits.allow(item, "k2") for _ in range(2)] == [True, False]

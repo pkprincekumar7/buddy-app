@@ -28,6 +28,16 @@ TOKEN_SECONDS = 900  # ElastiCache's maximum
 REUSE_SECONDS = 600  # well inside it, so a connection never starts with a token about to lapse
 
 
+def degraded(component: str) -> dict[str, str]:
+    """The `extra=` for the log line a Valkey fallback writes when it can't reach Valkey: a
+    top-level `valkey_degraded` field naming what fell back (rate_limits, llm_limit,
+    login_throttle, authz_cache). The backend stack counts those lines into the
+    ValkeyDegraded metric and alarms when it keeps happening (production-readiness review,
+    APP-04): limits counted per task are as many times looser as there are tasks.
+    """
+    return {"valkey_degraded": component}
+
+
 class ElastiCacheIAMProvider(CredentialProvider):
     """`(user, token)` for redis-py; the token comes from the task role's credentials."""
 

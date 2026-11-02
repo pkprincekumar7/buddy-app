@@ -24,6 +24,8 @@ from limits import RateLimitItem, parse
 from limits.aio.storage import MemoryStorage, RedisStorage, Storage
 from limits.aio.strategies import FixedWindowRateLimiter
 
+from common.valkey import degraded
+
 FAILURES = parse("5/15minutes")
 # Across every IP (production-readiness review, AUTH-04): after this many failures for one
 # email in the window, its logins slow to ACCOUNT_SLOWED, from any address, until the
@@ -74,6 +76,7 @@ class LoginThrottle:
                 _logger.warning(
                     "login throttle: Valkey unreachable (%s); counting per task",
                     type(exc).__name__,
+                    extra=degraded("login_throttle"),
                 )
         return bool(await getattr(self._memory, method)(item, *ids))
 
