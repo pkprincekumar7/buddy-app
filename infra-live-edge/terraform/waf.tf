@@ -10,7 +10,7 @@
 #   15 — Body size: 8 KB, except the routes that accept more (local.large_body_paths)
 #   20 — AWS Managed: Known Bad Inputs
 #   30 — AWS Managed: Amazon IP Reputation List (known malicious IPs)
-#   40 — Rate limit: 1 000 requests / 5 min per IP (blocks sustained abusers)
+#   40 — Rate limit: 3 000 API requests / 5 min per IP (blocks sustained abusers)
 # ---------------------------------------------------------------------------
 
 locals {
@@ -23,6 +23,14 @@ locals {
   # Anchored, so a route under one of these (…/generation, …/photos/presign) keeps the 8 KB limit.
   large_body_paths = "^/api/v1/(speech/transcriptions|children/[^/]+/(onboarding|transform|growth-areas/[^/]+))$"
   max_body_bytes   = 8192
+
+  # RateLimitPerIP counts /api/ only (WAF-01). The web app's files (about 50 on a first
+  # visit) aren't abuse and once counted too, so many people behind one address (a
+  # mobile carrier's shared IPs, an office) could be blocked for loading the site. 3 000
+  # in 5 minutes is 10 a second from one address, far above one person's use (job polls
+  # back off to one per 5 s), and below what a scraper or flood sends. The services' own
+  # per-route limits (common/limiter.py) stay the finer check.
+  api_rate_limit_per_5_minutes = 3000
 }
 
 resource "aws_wafv2_web_acl" "frontend" {
@@ -226,9 +234,23 @@ resource "aws_wafv2_web_acl" "frontend" {
 
     statement {
       rate_based_statement {
-        limit                 = 1000
+        limit                 = local.api_rate_limit_per_5_minutes
         aggregate_key_type    = "IP"
         evaluation_window_sec = 300
+
+        scope_down_statement {
+          byte_match_statement {
+            search_string         = "/api/"
+            positional_constraint = "STARTS_WITH"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
       }
     }
 

@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 24 are done, 33 partly done, 28 open and 1 moot; DR-01, CI-01, CI-02, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 24 are done, 33 partly done, 28 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -142,7 +142,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth (no token in state); the scheduler PAT and the service-token private keys are still in state |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | 🟡 `Authorization`/`Cookie` redacted, BLOCK/COUNT only; log-bucket expiry (manual bucket) open |
-| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open |
+| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open · ⏸ Deferred |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | 🟡 Secret reads fail closed (fix 1); per-key merge open |
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ⬜ Open |
@@ -201,7 +201,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open (the authz cache now shares the cluster) |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
-| WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (CRS body rule counts; own 8 KB rule exempts the four large-body routes); rate rules, version pins, count-mode switch open |
+| WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (body rule), rate rule scoped to `/api/` and raised; the rest ⏸ deferred (auth-route rule, version pins, count-mode switch) |
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Timeout, no async retries and a managed log group done; failure alert and idempotency check open |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
@@ -496,7 +496,7 @@ custom_error_response {
 
 ### SEC-03 — Scheduler: broad classic PAT and raw-event dispatch 🟠
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `infra-live-scheduler/lambda/dispatcher.py:25` still forwards `json.dumps(event)`, and `scheduler.tf:27` has no `Source*` condition.
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-02): to do later, not before the next releases. ⬜ Open. `infra-live-scheduler/lambda/dispatcher.py:25` still forwards `json.dumps(event)`, and `scheduler.tf:27` has no `Source*` condition.
 
 **Where:** `infra-live-scheduler/terraform/secrets.tf` (PAT), `infra-live-scheduler/lambda/dispatcher.py:26`, `infra-live-scheduler/terraform/scheduler.tf:23-30` (trust policy).
 
@@ -2043,8 +2043,11 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 >
 > The regex was checked against every route in `backend/openapi/*.json`: only those four match, and routes under them (`…/generation`, `…/photos/presign`) keep the 8 KB limit. The endpoint table below cites deleted files and routes (`/llm/invoke`, `/jobs`). A new route whose bodies pass 8 KB has to be added to `local.large_body_paths`.
 >
+> - **Rate rule (part of fix 3, 2026-11-02):** `RateLimitPerIP` now counts only requests whose path starts with `/api/` (`scope_down_statement`), and its limit is 3,000 per 5 minutes per IP (`local.api_rate_limit_per_5_minutes`), up from 1,000 for everything. Before, the web app's own files counted, so many people behind one address (a mobile carrier's shared IPs, an office) could be blocked for loading the site. The services' per-route limits stay the finer check.
+>
+> ⏸ **Deferred (owner's decision, 2026-11-02):** the rest of fixes 2–4. That's a count-mode switch for new rule groups, a strict WAF rule on the auth routes (the services already limit them per IP and per account, AUTH-04), pinned managed-group versions, and the anonymous-IP list.
+>
 > Still open:
-> - fixes 2–4: a count-mode switch for new rule groups; the rate rule scoped to `/api/*`, with a strict one on the auth routes; pinned managed-group versions; the anonymous-IP list;
 > - the acceptance check (a 5 MB recording through stg CloudFront), which needs a stg apply;
 > - watching the CRS `*_BODY` rules' counts on `speech/transcriptions`, since they still inspect the first 16 KB of a recording.
 
