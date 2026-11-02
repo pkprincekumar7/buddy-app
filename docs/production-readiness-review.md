@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 34 are done, 30 partly done, 21 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 34 are done, 31 partly done, 20 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04, SEC-08 and MOB-01 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -188,7 +188,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | PRIV-04 | 🟢 Low | Privacy | Soft-deleted child's data still readable | ✅ Done |
 | SEC-10 | 🟠 High | Security | API task role can overwrite the public APK | ✅ Done (only `shared` reads the APK prefix; no role can write assets) |
 | OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | 🟡 JSON logs with `request_id`/`trace_id`; access log line and ID propagation open |
-| MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open |
+| MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open · ⏸ Deferred |
 | DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
 | DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | 🟡 stg alerts too; ALB 5xx rate and p95, Valkey, CloudFront 5xx added (email, AWS-only); logs, canary, push open |
@@ -205,7 +205,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Timeout, no async retries and a managed log group done; failure alert and idempotency check open |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
-| CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
+| CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | 🟡 No direct prod deploy; each pushed image scanned and marked, promote requires the marker; signing, provenance, digest-pinned base and registry copy open |
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | 🟡 Actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, Dependabot added; image digests open |
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
@@ -1656,6 +1656,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### MOB-01 — Prod mobile builds debug-signed and publicly downloadable 🟠 (new in v2)
 
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
+
 > 🔄 **Current code (2026-11-01):** ⬜ Open. Release builds are still debug-signed (`frontend-app/android/app/build.gradle:125,130`, `versionCode 1` at `:91`), and the builds are still public (`build-android-apk.yml:152,185`, `build-ios-ipa.yml:281,349`, `cloudfront.tf:143`). The APK prefix is now `APK_PREFIX` in `backend/shared/app/main.py:48`; `backend/app/routers/downloads.py` is gone.
 
 **Where:**
@@ -2232,7 +2234,17 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-03 — Deployed image ≠ scanned image; prod deploy bypasses promotion 🟠
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `deploy-live-backend.yml:203` builds the image again, once per service, so the image CI scanned isn't the one deployed, and `prod` is still offered (`:26`). The base images aren't pinned by digest (`backend/Dockerfile:11,41`). Promote rejects `@sha256` references (`promote-live-backend.yml:173`).
+> 🔄 **Current code (2026-11-02):** 🟡 Partial (fixes 3 and part of 1).
+> - **No fresh build reaches prod.** `deploy-live-backend` and `deploy-live-frontend` no longer offer `prod`, and their `validate` job refuses it through `workflow_call` too (`check_deploy_environment` in `scripts/workflow-inputs.sh`). For prod, `terraform-live-all` applies infrastructure and skips both deploy steps; a `prod-deploy-skipped` job says so in the run. The scheduler can never start prod (`infra-live-scheduler/terraform/variables.tf`), so no daily run is affected.
+> - **The pushed image is the scanned image.** Each build in `deploy-live-backend` is scanned by Trivy (HIGH/CRITICAL with a fix fails, `.trivyignore` as in `check.yml`) before any push. Each pushed image also gets a `<tag>-scanned` ECR tag on the same digest, written by copying the manifest, so it can't point at another image. A re-run that finds the tag already pushed (another build of the commit) pulls and scans that image before marking it.
+> - **Promote moves only scanned images.** The export job requires the marker on the live image's digest in the source. The promote job marks the copy in the target, so stg → prod accepts it in turn, and refuses a target tag that exists without the marker.
+> - **Tests:** `scripts/ecs-services.test.sh` covers the marker (52 tests), and `workflow-inputs.test.sh` covers the prod refusal. Both push loops were run, as written in the YAML, against fake `aws`, `docker` and `trivy`: new tag, re-run, unmarked tag in ECR, and unmarked tag in the target.
+> - **Still open:**
+>   - buildx with provenance and SBOM, and cosign signing and `cosign verify` (fixes 1–2);
+>   - base images pinned by digest without `apt-get upgrade` (fix 4);
+>   - a registry-to-registry copy that keeps the digest (fixes 5–6, with CI-09). Today the target can store the same image under a new digest after `docker save`/`load`, and promote notes when it does, so the first acceptance criterion holds for content, not always for the digest.
+>   - `promote-live-frontend` still rebuilds for the target, because `VITE_*` values are baked into the bundle, but only from a commit already deployed to stg.
+> - **First promote after this change:** images deployed before it have no marker, so deploy dev or stg once, then promote.
 
 **Where:**
 - `check.yml:562` builds and scans its own image.

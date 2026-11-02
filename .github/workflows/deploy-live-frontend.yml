@@ -4,8 +4,11 @@ run-name: Deploy Live Frontend (${{ inputs.environment }})
 on:
   workflow_dispatch:
     inputs:
+      # No prod (production-readiness review, CI-03): prod runs only images and
+      # builds promoted from stg (promote-live-backend / promote-live-frontend),
+      # never a fresh build. The validate job refuses prod from workflow_call too.
       environment:
-        description: "Deployment environment"
+        description: "Deployment environment (prod: use the promote workflow)"
         required: true
         default: "dev"
         type: choice
@@ -13,7 +16,6 @@ on:
           - dev
           - sbx
           - stg
-          - prod
   workflow_call:
     inputs:
       environment:
@@ -52,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/workflow-inputs.sh
-          check_environment "$ENVIRONMENT"
+          check_deploy_environment "$ENVIRONMENT"
 
   deploy:
     name: Deploy Live Frontend

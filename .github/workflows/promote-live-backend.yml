@@ -162,6 +162,7 @@ jobs:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.source_env }}/backend/${{ matrix.aws_region }}
           SELECTION: ${{ inputs.service }}
           SOURCE_ENV: ${{ inputs.source_env }}
+          REGION: ${{ matrix.aws_region }}
         run: |
           source scripts/ecs-services.sh
 
@@ -182,8 +183,18 @@ jobs:
               echo "ERROR: $NAME runs $IMAGE, pinned by digest; promote expects tag-based images (as deploy-live-backend pushes)."
               exit 1
             fi
-            echo "Promoting $NAME: $IMAGE"
-            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" --arg s "$(jq -r .image_service <<<"$ENTRY")" '. + [{name: $n, image: $i, image_service: $s}]' <<<"$IMAGES")
+            # Only an image a scan passed (CI-03): deploy-live-backend marks each one
+            # it scanned <tag>-scanned, and each promote carries the marker along.
+            REPO_PATH="${IMAGE#*/}"
+            REPO_NAME="${REPO_PATH%:*}"
+            TAG="${IMAGE##*:}"
+            if ! is_scanned "$REGION" "$REPO_NAME" "$TAG"; then
+              echo "ERROR: $NAME runs $IMAGE, which has no scan marker ($TAG$SCANNED_SUFFIX) in ${SOURCE_ENV}. Only images deploy-live-backend scanned can be promoted: deploy ${SOURCE_ENV} again, then promote."
+              exit 1
+            fi
+            DIGEST=$(image_digest "$REGION" "$REPO_NAME" "$TAG")
+            echo "Promoting $NAME: $IMAGE ($DIGEST, scanned)"
+            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" --arg d "$DIGEST" --arg s "$(jq -r .image_service <<<"$ENTRY")" '. + [{name: $n, image: $i, digest: $d, image_service: $s}]' <<<"$IMAGES")
           done < <(jq -c '.[]' <<<"$SERVICES")
           echo "$IMAGES" > promote/images.json
 
@@ -333,23 +344,39 @@ jobs:
           gunzip -c promote/images.tar.gz | docker load
 
           # One push per (service, source image): a service and its worker
-          # usually run the same one.
-          while IFS=$'\t' read -r IMAGE_SERVICE SRC; do
+          # usually run the same one. Each gets the scan marker in the target as
+          # well, so the next promote (stg → prod) accepts it (CI-03).
+          while IFS=$'\t' read -r IMAGE_SERVICE SRC SRC_DIGEST; do
             REPO=$(repository_for "$SERVICES" "$IMAGE_SERVICE")
             REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
             REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/<service>
             TAG="${SRC##*:}"
             aws ecr get-login-password --region "${REGION}" \
               | docker login --username AWS --password-stdin "$REGISTRY"
-            if aws ecr describe-images --region "${REGION}" --repository-name "$REPO_NAME" \
-                 --image-ids imageTag="$TAG" --output text &>/dev/null; then
+            if [ -n "$(image_digest "$REGION" "$REPO_NAME" "$TAG")" ]; then
               echo "$REPO:$TAG already exists in target ECR — skipping push."
+              # Tags are immutable, so it's this release's image only if it was
+              # marked when it was pushed; an unmarked one is another build.
+              if ! is_scanned "$REGION" "$REPO_NAME" "$TAG"; then
+                echo "ERROR: $REPO:$TAG is already in ${TARGET_ENV}'s ECR without the scan marker, so it may be a different build of the same tag. Deploy a new release to the source, then promote that."
+                exit 1
+              fi
             else
               docker tag "$SRC" "$REPO:$TAG"
               docker push "$REPO:$TAG"
               echo "Pushed: $REPO:$TAG"
+              mark_scanned "$REGION" "$REPO_NAME" "$TAG"
             fi
-          done < <(jq -r 'map([.image_service, .image]) | unique | .[] | @tsv' promote/images.json)
+            TARGET_DIGEST=$(image_digest "$REGION" "$REPO_NAME" "$TAG")
+            if [ "$TARGET_DIGEST" = "$SRC_DIGEST" ]; then
+              echo "$REPO:$TAG is $TARGET_DIGEST, the digest scanned in the source."
+            else
+              # docker save/load and a new push can store the same image under a new
+              # digest (the layers are compressed again). Same content; CI-09 (a
+              # registry-to-registry copy) would keep the digest.
+              echo "::notice title=Digest changed in transit::$REPO:$TAG is $TARGET_DIGEST in ${TARGET_ENV}, $SRC_DIGEST in the source: the same image, pushed again."
+            fi
+          done < <(jq -r 'map([.image_service, .image, .digest]) | unique | .[] | @tsv' promote/images.json)
 
           # The target-ECR copy of the image exported for this service: its
           # own repository, the source's tag.

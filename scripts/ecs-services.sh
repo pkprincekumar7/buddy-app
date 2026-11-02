@@ -89,6 +89,52 @@ repository_for() {
   printf '%s\n' "$repo"
 }
 
+# -- the scanned marker (production-readiness review, CI-03) -------------------
+# deploy-live-backend scans each image it builds (Trivy, HIGH/CRITICAL) before
+# pushing it, then gives that same image a second tag, <tag>-scanned. Promote
+# moves an image only if its source has the marker on the same digest, and
+# copies the marker along, so prod only ever runs an image a scan passed.
+# Tags are IMMUTABLE and the "keep 30" lifecycle rule counts images, not tags.
+SCANNED_SUFFIX="-scanned"
+
+# image_digest REGION REPO_NAME TAG → the image's digest (sha256:…), or "" if
+# the tag isn't in the repository.
+image_digest() {
+  aws ecr describe-images --region "$1" --repository-name "$2" --image-ids imageTag="$3" \
+    --query 'imageDetails[0].imageDigest' --output text 2>/dev/null | grep '^sha256:' || true
+}
+
+# is_scanned REGION REPO_NAME TAG — true when TAG-scanned exists and is the
+# same image as TAG.
+is_scanned() {
+  local digest marker
+  digest=$(image_digest "$1" "$2" "$3")
+  marker=$(image_digest "$1" "$2" "$3$SCANNED_SUFFIX")
+  [ -n "$digest" ] && [ "$digest" = "$marker" ]
+}
+
+# mark_scanned REGION REPO_NAME TAG — add TAG-scanned to the image TAG names,
+# by copying its manifest (no push, so the digest is the same by construction).
+# The manifest goes through a file, byte for byte: $(…) would drop a trailing
+# newline and so change the digest.
+mark_scanned() {
+  local region="$1" repo="$2" tag="$3" image media file rc=0
+  is_scanned "$region" "$repo" "$tag" && return 0
+  image=$(aws ecr batch-get-image --region "$region" --repository-name "$repo" --image-ids imageTag="$tag" \
+    --query 'images[0].{manifest: imageManifest, media: imageManifestMediaType}' --output json) || return 1
+  if ! jq -e '.manifest | type == "string"' <<<"$image" >/dev/null; then
+    echo "ERROR: $repo:$tag isn't in ECR ($region), so it can't be marked scanned." >&2
+    return 1
+  fi
+  media=$(jq -r '.media // empty' <<<"$image")
+  file=$(mktemp)
+  jq -j '.manifest' <<<"$image" > "$file"
+  aws ecr put-image --region "$region" --repository-name "$repo" --image-tag "$tag$SCANNED_SUFFIX" \
+    --image-manifest "file://$file" ${media:+--image-manifest-media-type "$media"} >/dev/null || rc=1
+  rm -f "$file"
+  [ "$rc" -eq 0 ] && is_scanned "$region" "$repo" "$tag"
+}
+
 # register_with_image FAMILY CONTAINER IMAGE → ARN of a new revision of FAMILY
 # that is the current one with CONTAINER's image swapped for IMAGE. Everything
 # else (env vars, secrets refs, CPU/memory, logging, sidecars) is kept exactly

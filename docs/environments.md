@@ -270,11 +270,14 @@ Under **Settings → Environments → `<env>` → Variables** (not Secrets): thr
 
 1. **Apply everything:** run `terraform-live-all.yml` with `action = apply`, the environment,
    its backend regions, and `deploy = true`. It runs backend (all regions in parallel) → edge →
-   frontend → deploy backend → deploy frontend.
+   frontend → deploy backend → deploy frontend. For **prod** it stops after frontend: prod is
+   never deployed from a fresh build (CI-03), so once its infrastructure is applied, run
+   `promote-live-backend.yml` and `promote-live-frontend.yml` from stg.
 
    Prefer to go step by step? Apply `terraform-live-backend.yml` per region, then
    `terraform-live-edge.yml`, then `terraform-live-frontend.yml`, then
-   `deploy-live-backend.yml` and `deploy-live-frontend.yml`.
+   `deploy-live-backend.yml` and `deploy-live-frontend.yml` (or, for prod, the two promote
+   workflows).
 2. **Plans on a brand-new environment:** only the backend can be planned before anything is
    applied — edge and frontend skip their plan with a notice until the stack before them has
    been applied.

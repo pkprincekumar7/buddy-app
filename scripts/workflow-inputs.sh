@@ -28,6 +28,16 @@ check_environment() {
   return 1
 }
 
+# check_deploy_environment VALUE → check_environment, and refuse prod: prod gets
+# only what promote-live-backend/-frontend bring from stg, never a fresh build
+# (production-readiness review, CI-03).
+check_deploy_environment() {
+  check_environment "$1" || return 1
+  [[ "$1" != "prod" ]] && return 0
+  echo "::error::prod isn't deployed directly: promote the release from stg with promote-live-backend and promote-live-frontend."
+  return 1
+}
+
 # check_action VALUE → error unless plan, apply, plan-destroy or destroy.
 check_action() {
   [[ "$1" =~ ^(plan|apply|plan-destroy|destroy)$ ]] && return 0

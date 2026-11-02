@@ -45,6 +45,24 @@ case "$1 $2" in
   "ecs update-service")
     if [ -n "${FAKE_NO_DEPLOYMENT:-}" ]; then echo '{"serviceName":"x","deployment":null}'
     else echo '{"serviceName":"x","status":"ACTIVE","desiredCount":2,"deployment":"ecs-svc/new"}'; fi ;;
+  # ECR: one file per tag, $FAKE/ecr/<repo with / as _>/<tag>, holding the manifest;
+  # the digest is a checksum of it, so two tags on one manifest share a digest.
+  "ecr describe-images"|"ecr batch-get-image"|"ecr put-image")
+    dir="$FAKE/ecr/$(arg --repository-name "$@" | tr '/' '_')"
+    tag="$(arg --image-ids "$@" | sed 's/^imageTag=//')"
+    case "$2" in
+      describe-images)
+        [ -f "$dir/$tag" ] || { echo "ImageNotFoundException" >&2; exit 254; }
+        echo "sha256:$(cksum < "$dir/$tag" | cut -d' ' -f1)" ;;
+      batch-get-image)
+        if [ -f "$dir/$tag" ]; then jq -cn --rawfile m "$dir/$tag" '{manifest: $m, media: "application/vnd.oci.image.manifest.v1+json"}'
+        else echo '{"manifest": null, "media": null}'; fi ;;
+      put-image)
+        new="$(arg --image-tag "$@")"
+        [ -f "$dir/$new" ] && { echo "ImageTagAlreadyExistsException" >&2; exit 254; }
+        m="$(arg --image-manifest "$@")"
+        case "$m" in file://*) cat "${m#file://}" > "$dir/$new" ;; *) printf '%s' "$m" > "$dir/$new" ;; esac ;;
+    esac ;;
   *) echo "fake aws: unexpected call: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -137,6 +155,23 @@ if out=$(same_release "$A" "$E" 2>&1); then fail "a different tag is refused"; e
   [[ "$out" == *"promote-images-eu-west-1: shared=abc, users=def"* ]] && ok "a different tag is refused, naming each region's tags" || fail "different tag message" "$out"; fi
 echo '[{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:abc","image_service":"users"}]' > "$E"
 if same_release "$A" "$E" >/dev/null 2>&1; then fail "a missing service is refused"; else ok "a service missing in one region is refused"; fi
+
+# -- the scanned marker (CI-03) ---------------------------------------------------
+R="$FAKE/ecr/sp_dev_users"; mkdir -p "$R"
+echo '{"schemaVersion":2,"layers":["a"]}' > "$R/20261102-abc"
+echo '{"schemaVersion":2,"layers":["b"]}' > "$R/20261101-old"
+[[ "$(image_digest ap-south-1 sp/dev/users 20261102-abc)" == sha256:* ]] && ok "a tag's digest" || fail "a tag's digest"
+check "a missing tag has no digest" "$(image_digest ap-south-1 sp/dev/users nope)" ""
+is_scanned ap-south-1 sp/dev/users 20261102-abc && fail "an unmarked image isn't scanned" || ok "an unmarked image isn't scanned"
+mark_scanned ap-south-1 sp/dev/users 20261102-abc && ok "marking an image" || fail "marking an image"
+check "the marker is the same image" "$(image_digest ap-south-1 sp/dev/users 20261102-abc-scanned)" "$(image_digest ap-south-1 sp/dev/users 20261102-abc)"
+is_scanned ap-south-1 sp/dev/users 20261102-abc && ok "a marked image is scanned" || fail "a marked image is scanned"
+mark_scanned ap-south-1 sp/dev/users 20261102-abc && ok "marking again is a no-op (tags are immutable)" || fail "marking again"
+# A marker on another image (say a hand-pushed tag) doesn't count.
+cp "$R/20261102-abc" "$R/20261101-old-scanned"
+is_scanned ap-south-1 sp/dev/users 20261101-old && fail "a marker on a different image is refused" || ok "a marker on a different image doesn't count"
+if out=$(mark_scanned ap-south-1 sp/dev/users nope 2>&1); then fail "marking a missing tag is an error"; else
+  [[ "$out" == *"sp/dev/users:nope isn't in ECR"* ]] && ok "marking a missing tag is an error" || fail "missing tag message" "$out"; fi
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"

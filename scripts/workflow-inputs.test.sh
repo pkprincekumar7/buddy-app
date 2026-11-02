@@ -16,6 +16,7 @@ ok() { PASS=$((PASS + 1)); echo "ok   - $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "FAIL - $1${2:+: $2}"; }
 accepts() { "${@:2}" >/dev/null 2>&1 && ok "$1" || fail "$1"; }
 refuses() { "${@:2}" >/dev/null 2>&1 && fail "$1" || ok "$1"; }
+check() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "got '$2', want '$3'"; }
 
 check_regions_list="$(allowed_regions | paste -sd, -)"
 [ "$check_regions_list" = "ap-south-1,eu-west-1,us-east-1" ] && ok "the allow-list is routing.json's regions" \
@@ -26,6 +27,12 @@ refuses "an unknown environment" check_environment qa
 refuses "a path in the environment" check_environment "../prod"
 refuses "an environment with a newline" check_environment $'dev\nprod'
 refuses "an empty environment" check_environment ""
+
+for env in dev sbx stg; do accepts "deploy to $env" check_deploy_environment "$env"; done
+refuses "a direct deploy to prod" check_deploy_environment prod
+refuses "a deploy to an unknown environment" check_deploy_environment qa
+check "prod's refusal says to promote" "$(check_deploy_environment prod 2>&1 || true)" \
+  "::error::prod isn't deployed directly: promote the release from stg with promote-live-backend and promote-live-frontend."
 
 for action in plan apply plan-destroy destroy; do accepts "action $action" check_action "$action"; done
 refuses "an unknown action" check_action import

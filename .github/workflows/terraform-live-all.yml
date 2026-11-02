@@ -82,7 +82,7 @@ on:
           - eu-west-1
           - us-east-1
       deploy:
-        description: "Run deploy-backend and deploy-frontend after apply (ignored for plan)"
+        description: "Run deploy-backend and deploy-frontend after apply (ignored for plan and for prod: promote from stg instead)"
         required: false
         default: "true"
         type: boolean
@@ -183,12 +183,14 @@ jobs:
   # Step 4 — Deploy backend (Docker build + ECS rolling update). A single call
   # covering every region: deploy-live-backend builds the image once, pushes
   # it to each region's ECR, then rolls ECS out per region in parallel
-  # (fail-fast: false inside it). Skipped when action=plan or deploy=false.
+  # (fail-fast: false inside it). Skipped when action=plan or deploy=false, and
+  # always for prod: prod gets only images promoted from stg (CI-03), so
+  # terraform-live-all is infrastructure-only there (see prod-deploy-skipped).
   # ---------------------------------------------------------------------------
   deploy-backend:
     name: "4 · Deploy Backend"
     needs: tf-frontend
-    if: inputs.action == 'apply' && inputs.deploy
+    if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-backend.yml
     with:
       environment: ${{ inputs.environment }}
@@ -197,16 +199,34 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Step 5 — Deploy frontend (React build + S3 sync + CloudFront invalidation)
-  # Skipped when action=plan or deploy=false (inherits skip from step 4).
+  # Skipped when action=plan or deploy=false, and for prod (as step 4).
   # ---------------------------------------------------------------------------
   deploy-frontend:
     name: "5 · Deploy Frontend"
     needs: deploy-backend
-    if: inputs.action == 'apply' && inputs.deploy
+    if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-frontend.yml
     with:
       environment: ${{ inputs.environment }}
     secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # For prod with deploy=true (e.g. a scheduled start): say in the run why
+  # nothing was deployed, and what to run next.
+  # ---------------------------------------------------------------------------
+  prod-deploy-skipped:
+    name: "4 · Deploy skipped (prod)"
+    needs: tf-frontend
+    if: inputs.action == 'apply' && inputs.deploy && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Explain the skipped deploy
+        run: |
+          msg="prod isn't deployed by terraform-live-all (production-readiness review, CI-03): the infrastructure is applied, but the services keep their current images. To ship a release, run promote-live-backend and promote-live-frontend from stg to prod."
+          echo "::notice title=Deploy skipped for prod::$msg"
+          echo "### Deploy skipped for prod" >> "$GITHUB_STEP_SUMMARY"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # Destroy step 1 — Frontend bucket policy (reverse order: remove OAC first)

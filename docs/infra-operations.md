@@ -128,8 +128,14 @@ until the next deploy.
 A `resolve` job lists the selected runtimes and the images they need: one per service, since a
 worker runs its service's. The collector runs the pinned `otel_collector_image`, so `all` skips it,
 and naming it is an error. A build matrix then builds each image once
-(`--build-arg SERVICE=<service>`) and
-pushes it as `:<YYYYMMDD>-<short-sha>` to that service's repository in every selected region.
+(`--build-arg SERVICE=<service>`), scans it with Trivy (a HIGH or CRITICAL CVE with a fix fails the
+build before anything is pushed; `.trivyignore` holds the reviewed exceptions), and
+pushes it as `:<YYYYMMDD>-<short-sha>` to that service's repository in every selected region,
+with a second tag on the same image, `:<YYYYMMDD>-<short-sha>-scanned` (CI-03). A re-run finds
+the tag already there; since that's another build of the commit, it pulls and scans it before
+adding the marker.
+`prod` can't be deployed this way, from the dropdown or through `workflow_call`. It gets
+releases only through promote.
 Then, in each region:
 
 1. Reads the services to deploy from the region's `ecs_services` SSM list and rolls them all out
@@ -152,7 +158,10 @@ three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.te
 `promote-live-backend` does the same, but takes the image from the source environment's running
 task definition instead of building one: an export job (source environment's role) pulls it, and
 the promote job (target's role) pushes it into its service's repository in the target under the
-same tag before registering the revision. The target never references the source's ECR, so source and target can
+same tag before registering the revision. Only an image with the scan marker on the same digest in
+the source is promoted, and the promote job adds the marker in the target too, so stg → prod
+accepts it in turn. The run notes when the target stored the image under a different digest
+(`docker save`/`load` compresses the layers again; same content). The target never references the source's ECR, so source and target can
 be different AWS accounts, and the target is unaffected when the source repo expires the image or
 the source environment is destroyed. `restart-live-backend` forces a new deployment of the
 current revision without registering one.
@@ -161,7 +170,7 @@ current revision without registering one.
 
 | What changed | Run |
 |---|---|
-| Application code | `deploy-live-backend` |
+| Application code | `deploy-live-backend` (dev, sbx, stg). For prod: `promote-live-backend` and `promote-live-frontend` from stg |
 | Env var / model / CPU / memory (tfvars or GitHub secrets that feed env vars) | `terraform-live-backend` apply, **then** `deploy-live-backend` (apply registers, deploy activates) |
 | Secret values in Secrets Manager | `put-secret-value` (below), then `restart-live-backend` |
 

@@ -14,8 +14,11 @@ on:
         required: true
         default: "all"
         type: string
+      # No prod (production-readiness review, CI-03): prod runs only images and
+      # builds promoted from stg (promote-live-backend / promote-live-frontend),
+      # never a fresh build. The validate job refuses prod from workflow_call too.
       environment:
-        description: "Deployment environment"
+        description: "Deployment environment (prod: use the promote workflow)"
         required: true
         default: "dev"
         type: choice
@@ -23,7 +26,6 @@ on:
           - dev
           - sbx
           - stg
-          - prod
       # workflow_dispatch has no native multi-select input, so every valid
       # non-empty combination of the 3 supported regions is enumerated below
       # as its own choice (same list as terraform-live-all.yml) — adding a 4th
@@ -94,7 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/workflow-inputs.sh
-          check_environment "$ENVIRONMENT"
+          check_deploy_environment "$ENVIRONMENT"
           check_regions "$REGIONS"
 
   # ---------------------------------------------------------------------------
@@ -243,11 +245,30 @@ jobs:
             -f backend/Dockerfile \
             .
 
+      # The image pushed is the image scanned (CI-03): a HIGH or CRITICAL CVE with a
+      # fix fails the build before anything is pushed, as check.yml's image scan
+      # does (same options; .trivyignore holds the reviewed exceptions).
+      - name: Scan the image (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image_service }}:${{ needs.resolve.outputs.image_tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln
+          exit-code: '1'
+
+      # Each pushed image also gets the <tag>-scanned marker (scripts/ecs-services.sh),
+      # which promote requires. A tag already in ECR (a re-run) is another build of the
+      # same commit, not the one just scanned, so it's pulled and scanned itself before
+      # it's marked.
       - name: Push image to each region's ECR
         env:
           IMAGE_SERVICE: ${{ matrix.image_service }}
           TAG: ${{ needs.resolve.outputs.image_tag }}
         run: |
+          set -euo pipefail
+          source scripts/ecs-services.sh
           while read -r REGION REPO; do
             REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
             REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/<service>
@@ -259,17 +280,20 @@ jobs:
             # IMMUTABLE tags — pushing the same tag twice (e.g., re-running a
             # failed workflow) would error. If the tag already exists the image
             # is identical, so skip the push and proceed.
-            if aws ecr describe-images \
-                 --region "$REGION" \
-                 --repository-name "$REPO_NAME" \
-                 --image-ids imageTag="$TAG" \
-                 --output text &>/dev/null; then
+            if [ -n "$(image_digest "$REGION" "$REPO_NAME" "$TAG")" ]; then
               echo "Image $IMAGE already exists in ECR — skipping push."
+              if ! is_scanned "$REGION" "$REPO_NAME" "$TAG"; then
+                echo "$IMAGE has no scan marker: scanning the image in ECR."
+                docker pull "$IMAGE"
+                trivy image --severity HIGH,CRITICAL --exit-code 1 --scanners vuln --ignore-unfixed "$IMAGE"
+              fi
             else
               docker tag "$IMAGE_SERVICE:$TAG" "$IMAGE"
               docker push "$IMAGE"
               echo "Pushed: $IMAGE"
             fi
+            mark_scanned "$REGION" "$REPO_NAME" "$TAG"
+            echo "Scanned: $IMAGE ($(image_digest "$REGION" "$REPO_NAME" "$TAG"))"
           done < ecr_targets.txt
 
   # ---------------------------------------------------------------------------
