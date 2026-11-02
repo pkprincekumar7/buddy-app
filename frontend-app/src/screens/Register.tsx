@@ -11,6 +11,16 @@ import AuthCardHeader from '@/components/auth/AuthCardHeader';
 import CountrySelect from '@/components/auth/CountrySelect';
 import FormInput from '@/components/auth/FormInput';
 
+/** A string's length in UTF-8 bytes, as the server counts it (React Native has no TextEncoder). */
+function utf8Bytes(text: string): number {
+  let bytes = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  }
+  return bytes;
+}
+
 export default function Register() {
   const { checkAppState } = useAuth();
   const [firstName, setFirstName] = useState('');
@@ -43,6 +53,13 @@ export default function Register() {
     }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
+      return;
+    }
+    // The server's limit: bcrypt reads 72 bytes of UTF-8, so more would be ignored.
+    if (utf8Bytes(password) > 72) {
+      setError(
+        'Password must be at most 72 characters (fewer with accents or emoji).',
+      );
       return;
     }
     setBusy(true);

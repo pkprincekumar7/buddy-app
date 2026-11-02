@@ -43,6 +43,7 @@ from auth.app.sessions import (
 )
 from auth.app.store import ALLOWED_EMAILS, AUTH, EMAIL_INDEX, SESSIONS, authz_change
 from auth.app.tokens import (
+    BCRYPT_MAX_BYTES,
     InvalidToken,
     access_subject,
     async_check_password,
@@ -226,6 +227,9 @@ class RegisterBody(BaseModel):
             raise ValueError("Password must contain at least one digit")
         if not any(c.isalpha() for c in value):
             raise ValueError("Password must contain at least one letter")
+        # bcrypt reads 72 bytes; more would be silently ignored (tokens.BCRYPT_MAX_BYTES).
+        if len(value.encode()) > BCRYPT_MAX_BYTES:
+            raise ValueError("Password must be at most 72 characters (fewer with accents or emoji)")
         return value
 
     _upper_country = field_validator("country_code", mode="before")(_upper)

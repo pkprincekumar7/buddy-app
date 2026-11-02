@@ -12,10 +12,12 @@ No email or names: a JWT is signed, not encrypted.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import secrets
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -32,6 +34,18 @@ from common.authz import AuthzConfig
 from common.regions import location_from_claims
 
 BCRYPT_COST = 12  # as today (5.1)
+# bcrypt reads only the first 72 bytes of a password. bcrypt 4.x drops the rest silently
+# and 5.x raises, so the cut is made here, where it's the same on every version: the
+# hashes made so far (4.x, long passwords included) still match (production-readiness
+# review, AUTH-04). Registration refuses longer passwords (main.py), so no new one has
+# an ignored tail.
+BCRYPT_MAX_BYTES = 72
+# bcrypt has its own threads: at about 250 ms a hash, a burst of logins on the default
+# pool would hold up every other `to_thread` call on the task. It releases the GIL, so a
+# thread per CPU uses them all; requests beyond that wait their turn here.
+_bcrypt_pool = ThreadPoolExecutor(
+    max_workers=max(2, min(4, os.cpu_count() or 1)), thread_name_prefix="bcrypt"
+)
 _UUID4 = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 _REFRESH_CLAIMS = ["exp", "iat", "iat_ms", "sub", "type", "iss", "aud", "jti", "family_id"]
 
@@ -43,13 +57,18 @@ class InvalidToken(Exception):
 # ── passwords ──────────────────────────────────────────────────────────────────
 
 
+def _bcrypt_input(password: str) -> bytes:
+    """The bytes bcrypt uses: the UTF-8 encoding's first 72, cut as bcrypt 4.x cuts them."""
+    return password.encode()[:BCRYPT_MAX_BYTES]
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=BCRYPT_COST)).decode()
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt(rounds=BCRYPT_COST)).decode()
 
 
 def check_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode(), hashed.encode())
+        return bcrypt.checkpw(_bcrypt_input(password), hashed.encode())
     except ValueError:  # a malformed stored hash never matches
         return False
 
@@ -61,15 +80,16 @@ def dummy_hash() -> str:
 
 
 async def async_hash_password(password: str) -> str:
-    return await asyncio.to_thread(hash_password, password)
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_pool, hash_password, password)
 
 
 async def async_check_password(password: str, hashed: str | None) -> bool:
     """bcrypt off the event loop; `None` checks the dummy hash and is always False."""
+    loop = asyncio.get_running_loop()
     if hashed is None:
-        await asyncio.to_thread(check_password, password, dummy_hash())
+        await loop.run_in_executor(_bcrypt_pool, check_password, password, dummy_hash())
         return False
-    return await asyncio.to_thread(check_password, password, hashed)
+    return await loop.run_in_executor(_bcrypt_pool, check_password, password, hashed)
 
 
 async def unusable_password_hash() -> str:

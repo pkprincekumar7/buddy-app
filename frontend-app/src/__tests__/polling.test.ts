@@ -6,7 +6,7 @@ import { MAX_INTERVAL_MS, isRateLimited, runJob, slower } from '@/api/polling';
 describe('slower', () => {
   it('waits half as long again each time, up to the cap', () => {
     const waits = [2000];
-    for (let i = 0; i < 5; i++) waits.push(slower(waits[waits.length - 1]));
+    for (let i = 0; i < 5; i++) waits.push(slower(waits[waits.length - 1]!));
     expect(waits).toEqual([2000, 3000, 4500, 5000, 5000, 5000]);
     expect(MAX_INTERVAL_MS).toBe(5000);
   });

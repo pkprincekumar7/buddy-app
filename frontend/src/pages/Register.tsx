@@ -41,6 +41,11 @@ export default function Register() {
       setError('Password must be at least 8 characters.');
       return;
     }
+    // The server's limit: bcrypt reads 72 bytes of UTF-8, so more would be ignored.
+    if (new TextEncoder().encode(password).length > 72) {
+      setError('Password must be at most 72 characters (fewer with accents or emoji).');
+      return;
+    }
     setBusy(true);
     try {
       const optional = (value: string) => value.trim() || null;
