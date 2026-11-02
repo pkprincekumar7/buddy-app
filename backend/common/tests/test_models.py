@@ -68,7 +68,7 @@ def test_indexes_are_created_on_an_empty_database(mongo_run):
         jobs = await db.jobs.index_information()
         assert {
             (("location", 1), ("child_id", 1), ("type", 1), ("status", 1)),
-            (("location", 1), ("status", 1), ("retry_after", 1)),
+            (("location", 1), ("status", 1), ("created_at", 1)),
             (("location", 1), ("user_id", 1)),
         } <= _index_keys(jobs)
         ttl = {

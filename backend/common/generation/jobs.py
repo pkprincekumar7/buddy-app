@@ -22,6 +22,7 @@ A job writes only to its own service's documents. Its target is the circle's doc
 
 from __future__ import annotations
 
+import random
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -223,23 +224,41 @@ def _region_filter(locations: list[str] | None) -> Doc:
     return {} if locations is None else {"location": {"$in": locations}}
 
 
+CLAIM_SORT = [("created_at", ASCENDING)]
+# An idle worker's wait between claims varies by this much either way, so workers that
+# started together (a deploy) don't all poll at the same moment (DB-02).
+POLL_JITTER = 0.25
+
+
+def idle_wait(poll: float) -> float:
+    """How long an idle worker waits before its next claim: `poll`, give or take a quarter."""
+    # Spreads out timing, nothing secret, so a non-cryptographic random is right.
+    return poll * random.uniform(1 - POLL_JITTER, 1 + POLL_JITTER)  # nosec B311
+
+
+def claim_filter(locations: list[str] | None, now: datetime, stale_after: timedelta) -> Doc:
+    """The jobs a worker may take: due pending ones, and ones a crashed worker left. With
+    CLAIM_SORT it reads the `(location, status, created_at)` index in order (DB-02)."""
+    return {
+        **_region_filter(locations),
+        "$or": [
+            {
+                "status": "pending",
+                "$or": [{"retry_after": None}, {"retry_after": {"$lte": now}}],
+            },
+            # A worker crashed mid-job: take it over.
+            {"status": "processing", "claimed_at": {"$lt": now - stale_after}},
+        ],
+    }
+
+
 async def claim_next(
     db: Db, *, locations: list[str] | None, stale_after: timedelta = STALE_CLAIM_AFTER
 ) -> Doc | None:
     """The oldest due job in this region's locations, now `processing`, or None."""
     now = _now()
     return await db[JOBS].find_one_and_update(
-        {
-            **_region_filter(locations),
-            "$or": [
-                {
-                    "status": "pending",
-                    "$or": [{"retry_after": None}, {"retry_after": {"$lte": now}}],
-                },
-                # A worker crashed mid-job: take it over.
-                {"status": "processing", "claimed_at": {"$lt": now - stale_after}},
-            ],
-        },
+        claim_filter(locations, now, stale_after),
         {
             "$set": {
                 "status": "processing",
@@ -249,7 +268,7 @@ async def claim_next(
             },
             "$inc": {"llm_attempt": 1},
         },
-        sort=[("created_at", ASCENDING)],
+        sort=CLAIM_SORT,
         return_document=ReturnDocument.AFTER,
     )
 

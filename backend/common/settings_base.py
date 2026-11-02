@@ -147,6 +147,11 @@ class ServiceSettings(BaseSettings):
             "tz_aware": True,
             "appname": self.service_name,
             "serverSelectionTimeoutMS": 5000,
+            # A reply that never comes (a connection dropped without a reset) fails after
+            # 30 s instead of holding the request or job forever (DB-02). Per socket read,
+            # so a change stream's waits (about a second each) aren't cut short; the
+            # client-wide timeoutMS would end the outbox relay's streams.
+            "socketTimeoutMS": 30_000,
             **kwargs,
         }
         return AsyncMongoClient(self.mongodb_uri, **options)

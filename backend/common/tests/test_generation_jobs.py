@@ -225,6 +225,49 @@ def test_claims_wait_for_retry_after_and_take_over_stale_work(mongo_run):
     mongo_run(body)
 
 
+def test_an_idle_wait_varies_around_the_poll():
+    waits = [jobs.idle_wait(2.0) for _ in range(200)]
+    assert all(1.5 <= w <= 2.5 for w in waits)
+    assert max(waits) - min(waits) > 0.5  # spread out, not all the same
+
+
+def _plan_stages(plan: dict[str, Any]) -> list[str]:
+    stages = [plan["stage"]]
+    if "inputStage" in plan:
+        stages += _plan_stages(plan["inputStage"])
+    for child in plan.get("inputStages", []):
+        stages += _plan_stages(child)
+    return stages
+
+
+def test_the_claim_reads_its_index_in_order_without_sorting(mongo_run):
+    """DB-02: with many due jobs, the claim uses (location, status, created_at) and stops
+    at the oldest, instead of sorting every due job in memory."""
+
+    async def body(db, client):
+        await ensure_jobs(db, "discover")
+        now = datetime.now(UTC)
+        for n in range(200):
+            await _job(
+                db,
+                f"due-{n}",
+                location=("in", "apac")[n % 2],
+                created_at=now - timedelta(seconds=n),
+                status=("pending", "processing")[n % 2],
+                claimed_at=now - timedelta(hours=1),
+            )
+        query = jobs.claim_filter(["in", "apac"], now, jobs.STALE_CLAIM_AFTER)
+        explained = await db.jobs.find(query).sort(jobs.CLAIM_SORT).limit(1).explain()
+        planner = explained["queryPlanner"]["winningPlan"]
+        stages = _plan_stages(planner.get("queryPlan", planner))
+        assert "SORT" not in stages and "SORT_MERGE" in stages, stages
+        assert explained["executionStats"]["totalDocsExamined"] < 20  # not the 200 due jobs
+        claimed = await jobs.claim_next(db, locations=["in", "apac"])
+        assert claimed is not None and claimed["_id"] == "due-199"  # still the oldest
+
+    mongo_run(body)
+
+
 async def _claim(db) -> dict[str, Any]:
     job = await jobs.claim_next(db, locations=["in"])
     assert job is not None

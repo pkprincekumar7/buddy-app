@@ -240,7 +240,7 @@ async def run_jobs(
         except Exception:
             _logger.exception("transform: a job failed unexpectedly; retrying")
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), poll)
+            await asyncio.wait_for(stop.wait(), jobs.idle_wait(poll))
 
 
 async def report_jobs(

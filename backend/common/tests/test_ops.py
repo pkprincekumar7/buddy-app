@@ -125,11 +125,12 @@ def test_the_mongo_client_has_the_pool_limit(monkeypatch, tmp_path):
             return {
                 "pool": client.options.pool_options.max_pool_size,
                 "tz": client.codec_options.tz_aware,
+                "socket_timeout": client.options.pool_options.socket_timeout,
             }
         finally:
             await client.close()
 
-    assert asyncio.run(main()) == {"pool": 5, "tz": True}
+    assert asyncio.run(main()) == {"pool": 5, "tz": True, "socket_timeout": 30.0}
 
 
 # ── logging ────────────────────────────────────────────────────────────────────

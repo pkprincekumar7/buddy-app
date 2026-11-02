@@ -233,9 +233,12 @@ async def ensure_jobs(db: Db, service: str) -> None:
             ("status", ASCENDING),
         ]
     )
-    # The claim query and the pending count, region-scoped.
+    # The claim query and the pending count, region-scoped. created_at last, so the claim
+    # (oldest due job first) reads the index in order and stops at the first match: with
+    # retry_after there instead, Mongo sorted every due job in memory to return one
+    # (production-readiness review, DB-02). retry_after is checked on the few it reads.
     await jobs.create_index(
-        [("location", ASCENDING), ("status", ASCENDING), ("retry_after", ASCENDING)]
+        [("location", ASCENDING), ("status", ASCENDING), ("created_at", ASCENDING)]
     )
     await jobs.create_index([("location", ASCENDING), ("user_id", ASCENDING)])
     await jobs.create_index("completed_at", expireAfterSeconds=JOB_TTL_SECONDS)
