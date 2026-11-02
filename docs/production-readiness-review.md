@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 22 are done, 33 partly done, 30 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 22 are done, 34 partly done, 29 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -206,7 +206,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
-| CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ⬜ Open |
+| CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | 🟡 Actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, Dependabot added; image digests open |
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ⬜ Open |
@@ -2217,7 +2217,16 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-04 — Actions pinned by tag; binaries downloaded unverified 🟠
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Actions are still pinned by tag. Dockle and Nuclei are downloaded without a checksum (`check.yml:772,961`). There's no `.github/dependabot.yml`.
+> 🔄 **Current code (2026-11-02):** 🟡 Partial.
+> - **Actions:** all 103 `uses:` in `.github/workflows/` name a full commit SHA with the exact version as a comment. Each was resolved from its tag through the GitHub API, `@v5`/`@v3`-style majors to the release they point to (for example `actions/cache` → v5.1.0, `codeql-action` → v3.39.1). The acceptance grep below prints nothing.
+> - **Downloads:** `check.yml` checks every binary against a pinned SHA-256 before running it (`echo "<sha256>  <file>" | sha256sum --check --strict`, tested with GNU coreutils). The hashes come from GitHub's recorded asset digest for gitleaks, and from each release's checksums file for Dockle and Nuclei, whose releases have no recorded digest.
+> - **Gradle:** the Android build's wrapper pins `distributionSha256Sum` (`frontend-app/android/gradle/wrapper/gradle-wrapper.properties`, from Gradle's own `.sha256`), so it refuses a different Gradle 9.3.1 download.
+> - **Dependabot:** the new `.github/dependabot.yml` opens grouped weekly PRs for actions, pip (one PR across every backend requirements file, which must move together), npm (web and mobile) and the Dockerfiles, plus monthly Terraform providers. It ignores `buddy-common`, which is built from this repo, so it never looks that name up on PyPI.
+> - **`CODE_QUALITY_STANDARDS.md`** is updated to match.
+>
+> Still open:
+> - pinning service and base images by digest;
+> - the optional repo setting that requires SHA-pinned actions.
 
 **Where:**
 - Tag-pinned actions everywhere: `aquasecurity/trivy-action@v0.36.0` ×10, `aws-actions/configure-aws-credentials@v6.1.1` ×14, `hashicorp/setup-terraform@v4.0.1` ×6, `actions/cache@v5` ×7, `actions/upload-artifact@v7/@v7.0.1`, `actions/dependency-review-action@v5`, `github/codeql-action/*@v3`, `actions/setup-java@v5`, `hadolint/hadolint-action@v3.3.0`, `terraform-linters/setup-tflint@v6.2.2`. Some are **major-only** tags (`@v5`, `@v3`).

@@ -60,28 +60,25 @@ Status legend: ✅ in place · ⚠️ partial · ❌ missing
 
 | # | Gap | Current state | Target | Section |
 |---|---|---|---|---|
-| 1 | Terraform provider lock files | No `.terraform.lock.hcl` committed in any module | Committed per module | [6](#6-infrastructure--terraform) |
-| 2 | GitHub Actions pinned by SHA | All actions use mutable tags | Full commit SHA + version comment | [11](#11-security--cross-cutting) |
-| 3 | Dependabot | `.github/dependabot.yml` missing | Weekly/monthly updates for every ecosystem | [2](#2-github-repository-configuration) |
-| 4 | Frontend (web) tests | No test runner, no tests | Vitest + Testing Library + MSW | [8](#8-testing) |
-| 5 | mypy strict | `strict = false` — **440 errors** on `tools/ common/` and **524** across the nine services under `--strict` | `strict = true` | [4](#4-backend--python--fastapi) |
-| 6 | Ruff `S` + `ANN` rules | Not selected — **123 findings** outside the tests | Selected, findings fixed | [4](#4-backend--python--fastapi) |
-| 7 | `terraform validate` on PRs | Only runs inside the `terraform-live-*` deploy workflows (not scheduler); not in `check.yml` | All 4 modules in `terraform-lint` | [6](#6-infrastructure--terraform) |
-| 8 | tflint config | No `.tflint.hcl` → AWS ruleset not enabled | `.tflint.hcl` per module | [6](#6-infrastructure--terraform) |
-| 9 | Readiness endpoint | Only each service's `/health` (liveness) and shared's `/api/health` (build info) | `/health/ready` checking Mongo + Valkey | [4](#4-backend--python--fastapi) |
-| 10 | Post-deploy smoke test | Deploy checks ECS steady state only | HTTP smoke test after each deploy | [15](#15-cicd-pipeline) |
-| 11 | Error monitoring | OpenTelemetry tracing in the backend; no Sentry | Sentry (backend + frontends) | [14](#14-observability-and-error-monitoring) |
-| 12 | Base image digests | `python:3.13-slim`, `node:22-alpine`, `nginx:1.27-alpine` by tag | Pinned by digest | [7](#7-container-security) |
-| 13 | CODEOWNERS | `.github/CODEOWNERS` missing | Present | [2](#2-github-repository-configuration) |
-| 14 | Branch protection | Not verifiable from the repo | 1 review, CI required, no force-push | [2](#2-github-repository-configuration) |
-| 15 | Pre-commit secrets + Terraform fmt | Gitleaks and `terraform fmt` run in CI only | Also on commit | [11](#11-security--cross-cutting) |
-| 16 | Accessibility lint | No `eslint-plugin-jsx-a11y` (web or app) | Recommended rules on | [5](#5-frontend--react--typescript) |
-| 17 | Conventional Commits / CHANGELOG | Commit messages are free-form (`Updated code.`); no `CHANGELOG.md` | Conventional Commits + release-please | [2](#2-github-repository-configuration), [12](#12-documentation-standards) |
-| 18 | READMEs | Missing in `infra-live-*/` (4), `scripts/` and the services (`backend/common/` has one) | One per runnable directory | [12](#12-documentation-standards) |
-| 19 | ADRs | No `docs/adr/` | MADR records for major decisions | [12](#12-documentation-standards) |
-| 20 | RFC 7807 errors | FastAPI `{"detail": ...}` shape | Problem Details (breaking change) | [9](#9-api-quality) |
-| 21 | Schemathesis / k6 / Lighthouse / Playwright | None configured | Advisory runs against staging | [8](#8-testing), [9](#9-api-quality), [10](#10-performance) |
-| 22 | Prettier `trailingComma` | Not set in `frontend/.prettierrc` | `"all"` | [5](#5-frontend--react--typescript) |
+| 1 | Frontend (web) tests | No test runner, no tests | Vitest + Testing Library + MSW | [8](#8-testing) |
+| 2 | mypy strict | `strict = false` — **440 errors** on `tools/ common/` and **524** across the nine services under `--strict` | `strict = true` | [4](#4-backend--python--fastapi) |
+| 3 | Ruff `S` + `ANN` rules | Not selected — **123 findings** outside the tests | Selected, findings fixed | [4](#4-backend--python--fastapi) |
+| 4 | `terraform validate` on PRs | Only runs inside the `terraform-live-*` deploy workflows (not scheduler); not in `check.yml` | All 4 modules in `terraform-lint` | [6](#6-infrastructure--terraform) |
+| 5 | tflint config | No `.tflint.hcl` → AWS ruleset not enabled | `.tflint.hcl` per module | [6](#6-infrastructure--terraform) |
+| 6 | Readiness endpoint | Only each service's `/health` (liveness) and shared's `/api/health` (build info) | `/health/ready` checking Mongo + Valkey | [4](#4-backend--python--fastapi) |
+| 7 | Post-deploy smoke test | Deploy checks ECS steady state only | HTTP smoke test after each deploy | [15](#15-cicd-pipeline) |
+| 8 | Error monitoring | OpenTelemetry tracing in the backend; no Sentry | Sentry (backend + frontends) | [14](#14-observability-and-error-monitoring) |
+| 9 | Base image digests | `python:3.13-slim`, `node:22-alpine`, `nginx:1.27-alpine` by tag | Pinned by digest | [7](#7-container-security) |
+| 10 | CODEOWNERS | `.github/CODEOWNERS` missing | Present | [2](#2-github-repository-configuration) |
+| 11 | Branch protection | Not verifiable from the repo | 1 review, CI required, no force-push | [2](#2-github-repository-configuration) |
+| 12 | Pre-commit secrets + Terraform fmt | Gitleaks and `terraform fmt` run in CI only | Also on commit | [11](#11-security--cross-cutting) |
+| 13 | Accessibility lint | No `eslint-plugin-jsx-a11y` (web or app) | Recommended rules on | [5](#5-frontend--react--typescript) |
+| 14 | Conventional Commits / CHANGELOG | Commit messages are free-form (`Updated code.`); no `CHANGELOG.md` | Conventional Commits + release-please | [2](#2-github-repository-configuration), [12](#12-documentation-standards) |
+| 15 | READMEs | Missing in `infra-live-*/` (4), `scripts/` and the services (`backend/common/` has one) | One per runnable directory | [12](#12-documentation-standards) |
+| 16 | ADRs | No `docs/adr/` | MADR records for major decisions | [12](#12-documentation-standards) |
+| 17 | RFC 7807 errors | FastAPI `{"detail": ...}` shape | Problem Details (breaking change) | [9](#9-api-quality) |
+| 18 | Schemathesis / k6 / Lighthouse / Playwright | None configured | Advisory runs against staging | [8](#8-testing), [9](#9-api-quality), [10](#10-performance) |
+| 19 | Prettier `trailingComma` | Not set in `frontend/.prettierrc` | `"all"` | [5](#5-frontend--react--typescript) |
 
 ---
 
@@ -117,52 +114,13 @@ Configure on GitHub → Settings → Branches (or a ruleset) for `main`:
   `lambda-edge-test`, `terraform-lint`, `security-scan`, `dast`, `codeql`, `dependency-review`
 - No force-push, no deletion
 
-### Dependabot ❌
+### Dependabot ✅
 
-Create `.github/dependabot.yml`:
+`.github/dependabot.yml` opens one grouped pull request per ecosystem:
+- **Weekly:** GitHub Actions (their SHA pins and version comments), pip (every backend requirements file in a single PR, since `requirements-dev.txt` must stay their exact union), npm for `frontend/` and `frontend-app/`, and the Dockerfiles' base images.
+- **Monthly:** the Terraform providers, for every stack and module.
 
-```yaml
-version: 2
-updates:
-  - package-ecosystem: pip
-    directory: /backend
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: npm
-    directory: /frontend
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: npm          # yarn.lock is handled by the npm ecosystem
-    directory: /frontend-app
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: terraform
-    directories:
-      - /infra-live-backend/terraform
-      - /infra-live-frontend/terraform
-      - /infra-live-edge/terraform
-      - /infra-live-scheduler/terraform
-    schedule:
-      interval: monthly
-
-  - package-ecosystem: docker
-    directories:
-      - /backend
-      - /frontend
-    schedule:
-      interval: monthly
-
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: monthly
-```
+`buddy-common` is ignored: it's built from `backend/common`, never fetched from PyPI.
 
 ### Git workflow conventions ⚠️
 
@@ -656,25 +614,26 @@ CLS < 0.1. A score drop of > 10 points triggers a review comment (advisory).
 | A03 Injection | MongoDB dict queries; Pydantic at all boundaries; Semgrep + Bandit + CodeQL | ✅ |
 | A04 Insecure Design | No stack traces in responses; RFC 7807 pending | ⚠️ |
 | A05 Security Misconfiguration | Checkov + `trivy config` + tflint on all Terraform; no wildcard CORS; Hadolint/Dockle | ✅ |
-| A06 Vulnerable Components | pip-audit, npm/yarn audit, Retire.js, Trivy, Dependency Review; Dependabot pending | ⚠️ |
+| A06 Vulnerable Components | pip-audit, npm/yarn audit, Retire.js, Trivy, Dependency Review, Dependabot | ✅ |
 | A07 Auth Failures | Short-lived access JWT; refresh tokens rotated within a family (reuse revokes it); revocation; Valkey-backed rate limits; login throttling | ✅ |
-| A08 Integrity Failures | SBOMs generated; action SHA pinning and image digest pinning pending | ⚠️ |
+| A08 Integrity Failures | SBOMs generated; actions pinned by commit SHA; downloaded binaries checksum-verified; image digest pinning pending | ⚠️ |
 | A09 Logging Failures | JSON logs with `request_id` and trace ids, personal data dropped; Sentry pending | ⚠️ |
 
-### GitHub Actions — pin all actions to commit SHA ❌
+### GitHub Actions — pinned to commit SHAs ✅
 
-Every `uses:` is a mutable tag today (e.g. `actions/checkout@v6.0.2`,
-`aws-actions/configure-aws-credentials@v6.1.1`, `aquasecurity/trivy-action@v0.36.0`,
-`actions/cache@v5`, `github/codeql-action/*@v3`). Pin each one to a full SHA, keeping the version as
-a comment:
+Every `uses:` in `.github/workflows/` names a full commit SHA, with the version as a comment:
 
 ```yaml
-- uses: actions/checkout@<40-char-sha>  # v6.0.2
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 ```
 
-Automate with [pinact](https://github.com/suzuki-shunsuke/pinact) (`pinact run`). Dependabot's
-`github-actions` ecosystem then keeps the SHAs current. Pinning matters most for third-party
-actions that receive AWS credentials or secrets (`configure-aws-credentials`, `trivy-action`).
+Dependabot's `github-actions` ecosystem keeps the SHAs and comments current. To check, this prints nothing:
+
+```bash
+grep -nE 'uses: [^.][^@ ]*@' .github/workflows/*.yml | grep -vE '@[0-9a-f]{40}([[:space:]]|$)'
+```
+
+Every binary `check.yml` downloads (gitleaks, Dockle, Nuclei) is checked against a pinned SHA-256 before it runs: bump a version and its digest together. The Android build's Gradle wrapper pins `distributionSha256Sum` too.
 
 ### Gitleaks configuration ✅
 
