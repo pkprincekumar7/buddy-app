@@ -107,6 +107,7 @@ jobs:
     name: Resolve services and images
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: ${{ inputs.environment }}
     outputs:
       images: ${{ steps.list.outputs.images }}
@@ -184,6 +185,7 @@ jobs:
     name: Build & Push (${{ matrix.image_service }})
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -279,6 +281,7 @@ jobs:
     name: Deploy Live Backend (${{ matrix.aws_region }})
     needs: [resolve, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

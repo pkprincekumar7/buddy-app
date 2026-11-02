@@ -88,6 +88,7 @@ jobs:
   terraform:
     name: "Terraform Scheduler — ${{ inputs.environment }} / ${{ inputs.action }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ inputs.environment }}
     defaults:
       run:

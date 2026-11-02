@@ -134,6 +134,7 @@ jobs:
     name: Terraform Live Edge ${{ inputs.action }}
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     environment: ${{ inputs.environment }}
     defaults:
       run:

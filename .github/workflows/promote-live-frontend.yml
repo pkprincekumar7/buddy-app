@@ -54,6 +54,7 @@ jobs:
   validate:
     name: Validate Promotion
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Validate promotion direction
         env:
@@ -95,6 +96,7 @@ jobs:
     name: Resolve Source Git Ref
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: ${{ inputs.source_env }}
     outputs:
       git_sha: ${{ steps.resolve.outputs.git_sha }}
@@ -156,6 +158,7 @@ jobs:
     name: Promote Live Frontend
     needs: source_ref
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ inputs.target_env }}
 
     steps:

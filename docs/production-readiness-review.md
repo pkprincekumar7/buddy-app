@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 31 are done, 31 partly done, 23 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 32 are done, 31 partly done, 22 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -199,7 +199,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
 | TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Per-tier `runtime_sizes` (desired = min); load test, max counts and fixes 2, 4–9 open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open (the authz cache now shares the cluster) |
-| TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
+| TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | 🟡 HTTPS-only deny on all four Terraform policies; uploads-bucket policy and bucket imports open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (body rule), rate rule scoped to `/api/` and raised; the rest ⏸ deferred (auth-route rule, version pins, count-mode switch) |
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Timeout, no async retries and a managed log group done; failure alert and idempotency check open |
@@ -218,7 +218,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | 🟡 Build (`npm ci --ignore-scripts`) before credentials; the two-job split (drops `id-token` from the build) ⏸ deferred |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ✅ Done — only a single COMPLETED deployment is promoted; source regions must match |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
-| CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | 🟡 Every `check.yml` job has a timeout; the other 12 workflows have none |
+| CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ✅ Done — every job in every workflow has a timeout; recovery runbook |
 | CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | 🟡 (d) done, (f) moot; (a), (b), (c), (e) open; (g) now three environment-bound jobs |
 | DOC-01 | 🟢 Low | Docs | Documentation drift | 🟡 Several fixed; five drifts remain (see the note) |
 | LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L6, L8, L9, L14, L18, L21 done; L15 partial; L16 moot; L13 no action; the rest open |
@@ -2022,7 +2022,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### TF-05 — Bucket policies: no TLS-only deny; manual buckets 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. No bucket policy denies non-TLS access (`s3.tf:85`, `s3_backend_policy.tf:15`, `waf_logging.tf:96`, `infra-live-frontend/terraform/s3_policy.tf:9`), and there are no `import {}` blocks. `s3_uploads_policy.tf` no longer exists.
+> 🔄 **Current code (2026-11-02):** 🟡 Partial. All four Terraform-managed bucket policies now end with a `DenyInsecureTransport` statement (`Deny`, `s3:*` on the bucket and its objects, when `aws:SecureTransport = false`): `regional_logging` (`infra-live-backend/terraform/s3.tf`), `backend_assets_cf` and `global_logging` (`infra-live-edge/terraform/s3_backend_policy.tf`, `waf_logging.tf`) and `frontend` (`infra-live-frontend/terraform/s3_policy.tf`). Each takes effect as an in-place policy update on that stack's next apply. The backend stack test asserts the statement. **Open:** (1) the uploads buckets have no Terraform-managed policy (`s3_uploads_policy.tf` no longer exists; the backend manages only CORS and lifecycle). Adding one would replace any policy set by hand, so first check each uploads bucket's policy in the S3 console. (2) The buckets themselves aren't in Terraform state (no `import {}` blocks).
 
 **Where:** `infra-live-edge/terraform/s3_uploads_policy.tf`, `s3_backend_policy.tf`, `infra-live-frontend/terraform/s3_policy.tf`, `infra-live-backend/terraform/s3.tf:85` (`regional_logging`).
 
@@ -2521,7 +2521,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-16 — No job timeouts; queued runs silently cancelled 🟢 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. All 13 `check.yml` jobs have `timeout-minutes`, and each pytest step stops at 10 minutes. The other 12 workflows set none.
+> 🔄 **Current code (2026-11-02):** ✅ Done. Every job in all 13 workflows sets `timeout-minutes` (the 8 `terraform-live-all` jobs that only call a reusable workflow can't, and get the called jobs' limits instead). The limits are well above a normal run: Terraform backend 60, edge 90, frontend and scheduler 30; deploys, promotes and restarts 30–45, so a 15-minute rollout wait still fits; Android 60 and iOS 90; validate jobs 5. `docs/infra-operations.md` ("If a Terraform job timed out or was cancelled") covers recovery (re-plan, `force-unlock`, import on "already exists") and the one-pending-run-per-group behaviour. A fail-fast check for an already queued run wasn't added.
 
 **Where:** no job in the 12 workflows other than `check.yml` sets `timeout-minutes` (the default is 6 hours). All 10 `check.yml` jobs already set it. All backend/Terraform groups use `cancel-in-progress: false`.
 

@@ -63,6 +63,7 @@ jobs:
   resolve:
     name: Resolve services
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: ${{ inputs.environment }}
     outputs:
       services: ${{ steps.list.outputs.services }}
@@ -110,6 +111,7 @@ jobs:
     name: Restart Live Backend (${{ matrix.service }}, ${{ matrix.aws_region }})
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # One parallel instance per selected region × service. fail-fast: false —
     # an in-flight rollout must never be cancelled just because another
     # instance failed.

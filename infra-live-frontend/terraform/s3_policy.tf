@@ -49,6 +49,17 @@ resource "aws_s3_bucket_policy" "frontend" {
             "AWS:SourceArn" = data.aws_ssm_parameter.cloudfront_arn.value
           }
         }
+      },
+      {
+        # Plain HTTP is refused (production-readiness review, TF-05). Every caller
+        # that should reach this bucket (CloudFront, the AWS SDKs and CLI, ALB and
+        # CloudTrail log delivery) already uses HTTPS.
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = ["arn:aws:s3:::${var.spa_bucket_name}", "arn:aws:s3:::${var.spa_bucket_name}/*"]
+        Condition = { Bool = { "aws:SecureTransport" = "false" } }
       }
     ]
   })

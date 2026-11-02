@@ -93,6 +93,7 @@ jobs:
     name: Terraform Live Backend ${{ inputs.action }} (${{ matrix.aws_region }})
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # One parallel instance per selected region. fail-fast: false — an
     # in-flight apply in one region must never be cancelled just
     # because another region's instance failed.

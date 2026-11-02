@@ -71,6 +71,7 @@ jobs:
   validate:
     name: Validate Promotion
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Validate promotion direction
         env:
@@ -111,6 +112,7 @@ jobs:
     name: Export Source Image (${{ matrix.aws_region }})
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -257,6 +259,7 @@ jobs:
     name: Promote Live Backend (${{ matrix.aws_region }})
     needs: [export, same_release]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     # One parallel instance per selected region. fail-fast: false — an
     # in-flight rollout in one region must never be cancelled just
     # because another region's instance failed.

@@ -69,6 +69,22 @@ backend region has its own state, so regions can be applied in parallel (`terraf
 runs them as a matrix). The edge state is a single shared distribution per environment, which is
 why edge always receives the **full** region list.
 
+### If a Terraform job timed out or was cancelled
+
+Every workflow job has a `timeout-minutes` (CI-16): Terraform backend, frontend and scheduler 60/30/30, edge 90 (CloudFront and Lambda@Edge are slow), deploys 30–45. A timeout or a cancel sends Terraform an interrupt: it stops starting changes and saves the state, but GitHub kills the job about 10 seconds later, so a slow change still in flight can be cut off. State is written as the apply goes, so only that change is in doubt. To recover:
+
+1. Run `plan` again for the same environment (and region). Anything left undone shows up as a change; apply it as usual.
+2. If the run fails with **"Error acquiring the state lock"**, the killed run left its lock file. Make sure no other run is using that state, then, in the stack directory, initialised against that state:
+
+   ```bash
+   terraform force-unlock <LOCK_ID>
+   ```
+
+   The lock ID is in the error message.
+3. If an apply fails with **"already exists"**, AWS finished creating a resource that Terraform never recorded. Import it (`terraform import <address> <id>`, or an `import {}` block), then plan again.
+
+**Queued runs:** each Terraform and deploy workflow has a concurrency group (per environment, plus region for the backend), with `cancel-in-progress: false`. GitHub keeps one running and **one** pending run per group, so a third run started while one is pending replaces the pending one, without an error. That includes the scheduler's runs. If a run shows as cancelled without anyone cancelling it, that's why: start it again once the group is free.
+
 ---
 
 ## ECS task definitions — what each workflow changes

@@ -445,6 +445,14 @@ run "prod_stack_wiring" {
     )
     error_message = "A no-running-task alarm for every runtime, missing data breaching (OBS-03)."
   }
+  assert {
+    condition = anytrue([for s in jsondecode(aws_s3_bucket_policy.regional_logging[0].policy).Statement : (
+      s.Effect == "Deny" && s.Principal == "*" && s.Action == "s3:*" &&
+      s.Condition.Bool["aws:SecureTransport"] == "false" &&
+      toset(s.Resource) == toset(["arn:aws:s3:::superpower-logs-ap-south-1", "arn:aws:s3:::superpower-logs-ap-south-1/*"])
+    )])
+    error_message = "The regional logging bucket refuses plain HTTP, on the bucket and its objects (TF-05)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
