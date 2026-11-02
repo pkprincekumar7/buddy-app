@@ -130,6 +130,9 @@ jobs:
       # sends it instead. See docs/infra-operations.md.
       TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
       TF_VAR_global_logging_bucket_name: ${{ vars.GLOBAL_LOGGING_BUCKET_NAME }}
+      # The edge alarms' email (OBS-01), the same variable the backend stack uses.
+      # Needed where enable_alarms = true (stg, prod); Terraform checks it.
+      TF_VAR_ops_email: ${{ vars.OPS_EMAIL }}
       # TF_VAR_uploads_bucket_names is not set here — it is a JSON map built
       # from whichever regions are in inputs.backend_regions and written to
       # GITHUB_ENV by the "Resolve uploads bucket names" step below.

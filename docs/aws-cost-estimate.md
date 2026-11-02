@@ -26,7 +26,7 @@
 | **VPC interface endpoints** (ECR API, ECR DKR, Secrets Manager, Logs, X-Ray) | none | none | 5 × 2 AZ | 5 × 3 AZ | `modules/network` (created when `nat_gateway_count > 1`) |
 | **Public IPv4 addresses** (NAT EIPs + public ALB, one per AZ) | 1 + 3 | 1 + 3 | 2 + 3 | 3 + 3 | NAT count; ALB in 3 public subnets |
 | ALBs | 1 public | 1 public | 1 public | 1 public | `modules/alb` |
-| CloudWatch: basic / all alarms, dashboard | off / off, off | off / off, off | on / off, off | on / on, on | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard` |
+| CloudWatch: basic / all alarms, dashboard | off / off, off | off / off, off | on / on, off | on / on, on | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard` |
 | Container Insights | off | off | off | on | `enable_container_insights` |
 | Log retention | 7 d | 7 d | 30 d | 90 d | `log_retention_days` |
 | GuardDuty (backend region / edge us-east-1) | off / off | off / off | on / on | on / on | `enable_guardduty` (backend, edge tfvars) |

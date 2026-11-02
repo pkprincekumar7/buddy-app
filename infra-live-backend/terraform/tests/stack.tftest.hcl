@@ -105,6 +105,7 @@ variables {
   llm_hourly_limit       = 200
   cookie_domain          = "superpower.example.com"
   enable_all_alarms      = true
+  enable_basic_alarms    = true
   jwt_public_keys        = { "key-v1" = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n" }
 }
 
@@ -376,6 +377,28 @@ run "prod_stack_wiring" {
     condition     = aws_ssm_parameter.ecs_cluster_name.value == aws_ecs_cluster.backend.name
     error_message = "Deploy workflows still find the cluster in SSM."
   }
+
+  # -- alarms (OBS-01) ------------------------------------------------------------
+  assert {
+    condition = (
+      one([for q in aws_cloudwatch_metric_alarm.alb_5xx[0].metric_query : q.expression if coalesce(q.return_data, false)]) == "IF(requests >= 20, 100 * (FILL(target5xx, 0) + FILL(elb5xx, 0)) / requests, 0)" &&
+      toset([for q in aws_cloudwatch_metric_alarm.alb_5xx[0].metric_query : one(q.metric).metric_name if length(q.metric) > 0]) == toset(["RequestCount", "HTTPCode_Target_5XX_Count", "HTTPCode_ELB_5XX_Count"]) &&
+      aws_cloudwatch_metric_alarm.alb_5xx[0].threshold == 5
+    )
+    error_message = "ALB 5xx is a rate of all requests, the services' and the load balancer's 5xx together, over 5%."
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alb_slow[0].extended_statistic == "p95" && aws_cloudwatch_metric_alarm.alb_slow[0].threshold == 3
+    error_message = "A p95 response-time alarm on the ALB, over 3 s."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_metric_alarm.valkey)) == toset(["cpu", "memory", "evictions"]) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.valkey : length(a.metric_query) == length(local.redis_member_ids) + 1]) &&
+      one([for q in aws_cloudwatch_metric_alarm.valkey["evictions"].metric_query : q.expression if coalesce(q.return_data, false)]) == "SUM(METRICS())"
+    )
+    error_message = "Valkey CPU, memory and eviction alarms, each over every node."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -388,6 +411,7 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     elasticache_replica_count = 0
     elasticache_multi_az      = false
     enable_all_alarms         = false
+    enable_basic_alarms       = false
     enable_container_insights = false
     runtime_sizes = {
       "http"              = { cpu = 256, memory = 512, desired_count = 1, min_capacity = 1, max_capacity = 2 }
@@ -413,6 +437,10 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.outbox_stale) == 0 && length(aws_cloudwatch_metric_alarm.pending_jobs_high) == 0 && length(aws_cloudwatch_metric_alarm.deletion_stuck) == 0
     error_message = "Dev: no job or outbox alarms (enable_all_alarms)."
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.valkey) == 0 && length(aws_cloudwatch_metric_alarm.alb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.alb_slow) == 0
+    error_message = "Dev: no Valkey or ALB alarms."
   }
   assert {
     condition     = module.redis.node_count == 1

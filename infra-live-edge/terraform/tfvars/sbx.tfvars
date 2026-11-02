@@ -12,3 +12,6 @@ enable_cloudtrail = false
 # WAF — disabled on sbx to avoid ~$10/mo (WebACL + 5 rules) + per-request charges
 enable_waf         = false
 enable_waf_logging = false
+
+# Edge alarms (OBS-01): off here, as the backend's are.
+enable_alarms = false

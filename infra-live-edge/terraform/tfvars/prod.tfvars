@@ -16,3 +16,6 @@ enable_cloudtrail = true
 # WAF — enabled on prod, with full logging (prod only)
 enable_waf         = true
 enable_waf_logging = true
+
+# Edge alarms (OBS-01): CloudFront 5xx rate, emailed to OPS_EMAIL.
+enable_alarms = true

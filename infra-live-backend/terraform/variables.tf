@@ -312,7 +312,7 @@ variable "enable_basic_alarms" {
 }
 
 variable "enable_all_alarms" {
-  description = "Create full set of ECS, Redis, and ALB alerting alarms (superset of enable_basic_alarms). true only on prod."
+  description = "Create full set of ECS, Redis, and ALB alerting alarms (superset of enable_basic_alarms). true on stg and prod."
   type        = bool
   default     = false
 }

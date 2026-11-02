@@ -179,3 +179,22 @@ variable "global_logging_bucket_name" {
     error_message = "global_logging_bucket_name must be set when enable_cloudtrail = true or enable_waf_logging = true."
   }
 }
+
+# -- Alarms (OBS-01) ----------------------------------------------------------
+
+variable "enable_alarms" {
+  description = "Create the edge alarms (CloudFront 5xx rate) and their SNS topic in us-east-1. true on stg and prod."
+  type        = bool
+  default     = false
+}
+
+variable "ops_email" {
+  description = "Operator email for the edge alarm topic (the backend stack's OPS_EMAIL). Must be set when enable_alarms = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_alarms || length(var.ops_email) > 0
+    error_message = "ops_email must be set when enable_alarms = true (the OPS_EMAIL GitHub environment variable)."
+  }
+}

@@ -41,13 +41,15 @@ llm_hourly_limit    = 100
 # an acceptable trade-off. Disabled in prod via prod.tfvars.
 enable_execute_command = true
 
-# Observability — stg: 30-day retention, ALB alarms only, no dashboard, no email alerts
+# Observability — stg: 30-day retention, every alarm, emailed (OBS-01): a problem shows
+# up here before prod. Needs the stg GitHub environment's OPS_EMAIL variable; confirm
+# the subscription email SNS sends after the first apply. No dashboard.
 log_retention_days         = 30
 enable_basic_alarms        = true
-enable_all_alarms          = false
+enable_all_alarms          = true
 enable_dashboard           = false
 xray_default_sampling_rate = 0.05
-enable_ops_email           = false
+enable_ops_email           = true
 
 # Security — GuardDuty and CloudTrail enabled on stg
 # regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name

@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 24 are done, 33 partly done, 28 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 24 are done, 34 partly done, 27 open and 1 moot; DR-01, CI-01, CI-02, SEC-03, SEC-04 and SEC-08 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -191,7 +191,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open |
 | DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
 | DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
-| OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | ⬜ Open (alarms now per service; still email only) |
+| OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | 🟡 stg alerts too; ALB 5xx rate and p95, Valkey, CloudFront 5xx added (email, AWS-only); logs, canary, push open |
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | 🟡 Stuck alarm uses `OldestRunningJobAgeSeconds`; pending-age metric open |
 | OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | 🟡 Leader-per-region metrics, a missing-data alarm (prod) and worker health checks (APP-06); `RunningTaskCount` alarm open |
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
@@ -1745,7 +1745,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### OBS-01 — Alerting goes nowhere useful; edge/Redis not monitored 🟠
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open, with some progress: healthy-host alarms are now one per HTTP service, and CPU/memory alarms come from `modules/ecs-service`. Alerts still go to email only (`cloudwatch.tf:44-48`; `enable_ops_email = false` in stg). Nothing yet for Valkey CPU, memory or evictions, `TargetResponseTime`, `HTTPCode_ELB_*`, CloudFront, Synthetics or Chatbot. The "existing alarms" list below describes the old single API and worker.
+> 🔄 **Current code (2026-11-02):** 🟡 Partial. Alerting stays on AWS only: email through SNS, with no third-party paging, by the owner's choice.
+> - **stg alerts too:** `enable_ops_email` and `enable_all_alarms` are on in stg as well as prod, so every alarm emails `OPS_EMAIL` there.
+> - **ALB 5xx is a rate:** `alb_5xx` is the services' 5xx plus the load balancer's own (`HTTPCode_ELB_5XX_Count`) as a share of requests, over 5% for 3 of 5 minutes. Minutes under 20 requests count as 0, and `FILL` covers minutes with no 5xx data.
+> - **Slow responses:** a new `alb_slow` alarm fires on p95 `TargetResponseTime` over 3 s for 3 of 5 minutes.
+> - **Valkey:** new `valkey` alarms (where `enable_all_alarms`) on engine CPU over 80%, memory over 80%, and any evictions, each across every node.
+> - **Edge** (`infra-live-edge/terraform/alarms.tf`, `enable_alarms`, stg and prod): an alert topic in us-east-1, emailing `OPS_EMAIL` (now passed to the edge workflow), and a `cloudfront_5xx` alarm on the distribution's `5xxErrorRate` over 5%. That's a free default metric, and it covers Lambda@Edge failures, since they reach viewers as 5xx.
+> - **Checked:** stack `terraform test` assertions for the ALB and Valkey alarms (and none in dev); validate, tflint and checkov for both stacks.
+>
+> Still open: CloudFront access logs, an outside uptime check (CloudWatch Synthetics), and push notifications to the AWS Console Mobile app (AWS User Notifications). On-call paging would need Incident Manager, which may not be open to new accounts.
 
 **Where:**
 - `infra-live-backend/terraform/cloudwatch.tf:38`: an email subscription that has to be confirmed by hand.

@@ -171,16 +171,85 @@ resource "aws_cloudwatch_metric_alarm" "alb_healthy_hosts" {
   }
 }
 
+# 5xx as a share of requests, not a count, so it means the same at any traffic level
+# (OBS-01): the services' own 5xx plus the load balancer's (502/503/504 when a target
+# fails or times out), over 5 % of requests for 3 of 5 minutes. Below 20 requests a
+# minute a few errors would be a large share of nothing, so those minutes count as 0.
+# The 5xx counts are only published in minutes that have one, hence FILL(…, 0).
+locals {
+  alb_5xx_percent  = 5
+  alb_min_requests = 20
+  # p95 over this, for 3 of 5 minutes: most requests are reads; recordings and job
+  # starts are the slowest, and still well under it.
+  alb_p95_seconds = 3
+}
+
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   count               = var.enable_basic_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-alb-5xx-${var.environment}"
-  alarm_description   = "ALB 5XX error spike (all target groups) — check the HTTP services' task logs."
+  alarm_description   = "Over ${local.alb_5xx_percent}% of API requests failed with a 5xx (from the services or the load balancer) — check the HTTP services' task logs and the healthy-host alarms."
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = local.alb_5xx_percent
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "rate"
+    expression  = "IF(requests >= ${local.alb_min_requests}, 100 * (FILL(target5xx, 0) + FILL(elb5xx, 0)) / requests, 0)"
+    label       = "5xx (% of requests)"
+    return_data = true
+  }
+  metric_query {
+    id = "requests"
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "RequestCount"
+      stat        = "Sum"
+      period      = 60
+      dimensions  = { LoadBalancer = module.alb.arn_suffix }
+    }
+  }
+  metric_query {
+    id = "target5xx"
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "HTTPCode_Target_5XX_Count"
+      stat        = "Sum"
+      period      = 60
+      dimensions  = { LoadBalancer = module.alb.arn_suffix }
+    }
+  }
+  metric_query {
+    id = "elb5xx"
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "HTTPCode_ELB_5XX_Count"
+      stat        = "Sum"
+      period      = 60
+      dimensions  = { LoadBalancer = module.alb.arn_suffix }
+    }
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
+  tags = {
+    Name = "${var.app_name}-alb-5xx-${var.environment}"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_slow" {
+  count               = var.enable_basic_alarms ? 1 : 0
+  alarm_name          = "${var.app_name}-alb-slow-${var.environment}"
+  alarm_description   = "API responses are slow: p95 over ${local.alb_p95_seconds} s — check the services' CPU, MongoDB and Valkey."
   namespace           = "AWS/ApplicationELB"
-  metric_name         = "HTTPCode_Target_5XX_Count"
-  statistic           = "Sum"
+  metric_name         = "TargetResponseTime"
+  extended_statistic  = "p95"
   period              = 60
-  evaluation_periods  = 3
-  threshold           = 10
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = local.alb_p95_seconds
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
@@ -192,7 +261,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   ok_actions    = [aws_sns_topic.alerts.arn]
 
   tags = {
-    Name = "${var.app_name}-alb-5xx-${var.environment}"
+    Name = "${var.app_name}-alb-slow-${var.environment}"
   }
 }
 
@@ -250,6 +319,67 @@ resource "aws_cloudwatch_metric_alarm" "redis_connections" {
 
   tags = {
     Name = "${var.app_name}-redis-connections-${var.environment}"
+  }
+}
+
+# Valkey under strain (OBS-01). It holds the rate limits, the login throttle, the LLM
+# hourly limits and the authz cache, so running out of CPU or memory slows or weakens
+# all of them; an eviction means memory is already full. Each is over every node.
+locals {
+  valkey_alarms = var.enable_all_alarms ? {
+    cpu = {
+      metric = "EngineCPUUtilization", stat = "Maximum", combine = "MAX", threshold = 80
+      what   = "Valkey's engine CPU is over 80% on a node — it's single-threaded, so requests to it queue."
+    }
+    memory = {
+      metric = "DatabaseMemoryUsagePercentage", stat = "Maximum", combine = "MAX", threshold = 80
+      what   = "Valkey memory is over 80% on a node — next it evicts keys (rate-limit counters, cached authz)."
+    }
+    evictions = {
+      metric = "Evictions", stat = "Sum", combine = "SUM", threshold = 0
+      what   = "Valkey evicted keys: its memory is full. Limits and cached authz are being lost; size the nodes up (TF-04)."
+    }
+  } : {}
+}
+
+resource "aws_cloudwatch_metric_alarm" "valkey" {
+  for_each            = local.valkey_alarms
+  alarm_name          = "${var.app_name}-valkey-${each.key}-${var.environment}"
+  alarm_description   = each.value.what
+  evaluation_periods  = 5
+  datapoints_to_alarm = each.key == "evictions" ? 1 : 3
+  threshold           = each.value.threshold
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "all"
+    expression  = "${each.value.combine}(METRICS())"
+    label       = "${each.value.metric} (all nodes)"
+    return_data = true
+  }
+
+  dynamic "metric_query" {
+    for_each = local.redis_member_ids
+    content {
+      id = "node${metric_query.key}"
+      metric {
+        namespace   = "AWS/ElastiCache"
+        metric_name = each.value.metric
+        stat        = each.value.stat
+        period      = 60
+        dimensions = {
+          CacheClusterId = metric_query.value
+        }
+      }
+    }
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-valkey-${each.key}-${var.environment}"
   }
 }
 

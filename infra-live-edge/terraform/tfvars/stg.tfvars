@@ -14,3 +14,6 @@ enable_cloudtrail = false
 # WAF — enabled on stg (CloudFront WebACL); full logging disabled (no global logging bucket)
 enable_waf         = true
 enable_waf_logging = false
+
+# Edge alarms (OBS-01): CloudFront 5xx rate, emailed to OPS_EMAIL.
+enable_alarms = true
