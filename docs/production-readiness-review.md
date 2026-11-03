@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 40 are done, 28 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 41 are done, 27 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -209,7 +209,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | 🟡 Actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, Dependabot added; image digests open |
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open · ⏸ Deferred |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
-| CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | 🟡 Old chunks kept, unhashed-only invalidation, old unused chunks pruned; rollback workflow open |
+| CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ✅ Done — old chunks kept, unhashed-only invalidation, the last 10 releases kept, `rollback-live-frontend` with no rebuild |
 | CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | 🟡 `images.json` read with jq instead of sourced; still `docker save` artifacts |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
@@ -2412,17 +2412,24 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-07 — Frontend deploy deletes live chunks; no rollback 🟠 (v2: raised)
 
-> 🔄 **Current code (2026-11-02):** 🟡 Partial: fixes 1 and 3, and pruning in place of fix 2's releases.
+> 🔄 **Current code (2026-11-03):** ✅ Done: fixes 1–4 (fix 2 as kept releases), and pruning.
 > - **One script:** deploy and promote both publish through `scripts/frontend-publish.sh`. Promote checks out the script from its own commit, since the commit being promoted can predate it.
 > - **Fix 1:** `assets/` (Vite's hashed chunks) is synced **without** `--delete`, before `index.html` and the other unhashed files (which keep `--delete`). The live `index.html` and tabs opened before a deploy keep finding their chunks.
 > - **Fix 3:** only the unhashed files (and `/`) are invalidated, not `/*`. App routes are cached as `/index.html`, because `spa_rewrite` runs on viewer request.
 > - **Pruning:** after a successful deploy, a last step deletes chunks the new build doesn't contain *and* that are over 30 days old. That counts age from upload but never touches the current build, so the age-based-expiry problem in fix 2 doesn't arise.
 > - **Tests:** `scripts/frontend-publish.test.sh` (fake aws; in `check.sh` and `check.yml`) covers the sync order and flags, the invalidation paths, and pruning (only old unused chunks, an empty bucket, and batches of 1,000).
 >
+> ✅ **2026-11-03, fix 2 (as releases) and fix 4:**
+> - **Releases.** Every deploy and promote also keeps its build's unhashed files, with the list of the chunks it uses, under `releases/<sha>/` (about 450 KB). It keeps the last 10 (`prune_releases`).
+> - **Pruning.** The prune keeps every chunk a kept release uses, so a rollback never finds its chunks gone. The root sync no longer deletes `releases/`.
+> - **Rollback.** The new `rollback-live-frontend.yml` takes an environment (prod included) and a commit SHA, or none, meaning the newest saved release that isn't live. It checks every chunk the release needs is still there, copies the release back over the root (`restore_release`, `publish_unhashed`), invalidates those files and records the SHA as deployed. It shares the deploy's concurrency group, and has a `validate` job for the free-text SHA. It rolls back to that environment's own earlier build, never a fresh one (CI-03).
+> - **Tests.** `scripts/frontend-release.test.sh` (21, against a stateful fake S3; in `check.sh` and `check.yml`) covers: a release per build, a publish keeping the releases, the prune keeping a release's chunks, a restore bringing the old `index.html` back without publishing the chunk list, an unknown release and one with a missing chunk refused, the default target, and keeping only the newest releases. The 14 publish tests still pass.
+> - **Docs.** `docs/infra-operations.md` ("Rolling the frontend back") has the runbook, and its frontend deploy steps are corrected: they still described `--delete` on `assets/` and a `/*` invalidation.
+>
 > Still open:
-> - fix 4: a rollback workflow;
-> - promote still rebuilds from source, so prod isn't byte-identical to stg;
-> - the deploy roles need `s3:ListBucket`/`s3:DeleteObject` on the bucket, which they already use for `sync --delete`; check them on the first deploy.
+> - promote still rebuilds from source, so prod isn't byte-identical to stg (fix 5, runtime config);
+> - the deploy roles need `s3:ListBucket`/`s3:DeleteObject` on the bucket, which they already use for `sync --delete`; check them on the first deploy, and check a rollback once there.
+> - The acceptance criterion (zero failed chunk loads during a deploy) needs a deployed environment.
 
 **Where:** `deploy-live-frontend.yml:142` (`aws s3 sync frontend/dist/assets/ … --delete`), `:148` (`index.html` and the rest, `--exclude "assets/*"`), `:159` (invalidation `/*`). The same at `promote-live-frontend.yml:261,267`.
 

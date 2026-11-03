@@ -391,6 +391,10 @@ jobs:
       - name: Run frontend-publish.sh tests
         run: bash scripts/frontend-publish.test.sh
 
+      # The frontend releases kept for rollback-live-frontend (CI-07): save, prune, restore.
+      - name: Run frontend release tests
+        run: bash scripts/frontend-release.test.sh
+
       # The reusable workflows' input checks (SEC-07): environment, action, regions.
       - name: Run workflow-inputs.sh tests
         run: bash scripts/workflow-inputs.test.sh
@@ -406,7 +410,7 @@ jobs:
         run: bash scripts/check-service-lists.sh
 
       - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh scripts/workflow-inputs.sh scripts/workflow-inputs.test.sh
+        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh scripts/frontend-release.test.sh scripts/workflow-inputs.sh scripts/workflow-inputs.test.sh
 
   terraform-lint:
     name: Terraform Lint

@@ -80,6 +80,7 @@ Add `- qa` to the `environment` choice options in:
 | `.github/workflows/build-ios-ipa.yml` | `environment` |
 | `.github/workflows/promote-live-backend.yml` | `source_env`, `target_env` **and** the allowed paths in the `Validate promotion direction` step |
 | `.github/workflows/promote-live-frontend.yml` | `source_env`, `target_env` **and** the allowed paths in the `Validate promotion direction` step |
+| `.github/workflows/rollback-live-frontend.yml` | `environment` |
 
 Promotion paths are an explicit allow-list (today: `dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`).
 Add an `elif` for each new path you want, e.g. `dev→qa` and `qa→stg`, and update the error message.

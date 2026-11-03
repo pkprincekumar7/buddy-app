@@ -611,12 +611,30 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 | ElastiCache Valkey 8.0 | At-rest encryption + TLS required + RBAC: one IAM-authenticated user per service, limited to its own keys (`modules/redis`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters, leader locks and the `authz:{user}` cache. `maxmemory-policy = noeviction` (TF-04): when memory is full, writes fail rather than evict a counter or lock (every key has a TTL, so Valkey's default `volatile-lru` would); the services then count per task, and the Valkey memory and `valkey-degraded` alarms fire |
 | CloudWatch Logs | One log group per runtime, `/ecs/<app>/<runtime>/<env>`; retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
 
-### Frontend deploy (`deploy-live-frontend.yml`)
+### Frontend deploy (`deploy-live-frontend.yml`, `promote-live-frontend.yml`)
+
+Both publish through `scripts/frontend-publish.sh` (CI-07):
 
 1. Builds the React app (`VITE_API_URL` is baked in, derived from `SUBDOMAIN` + env + `DOMAIN_NAME`).
-2. Syncs `dist/assets/` with `Cache-Control: public,max-age=31536000,immutable` (hashed files).
-3. Syncs the rest (`index.html` …) with `no-cache,no-store,must-revalidate`; both syncs `--delete`.
-4. Invalidates CloudFront `/*`, waits for completion, and records `deployed_git_sha` in SSM.
+2. Syncs `dist/assets/` with `Cache-Control: public,max-age=31536000,immutable` (hashed files),
+   **without** `--delete`, so open pages and the live `index.html` keep finding their chunks.
+3. Syncs the rest (`index.html` …) with `no-cache,no-store,must-revalidate` and `--delete`,
+   leaving `assets/` and `releases/` alone.
+4. Keeps the build's unhashed files and its chunk list under `releases/<sha>/` (about 450 KB).
+5. Invalidates only the unhashed files (and `/`), waits, and records `deployed_git_sha` in SSM.
+6. Prunes: releases beyond the last 10, then chunks that neither this build nor a kept
+   release uses and that are over 30 days old.
+
+### Rolling the frontend back (`rollback-live-frontend.yml`)
+
+A bad frontend release goes back to an earlier one in minutes, with no rebuild. Run
+**Rollback Live Frontend** with the environment (prod included) and either a commit SHA or
+nothing, which means the newest saved release that isn't live now. The run's log lists the
+saved releases. It checks that every chunk the release uses is still in the bucket, copies
+its files back over the root, invalidates them, and records that SHA as `deployed_git_sha`,
+so a later promote from this environment promotes what's live. Only the last 10 releases
+are kept; an older commit has to be deployed (or promoted) again. The backend isn't touched:
+roll it back by deploying or promoting its earlier image.
 
 `infra-live-frontend`'s bucket policy has a precondition: apply fails if `spa_bucket_name` in its
 tfvars differs from the bucket name `infra-live-edge` wrote to SSM.

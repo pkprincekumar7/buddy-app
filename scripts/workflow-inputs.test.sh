@@ -34,6 +34,12 @@ refuses "a deploy to an unknown environment" check_deploy_environment qa
 check "prod's refusal says to promote" "$(check_deploy_environment prod 2>&1 || true)" \
   "::error::prod isn't deployed directly: promote the release from stg with promote-live-backend and promote-live-frontend."
 
+accepts "no SHA: the previous release" check_optional_sha ""
+accepts "a full SHA" check_optional_sha "$(printf 'a%.0s' {1..40})"
+refuses "a short SHA" check_optional_sha abc123
+# shellcheck disable=SC2016 # the literal text is the point
+refuses "shell in a SHA" check_optional_sha '$(id)'
+
 for action in plan apply plan-destroy destroy; do accepts "action $action" check_action "$action"; done
 refuses "an unknown action" check_action import
 refuses "shell in the action" check_action 'plan; id'

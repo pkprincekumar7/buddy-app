@@ -38,6 +38,13 @@ check_deploy_environment() {
   return 1
 }
 
+# check_optional_sha VALUE → error unless empty or a 40-character commit SHA.
+check_optional_sha() {
+  [[ -z "$1" || "$1" =~ ^[0-9a-f]{40}$ ]] && return 0
+  echo "::error::git_sha must be empty (the release before the current one) or a 40-character commit SHA, not '$1'."
+  return 1
+}
+
 # check_action VALUE → error unless plan, apply, plan-destroy or destroy.
 check_action() {
   [[ "$1" =~ ^(plan|apply|plan-destroy|destroy)$ ]] && return 0

@@ -175,6 +175,7 @@ jobs:
 
       # Old hashed chunks are kept, index.html goes up last, and only the unhashed files
       # are invalidated, so a deploy never breaks an open page or the next load (CI-07).
+      # The build is also kept as a release for rollback-live-frontend.
       # Helpers and the reasons: scripts/frontend-publish.sh.
       - name: Sync to S3
         env:
@@ -182,6 +183,7 @@ jobs:
         run: |
           source scripts/frontend-publish.sh
           publish_files frontend/dist "$S3_BUCKET"
+          save_release frontend/dist "$S3_BUCKET" "$GITHUB_SHA"
 
       - name: Invalidate CloudFront cache
         id: invalidate
@@ -227,4 +229,5 @@ jobs:
           S3_BUCKET: ${{ steps.tf_outputs.outputs.s3_bucket }}
         run: |
           source scripts/frontend-publish.sh
+          echo "Pruned $(prune_releases "$S3_BUCKET") old releases (the last $RELEASES_KEPT are kept)."
           echo "Pruned $(prune_assets frontend/dist "$S3_BUCKET" 30) old assets."

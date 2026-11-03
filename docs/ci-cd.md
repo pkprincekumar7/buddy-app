@@ -2,7 +2,7 @@
 
 ## GitHub Actions workflows
 
-Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Deployment and infrastructure workflows authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
+Fourteen workflows live under [`.github/workflows/`](../.github/workflows/). Deployment and infrastructure workflows authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
@@ -15,6 +15,7 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 | `deploy-live-backend.yml` | Manual / called | dev, sbx and stg only (prod gets `promote-live-backend`). Builds one image per selected service (`--build-arg SERVICE=<service>`; a worker runs its service's), in parallel, scans each with Trivy (HIGH/CRITICAL fails before any push), pushes each to that service's ECR repository in every selected region, and rolls out the selected runtimes (`service`: `all` or a comma-separated list such as `users,users-worker`) in parallel; a failed one doesn't stop the others, and the run fails naming it. The collector runs a pinned public image, so `all` skips it. A service added in `infra-live-backend/terraform/services.tf` needs no workflow logic change, only its runtimes added to the help text of the `service` input (CI checks it matches). |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront. dev, sbx and stg only: prod gets `promote-live-frontend` |
 | `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), all in parallel. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment; a service still rolling out or rolling back there stops the run (only one `COMPLETED` deployment counts), and so do source regions running different tags (the `same_release` job). Then the promote job (target's `ROLE_ARN`) pushes each into its service's repository in the target under the same tag and updates each target ECS service. The collector isn't promoted. Works across AWS accounts (e.g. stg and prod in different accounts) |
+| `rollback-live-frontend.yml` | Manual | Puts an earlier frontend release back live in an environment (prod included), with no rebuild: one of the last 10 builds each deploy and promote keeps under `releases/<sha>/` in the bucket (CI-07). Empty `git_sha` means the release before the one live now; see [infra-operations.md](infra-operations.md#rolling-the-frontend-back-rollback-live-frontendyml) |
 | `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
 | `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `sbx`, `stg`, `prod`) |
 | `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment |
