@@ -1261,7 +1261,7 @@ Unknown fields are `422`.
 
 1. **Checking `avatar_key`:**
    - it must start with this child's **avatar** prefix, `uploads/{location}/{child_id}/avatar/` (`422 invalid_avatar_key`). Plan photos live under `…/ninety-day-plan/`, so a plan photo can't be set as the avatar, and replacing the avatar can never delete transform's object;
-   - `HeadObject` must find it, with an allowed image type and at most **5 MB** (`422 avatar_not_uploaded` or `avatar_too_large`). A presigned PUT can't limit size, so this check is where the limit is enforced.
+   - `HeadObject` must find it, with an allowed image type and at most **5 MB** (`422 avatar_not_uploaded` or `avatar_too_large`). The upload's signed policy already capped it at 5 MB; this checks it again, whatever S3 was told.
 2. **Update:** apply the changes and increment `version`. If `name`, `age` and `gender` are now all present for the first time, set `progress.profile = true`.
 3. **Event, in the same transaction:** one `child.changed` with the full snapshot, if `name`, `age`, `gender` or `progress` changed (proposal 7.4). Transform clears the child's Life Pathway milestones when `age` or `gender` differs from its copy, as today's `_LIFE_PATHWAY_INPUTS` does. A `school` or avatar change alone publishes nothing: no other service holds them.
 
@@ -1322,14 +1322,15 @@ Returns a URL for uploading a child's photo straight to S3.
 
 ```json
 {
-  "upload_url": "https://<bucket>.s3.<region>.amazonaws.com/uploads/…?X-Amz-…",
+  "upload_url": "https://<bucket>.s3.<region>.amazonaws.com/",
+  "upload_fields": {"key": "uploads/…", "Content-Type": "image/jpeg", "policy": "…", "x-amz-signature": "…", "…": "…"},
   "avatar_key": "uploads/ap-south-1/c0ffee00-…/avatar/9f8e….jpg",
   "avatar_url": "https://…?X-Amz-…"
 }
 ```
 
 The flow:
-1. **Upload:** the client PUTs the file to `upload_url` within **5 minutes**, with the same `Content-Type`.
+1. **Upload:** within **5 minutes**, the client POSTs a multipart form to `upload_url`: every field of `upload_fields`, then the file as `file` (last). The signed policy pins the key and the `Content-Type` and limits the file to 5 MB, so S3 refuses anything else (production-readiness review, APP-07).
 2. **Save:** it then sends `PATCH /api/v1/children/{id}` with `{"avatar_key": …}`.
 3. **Preview:** `avatar_url` is a short-lived GET URL, so the photo can be shown at once.
 
@@ -1980,15 +1981,16 @@ Returns a URL for uploading a 90-day-plan photo straight to S3.
 
 ```json
 {
-  "upload_url": "https://<bucket>.s3.<region>.amazonaws.com/uploads/…?X-Amz-…",
+  "upload_url": "https://<bucket>.s3.<region>.amazonaws.com/",
+  "upload_fields": {"key": "uploads/…", "Content-Type": "image/jpeg", "policy": "…", "x-amz-signature": "…", "…": "…"},
   "photo_key": "uploads/ap-south-1/c0ffee00-…/ninety-day-plan/….jpg",
   "photo_url": "https://…?X-Amz-…"
 }
 ```
 
 The flow:
-1. **Upload:** the client PUTs the file to `upload_url` within **5 minutes**.
-2. **Save:** it adds `photo_key` to `photos[field_key]` with `PATCH …/transform`, where the 5 MB limit is checked.
+1. **Upload:** within **5 minutes**, the client POSTs a multipart form to `upload_url`: every field of `upload_fields`, then the file as `file` (last). The signed policy pins the key and the `Content-Type` and limits the file to 5 MB, so S3 refuses anything else (production-readiness review, APP-07).
+2. **Save:** it adds `photo_key` to `photos[field_key]` with `PATCH …/transform`, which checks the photo again.
 3. **Preview:** `photo_url` is a short-lived GET URL, so the photo can be shown at once.
 
 ### Errors

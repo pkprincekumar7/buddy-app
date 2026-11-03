@@ -6,6 +6,8 @@ URLs a browser would get are exercised end to end.
 """
 
 import asyncio
+import base64
+import json
 import socket
 import uuid
 from typing import Any
@@ -257,14 +259,18 @@ def test_presigned_urls_work_end_to_end_locally(fake_aws_credentials):
         assert uploads.presign_client is not uploads.client
 
         key = uploads.new_key("in", CHILD, "avatar", "image/png")
-        put_url = asyncio.run(uploads.presign_put(key, "image/png"))
-        assert put_url.startswith(f"http://localhost:{port}/{BUCKET}/uploads/in/")  # path-style
-        assert (
-            httpx.put(
-                put_url, content=b"\x89PNG photo", headers={"Content-Type": "image/png"}
-            ).status_code
-            == 200
+        url, fields = asyncio.run(uploads.presign_post(key, "image/png"))
+        assert url.startswith(f"http://localhost:{port}/{BUCKET}")  # path-style
+        assert (fields["key"], fields["Content-Type"]) == (key, "image/png")
+        # The signed policy (APP-07): this key, this Content-Type, 1 byte to 5 MB.
+        policy = json.loads(base64.b64decode(fields["policy"]))
+        assert {"key": key} in policy["conditions"]
+        assert {"Content-Type": "image/png"} in policy["conditions"]
+        assert ["content-length-range", 1, MAX_UPLOAD_BYTES] in policy["conditions"]
+        posted = httpx.post(
+            url, data=fields, files={"file": ("p.png", b"\x89PNG photo", "image/png")}
         )
+        assert posted.status_code in (200, 204)
         assert asyncio.run(uploads.accept(key, "in", CHILD, "avatar")) == key
         get_url = asyncio.run(uploads.presign_get(key))
         assert httpx.get(get_url).content == b"\x89PNG photo"

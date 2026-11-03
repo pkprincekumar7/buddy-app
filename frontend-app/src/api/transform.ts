@@ -8,6 +8,7 @@
 import type { components } from './generated/transform';
 import { runJob, type PollOptions } from './polling';
 import { services, unwrap } from './services';
+import { localFile, postToS3 } from './uploads';
 
 type Schemas = components['schemas'];
 
@@ -61,8 +62,9 @@ export const transform = {
     fieldKey: string,
     photo: Blob,
     contentType: string,
+    fileUri?: string,
   ): Promise<PlanPhoto> {
-    const { upload_url, photo_key, photo_url } = await unwrap(
+    const { upload_url, upload_fields, photo_key, photo_url } = await unwrap(
       services.transform.POST(
         '/api/v1/children/{id}/transform/photos/presign',
         {
@@ -71,14 +73,12 @@ export const transform = {
         },
       ),
     );
-    // The PUT must carry the Content-Type the URL was signed with, or S3 refuses it.
-    const uploaded = await fetch(upload_url, {
-      method: 'PUT',
-      body: photo,
-      headers: { 'Content-Type': contentType },
-    });
-    if (!uploaded.ok)
-      throw new Error(`The photo upload failed (${uploaded.status}).`);
+    // The picked file by its URI on a device (`photo` as a Blob otherwise).
+    await postToS3(
+      upload_url,
+      upload_fields,
+      fileUri ? localFile(fileUri, contentType) : photo,
+    );
     return { key: photo_key, url: photo_url };
   },
 };

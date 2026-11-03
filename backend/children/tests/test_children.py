@@ -318,7 +318,11 @@ def test_a_photo_is_uploaded_saved_shown_and_replaced(mongo_uri):
         assert presign.status_code == 200
         body = presign.json()
         assert body["avatar_key"].startswith(f"uploads/{LOCATION}/{child['id']}/avatar/")
-        assert body["avatar_key"].endswith(".png") and "X-Amz-Signature" in body["upload_url"]
+        assert body["avatar_key"].endswith(".png") and body["upload_url"]
+        # A form upload whose signed policy pins the key and limits the size (APP-07).
+        fields = body["upload_fields"]
+        assert fields["key"] == body["avatar_key"] and fields["Content-Type"] == "image/png"
+        assert {"policy", "x-amz-signature"} <= set(fields)
         # Pending until saved: an avatar never saved is swept after a day (review).
         pending = r.db[upload_tracking.PENDING_UPLOADS]
         assert await pending.find_one({"_id": body["avatar_key"]}) is not None
@@ -434,7 +438,7 @@ def test_s3_failures_are_reported_not_hidden(mongo_uri, monkeypatch):
         async def broken(*args: Any, **kwargs: Any) -> str:
             raise RuntimeError("S3 down")
 
-        monkeypatch.setattr(uploads, "presign_put", broken)
+        monkeypatch.setattr(uploads, "presign_post", broken)
         failed = await r.http.post(
             f"{path}/avatar/presign", json={"content_type": "image/png"}, headers=auth_header()
         )

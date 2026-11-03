@@ -65,11 +65,12 @@ describe('transform (build plan 7.7)', () => {
   it('uploads a plan photo to S3 and returns its key and URL to show', async () => {
     const sent = network({
       [`POST ${T}/photos/presign`]: json(200, {
-        upload_url: 'https://s3.test/put',
+        upload_url: 'https://s3.test/bucket',
+        upload_fields: { key: 'uploads/in/x/ninety-day-plan/b.png' },
         photo_key: 'uploads/in/x/ninety-day-plan/b.png',
         photo_url: 'https://s3.test/get',
       }),
-      'PUT /put': new Response(null, { status: 200 }),
+      'POST /bucket': new Response(null, { status: 204 }),
     });
     const photo = await transform.uploadPhoto(
       ID,
@@ -85,11 +86,14 @@ describe('transform (build plan 7.7)', () => {
       field_key: 'act:week-1',
       content_type: 'image/png',
     });
-    expect([sent[1]?.method, sent[1]?.url, sent[1]?.type]).toEqual([
-      'PUT',
-      'https://s3.test/put',
-      'image/png',
+    expect([sent[1]?.method, sent[1]?.url]).toEqual([
+      'POST',
+      'https://s3.test/bucket',
     ]);
+    expect(sent[1]?.type).toMatch(/^multipart\/form-data/); // a form upload (APP-07)
+    expect(String(sent[1]?.body)).toContain(
+      'uploads/in/x/ninety-day-plan/b.png',
+    );
     expect(sent).toHaveLength(2); // the save is the caller's PATCH, with the other keys
   });
 

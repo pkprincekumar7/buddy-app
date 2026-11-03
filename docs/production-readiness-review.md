@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 38 are done, 30 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 40 are done, 28 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -155,8 +155,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ✅ Done — Valkey retried after 30 s; `ValkeyDegraded` metric and alarm |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ✅ Done (rate limits and the login throttle count through `limits.aio`) |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ✅ Done (workers finish the job in hand on SIGTERM, get `llm_timeout_seconds` + 30 s to stop, and have a heartbeat health check) |
-| APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | 🟡 Size checked after upload, orphan sweep, replaced objects deleted; no S3-side size cap |
-| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | 🟡 Photos limited to the child's own uploads (EDGE-05); CSP `img-src` not tightened |
+| APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | ✅ Done — presigned POST whose policy caps the size at 5 MB, plus the after-upload check, orphan sweep and deletes |
+| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | ✅ Done — photos are the child's own upload keys (EDGE-05); CSP `img-src` limited to self, data:, blob: and the uploads buckets |
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ✅ Done (1 MiB body cap in every service) |
 | APP-10 | 🟠 High | App | Child documents can grow without bound | ✅ Done (strict child model, bounded fields, 64 KB caps) |
 | APP-11 | 🟢 Low | App | Misc backend hygiene | 🟡 a, c, d, g done; e moot; b and f open |
@@ -831,7 +831,13 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-07 — No upload size cap; orphaned objects never deleted 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The size is checked after upload (`backend/common/uploads.py:165-187`); orphans are swept (`children/worker.py:66`, `transform/worker.py:73`); a replaced photo is deleted (`children/app/main.py:543`); a child's purge removes its objects (`children/app/lifecycle.py:122`). Still open: the presigned PUT (`uploads.py:137-143`) puts no size limit on S3 itself.
+> 🔄 **Current code (2026-11-03):** ✅ Done (buddy-common 0.29.0).
+> - **S3 enforces the size.** Photos go up as a presigned **POST** (`Uploads.presign_post`, `backend/common/uploads.py`). Its signed policy pins the exact key and `Content-Type` and sets `content-length-range` to 1 byte–5 MB, so S3 refuses a bigger file, another key or another type. The presign routes (`POST /children/{id}/avatar/presign`, `POST /children/{id}/transform/photos/presign`) return `upload_url` and `upload_fields`.
+> - **Clients.** Both apps send the fields, then the file, as a multipart form (`src/api/uploads.ts`). On a device, the mobile app sends the picked file by its URI as `{uri, name, type}`, the part React Native's `FormData` reads; Blobs are measured only for the 5 MB check before upload. The e2e journey scripts upload the same way.
+> - **CORS.** The uploads buckets' CORS allows `POST` instead of `PUT` (`infra-live-backend/terraform/s3.tf`, asserted by the stack test), and so does the local Moto setup (`scripts/local-aws-setup.py`).
+> - **Defence in depth.** The size and type are still checked after upload (`verify_uploaded`, which deletes a refused object). Orphans are swept, replaced photos deleted, and a child's purge removes its objects, as before.
+> - **Tests.** The `common` test uploads by form to a real Moto server and checks the signed policy's three conditions. Moto doesn't enforce `content-length-range` (an oversized POST was accepted there), so the 11 MB refusal itself is S3's, unproven until a deployed environment. The service tests assert the fields; the mobile tests check the fields come first and the file last, and the URI file part.
+> - **Not checked:** an upload from a real device (React Native's form encoding of a `{uri}` part), and the local full journey, which wasn't run (it makes real LLM calls).
 
 **Where:** `backend/app/routers/children.py:557`, `users.py:551` (presigned **PUT**), `infra-live-backend/terraform/s3.tf` (lifecycle has no expiry of orphans).
 
@@ -861,7 +867,12 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### APP-08 — Any HTTPS URL accepted as a child's photo 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial (matches the tracker). Keys are checked per child (`backend/common/uploads.py:150-163`). The CSP still has `img-src 'self' data: https:` (`response_headers.tf:89`). The schema paths below are deleted.
+> 🔄 **Current code (2026-11-03):** ✅ Done.
+> - **Keys only.** A photo is stored as an upload **key**, checked against this child and kind (`backend/common/uploads.py`, EDGE-05). An external, `http:` or `data:` URL isn't a key, so `PATCH /children/{id}` and the plan's photos refuse it with 422. The schema paths below are deleted.
+> - **CSP.** CloudFront's `img-src` (`infra-live-edge/terraform/response_headers.tf`) is now `'self' data: blob:` plus each active region's uploads bucket (the presigned photo URLs), the same list `connect-src` uses, instead of any `https:` host. A URL elsewhere, such as a tracking pixel, isn't loaded.
+>   - That covers every image the web app shows: `/app-assets/*` (self), generated avatars and FileReader previews (`data:`), a picked photo's preview (`blob:`), and the presigned photos. It doesn't show Google profile photos.
+>   - The nginx copies of the CSP (`frontend/nginx.conf`, `.template`) gained `blob:` too.
+> - **Checked:** `terraform validate` and tflint on the edge stack, which has no tests of its own. The CSP itself is only exercised in a deployed environment.
 
 **Where:** `backend/app/schemas/children.py:126-130,194` (checks HTTPS only), combined with the CSP `img-src https:` (`infra-live-edge/terraform/response_headers.tf:88-89`).
 

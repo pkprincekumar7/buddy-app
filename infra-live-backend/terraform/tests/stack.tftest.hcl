@@ -493,6 +493,10 @@ run "prod_stack_wiring" {
     )
     error_message = "auth's security events (a reused refresh token) are counted, with an alarm (AUTH-02)."
   }
+  assert {
+    condition     = toset(one(aws_s3_bucket_cors_configuration.uploads.cors_rule).allowed_methods) == toset(["POST", "GET"])
+    error_message = "Uploads are form POSTs (their policy limits the size), not PUTs (APP-07)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {

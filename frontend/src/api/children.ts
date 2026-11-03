@@ -5,6 +5,7 @@
 
 import type { components } from './generated/children';
 import { services, unwrap } from './services';
+import { postToS3 } from './uploads';
 
 type Schemas = components['schemas'];
 
@@ -45,19 +46,13 @@ export const children = {
   async uploadAvatar(id: string, photo: Blob, contentType: string): Promise<Child> {
     const problem = avatarProblem(contentType, photo.size);
     if (problem) throw new Error(problem);
-    const { upload_url, avatar_key } = await unwrap(
+    const { upload_url, upload_fields, avatar_key } = await unwrap(
       services.children.POST('/api/v1/children/{id}/avatar/presign', {
         ...byId(id),
         body: { content_type: contentType },
       }),
     );
-    // The PUT must carry the Content-Type the URL was signed with, or S3 refuses it.
-    const uploaded = await fetch(upload_url, {
-      method: 'PUT',
-      body: photo,
-      headers: { 'Content-Type': contentType },
-    });
-    if (!uploaded.ok) throw new Error(`The photo upload failed (${uploaded.status}).`);
+    await postToS3(upload_url, upload_fields, photo);
     return children.update(id, { avatar_key });
   },
 

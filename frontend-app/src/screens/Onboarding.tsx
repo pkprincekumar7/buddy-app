@@ -158,7 +158,12 @@ export default function Onboarding() {
         if (photoFile) {
           try {
             const photo = await (await fetch(photoFile.uri)).blob();
-            await children.uploadAvatar(targetId, photo, photoFile.mimeType);
+            await children.uploadAvatar(
+              targetId,
+              photo,
+              photoFile.mimeType,
+              photoFile.uri,
+            );
           } catch (uploadErr) {
             console.warn(
               '[Onboarding] Photo upload failed, continuing without photo:',

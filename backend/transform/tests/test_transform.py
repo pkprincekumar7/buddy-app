@@ -384,6 +384,7 @@ def test_photos_round_trip_as_keys_and_urls(mongo_uri, monkeypatch, caplog):
             ".png"
         )
         assert presigned.json()["upload_url"] and presigned.json()["photo_url"]
+        assert presigned.json()["upload_fields"]["key"] == key  # a form upload (APP-07)
         not_yet = await _patch(r, child, photos={"act:01:sketch": [key]})
         assert not_yet.status_code == 422 and _code(not_yet) == "photo_not_uploaded"
         _put_photo(r, key, content_type="image/png")
@@ -453,7 +454,7 @@ def test_presign_refusals(mongo_uri, monkeypatch):
         async def failing(*args: Any) -> str:
             raise RuntimeError("s3 down")
 
-        monkeypatch.setattr(r.runtime.uploads, "presign_put", failing)
+        monkeypatch.setattr(r.runtime.uploads, "presign_post", failing)
         failed = await r.http.post(
             _path(child, "/photos/presign"), json=body, headers=auth_header()
         )

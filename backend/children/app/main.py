@@ -301,7 +301,9 @@ class PresignIn(BaseModel):
 
 
 class PresignOut(BaseModel):
+    # A form upload (APP-07): POST `upload_fields`, then the file as `file`, to `upload_url`.
     upload_url: str
+    upload_fields: dict[str, str]
     avatar_key: str
     avatar_url: str
 
@@ -584,8 +586,9 @@ async def delete_child(id: ChildId, runtime: Ready, caller: SignedIn) -> Respons
 @router.post(
     "/{id}/avatar/presign",
     dependencies=[Depends(per_user("20/minute"))],
-    description="A 5-minute URL to upload the child's photo straight to S3 (parents only); "
-    "then PATCH the child with the returned `avatar_key`.",
+    description="A 5-minute form upload of the child's photo straight to S3 (parents only): "
+    "POST `upload_fields`, then the file as `file`, to `upload_url`; S3 refuses another "
+    "key or type, or over 5 MB. Then PATCH the child with the returned `avatar_key`.",
 )
 async def presign_avatar(
     id: ChildId, body: PresignIn, runtime: Ready, caller: SignedIn
@@ -599,7 +602,7 @@ async def presign_avatar(
     except UploadError as exc:
         raise _error(415, exc.code, str(exc)) from exc
     try:
-        upload_url = await runtime.uploads.presign_put(key, body.content_type)
+        upload_url, upload_fields = await runtime.uploads.presign_post(key, body.content_type)
         avatar_url = await runtime.uploads.presign_get(key)
         await upload_tracking.record_presigned(
             runtime.db, key, location=child["location"], child_id=id
@@ -607,7 +610,9 @@ async def presign_avatar(
     except Exception as exc:
         _logger.exception("children: presigning failed")
         raise _error(502, "upload_url_failed", "Couldn't create an upload URL.") from exc
-    return PresignOut(upload_url=upload_url, avatar_key=key, avatar_url=avatar_url)
+    return PresignOut(
+        upload_url=upload_url, upload_fields=upload_fields, avatar_key=key, avatar_url=avatar_url
+    )
 
 
 async def _release_done(runtime: Runtime, doc: Mapping[str, Any]) -> bool:

@@ -12,10 +12,13 @@
 #                + accounts.google.com          inline styles added by framer-motion
 #                                               and shadcn components at runtime;
 #                                               GSI button injects its own inline styles.
-#   img-src     'self' + data: + https:         — bundled SVG/PNG assets; base64 data URIs;
-#                                               all HTTPS image sources including S3-backed
-#                                               activity-game images (served via CloudFront
-#                                               /app-assets/*) and Google profile photos.
+#   img-src     'self' + data: + blob:         — bundled and /app-assets/* images (self);
+#                + the uploads buckets           generated avatars and FileReader previews
+#                                               (data:); a picked photo's preview (blob:);
+#                                               child photos, as presigned S3 URLs on each
+#                                               region's uploads bucket. No other HTTPS host,
+#                                               so a stored or injected URL elsewhere (a
+#                                               tracking pixel) isn't loaded (APP-08).
 #   font-src    'self' + data:                 — self-hosted fonts; base64-encoded fonts
 #                                               bundled by Vite.
 #   connect-src 'self' + accounts.google.com  — all /api/* calls proxied via CloudFront
@@ -39,9 +42,10 @@
 locals {
   # One entry per active region's uploads bucket, on its regional endpoint —
   # the only form the backend's S3 client presigns (SigV4 + regional endpoint,
-  # backend/common/uploads.py). The presigned PUT goes straight from
-  # the browser to S3, bypassing CloudFront, so every active region must be
-  # allow-listed here or the browser blocks the upload. Built from the bucket
+  # backend/common/uploads.py). The presigned form upload (POST) and the
+  # presigned photo URLs go straight between the browser and S3, bypassing
+  # CloudFront, so every active region must be allow-listed here (connect-src
+  # for the upload, img-src for showing the photo) or the browser blocks it. Built from the bucket
   # names alone: no per-region provider or lookup needed (TF-01), so a new
   # region is just another key in var.uploads_bucket_names.
   uploads_connect_src_origins = [
@@ -86,7 +90,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
         "default-src 'self'",
         "script-src 'self' https://accounts.google.com",
         "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-        "img-src 'self' data: https:",
+        "img-src 'self' data: blob: ${join(" ", local.uploads_connect_src_origins)}",
         "font-src 'self' data:",
         "connect-src 'self' https://accounts.google.com ${join(" ", local.uploads_connect_src_origins)}",
         "frame-src https://accounts.google.com",

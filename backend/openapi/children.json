@@ -386,7 +386,7 @@
           "children"
         ],
         "summary": "Presign Avatar",
-        "description": "A 5-minute URL to upload the child's photo straight to S3 (parents only); then PATCH the child with the returned `avatar_key`.",
+        "description": "A 5-minute form upload of the child's photo straight to S3 (parents only): POST `upload_fields`, then the file as `file`, to `upload_url`; S3 refuses another key or type, or over 5 MB. Then PATCH the child with the returned `avatar_key`.",
         "operationId": "presign_avatar_api_v1_children__id__avatar_presign_post",
         "security": [
           {
@@ -777,6 +777,13 @@
             "type": "string",
             "title": "Upload Url"
           },
+          "upload_fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Upload Fields"
+          },
           "avatar_key": {
             "type": "string",
             "title": "Avatar Key"
@@ -789,6 +796,7 @@
         "type": "object",
         "required": [
           "upload_url",
+          "upload_fields",
           "avatar_key",
           "avatar_url"
         ],

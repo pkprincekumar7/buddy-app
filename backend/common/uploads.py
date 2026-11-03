@@ -4,12 +4,15 @@ Ported from today's `app/services/s3_uploads.py` (docs/auth-users-split.md, 4.1;
 auth-users-split-api.md, avatar/presign and transform/photos/presign):
 
 1. **Presign:** `new_key` mints `uploads/{location}/{child_id}/{kind}/{uuid}.{ext}` and
-   `presign_put` a 5-minute PUT URL for it. The client uploads, then sends the **key** back.
+   `presign_post` a 5-minute form upload for it: a URL and the fields to POST with the file.
+   The signed policy pins the key and the Content-Type and limits the size to 1 byte-5 MB,
+   so S3 itself refuses a bigger file (production-readiness review, APP-07; a presigned
+   PUT can't limit size). The client uploads, then sends the **key** back.
 2. **Save:** `check_key` accepts only a key under this child's prefix *for this kind*, so a
    plan photo can't become an avatar (and replacing an avatar can't delete transform's
    object), and `verify_uploaded` runs `HeadObject`: the object must exist, be an allowed
-   image and be at most 5 MB. A presigned PUT can't limit size, so this is where it's enforced;
-   a refused object is deleted. One never saved is swept after a day (common.upload_tracking).
+   image and be at most 5 MB (checked again, whatever S3 was told); a refused object is
+   deleted. One never saved is swept after a day (common.upload_tracking).
 3. **Read:** the bucket is private; `presign_get` turns a stored key into a short-lived URL.
 
 Locally, AWS_ENDPOINT_URL is where the service calls S3 (Moto) and AWS_PUBLIC_ENDPOINT_URL
@@ -42,7 +45,7 @@ ALLOWED_IMAGE_CONTENT_TYPES: dict[str, str] = {
     "image/gif": "gif",
 }
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
-PUT_URL_TTL_SECONDS = 300
+UPLOAD_URL_TTL_SECONDS = 300
 
 _UUID4 = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 _KEY_RE = re.compile(
@@ -134,15 +137,22 @@ class Uploads:
             raise ValueError("location or child id is malformed")
         return f"{child_prefix(location, child_id, kind)}{uuid.uuid4()}.{ext}"
 
-    async def presign_put(self, key: str, content_type: str) -> str:
-        """A URL the client PUTs the file to within 5 minutes, with the same Content-Type."""
-        url: str = await asyncio.to_thread(
-            self.presign_client.generate_presigned_url,
-            "put_object",
-            Params={"Bucket": self.config.bucket, "Key": key, "ContentType": content_type},
-            ExpiresIn=PUT_URL_TTL_SECONDS,
+    async def presign_post(self, key: str, content_type: str) -> tuple[str, dict[str, str]]:
+        """(url, fields): the client POSTs a multipart form of `fields`, then the file as
+        `file` (last), within 5 minutes. S3 refuses another key, another Content-Type or a
+        file over MAX_UPLOAD_BYTES."""
+        post: dict[str, Any] = await asyncio.to_thread(
+            self.presign_client.generate_presigned_post,
+            Bucket=self.config.bucket,
+            Key=key,
+            Fields={"Content-Type": content_type},
+            Conditions=[
+                {"Content-Type": content_type},
+                ["content-length-range", 1, MAX_UPLOAD_BYTES],
+            ],
+            ExpiresIn=UPLOAD_URL_TTL_SECONDS,
         )
-        return url
+        return str(post["url"]), {str(k): str(v) for k, v in post["fields"].items()}
 
     # ── 2. save ──
 

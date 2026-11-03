@@ -97,7 +97,12 @@ describe('the children calls (build plan 7.4)', () => {
     const sent = network(({ url }) =>
       url.endsWith('/avatar/presign')
         ? json(200, {
-            upload_url: 'https://s3.test/bucket/put-here',
+            upload_url: 'https://s3.test/bucket',
+            upload_fields: {
+              key,
+              'Content-Type': 'image/png',
+              policy: 'signed',
+            },
             avatar_key: key,
             avatar_url: 'https://s3.test/bucket/get-here',
           })
@@ -115,11 +120,23 @@ describe('the children calls (build plan 7.4)', () => {
     const saved = await children.uploadAvatar(ID, photo, 'image/png');
     expect(sent.map(s => [s.method, s.url])).toEqual([
       ['POST', `/api/v1/children/${ID}/avatar/presign`],
-      ['PUT', 'https://s3.test/bucket/put-here'],
+      ['POST', 'https://s3.test/bucket'],
       ['PATCH', `/api/v1/children/${ID}`],
     ]);
     expect(sent[0]?.body).toEqual({ content_type: 'image/png' });
-    expect(sent[1]?.type).toBe('image/png'); // what the URL was signed with
+    // A form upload (APP-07): the signed fields, then the file, last as S3 requires.
+    expect(sent[1]?.type).toMatch(/^multipart\/form-data/);
+    const form = String(sent[1]?.body);
+    const order = [
+      'name="key"',
+      'name="Content-Type"',
+      'name="policy"',
+      'name="file"',
+    ];
+    const at = order.map(part => form.indexOf(part));
+    expect(at.every(i => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(form).toContain('png-bytes');
     expect(sent[2]?.body).toEqual({ avatar_key: key }); // the key, not the URL
     expect(saved.avatar_url).toBe('https://s3.test/bucket/get-here');
   });

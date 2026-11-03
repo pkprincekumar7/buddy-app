@@ -159,7 +159,7 @@ def transform_everything(j: Journey) -> None:
     _generate(j, plan, {"kind": "plan"})
     body = {"field_key": "week_1", "content_type": "image/jpeg"}
     presigned = check(j.http.post(f"{plan}/photos/presign", json=body), 200)
-    journey._upload(presigned["upload_url"], "image/jpeg")
+    journey._upload(presigned["upload_url"], presigned["upload_fields"], "image/jpeg")
     check(
         j.http.patch(plan, json={"photos": {"week_1": [presigned["photo_key"]]}}), 200
     )

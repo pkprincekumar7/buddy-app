@@ -75,7 +75,8 @@ def main() -> int:
                 "CORSRules": [
                     {
                         "AllowedOrigins": ORIGINS,
-                        "AllowedMethods": ["GET", "PUT", "HEAD"],
+                        # Photos go up as presigned form POSTs (APP-07).
+                        "AllowedMethods": ["GET", "POST", "HEAD"],
                         "AllowedHeaders": ["*"],
                         "ExposeHeaders": ["ETag"],
                         "MaxAgeSeconds": 3600,

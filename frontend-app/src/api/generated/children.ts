@@ -85,7 +85,7 @@ export interface paths {
         put?: never;
         /**
          * Presign Avatar
-         * @description A 5-minute URL to upload the child's photo straight to S3 (parents only); then PATCH the child with the returned `avatar_key`.
+         * @description A 5-minute form upload of the child's photo straight to S3 (parents only): POST `upload_fields`, then the file as `file`, to `upload_url`; S3 refuses another key or type, or over 5 MB. Then PATCH the child with the returned `avatar_key`.
          */
         post: operations["presign_avatar_api_v1_children__id__avatar_presign_post"];
         delete?: never;
@@ -194,6 +194,10 @@ export interface components {
         PresignOut: {
             /** Upload Url */
             upload_url: string;
+            /** Upload Fields */
+            upload_fields: {
+                [key: string]: string;
+            };
             /** Avatar Key */
             avatar_key: string;
             /** Avatar Url */

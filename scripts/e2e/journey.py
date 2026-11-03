@@ -66,15 +66,16 @@ def _claims(token: str) -> dict[str, Any]:
     return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
 
 
-def _upload(url: str, content_type: str) -> None:
-    """PUT a tiny image to a presigned URL; the services sign for Moto as the containers see it."""
+def _upload(url: str, fields: dict[str, str], content_type: str) -> None:
+    """POST a tiny image with a presigned form (APP-07): the signed fields, then the file.
+    The services sign for Moto as the containers see it."""
     local = url.replace("http://host.docker.internal:5050", MOTO_URL)
-    response = httpx.put(
+    response = httpx.post(
         local,
-        content=b"\xff\xd8\xff test image",
-        headers={"Content-Type": content_type},
+        data=fields,
+        files={"file": ("photo.jpg", b"\xff\xd8\xff test image", content_type)},
     )
-    if response.status_code != 200:
+    if response.status_code not in (200, 204):
         raise WalkFailed(
             f"photo upload -> {response.status_code}: {response.text[:300]}"
         )
@@ -108,7 +109,7 @@ def start(email: str | None = None) -> Journey:
         ),
         200,
     )
-    _upload(presigned["upload_url"], "image/jpeg")
+    _upload(presigned["upload_url"], presigned["upload_fields"], "image/jpeg")
     check(http.patch(journey.child, json={"avatar_key": presigned["avatar_key"]}), 200)
     return journey
 
@@ -177,7 +178,7 @@ def transform(j: Journey) -> None:
     _job(j.http, f"{plan}/generation", started["job_id"])
     body = {"field_key": "week_1", "content_type": "image/jpeg"}
     presigned = check(j.http.post(f"{plan}/photos/presign", json=body), 200)
-    _upload(presigned["upload_url"], "image/jpeg")
+    _upload(presigned["upload_url"], presigned["upload_fields"], "image/jpeg")
     check(
         j.http.patch(plan, json={"photos": {"week_1": [presigned["photo_key"]]}}), 200
     )

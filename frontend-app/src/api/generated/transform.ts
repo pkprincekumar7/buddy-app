@@ -97,7 +97,7 @@ export interface paths {
         put?: never;
         /**
          * Presign Photo
-         * @description A URL to PUT a plan photo to within 5 minutes; then add `photo_key` to `photos[field_key]` with PATCH (where the 5 MB limit is checked).
+         * @description A 5-minute form upload of a plan photo straight to S3: POST `upload_fields`, then the file as `file`, to `upload_url`; S3 refuses another key or type, or over 5 MB. Then add `photo_key` to `photos[field_key]` with PATCH (which checks the photo again).
          */
         post: operations["presign_photo_api_v1_children__id__transform_photos_presign_post"];
         delete?: never;
@@ -237,6 +237,10 @@ export interface components {
         PresignOut: {
             /** Upload Url */
             upload_url: string;
+            /** Upload Fields */
+            upload_fields: {
+                [key: string]: string;
+            };
             /** Photo Key */
             photo_key: string;
             /** Photo Url */

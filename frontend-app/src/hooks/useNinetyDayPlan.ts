@@ -383,7 +383,7 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
         fetch(file.uri)
           .then(local => local.blob())
           .then(photo =>
-            transform.uploadPhoto(childId, key, photo, contentType),
+            transform.uploadPhoto(childId, key, photo, contentType, file.uri),
           )
           .then(uploaded => {
             setPhotoFiles(prev => {

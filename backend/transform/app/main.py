@@ -311,7 +311,9 @@ class PresignIn(BaseModel):
 
 
 class PresignOut(BaseModel):
+    # A form upload (APP-07): POST `upload_fields`, then the file as `file`, to `upload_url`.
     upload_url: str
+    upload_fields: dict[str, str]
     photo_key: str
     photo_url: str
 
@@ -627,8 +629,9 @@ async def get_job(id: ChildId, job_id: str, runtime: Ready, caller: SignedIn) ->
 @router.post(
     "/photos/presign",
     dependencies=[Depends(per_user("20/minute"))],
-    description="A URL to PUT a plan photo to within 5 minutes; then add `photo_key` to "
-    "`photos[field_key]` with PATCH (where the 5 MB limit is checked).",
+    description="A 5-minute form upload of a plan photo straight to S3: POST `upload_fields`, "
+    "then the file as `file`, to `upload_url`; S3 refuses another key or type, or over 5 MB. "
+    "Then add `photo_key` to `photos[field_key]` with PATCH (which checks the photo again).",
 )
 async def presign_photo(
     id: ChildId, body: PresignIn, runtime: Ready, caller: SignedIn
@@ -641,7 +644,7 @@ async def presign_photo(
     except UploadError as exc:
         raise error(415, exc.code, str(exc)) from exc
     try:
-        upload_url = await runtime.uploads.presign_put(key, body.content_type)
+        upload_url, upload_fields = await runtime.uploads.presign_post(key, body.content_type)
         photo_url = await runtime.uploads.presign_get(key)
         await upload_tracking.record_presigned(
             runtime.db, key, location=child["location"], child_id=id
@@ -649,7 +652,9 @@ async def presign_photo(
     except Exception as exc:
         _logger.exception("transform: presigning failed")
         raise error(502, "upload_url_failed", "Couldn't create an upload URL.") from exc
-    return PresignOut(upload_url=upload_url, photo_key=key, photo_url=photo_url)
+    return PresignOut(
+        upload_url=upload_url, upload_fields=upload_fields, photo_key=key, photo_url=photo_url
+    )
 
 
 app.include_router(health_router)
