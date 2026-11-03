@@ -111,7 +111,14 @@ async function request(
 }
 
 async function refreshTokenPair(): Promise<void> {
-  await request('/auth/refresh', { method: 'POST' }, true);
+  try {
+    await request('/auth/refresh', { method: 'POST' }, true);
+  } catch (err) {
+    // 409 refresh_superseded: another tab refreshed this session first, and its new
+    // cookies are already in the browser, so this tab carries on with them.
+    if (err instanceof ApiError && err.status === 409) return;
+    throw err;
+  }
 }
 
 export const api = {
@@ -119,7 +126,7 @@ export const api = {
     // The sign-in calls moved to api/account.ts (build plan 7.2); the refresh stays here,
     // shared by request() and the generated clients.
     async silentRefresh(): Promise<void> {
-      return refreshTokenPair();
+      return ensureRefreshed(); // never alongside a request()-triggered refresh
     },
   },
 };

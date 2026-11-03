@@ -3,15 +3,18 @@ reuse detection (which logs the account out everywhere), and every refusal clear
 cookies."""
 
 import asyncio
+import types
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
 from auth_testkit import JWT_PRIVATE, KID, OTHER_PRIVATE, Running, claims, issuer, running
+from fastapi import Request, Response
 from pymongo import MongoClient
 
+from auth.app import main
 from auth.app.store import AUTH, SESSIONS
 from auth.app.tokens import TokenIssuer
 
@@ -99,15 +102,26 @@ def test_a_logout_all_during_a_refresh_leaves_no_session(mongo_uri, monkeypatch)
     live(mongo_uri, test)
 
 
+async def _live_sessions(r: Running, family: str) -> int:
+    """Sessions of `family` that can still refresh (not yet rotated)."""
+    return await r.db[SESSIONS].count_documents({"family_id": family, "rotated_at": None})
+
+
 @pytest.mark.live_service
-def test_a_concurrent_refresh_within_30_seconds_gets_a_pair_too(mongo_uri):
+def test_a_second_refresh_within_30_seconds_replaces_the_first_ones_session(mongo_uri):
+    # AUTH-02: a mobile retry after a lost response, or another tab. It gets a pair, but
+    # the family keeps one branch: the first refresh's session can no longer refresh.
     async def test(r: Running) -> None:
         tokens = await _signed_in(r)
         first = await _refresh(r, tokens["refresh_token"])
-        second = await _refresh(r, tokens["refresh_token"])  # the other tab
+        second = await _refresh(r, tokens["refresh_token"])
         assert first.status_code == second.status_code == 200
         family = claims(tokens["refresh_token"])["family_id"]
         assert claims(second.json()["refresh_token"])["family_id"] == family
+        assert await _live_sessions(r, family) == 1
+        lost = await _refresh(r, first.json()["refresh_token"])
+        assert (lost.status_code, _code(lost)) == (401, "session_expired")
+        assert (await _refresh(r, second.json()["refresh_token"])).status_code == 200
         account = await r.db[AUTH].find_one({})
         assert account is not None and account["tokens_revoked_at"] is None
 
@@ -115,7 +129,88 @@ def test_a_concurrent_refresh_within_30_seconds_gets_a_pair_too(mongo_uri):
 
 
 @pytest.mark.live_service
-def test_reuse_after_30_seconds_revokes_the_family_and_every_token(mongo_uri):
+def test_parallel_refreshes_leave_exactly_one_branch(mongo_uri):
+    async def test(r: Running) -> None:
+        tokens = await _signed_in(r)
+        token = tokens["refresh_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        replies = await asyncio.gather(*(r.http.post(PATH, headers=headers) for _ in range(6)))
+        assert {reply.status_code for reply in replies} <= {200, 409}
+        family = claims(token)["family_id"]
+        assert await _live_sessions(r, family) == 1
+        # Of the pairs handed out, exactly one can still refresh.
+        pairs = [reply.json()["refresh_token"] for reply in replies if reply.status_code == 200]
+        assert pairs
+        still = [p for p in pairs if (await _refresh(r, p)).status_code == 200]
+        assert len(still) == 1
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_refresh_after_its_successor_was_used_is_a_409_that_keeps_the_cookies(mongo_uri):
+    async def test(r: Running) -> None:
+        tokens = await _signed_in(r)
+        first = await _refresh(r, tokens["refresh_token"])
+        assert (await _refresh(r, first.json()["refresh_token"])).status_code == 200
+        late = await _refresh(r, tokens["refresh_token"])  # a tab that slept through both
+        assert (late.status_code, _code(late)) == (409, "refresh_superseded")
+        assert late.headers.get_list("set-cookie") == []
+        assert await _live_sessions(r, claims(tokens["refresh_token"])["family_id"]) == 1
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_claim_that_stopped_part_way_is_taken_over(mongo_uri, monkeypatch):
+    monkeypatch.setattr(main, "SUCCESSOR_WAIT_SECONDS", 0.2)
+    monkeypatch.setattr(main, "SUCCESSOR_POLL_SECONDS", 0.05)
+
+    async def test(r: Running) -> None:
+        tokens = await _signed_in(r)
+        old = claims(tokens["refresh_token"])
+        # Claimed (rotated) by a refresh that crashed before recording its successor.
+        await r.db[SESSIONS].update_one(
+            {"_id": old["jti"]}, {"$set": {"rotated_at": datetime.now(UTC) - timedelta(seconds=5)}}
+        )
+        retried = await _refresh(r, tokens["refresh_token"])
+        assert retried.status_code == 200
+        session = await r.db[SESSIONS].find_one({"_id": old["jti"]})
+        assert session is not None
+        assert session["replaced_by"] == claims(retried.json()["refresh_token"])["jti"]
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_refresh_that_loses_the_link_leaves_no_second_session(mongo_uri):
+    async def test(r: Running) -> None:
+        tokens = await _signed_in(r)
+        old = claims(tokens["refresh_token"])
+        account = await r.db[AUTH].find_one({"_id": old["sub"]})
+        claim = main._Claim(
+            r.runtime,
+            Request({"type": "http", "headers": [], "method": "POST", "path": PATH}),
+            Response(),
+            account,
+            old["jti"],
+            old["location"],
+            old["family_id"],
+        )
+        # Another refresh linked a successor first: this one's session is removed again.
+        await r.db[SESSIONS].update_one({"_id": old["jti"]}, {"$set": {"replaced_by": "other"}})
+        lost = await claim.mint(expected=None)
+        assert lost.status_code == 409
+        assert await r.db[SESSIONS].count_documents({"family_id": old["family_id"]}) == 1
+        # And a token whose session is gone by now is superseded, not an error.
+        await r.db[SESSIONS].delete_many({})
+        assert (await claim.replace_successor()).status_code == 409
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_reuse_after_30_seconds_revokes_the_family_and_every_token(mongo_uri, caplog):
     async def test(r: Running) -> None:
         tokens = await _signed_in(r)
         other_device = await r.login()
@@ -125,9 +220,14 @@ def test_reuse_after_30_seconds_revokes_the_family_and_every_token(mongo_uri):
         await r.db[SESSIONS].update_one(
             {"_id": old["jti"]}, {"$set": {"rotated_at": datetime.now(UTC) - timedelta(seconds=31)}}
         )
-        stolen = await _refresh(r, tokens["refresh_token"])
+        with caplog.at_level("WARNING", logger="auth.app.main"):
+            stolen = await _refresh(r, tokens["refresh_token"])
         assert (stolen.status_code, _code(stolen)) == (401, "session_revoked")
         assert _clears_cookies(stolen)
+        # A security event the backend stack counts and alarms on (AUTH-02).
+        assert [getattr(x, "security_event", None) for x in caplog.records] == [
+            "refresh_token_reuse"
+        ]
         # The whole family is gone, including the pair the reuse would have been after.
         assert await r.db[SESSIONS].count_documents({"family_id": old["family_id"]}) == 0
         assert (await _refresh(r, rotated.json()["refresh_token"])).status_code == 401
@@ -270,3 +370,29 @@ def test_tokens_last_30_minutes_and_24_hours():
     access, refresh = claims(issued.access_token), claims(issued.refresh_token)
     assert access["exp"] - access["iat"] == 30 * 60
     assert refresh["exp"] - refresh["iat"] == 24 * 3600
+
+
+def test_two_takeovers_of_a_stopped_claim_only_one_wins(monkeypatch):
+    monkeypatch.setattr(main, "SUCCESSOR_WAIT_SECONDS", 0.0)
+
+    class Sessions:
+        """The claimed token, re-claimed by another takeover between this one's read and
+        its own claim: the conditional update matches nothing."""
+
+        async def find_one(self, query: Any) -> dict[str, Any]:
+            return {"_id": "j", "rotated_at": datetime.now(UTC), "replaced_by": None}
+
+        async def find_one_and_update(self, query: Any, update: Any) -> None:
+            return None
+
+    runtime = types.SimpleNamespace(db={SESSIONS: Sessions()})
+    claim = main._Claim(
+        cast(Any, runtime),
+        Request({"type": "http", "headers": [], "method": "POST", "path": PATH}),
+        Response(),
+        {"_id": "u"},
+        "j",
+        "in",
+        "f",
+    )
+    assert asyncio.run(claim.replace_successor()).status_code == 409

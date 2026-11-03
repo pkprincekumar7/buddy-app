@@ -484,6 +484,15 @@ run "prod_stack_wiring" {
     ) if s.kind != "collector"])
     error_message = "Every runtime gets the web app's origin, for the cross-site cookie check (AUTH-05)."
   }
+  assert {
+    condition = (
+      aws_cloudwatch_log_metric_filter.security_events.log_group_name == aws_cloudwatch_log_group.service["auth"].name &&
+      aws_cloudwatch_log_metric_filter.security_events.pattern == "{ $.security_event = * }" &&
+      aws_cloudwatch_metric_alarm.security_events[0].metric_name == "SecurityEvents" &&
+      aws_cloudwatch_metric_alarm.security_events[0].namespace == "Superpower/auth"
+    )
+    error_message = "auth's security events (a reused refresh token) are counted, with an alarm (AUTH-02)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -528,7 +537,7 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     error_message = "Dev: no Valkey or ALB alarms."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) + length(aws_cloudwatch_metric_alarm.valkey_degraded) + length(aws_cloudwatch_metric_alarm.index_problems) == 0
+    condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) + length(aws_cloudwatch_metric_alarm.valkey_degraded) + length(aws_cloudwatch_metric_alarm.index_problems) + length(aws_cloudwatch_metric_alarm.security_events) == 0
     error_message = "Dev: no generation, runtime, Valkey-fallback or index alarms."
   }
   assert {

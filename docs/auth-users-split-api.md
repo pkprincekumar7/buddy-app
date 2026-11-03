@@ -372,13 +372,14 @@ No body. If an access token is also sent (cookie or header), its `sub` must matc
 2. Read `sessions {_id: jti, user_id, location}`.
    - **Not found:** `401 session_expired`, cookies cleared.
    - **Found and already rotated** (`rotated_at` is set):
-     - **within 30 seconds of `rotated_at`:** a concurrent refresh, for example two tabs at once. Issue a new pair in the same family and continue.
+     - **within 30 seconds of `rotated_at`:** a concurrent refresh, for example two tabs at once, or the mobile app retrying after a lost response. The family keeps one branch (production-readiness review, AUTH-02): if the session that refresh created (`replaced_by`) hasn't been used, delete it, issue this caller a new pair in the same family and point `replaced_by` at it. The other caller's pair then can't refresh (`401 session_expired`). If it has been used already, return `409 refresh_superseded` and leave the cookies: the client's tokens or cookies have moved on without this request. If the first refresh hasn't recorded its successor within 2 s, it's taken to have stopped part-way, and this one claims the token again.
      - **later:** the token was reused, so treat it as stolen. Delete every session in `family_id`, set `auth.auth.tokens_revoked_at = now` (which logs the user out everywhere, proposal 9.1) and update `authz:{user_id}`. Return `401 session_revoked` and clear the cookies.
 3. Read `auth.auth`. If it's missing, `is_being_deleted` or `is_locked`, delete the session and return `401` / `403 account_locked`. If `tokens_revoked_at` (in milliseconds) `>=` the refresh token's `iat_ms`, return `401 session_revoked` (proposal 9.3).
 4. **Rotate:**
-   - insert the new session (new `jti`, same `family_id`);
-   - mark the old one `{rotated_at: now, replaced_by: <new jti>}` rather than deleting it, so a reuse can be recognised. The TTL index still removes it at `expires_at`.
-   - Then issue the new tokens. As today, the new row is written before the old one changes, so a crash mid-way leaves the old token usable.
+   - claim the old session atomically (`findOneAndUpdate` where `rotated_at` is null, setting it), so of refreshes racing on one token exactly one goes on to step 4;
+   - insert the new session (new `jti`, same `family_id`) and link it, `replaced_by: <new jti>`, only while the link is still unset (or, in step 2's case, still the successor it replaced). A refresh that loses that race deletes the session it just made and returns `409`, so a family never has two sessions that can refresh;
+   - the old session stays, rotated, so a reuse can be recognised. The TTL index still removes it at `expires_at`.
+   - A reuse after the window is logged with `security_event: "refresh_token_reuse"`; the backend stack alarms on it.
 
 ### Response
 
@@ -393,6 +394,7 @@ No body. If an access token is also sent (cookie or header), its `sub` must matc
 | `401` | `session_expired` | Session not found or past `expires_at` |
 | `401` | `session_revoked` | Reuse detected, `tokens_revoked_at` after issue, the account is being deleted, or it changed (logout-all, lock, role, deletion) while the new session was written: that session is deleted again |
 | `403` | `account_locked` | The account is locked |
+| `409` | `refresh_superseded` | Within the 30 s window, the session this token's other refresh created has been used already; the cookies are left as they are (the web app carries on with the other tab's cookies) |
 | `429` | — | Rate limit |
 
 Every `401` and `403` here also clears both cookies, as today.

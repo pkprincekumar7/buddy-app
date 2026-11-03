@@ -15,10 +15,12 @@ an email, and never names or addresses (6.3).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
@@ -55,6 +57,10 @@ from common.origin import is_browser_request
 from common.routers import PolicyRouter, public
 
 CONCURRENT_REFRESH_WINDOW = timedelta(seconds=30)
+# A refresh that finds its token just claimed by another waits this long for that one's
+# successor session to be recorded, polling every SUCCESSOR_POLL_SECONDS (AUTH-02).
+SUCCESSOR_WAIT_SECONDS = 2.0
+SUCCESSOR_POLL_SECONDS = 0.1
 NAME_MAX = 100
 ADDRESS_MAX = 200
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
@@ -447,10 +453,16 @@ def _refuse_refresh(
     "/refresh",
     dependencies=[Depends(public())],
     description="Exchange a refresh token (cookie, or Bearer on mobile) for a new pair in "
-    "the same family. Reusing a rotated token after 30 s logs the account out everywhere.",
+    "the same family. Within 30 s of a token's first refresh, another one replaces the "
+    "first's session (one branch per family); reusing it after 30 s logs the account out "
+    "everywhere.",
     responses={
         401: {"description": "Missing, invalid, expired or revoked; clears the cookies"},
         403: {"description": "The account is locked; clears the cookies"},
+        409: {
+            "description": "refresh_superseded: this token's newer session has been used "
+            "already; the cookies are left as they are"
+        },
     },
 )
 async def refresh(request: Request, response: Response, runtime: Ready) -> Any:
@@ -477,10 +489,15 @@ async def refresh(request: Request, response: Response, runtime: Ready) -> Any:
         return _rejected(runtime, 401, "session_expired", "Session expired or logged out.")
     rotated_at = session.get("rotated_at")
     if rotated_at is not None and now - rotated_at > CONCURRENT_REFRESH_WINDOW:
-        # A rotated token used again later: treat it as stolen (9.1).
+        # A rotated token used again later: treat it as stolen (9.1). security_event: the
+        # backend stack counts these lines and alarms (AUTH-02).
         await sessions.delete_many({"location": location, "family_id": session["family_id"]})
         await _revoke(runtime, user_id, location)
-        _logger.warning("auth.refresh.reuse sub=%s family revoked", user_id)
+        _logger.warning(
+            "auth.refresh.reuse sub=%s family revoked",
+            user_id,
+            extra={"security_event": "refresh_token_reuse"},
+        )
         return _rejected(runtime, 401, "session_revoked", "Session revoked.")
 
     account = await runtime.db[AUTH].find_one({"_id": user_id, "location": location})
@@ -489,16 +506,93 @@ async def refresh(request: Request, response: Response, runtime: Ready) -> Any:
         await sessions.delete_one({"_id": jti, "location": location})
         return refused or _rejected(runtime, 401, "session_revoked", "Session revoked.")
 
-    # The new session first: a crash in between leaves the old token usable.
-    signed = await sign_in(
-        runtime, response, account, browser=_browser(request), family_id=session["family_id"]
-    )
-    if rotated_at is None:
-        await sessions.update_one(
-            {"_id": jti, "location": location, "rotated_at": None},
-            {"$set": {"rotated_at": now, "replaced_by": signed.jti}},
+    # AUTH-02: one refreshable branch per family, however many refreshes of this token race.
+    # The first claims the token atomically and mints its successor. Another one, within
+    # the window (a second tab, a mobile retry after a lost response), replaces that
+    # successor if it hasn't been used yet; the one it replaces can no longer refresh.
+    claim = _Claim(runtime, request, response, account, jti, location, session["family_id"])
+    if rotated_at is None and await sessions.find_one_and_update(
+        {"_id": jti, "location": location, "rotated_at": None}, {"$set": {"rotated_at": now}}
+    ):
+        return await claim.mint(expected=None)
+    return await claim.replace_successor()
+
+
+@dataclass(frozen=True)
+class _Claim:
+    """A refresh of one token, once it's allowed to continue (AUTH-02)."""
+
+    runtime: Runtime
+    request: Request
+    response: Response
+    account: dict[str, Any]
+    jti: str
+    location: str
+    family: str
+
+    async def mint(self, *, expected: str | None) -> Any:
+        """A new session in the family, linked as this token's successor only while the
+        link is still `expected`. A refresh that lost that race deletes the session it
+        just made, so the family never has two that can refresh."""
+        sessions = self.runtime.db[SESSIONS]
+        signed = await sign_in(
+            self.runtime,
+            self.response,
+            self.account,
+            browser=_browser(self.request),
+            family_id=self.family,
         )
-    return signed.body
+        linked = await sessions.update_one(
+            {"_id": self.jti, "location": self.location, "replaced_by": expected},
+            {"$set": {"replaced_by": signed.jti}},
+        )
+        if linked.modified_count == 1:
+            return signed.body
+        await sessions.delete_one({"_id": signed.jti, "location": self.location})
+        return self.superseded()
+
+    async def replace_successor(self) -> Any:
+        """Another refresh has claimed this token. Retire its successor if unused and mint
+        this caller's instead; a 409 if it's been used (the client's tokens or cookies
+        moved on without this request), with the cookies left as they are."""
+        sessions = self.runtime.db[SESSIONS]
+        key = {"_id": self.jti, "location": self.location}
+        waited = 0.0
+        while True:
+            claimed = await sessions.find_one(key)
+            successor = claimed.get("replaced_by") if claimed else None
+            if successor or claimed is None or waited >= SUCCESSOR_WAIT_SECONDS:
+                break
+            await asyncio.sleep(SUCCESSOR_POLL_SECONDS)
+            waited += SUCCESSOR_POLL_SECONDS
+        if claimed is None:
+            return self.superseded()
+        if successor is None:
+            # Claimed, but no successor recorded in time: that refresh stopped part-way
+            # (a crash). Claim it again, as the one that never finished would have.
+            if await sessions.find_one_and_update(
+                {**key, "replaced_by": None, "rotated_at": claimed["rotated_at"]},
+                {"$set": {"rotated_at": datetime.now(UTC)}},
+            ):
+                return await self.mint(expected=None)
+            return self.superseded()
+        if await sessions.find_one_and_delete(
+            {"_id": successor, "location": self.location, "rotated_at": None}
+        ):
+            return await self.mint(expected=successor)
+        return self.superseded()
+
+    def superseded(self) -> JSONResponse:
+        _logger.info("auth.refresh.superseded sub=%s", self.account["_id"])
+        return JSONResponse(
+            {
+                "detail": {
+                    "code": "refresh_superseded",
+                    "msg": "This session was refreshed elsewhere; use the newer tokens.",
+                }
+            },
+            status_code=409,
+        )
 
 
 @router.post(

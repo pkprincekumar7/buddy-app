@@ -144,7 +144,7 @@ export const api = {
     // The sign-in calls moved to api/account.ts (build plan 7.2); the refresh stays here,
     // shared by request() and the generated clients.
     async silentRefresh(): Promise<void> {
-      return refreshTokenPair();
+      return ensureRefreshed(); // never alongside a request-triggered refresh
     },
   },
 };

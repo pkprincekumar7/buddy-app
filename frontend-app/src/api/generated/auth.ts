@@ -93,7 +93,7 @@ export interface paths {
         put?: never;
         /**
          * Refresh
-         * @description Exchange a refresh token (cookie, or Bearer on mobile) for a new pair in the same family. Reusing a rotated token after 30 s logs the account out everywhere.
+         * @description Exchange a refresh token (cookie, or Bearer on mobile) for a new pair in the same family. Within 30 s of a token's first refresh, another one replaces the first's session (one branch per family); reusing it after 30 s logs the account out everywhere.
          */
         post: operations["refresh_api_v1_auth_refresh_post"];
         delete?: never;
@@ -698,6 +698,13 @@ export interface operations {
             };
             /** @description The account is locked; clears the cookies */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description refresh_superseded: this token's newer session has been used already; the cookies are left as they are */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

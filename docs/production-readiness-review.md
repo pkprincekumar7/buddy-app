@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 36 are done, 32 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08 and MOB-01 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 37 are done, 31 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -148,7 +148,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ✅ Done — secrets on the Terraform plan/apply steps only, `terraform_wrapper: false` |
 | SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ✅ Done — no expression in any `run:`; reusable workflows validate inputs in a first job |
 | SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open · ⏸ Deferred |
-| SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
+| SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open · ⏸ Deferred |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path), SDK retries off; an overall time budget open |
@@ -176,7 +176,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
 | JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⬜ Open (matters only if DEC-01 = B) |
 | AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | ✅ Done (certs cached per Google's max-age, 5 s timeout, own thread pool) |
-| AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | 🟡 Family revoked on reuse after the 30 s grace; no atomic consume inside it |
+| AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | ✅ Done — atomic claim, one refreshable branch per family, reuse revokes the family and alarms |
 | AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ✅ Done |
 | AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | ✅ Done (per-account backoff across IPs, bcrypt on its own pool, 72-byte cut made explicit) |
 | AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ✅ Done — tokens in the body for the mobile app only, host-only cookies, cross-site cookie writes refused |
@@ -196,7 +196,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ✅ Done (no-running-task alarm for every runtime, worker health checks) |
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
-| TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
+| TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open · ⏸ Deferred |
 | TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Per-tier `runtime_sizes` (desired = min); load test, max counts and fixes 2, 4–9 open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open (the authz cache now shares the cluster) |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | 🟡 HTTPS-only deny on all four Terraform policies; uploads-bucket policy and bucket imports open |
@@ -634,6 +634,8 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 ---
 
 ### SEC-09 — CloudTrail design 🟡 (new in v2)
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
 
 > 🔄 **Current code (2026-11-01):** ⬜ Open. `is_multi_region_trail = false` (backend `security.tf:53`, edge `security.tf:52`), and `s3.tf:105-117` has no `SourceArn`.
 
@@ -1396,7 +1398,13 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-02 — Refresh tokens: no atomic consume, no reuse detection 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Reusing a refresh token after the 30 s grace revokes its whole family (`backend/auth/app/main.py:463-490`). Inside the grace window, two concurrent refreshes both succeed (no atomic consume). That's by design, but it misses this finding's acceptance criterion.
+> 🔄 **Current code (2026-11-02):** ✅ Done (`backend/auth/app/main.py`, `refresh` and `_Claim`).
+> - **Atomic claim.** A refresh claims its token with one `findOneAndUpdate` (`rotated_at` null → now). Of refreshes racing on one token, exactly one goes on to mint.
+> - **One branch per family.** A second refresh within the 30 s window (another tab, or the mobile app retrying after a lost response) retires the first one's successor if it hasn't been used, and gets the new pair; the replaced pair can no longer refresh. If the successor has been used, it gets `409 refresh_superseded`, and its cookies are left alone. Every successor link is conditional, and a refresh that loses it deletes the session it just made. So a family never has two sessions that can refresh, the security property the criterion is after. A literal "the second refresh fails" would instead sign out a second tab or a mobile retry, so the second refresh gets a pair, but only one pair can ever refresh again.
+> - **Crash recovery.** A claim whose successor isn't recorded within 2 s (that refresh stopped part-way) is taken over by the next refresh. Two takeovers can't both win.
+> - **Reuse.** A reuse after the window still revokes the family and logs the account out everywhere. Its log line now has `security_event: "refresh_token_reuse"`, which a log metric filter on auth counts (`Superpower/auth` `SecurityEvents`); the `auth-security-events` alarm (stg, prod) fires on any.
+> - **Clients.** The web app treats a `409` from refresh as "another tab refreshed first" and carries on with the cookies it now has. In both apps, the timed silent refresh goes through the same one-at-a-time path as request-triggered ones.
+> - **Tests:** a second refresh replacing the first's session; six parallel refreshes leaving exactly one session and one pair that can refresh (10 repeat runs); a `409` after the successor was used, with no cookies set; a stopped claim taken over; a lost link deleting its session; two takeovers with one winner; the reuse's security event. auth is at 100% coverage, and the stack test asserts the filter and alarm.
 
 **Where:** `backend/app/routers/auth.py:403-451` (`find_one` session → insert the new one → `delete_one` the old one).
 
@@ -1941,6 +1949,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### TF-02 — Task definition `:latest` bootstrap and config drift 🟡
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
 
 > 🔄 **Current code (2026-11-01):** ⬜ Open. The bootstrap still uses `:latest` (`infra-live-backend/terraform/ecs.tf:69`), and `modules/ecs-service/main.tf:151` ignores `task_definition` and `desired_count`.
 

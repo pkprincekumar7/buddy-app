@@ -796,3 +796,41 @@ resource "aws_cloudwatch_metric_alarm" "index_problems" {
     Name = "${var.app_name}-index-problems-${var.environment}"
   }
 }
+
+# AUTH-02: a refresh token used again after its 30-second window is taken as stolen; auth
+# revokes the family and logs the account out everywhere, with a top-level
+# security_event field on that log line.
+resource "aws_cloudwatch_log_metric_filter" "security_events" {
+  name           = "${var.app_name}-auth-security-events-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["auth"].name
+  pattern        = "{ $.security_event = * }"
+
+  metric_transformation {
+    name          = "SecurityEvents"
+    namespace     = "Superpower/auth"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "security_events" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-auth-security-events-${var.environment}"
+  alarm_description   = "auth logged a security event: a refresh token reused after its window (taken as stolen; the account was logged out everywhere). The auth log lines with a security_event field name the account (sub) and the event."
+  namespace           = "Superpower/auth"
+  metric_name         = aws_cloudwatch_log_metric_filter.security_events.metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-auth-security-events-${var.environment}"
+  }
+}
