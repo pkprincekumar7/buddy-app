@@ -3,9 +3,16 @@
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import pytest
 from pymongo import ASCENDING, IndexModel
+from pymongo.errors import (
+    AutoReconnect,
+    NotPrimaryError,
+    OperationFailure,
+    ServerSelectionTimeoutError,
+)
 
 from common import index_builds
 from common.events import store
@@ -213,3 +220,102 @@ def test_stopping_cancels_a_running_build_only():
         assert done.result() == "built"
 
     asyncio.run(main())
+
+
+# ── startup through an Atlas election (DB-05) ─────────────────────────────────
+
+
+class Election:
+    """A clock and a sleep that move it, so the retries' waits take no real time."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.waits: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        self.now += seconds
+
+
+def test_startup_rides_out_an_election(caplog):
+    election, calls = Election(), []
+
+    async def step():
+        calls.append(1)
+        if len(calls) < 4:
+            raise NotPrimaryError("not primary")
+        return "ready"
+
+    result = asyncio.run(
+        index_builds.with_startup_retries(
+            step, service="t", clock=election.clock, sleep=election.sleep
+        )
+    )
+    assert result == "ready" and election.waits == [1.0, 2.0, 4.0]
+    assert "t: MongoDB unavailable at startup (NotPrimaryError); retrying in 1 s" in caplog.text
+
+
+def test_startup_gives_up_after_the_retry_window():
+    election = Election()
+
+    async def step():
+        raise ServerSelectionTimeoutError("no primary")
+
+    with pytest.raises(ServerSelectionTimeoutError):
+        asyncio.run(
+            index_builds.with_startup_retries(
+                step, service="t", clock=election.clock, sleep=election.sleep
+            )
+        )
+    assert sum(election.waits) <= index_builds.STARTUP_RETRY_SECONDS
+    assert election.waits == [1.0, 2.0, 4.0, 8.0, 16.0]  # the next, 32 s, would pass 60 s
+
+
+def test_any_other_error_stops_startup_at_once():
+    election = Election()
+
+    async def step():
+        raise OperationFailure("bad validator", code=2)
+
+    with pytest.raises(OperationFailure):
+        asyncio.run(
+            index_builds.with_startup_retries(
+                step, service="t", clock=election.clock, sleep=election.sleep
+            )
+        )
+    assert election.waits == []
+
+
+@pytest.mark.parametrize(
+    ("exc", "transient"),
+    [
+        (AutoReconnect("reset"), True),
+        (OperationFailure("stepped down", code=189), True),
+        (OperationFailure("interrupted", code=11602), True),
+        (OperationFailure("x", code=1, details={"errorLabels": ["RetryableWriteError"]}), True),
+        (OperationFailure("unauthorized", code=13), False),
+        (ValueError("bug"), False),
+    ],
+)
+def test_which_errors_are_retried(exc, transient):
+    assert index_builds.is_transient(exc) is transient
+
+
+def test_prepare_database_retries_its_collection_step(monkeypatch):
+    attempts = []
+
+    async def flaky(db):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise AutoReconnect("election")
+
+    async def no_wait(seconds):
+        return None
+
+    monkeypatch.setattr(index_builds.asyncio, "sleep", no_wait)
+    db = cast(Any, object())  # no index to build, so it's never touched
+    assert asyncio.run(prepare_database(db, flaky, service="t", release=None)) is None
+    assert len(attempts) == 2

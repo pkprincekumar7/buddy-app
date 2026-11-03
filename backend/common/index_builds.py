@@ -21,25 +21,38 @@ circuit breaker rolled the deploy back. An option conflict crash-looped every ta
 - A failed build, or an index still missing afterwards, is logged with a top-level
   `index_problem` field. The backend stack counts those lines and alarms. Nothing
   raises: the task keeps serving.
+
+Startup rides out an Atlas election (production-readiness review, DB-05): the collection
+step is retried with backoff for up to STARTUP_RETRY_SECONDS on a connection or "not
+primary" error, inside the container's health-check allowance, instead of the task
+exiting and ECS restarting it in a loop. Any other error stops startup at once.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
 from pymongo import IndexModel
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailure
 
 BUILDS = "index_builds"
 STALE_AFTER = timedelta(minutes=30)
 WAIT_POLL_SECONDS = 15.0
 # GIT_SHA's value when an image is built without one (backend/Dockerfile).
 NO_RELEASE = frozenset({"", "unknown"})
+# An Atlas election takes about 10-12 s; a task's health check allows about 150 s
+# (services.tf: startPeriod 60 s, then 3 x 30 s), the load balancer's grace 90 s.
+STARTUP_RETRY_SECONDS = 60.0
+STARTUP_FIRST_DELAY_SECONDS = 1.0
+# Server errors of a replica set changing primary (not covered by ConnectionFailure, which
+# includes NotPrimaryError, AutoReconnect and ServerSelectionTimeoutError).
+_STEPPING_DOWN = frozenset({91, 189, 10107, 11600, 11602, 13435, 13436})
 
 Doc = dict[str, Any]
 Db = AsyncDatabase[Doc]
@@ -201,14 +214,50 @@ async def prepare_database(
 ) -> asyncio.Task[Outcome] | None:
     """Make the collections and validators now; the indexes now without a release, else
     in a background task (returned, so the runtime can cancel it when it closes)."""
-    indexes = await record_indexes(db, ensure)
+    indexes = await with_startup_retries(lambda: record_indexes(db, ensure), service=service)
     if (release or "") in NO_RELEASE:
-        await build_indexes(db, indexes)
+        await with_startup_retries(lambda: build_indexes(db, indexes), service=service)
         return None
     return asyncio.create_task(
         run_index_build(db, indexes, service=service, release=f"{service}:{release}"),
         name=f"{service}-index-build",
     )
+
+
+def is_transient(exc: BaseException) -> bool:
+    """A connection error or a primary stepping down: worth retrying in a moment."""
+    if isinstance(exc, ConnectionFailure):
+        return True
+    return isinstance(exc, OperationFailure) and (
+        exc.code in _STEPPING_DOWN or exc.has_error_label("RetryableWriteError")
+    )
+
+
+async def with_startup_retries(
+    step: Callable[[], Awaitable[Any]],
+    *,
+    service: str,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> Any:
+    """Run `step`, retrying a transient error with doubling waits (1 s, 2 s, 4 s...) until
+    STARTUP_RETRY_SECONDS have passed; then, or for any other error, it raises."""
+    deadline = clock() + STARTUP_RETRY_SECONDS
+    delay = STARTUP_FIRST_DELAY_SECONDS
+    while True:
+        try:
+            return await step()
+        except Exception as exc:
+            if not is_transient(exc) or clock() + delay > deadline:
+                raise
+            _logger.warning(
+                "%s: MongoDB unavailable at startup (%s); retrying in %.0f s",
+                service,
+                type(exc).__name__,
+                delay,
+            )
+            await sleep(delay)
+            delay *= 2
 
 
 def stop_index_build(task: asyncio.Task[Any] | None) -> None:

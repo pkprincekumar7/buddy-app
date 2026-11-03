@@ -166,7 +166,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ✅ Done (claim reads an index in order, jittered idle poll, 30 s socket timeout; connection budget with DB-01) |
 | DB-03 | 🟡 Medium | Database | Index creation at startup in every task | 🟡 Code done (indexes built in the background once per release, others verify, `index-problems` alarm); acceptance needs a deployed env |
 | DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
-| DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Deletes transactional and event-retried; startup has no retry; failover untested |
+| DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Code done (startup retries through an election, about 60 s, buddy-common 0.27.0; failover runbook); the stg Test Failover needs a deployed env |
 | JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
 | JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | ✅ Done (attempts counted at claim, SDK retries off, failed-jobs alarm per circle) |
 | JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | ✅ Done (hourly limit, output caps, LLM token metrics with an hourly alarm, SSM kill switch) |
@@ -198,11 +198,11 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open · ⏸ Deferred |
 | TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Per-tier `runtime_sizes` (desired = min); load test, max counts and fixes 2, 4–9 open |
-| TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open (the authz cache now shares the cluster) |
+| TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0, right-sized nodes and an explicit `maxmemory-policy = noeviction` done; the working-set load test open |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | 🟡 HTTPS-only deny on all four Terraform policies; uploads-bucket policy and bucket imports open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (body rule), rate rule scoped to `/api/` and raised; the rest ⏸ deferred (auth-route rule, version pins, count-mode switch) |
-| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Timeout, no async retries and a managed log group done; failure alert and idempotency check open |
+| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Code done (timeout, no async retries, log group, failure alarm and destination, duplicate check); acceptance needs an applied env; fix 5 is the deferred SEC-03 |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | 🟡 No direct prod deploy; each pushed image scanned and marked, promote requires the marker; signing, provenance, digest-pinned base and registry copy open |
@@ -1172,7 +1172,12 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DB-05 — Atlas failover behaviour unspecified/untested 🟡
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Deletes run in transactions and are re-run by events. Startup `prepare()` has no retry or backoff, so tasks crash-loop during a failover, and no failover test is documented. A failed startup now at least exits 1 (`common.serve`), so ECS and the deploy see it as a failed task.
+> 🔄 **Current code (2026-11-03):** 🟡 Code done (buddy-common 0.27.0); the failover test needs a deployed environment.
+> - **Startup retries.** Every service's startup (`prepare()` → `common.index_builds.prepare_database`) retries the collection step on a connection or "not primary" error: `ConnectionFailure`, which covers `NotPrimaryError`, `AutoReconnect` and `ServerSelectionTimeoutError`, plus the stepping-down server codes and the `RetryableWriteError` label. It waits 1, 2, 4, 8 and 16 s, about 60 s, inside the task's health-check allowance (about 150 s) and the load balancer's 90 s grace. A task starting during an election no longer exits and gets restarted in a loop. Any other error still stops it at once, and a failed startup exits 1 (`common.serve`).
+> - **Writes.** Deletes run in transactions and are re-run by events. pymongo retries a single write once, and a request in flight during an election can fail.
+> - **Runbook.** `docs/infra-operations.md` ("MongoDB indexes" section) has the expected behaviour and the release step: run Atlas *Test Failover* on stg while the services run.
+> - **Tests:** an election ridden out (three "not primary" errors, then ready), the 60 s limit, a non-transient error raised at once, which errors count as transient, and `prepare_database` retrying its collection step.
+> - **Still open:** the stg failover test itself (the acceptance criterion).
 
 **Where:** `backend/app/main.py:102` (`delete_many`), `update_many` call sites, `backend/worker.py:568` (startup ping → `sys.exit`).
 
@@ -2050,6 +2055,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 > ✅ **Partly done 2026-10-23:** the engine is Valkey, `engine_version` is a variable (default `"8.0"`, parameter group family derived from it, `create_before_destroy`), and nodes are right-sized for the current keys: dev/sbx `cache.t4g.micro`, stg `cache.t4g.small`, prod `cache.t4g.medium` × 2 (primary + 1 replica, multi-AZ). The `elasticache.tf` comment matches the tfvars. Still open: set `maxmemory-policy` explicitly, and confirm the working set with a load test before moving prod to `cache.r7g.large`.
 
+> ✅ **2026-11-03:** `maxmemory-policy` is set explicitly in the parameter group, `noeviction`, through the `modules/redis` variable `maxmemory_policy` (validated against Valkey's values), as Appendix A advises for one cluster of state keys. Every key here has a TTL (rate-limit counters, LLM limits, leader locks, the `authz:` cache), so Valkey's `volatile-lru` default would have evicted counters and locks under memory pressure. With `noeviction` a full cluster refuses writes; the services fall back to per-task counting (`valkey-degraded` alarm, APP-04) and the Valkey memory alarm fires. A parameter change applies in place. The module test asserts it. Still open: the load test for the working set.
+
 ---
 
 ### TF-05 — Bucket policies: no TLS-only deny; manual buckets 🟡
@@ -2167,16 +2174,18 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### SCH-01 — Duplicate dispatch via Lambda async retries; no timeout/alarm 🟡
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial: fixes 1, 2 (without the destination and alarm) and 4 are done.
+> 🔄 **Current code (2026-11-03):** 🟡 Code done: fixes 1–4. Fix 5 is SEC-03 (deferred), and the acceptance check needs an applied environment.
 > - **1:** `dispatcher.py` calls GitHub with `timeout=GITHUB_TIMEOUT_SECONDS` (10 s, inside the function's 30 s).
 > - **2:** `aws_lambda_function_event_invoke_config.dispatcher` (`infra-live-scheduler/terraform/lambda.tf`) sets `maximum_retry_attempts = 0` and `maximum_event_age_in_seconds = 300`, so a failed or timed-out invocation never runs again and can't start a second apply or destroy. The CKV_AWS_116 skip now gives that reason.
 > - **4:** the function logs to a Terraform-managed group with 30-day retention, `/<app>/<env>/scheduler/github-dispatcher` (through `logging_config`). It isn't the default `/aws/lambda/…` name, which Lambda creates itself and which would clash on apply. The role can only write to that group, and the unused `aws_caller_identity` data source is gone.
 > - **Tests:** `infra-live-scheduler/lambda/test_dispatcher.py` (standard library only) checks the request, the timeout, and that GitHub errors and timeouts fail the invocation. It runs in `check.sh` and `check.yml`.
 >
+> - **2 (the rest):** where `enable_alarms` (stg; the scheduler can't run for prod), a new topic, `<app>-scheduler-alerts-<env>`, emails `OPS_EMAIL` (`infra-live-scheduler/terraform/alarms.tf`). The `scheduler-dispatch-failed` alarm fires on any `AWS/Lambda` `Errors` of the function. The event invoke config's `on_failure` destination publishes the failed invocation (the schedule's event and the error) to the same topic, through a `sns:Publish` grant on the function's role. The workflow passes `TF_VAR_ops_email` from the `OPS_EMAIL` variable.
+> - **3:** before dispatching, the function lists the workflow's `workflow_dispatch` runs from the last 60 minutes and skips if one has this dispatch's title. The title is `terraform-live-all.yml`'s `run-name` (action, environment, regions), and a test checks the two stay the same. If the runs can't be listed, it dispatches anyway: a missed start or stop is worse than a duplicate, which the workflow's concurrency group would run one after the other.
+> - **Tests:** 5 more in `test_dispatcher.py` (8 in all): a duplicate skipped, other runs not counted, a failed list still dispatching, an event without the title inputs, and the title matching the run-name. `terraform validate` and tflint pass for the stack.
+>
 > Still open:
-> - an `on_failure` destination and an alarm on the function's `Errors`, because the stack has no alarm topic yet;
-> - fix 3, the optional idempotency check against recent workflow runs;
-> - fix 5 (SEC-03);
+> - fix 5 (SEC-03, deferred);
 > - the acceptance check (one run and one alert after a simulated timeout), which needs an applied environment.
 
 **Where:**

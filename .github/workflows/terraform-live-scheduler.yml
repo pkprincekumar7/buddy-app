@@ -108,6 +108,8 @@ jobs:
       # TF_VAR_* otherwise, since -var-file is evaluated after environment
       # variables).
       TF_VAR_target_aws_regions: ${{ inputs.target_aws_regions }}
+      # The dispatcher's alert email (alarms.tf, SCH-01), where enable_alarms = true (stg).
+      TF_VAR_ops_email: ${{ vars.OPS_EMAIL }}
 
     steps:
       - name: Checkout

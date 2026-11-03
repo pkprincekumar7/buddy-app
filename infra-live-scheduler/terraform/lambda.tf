@@ -34,7 +34,7 @@ resource "aws_iam_role_policy" "lambda_exec" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         # The log group is Terraform's (below), so the function only writes to it.
         Sid      = "Logs"
@@ -48,7 +48,13 @@ resource "aws_iam_role_policy" "lambda_exec" {
         Action   = "secretsmanager:GetSecretValue"
         Resource = aws_secretsmanager_secret.github_pat.arn
       }
-    ]
+      ], var.enable_alarms ? [{
+        # The on_failure destination (below) publishes as the function's role.
+        Sid      = "PublishFailures"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.scheduler_alerts[0].arn
+    }] : [])
   })
 }
 
@@ -77,7 +83,7 @@ resource "aws_cloudwatch_log_group" "dispatcher" {
 }
 
 resource "aws_lambda_function" "dispatcher" {
-  #checkov:skip=CKV_AWS_116:Failed invocations aren't retried (aws_lambda_function_event_invoke_config below) and are in the logs; nothing to replay from a DLQ
+  #checkov:skip=CKV_AWS_116:Failed invocations aren't retried (aws_lambda_function_event_invoke_config below); they go to the logs and, where enable_alarms, to an on_failure destination (alarms.tf), not a DLQ to replay
   #checkov:skip=CKV_AWS_117:Function only calls GitHub public API and Secrets Manager — VPC not required
   #checkov:skip=CKV_AWS_50:X-Ray tracing not required for this simple dispatcher
   #checkov:skip=CKV_AWS_272:Code signing not required for internal infrastructure Lambda
@@ -119,4 +125,14 @@ resource "aws_lambda_function_event_invoke_config" "dispatcher" {
   function_name                = aws_lambda_function.dispatcher.function_name
   maximum_retry_attempts       = 0
   maximum_event_age_in_seconds = 300
+
+  # The failed invocation (the schedule's event and the error) to OPS_EMAIL (alarms.tf).
+  dynamic "destination_config" {
+    for_each = var.enable_alarms ? [1] : []
+    content {
+      on_failure {
+        destination = aws_sns_topic.scheduler_alerts[0].arn
+      }
+    }
+  }
 }

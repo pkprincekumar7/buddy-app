@@ -83,6 +83,14 @@ Every workflow job has a `timeout-minutes` (CI-16): Terraform backend, frontend 
    The lock ID is in the error message.
 3. If an apply fails with **"already exists"**, AWS finished creating a resource that Terraform never recorded. Import it (`terraform import <address> <id>`, or an `import {}` block), then plan again.
 
+**Scheduled starts and stops** (`infra-live-scheduler`, dev, sbx and stg): the dispatcher Lambda
+isn't retried, and skips a dispatch whose run (same action, environment and regions) already
+started in the last hour, so a schedule delivered twice runs once (SCH-01). Where
+`enable_alarms` (stg), a failed dispatch emails `OPS_EMAIL` twice over: the
+`scheduler-dispatch-failed` alarm, and the failed event itself through the function's
+`on_failure` destination. The environment then didn't start or stop: run
+`terraform-live-all` by hand if it must.
+
 **Queued runs:** each Terraform and deploy workflow has a concurrency group (per environment, plus region for the backend), with `cancel-in-progress: false`. GitHub keeps one running and **one** pending run per group, so a third run started while one is pending replaces the pending one, without an error. That includes the scheduler's runs. If a run shows as cancelled without anyone cancelling it, that's why: start it again once the group is free.
 
 ---
@@ -488,6 +496,15 @@ holds up startup or fails the health check, and an option conflict no longer cra
 - **Until a new index exists,** queries that need it run unindexed, and a new unique rule isn't
   enforced. On a large collection, check the build finished (`index_builds` status `done`)
   before relying on it.
+- **Through an Atlas election** (DB-05): a task starting while the replica set has no primary
+  retries the collection step on connection and "not primary" errors, waiting 1, 2, 4, 8 and
+  16 s (about 60 s in all, inside its health-check allowance), instead of exiting and being
+  restarted in a loop. Other errors still stop it at once. Requests in flight during an
+  election can fail; pymongo retries a single write once.
+- **Before a release that changes MongoDB access,** run Atlas's *Test Failover* on the stg
+  cluster while the services run: the API should recover within about a minute, with no task
+  crash-looping and no generation job stuck (the `jobs-waiting` and `failed-jobs` alarms stay
+  quiet).
 
 ---
 
@@ -557,7 +574,7 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 | Cloud Map | Private DNS namespace `<app>-<env>.internal`: each HTTP service except shared on 8001, the collector on 4318, reachable only from the `internal-callers` security group |
 | SNS / SQS | From `backend/common/events/catalogue.json` (`modules/events`): a topic per producing service (customer-managed KMS key), a queue + DLQ per consuming service (SSE-SQS), filtered subscriptions; DLQ and message-age alarms when `enable_all_alarms` |
 | ECR | One repository per service, `<app>/<env>/<service>`; `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
-| ElastiCache Valkey 8.0 | At-rest encryption + TLS required + RBAC: one IAM-authenticated user per service, limited to its own keys (`modules/redis`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters, leader locks and the `authz:{user}` cache |
+| ElastiCache Valkey 8.0 | At-rest encryption + TLS required + RBAC: one IAM-authenticated user per service, limited to its own keys (`modules/redis`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters, leader locks and the `authz:{user}` cache. `maxmemory-policy = noeviction` (TF-04): when memory is full, writes fail rather than evict a counter or lock (every key has a TTL, so Valkey's default `volatile-lru` would); the services then count per task, and the Valkey memory and `valkey-degraded` alarms fire |
 | CloudWatch Logs | One log group per runtime, `/ecs/<app>/<runtime>/<env>`; retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
 
 ### Frontend deploy (`deploy-live-frontend.yml`)

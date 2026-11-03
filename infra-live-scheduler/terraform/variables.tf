@@ -86,3 +86,20 @@ variable "schedule_timezone" {
   description = "IANA timezone for EventBridge schedule expressions (e.g. Asia/Kolkata, America/New_York)"
   type        = string
 }
+
+variable "enable_alarms" {
+  description = "Email OPS_EMAIL when the GitHub dispatcher fails: an alarm on its Errors and a failure destination with the failed event (SCH-01). true on stg (prod can't be scheduled)."
+  type        = bool
+  default     = false
+}
+
+variable "ops_email" {
+  description = "Operator email for the scheduler's alert topic (the OPS_EMAIL GitHub environment variable). Must be set when enable_alarms = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_alarms || length(var.ops_email) > 0
+    error_message = "ops_email must be set when enable_alarms = true (the OPS_EMAIL GitHub environment variable)."
+  }
+}

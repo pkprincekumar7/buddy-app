@@ -251,7 +251,7 @@ Under **Settings → Environments → `<env>` → Variables** (not Secrets): thr
 | Name (kind) | When |
 |---|---|
 | `GLOBAL_LOGGING_BUCKET_NAME` (variable) | Always for `prod`; for others when edge `enable_cloudtrail` or `enable_waf_logging` is `true` |
-| `OPS_EMAIL` (variable) | When backend `enable_ops_email = true` or edge `enable_alarms = true` (both on in stg and prod). Use a team address, since variables show in logs. |
+| `OPS_EMAIL` (variable) | When backend `enable_ops_email = true` or edge `enable_alarms = true` (both on in stg and prod), or scheduler `enable_alarms = true` (stg). Use a team address, since variables show in logs. |
 | `GIT_ACTIONS_PAT` (secret) | When using the scheduler (`terraform-live-scheduler.yml`) — GitHub PAT with `repo` + `workflow` scopes |
 | `IOS_CLIENT_ID`, `IOS_APPLE_TEAM_ID`, `IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64` (secrets) | Only for building iOS IPAs (`build-ios-ipa.yml`) |
 
