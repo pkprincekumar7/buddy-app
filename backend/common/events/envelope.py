@@ -6,7 +6,8 @@ SNS message body (JSON):
      "occurred_at", "payload"}
 
 with message attributes `event_type` (what the filter policies match), `schema` and, when
-set, `traceparent`. Subscriptions keep raw delivery off, so SQS receives the SNS envelope
+set, `traceparent` and `request_id` (the request that wrote the event, so the consumer's
+lines for it carry the same id: production-readiness review, OBS-04). Subscriptions keep raw delivery off, so SQS receives the SNS envelope
 and its `TopicArn`, which is how a consumer knows the producer (7.2).
 """
 
@@ -20,6 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from common.events import catalogue, schemas
+from common.logging import is_request_id, request_id_var
 from common.regions import LOCATION_RE
 
 _UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
@@ -58,6 +60,7 @@ class Event:
     payload: dict[str, Any]
     created_at: datetime
     traceparent: str | None = None
+    request_id: str | None = None
 
     # ── building one ──────────────────────────────────────────────────────────
 
@@ -73,8 +76,10 @@ class Event:
         region: str,
         payload: dict[str, Any] | None = None,
         traceparent: str | None = None,
+        request_id: str | None = None,
     ) -> Event:
-        """A new event from `producer`, checked against the catalogue and its schema."""
+        """A new event from `producer`, checked against the catalogue and its schema. Its
+        request id is the current request's unless one is given."""
         cat = catalogue.load()
         try:
             spec = cat.spec(event_type)
@@ -95,6 +100,7 @@ class Event:
             payload=payload if payload is not None else {},
             created_at=_now(),
             traceparent=traceparent,
+            request_id=request_id if request_id is not None else request_id_var.get(),
         )
         event.check()
         return event
@@ -121,6 +127,8 @@ class Event:
             raise InvalidEvent("region must be an AWS region")
         if self.traceparent is not None and not _TRACEPARENT_RE.fullmatch(self.traceparent):
             raise InvalidEvent("traceparent is malformed")
+        if self.request_id is not None and not is_request_id(self.request_id):
+            raise InvalidEvent("request_id is malformed")
         if not isinstance(self.payload, dict):
             raise InvalidEvent("payload must be an object")
         try:
@@ -149,6 +157,8 @@ class Event:
         }
         if self.traceparent is not None:
             doc["traceparent"] = self.traceparent
+        if self.request_id is not None:
+            doc["request_id"] = self.request_id
         return doc
 
     @classmethod
@@ -167,6 +177,7 @@ class Event:
             payload=doc["payload"],
             created_at=created,
             traceparent=doc.get("traceparent"),
+            request_id=doc.get("request_id"),
         )
 
     # ── the SNS message ───────────────────────────────────────────────────────
@@ -202,10 +213,14 @@ class Event:
         }
         if self.traceparent is not None:
             attrs["traceparent"] = {"DataType": "String", "StringValue": self.traceparent}
+        if self.request_id is not None:
+            attrs["request_id"] = {"DataType": "String", "StringValue": self.request_id}
         return attrs
 
     @classmethod
-    def from_message(cls, message: str, traceparent: str | None = None) -> Event:
+    def from_message(
+        cls, message: str, traceparent: str | None = None, request_id: str | None = None
+    ) -> Event:
         """Parse and check an SNS message body; InvalidEvent if anything is off."""
         try:
             data = json.loads(message)
@@ -220,6 +235,7 @@ class Event:
                 payload=data["payload"],
                 created_at=datetime.fromisoformat(data["occurred_at"]),
                 traceparent=traceparent,
+                request_id=request_id,
             )
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             raise InvalidEvent(f"malformed message: {exc}") from exc

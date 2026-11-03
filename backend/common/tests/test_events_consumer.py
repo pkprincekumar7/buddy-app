@@ -6,9 +6,10 @@ from typing import Any
 
 import pytest
 
+from common import logging as clog
 from common.events import catalogue
 from common.events.consumer import Consumer, Outcome, Rejected
-from common.events.envelope import ReceivedEvent
+from common.events.envelope import Event, InvalidEvent, ReceivedEvent
 from common.events.testing import (
     assert_consumer_contract,
     example_event,
@@ -58,6 +59,40 @@ def test_the_traceparent_attribute_is_kept():
     event = example_event("child.changed", traceparent=trace)
     received = _grow().check(sns_envelope(event, topic_arn(PREFIX, "children")))
     assert received.event.traceparent == trace
+
+
+def test_the_request_id_follows_an_event_to_its_consumer():
+    # OBS-04: Event.new takes the current request's id; it travels as an attribute and
+    # is the current id while the consumer's handler runs, then not.
+    token = clog.request_id_var.set("req-7")
+    try:
+        event = example_event("child.changed")
+    finally:
+        clog.request_id_var.reset(token)
+    assert event.request_id == "req-7"
+    assert event.message_attributes()["request_id"] == {
+        "DataType": "String",
+        "StringValue": "req-7",
+    }
+    assert Event.from_outbox(event.to_outbox()).request_id == "req-7"
+    consumer, seen = _grow(), []
+
+    @consumer.handler("child.changed")
+    async def on_child(received: ReceivedEvent, session: Any) -> None:
+        seen.append((received.event.request_id, clog.request_id_var.get()))
+
+    body = sns_envelope(event, topic_arn(PREFIX, "children"))
+    assert asyncio.run(consumer.handle_body(body)) is Outcome.HANDLED
+    assert seen == [("req-7", "req-7")] and clog.request_id_var.get() is None
+    # Without one: none in the outbox row or the attributes.
+    plain = example_event("child.changed")
+    assert plain.request_id is None and "request_id" not in plain.to_outbox()
+    assert "request_id" not in plain.message_attributes()
+
+
+def test_a_malformed_request_id_is_refused():
+    with pytest.raises(InvalidEvent, match="request_id is malformed"):
+        example_event("child.changed", request_id="not valid!")
 
 
 # ── rejected ───────────────────────────────────────────────────────────────────

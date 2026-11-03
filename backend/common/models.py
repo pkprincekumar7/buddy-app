@@ -181,6 +181,8 @@ def jobs_validator(service: str) -> dict[str, Any]:
             "retry_after": _DATE,
             "claimed_at": _DATE,
             "claim_id": _STRING,
+            # The request that started the job, for its log lines (OBS-04).
+            "request_id": _STRING,
             # A short reason only: never the prompt or user data.
             "error": {"bsonType": "string", "maxLength": 500},
             "created_at": _DATE,

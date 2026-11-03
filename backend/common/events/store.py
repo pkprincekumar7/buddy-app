@@ -59,6 +59,8 @@ OUTBOX_VALIDATOR: Doc = {
             "payload": {"bsonType": "object"},
             "region": {"bsonType": "string"},
             "traceparent": {"bsonType": "string"},
+            # The request that wrote the event, for the consumers' log lines (OBS-04).
+            "request_id": {"bsonType": "string"},
             "created_at": {"bsonType": "date"},
             "published_at": {"bsonType": ["date", "null"]},
             # A row the relay could never publish, kept for a person to look at (relay).

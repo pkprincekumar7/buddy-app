@@ -35,6 +35,7 @@ from common.audit import AuditEvent, route_template, source_ip
 from common.authz import Access, Caller, current_caller, require, require_self_or
 from common.events import is_tombstoned, tombstone_key
 from common.internal_client import allow_callers
+from common.logging import current_request_id
 from common.routers import PolicyRouter, public
 from users.app.runtime import SERVICE, Runtime
 from users.app.store import (
@@ -204,7 +205,7 @@ def audit_change(request: Request, runtime: Runtime, access: Access, fields: lis
             status=200,
             method=request.method,
             route=route_template(request),
-            request_id=request.headers.get("x-request-id"),
+            request_id=current_request_id(request.headers),
             source_ip=source_ip(request),
             changed_fields=tuple(sorted(fields)),
         )

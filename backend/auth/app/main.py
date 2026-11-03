@@ -53,6 +53,7 @@ from common.audit import AuditEvent, route_template
 from common.authz import Caller, mark_policy, signed_in
 from common.cookies import ACCESS_COOKIE, REFRESH_COOKIE
 from common.internal_client import InvalidServiceToken, allow_callers, get_verifier
+from common.logging import current_request_id
 from common.origin import is_browser_request
 from common.routers import PolicyRouter, public
 
@@ -800,7 +801,7 @@ async def internal_email(
             status=200,
             method=request.method,
             route=route_template(request),
-            request_id=request.headers.get("x-request-id"),
+            request_id=current_request_id(request.headers),
             source_ip=None,
         ),
         location,

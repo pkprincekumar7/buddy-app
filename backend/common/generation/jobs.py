@@ -35,6 +35,7 @@ from pymongo.asynchronous.mongo_client import AsyncMongoClient
 from pymongo.errors import DuplicateKeyError
 
 from common.events.store import Db, is_tombstoned, tombstone_key, write_guards
+from common.logging import is_request_id, request_id_var
 from common.models import JOBS, SCHEMA_VERSION
 
 OPEN_STATUSES = ("pending", "processing")
@@ -196,6 +197,9 @@ async def start_job(
                 "created_at": now,
                 "updated_at": now,
                 "schema_version": SCHEMA_VERSION,
+                # The request that started it, so the worker's lines for it carry the same
+                # id (OBS-04; claim_next).
+                **({"request_id": request_id} if (request_id := request_id_var.get()) else {}),
             },
             session=session,
         )
@@ -255,9 +259,13 @@ def claim_filter(locations: list[str] | None, now: datetime, stale_after: timede
 async def claim_next(
     db: Db, *, locations: list[str] | None, stale_after: timedelta = STALE_CLAIM_AFTER
 ) -> Doc | None:
-    """The oldest due job in this region's locations, now `processing`, or None."""
+    """The oldest due job in this region's locations, now `processing`, or None.
+
+    It also makes the job's request id (start_job) the current one, so every line the
+    worker logs while processing it carries the id of the request that started it (OBS-04);
+    no job, or one without, clears it."""
     now = _now()
-    return await db[JOBS].find_one_and_update(
+    job = await db[JOBS].find_one_and_update(
         claim_filter(locations, now, stale_after),
         {
             "$set": {
@@ -271,6 +279,9 @@ async def claim_next(
         sort=CLAIM_SORT,
         return_document=ReturnDocument.AFTER,
     )
+    request_id = job.get("request_id") if job else None
+    request_id_var.set(request_id if is_request_id(request_id) else None)
+    return job
 
 
 def exhausted(job: Mapping[str, Any]) -> bool:

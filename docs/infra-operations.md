@@ -508,6 +508,40 @@ holds up startup or fails the health check, and an option conflict no longer cra
 
 ---
 
+## Finding a request in the logs
+
+Every runtime writes JSON lines to its log group, `/ecs/<app>/<runtime>/<env>`. Each request
+has one access line (`logger` `common.access`: `method`, `path`, `route`, `status`,
+`latency_ms`, `user`), and every line logged for it carries the same `request_id`, which the
+response returns in `X-Request-Id` (OBS-04). The id follows the work: internal calls send it,
+a generation job keeps the id of the request that started it (so the worker's lines carry it
+too), and an event carries it to its consumers. `user` is a hash of the user id
+(`common.logging.user_hash`), so the id itself isn't in the access lines. Successful health
+checks aren't logged.
+
+In CloudWatch Logs Insights, across the service's log groups:
+
+```
+fields @timestamp, service, logger, message, status, latency_ms
+| filter request_id = "<X-Request-Id from the response or the client's error report>"
+| sort @timestamp asc
+```
+
+Slowest routes in the last hour, and the ones failing:
+
+```
+filter logger = "common.access"
+| stats count(*) as requests, pct(latency_ms, 95) as p95 by route
+| sort p95 desc
+```
+
+```
+filter logger = "common.access" and status >= 500
+| stats count(*) as errors by route, status
+```
+
+---
+
 ## Pausing LLM generation (the kill switch)
 
 When LLM spend runs away (the `llm-tokens` alarm, a loop, abuse) or a provider misbehaves, pause generation in a region without a deploy. Each backend stack has one switch, an SSM parameter that Terraform creates as `true` and never resets (`infra-live-backend/terraform/generation_switch.tf`):

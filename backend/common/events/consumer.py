@@ -37,6 +37,7 @@ from pymongo.errors import DuplicateKeyError
 from common.events import catalogue as catalogue_mod
 from common.events.envelope import Event, InvalidEvent, ReceivedEvent
 from common.events.store import INBOX, Db
+from common.logging import request_id_var
 from common.telemetry import linked_span
 
 _logger = logging.getLogger(__name__)
@@ -133,12 +134,15 @@ class Consumer:
         if not isinstance(attributes, dict):
             raise Rejected("malformed message attributes")
         trace = attributes.get("traceparent", {})
+        request = attributes.get("request_id", {})
         message = envelope.get("Message")
         if not isinstance(message, str):
             raise Rejected("no message")
         try:
             event = Event.from_message(
-                message, traceparent=trace.get("Value") if isinstance(trace, dict) else None
+                message,
+                traceparent=trace.get("Value") if isinstance(trace, dict) else None,
+                request_id=request.get("Value") if isinstance(request, dict) else None,
             )
         except InvalidEvent as exc:
             raise Rejected(str(exc)) from exc
@@ -173,6 +177,16 @@ class Consumer:
         registration = self._handlers.get(received.event_type)
         if registration is None:
             raise LookupError(f"no handler for {received.event_type} in {self.service}")
+        # The producing request's id on every line logged while handling it (OBS-04).
+        token = request_id_var.set(received.event.request_id)
+        try:
+            return await self._handle_received(received, registration)
+        finally:
+            request_id_var.reset(token)
+
+    async def _handle_received(
+        self, received: ReceivedEvent, registration: _Registration
+    ) -> Outcome:
         # A new trace linked to the producer's span, not a child of it (15.5).
         with linked_span(
             f"consume {received.event_type}",

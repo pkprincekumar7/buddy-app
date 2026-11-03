@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from limits import parse
 from limits.aio.storage import MemoryStorage
@@ -290,6 +290,88 @@ def test_the_request_id_middleware():
     generated = client.get("/x", headers={"X-Request-Id": "bad id!"})
     assert generated.headers["x-request-id"] == generated.json()["seen"] != "bad id!"
     assert clog.request_id_var.get() is None
+
+
+def _access_lines(caplog) -> list[Any]:  # LogRecords with the access fields
+    return [r for r in caplog.records if r.name == "common.access"]
+
+
+def test_every_request_gets_one_access_line(caplog):
+    # OBS-04: method, path, route template, status, latency and a hash of the user.
+    app = FastAPI()
+    app.add_middleware(clog.RequestIdMiddleware)
+
+    @app.get("/api/v1/children/{child_id}")
+    async def child(child_id: str, request: Request) -> dict[str, str]:
+        request.scope["state"][clog.USER_ID_STATE] = "user-1"  # as common.authz does
+        return {"id": child_id}
+
+    caplog.set_level(logging.INFO, logger="common.access")
+    TestClient(app).get("/api/v1/children/c-9", headers={"X-Request-Id": "gw-7"})
+    (line,) = _access_lines(caplog)
+    fields = {k: getattr(line, k) for k in ("method", "path", "route", "status", "user")}
+    assert fields == {
+        "method": "GET",
+        "path": "/api/v1/children/c-9",
+        "route": "/api/v1/children/{child_id}",
+        "status": 200,
+        "user": clog.user_hash("user-1"),
+    }
+    assert isinstance(line.latency_ms, int) and line.latency_ms >= 0
+    assert line.getMessage().startswith("GET /api/v1/children/c-9 200 ")
+    formatted = json.loads(clog.JsonFormatter("children").format(line))
+    assert formatted["request_id"] == "gw-7" and formatted["user"] != "user-1"
+
+
+def test_health_checks_are_logged_only_when_they_fail(caplog):
+    app = FastAPI()
+    app.add_middleware(clog.RequestIdMiddleware)
+    healthy = {"ok": True}
+
+    @app.get("/health")
+    async def health() -> Any:
+        if healthy["ok"]:
+            return {"status": "ok"}
+        raise HTTPException(status_code=503)
+
+    caplog.set_level(logging.INFO, logger="common.access")
+    client = TestClient(app)
+    client.get("/health")
+    assert _access_lines(caplog) == []
+    healthy["ok"] = False
+    client.get("/health")
+    assert [r.status for r in _access_lines(caplog)] == [503]
+
+
+def test_a_request_that_fails_before_any_response_is_a_500_line(caplog):
+    async def app(scope, receive, send):
+        raise RuntimeError("boom")
+
+    async def receive() -> dict[str, Any]:
+        return {}  # pragma: no cover - not called
+
+    async def send(message: Any) -> None:
+        return None  # pragma: no cover - not called
+
+    caplog.set_level(logging.INFO, logger="common.access")
+    scope = {"type": "http", "method": "POST", "path": "/x", "headers": []}
+    with pytest.raises(RuntimeError):
+        asyncio.run(clog.RequestIdMiddleware(app)(scope, receive, send))
+    (line,) = _access_lines(caplog)
+    assert (line.status, line.route) == (500, "/x") and not hasattr(line, "user")
+
+
+def test_the_current_request_id_falls_back_to_a_valid_header():
+    assert clog.current_request_id() is None
+    assert clog.current_request_id({"x-request-id": "gw-1"}) == "gw-1"
+    assert clog.current_request_id({"x-request-id": "bad id!"}) is None
+    token = clog.request_id_var.set("mw-1")
+    try:
+        assert clog.current_request_id({"x-request-id": "gw-1"}) == "mw-1"
+    finally:
+        clog.request_id_var.reset(token)
+    assert clog.user_hash("u") == clog.user_hash("u") != clog.user_hash("v")
+    assert len(clog.user_hash("u")) == 16
 
 
 def test_the_request_id_middleware_passes_other_scopes():

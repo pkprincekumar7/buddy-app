@@ -32,6 +32,7 @@ from common.authz import (
     require_self_or,
     signed_in,
 )
+from common.logging import RequestIdMiddleware, user_hash
 from common.routers import public
 
 ISS, AUD, KID = "buddy-test", "buddy-api", "k1"
@@ -552,3 +553,14 @@ def test_policies_are_marked():
         getattr(require_self_or("profiles:read:any"), authz.POLICY_ATTR)
         == "require_self_or:profiles:read:any"
     )
+
+
+def test_the_access_line_names_the_signed_in_user_as_a_hash(client, cache, caplog):
+    # OBS-04: authenticate leaves the user for common.logging's access line.
+    cache.put(USER, entry())
+    logged = TestClient(RequestIdMiddleware(client.app))
+    caplog.set_level("INFO", logger="common.access")
+    assert call(logged, "/me").status_code == 200
+    (line,) = [r for r in caplog.records if r.name == "common.access"]
+    assert line.user == user_hash(USER) != USER
+    assert line.route == "/me"

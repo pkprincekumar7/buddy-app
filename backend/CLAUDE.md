@@ -167,6 +167,12 @@ on-demand audit that checks a file against this same list. The design behind the
 - Log ids, never people: personal keys in `extra={...}` are dropped and emails in messages are
   masked, but don't rely on that — never log names, emails, prompts or LLM answers.
 - Put queryable facts in `extra={...}` fields rather than in the message text.
+- Every request gets one access line from `RequestIdMiddleware` (`common.access`: method,
+  path, route, status, `latency_ms`, a hash of the user, `request_id`); don't add your own.
+  The request id follows the work: internal calls send it, a job a request starts keeps it
+  (`start_job`, made current again by `claim_next`), and an event carries it as an attribute
+  (`Event.new`, made current by the consumer). For an audit record, use
+  `common.logging.current_request_id`, not the incoming header.
 
 ## Tests
 

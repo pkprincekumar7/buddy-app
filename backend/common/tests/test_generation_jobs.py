@@ -12,6 +12,7 @@ import pytest
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
+from common import logging as clog
 from common.events import store
 from common.generation import jobs
 from common.generation.jobs import JobRefused, Target
@@ -205,6 +206,42 @@ def test_jobs_from_another_regions_locations_arent_claimed(mongo_run):
         assert await jobs.claim_next(db, locations=["in", "apac", "me"]) is None
         unscoped = await jobs.claim_next(db, locations=None)
         assert unscoped is not None and unscoped["_id"] == "eu-job"
+
+    mongo_run(body)
+
+
+def test_a_job_carries_the_request_that_started_it(mongo_run):
+    # OBS-04: the worker logs a job under the id of the request that started it.
+    async def body(db, client):
+        await _setup(db)
+        token = clog.request_id_var.set("req-42")
+        try:
+            job_id, _ = await _start(db, client)
+        finally:
+            clog.request_id_var.reset(token)
+        assert (await db.jobs.find_one({"_id": job_id}))["request_id"] == "req-42"
+        claimed = await jobs.claim_next(db, locations=None)
+        assert claimed is not None and clog.request_id_var.get() == "req-42"
+        # Nothing to claim, or a job without one: no stale id on the next lines.
+        assert await jobs.claim_next(db, locations=None) is None
+        assert clog.request_id_var.get() is None
+        await _job(db, "no-id")
+        await _job(
+            db, "bad-id", request_id="not valid!", created_at=datetime(2030, 1, 1, tzinfo=UTC)
+        )
+        await jobs.claim_next(db, locations=None)
+        assert clog.request_id_var.get() is None
+        await jobs.claim_next(db, locations=None)
+        assert clog.request_id_var.get() is None
+
+    mongo_run(body)
+
+
+def test_a_job_started_outside_a_request_has_no_request_id(mongo_run):
+    async def body(db, client):
+        await _setup(db)
+        job_id, _ = await _start(db, client)
+        assert "request_id" not in await db.jobs.find_one({"_id": job_id})
 
     mongo_run(body)
 

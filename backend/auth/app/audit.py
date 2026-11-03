@@ -23,6 +23,7 @@ from auth.app.store import AUDIT
 from common.audit import AuditEvent, AuditLog, route_template, should_record, source_ip
 from common.authz import Authorizer, Caller
 from common.events.store import Db
+from common.logging import current_request_id
 
 _logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class AuditTrail:
                 status=200,
                 method=request.method,
                 route=route_template(request),
-                request_id=request.headers.get("x-request-id"),
+                request_id=current_request_id(request.headers),
                 source_ip=source_ip(request),
                 changed_fields=tuple(sorted(changed_fields)),
             ),
@@ -124,7 +125,7 @@ class AuthAuthorizer(Authorizer):
                 status=status if status is not None else 200,
                 method=request.method,
                 route=route_template(request),
-                request_id=request.headers.get("x-request-id"),
+                request_id=current_request_id(request.headers),
                 source_ip=source_ip(request),
             ),
             caller.location,

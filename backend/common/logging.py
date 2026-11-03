@@ -6,16 +6,29 @@ Fields passed with `extra={...}` are included, except personal data: emails, nam
 addresses and similar keys are dropped, and anything that looks like an email in a message
 is masked. Log ids, never people.
 
-`RequestIdMiddleware` takes `X-Request-Id` from the gateway (or makes one) and returns it.
+`RequestIdMiddleware` takes `X-Request-Id` from the gateway (or makes one) and returns it,
+and writes one access line per request (production-readiness review, OBS-04):
+
+    {"logger": "common.access", "message": "GET /api/v1/children 200 12ms",
+     "method": "GET", "path": "/api/v1/children", "route": "/api/v1/children",
+     "status": 200, "latency_ms": 12, "user": "<16 hex>", "request_id": "..."}
+
+`user` is a hash of the signed-in user's id (common.authz records it on the request), so
+lines for one user can be grouped without the id itself. Successful health checks aren't
+logged: the load balancer and the container check poll them every few seconds. The
+request id also goes on internal calls (common.internal_client), the jobs a request
+starts (common.generation.jobs) and the events it writes (common.events).
 """
 
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import json
 import logging
 import re
 import sys
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -60,6 +73,11 @@ PERSONAL_KEYS: frozenset[str] = frozenset(
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,128}")
+_access = logging.getLogger("common.access")
+# Polled by the load balancer and the container health check: logged only when they fail.
+QUIET_PATHS = frozenset({"/health", "/api/health"})
+# Where common.authz leaves the signed-in user's id for the access line (scope["state"]).
+USER_ID_STATE = "user_id"
 
 # LogRecord's own attributes: anything else on a record came from `extra`.
 _RECORD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", None, None))) | {
@@ -124,8 +142,29 @@ def configure_logging(service: str, level: str = "INFO") -> None:
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
+def is_request_id(value: object) -> bool:
+    """A request id worth carrying: what RequestIdMiddleware accepts from a gateway."""
+    return isinstance(value, str) and bool(_REQUEST_ID_RE.fullmatch(value))
+
+
+def current_request_id(headers: Any = None) -> str | None:
+    """This request's id (RequestIdMiddleware's), else a valid X-Request-Id in `headers`
+    (an app called without the middleware, as in tests)."""
+    request_id = request_id_var.get()
+    if request_id:
+        return request_id
+    incoming = headers.get("x-request-id") if headers is not None else None
+    return incoming if is_request_id(incoming) else None
+
+
+def user_hash(user_id: str) -> str:
+    """A stable stand-in for a user id in logs: the first 16 hex characters of its SHA-256."""
+    return hashlib.sha256(user_id.encode()).hexdigest()[:16]
+
+
 class RequestIdMiddleware:
-    """Carries `X-Request-Id` through the request (logs, internal calls) and back out."""
+    """Carries `X-Request-Id` through the request (logs, internal calls) and back out, and
+    writes the request's access line."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -137,9 +176,13 @@ class RequestIdMiddleware:
         incoming = dict(scope.get("headers") or []).get(b"x-request-id", b"").decode("latin-1")
         request_id = incoming if _REQUEST_ID_RE.fullmatch(incoming) else str(uuid.uuid4())
         token = request_id_var.set(request_id)
+        started = time.perf_counter()
+        status = 500  # unless a response starts: an app that raised before sending one
 
         async def send_with_id(message: Message) -> None:
+            nonlocal status
             if message["type"] == "http.response.start":
+                status = int(message["status"])
                 headers = [h for h in message.get("headers", []) if h[0].lower() != b"x-request-id"]
                 headers.append((b"x-request-id", request_id.encode("latin-1")))
                 message = {**message, "headers": headers}
@@ -148,4 +191,28 @@ class RequestIdMiddleware:
         try:
             await self.app(scope, receive, send_with_id)
         finally:
+            _log_access(scope, request_id, status, round((time.perf_counter() - started) * 1000))
             request_id_var.reset(token)
+
+
+def _log_access(scope: Scope, request_id: str, status: int, latency_ms: int) -> None:
+    path = str(scope.get("path", ""))
+    if path in QUIET_PATHS and status < 400:
+        return
+    method = str(scope.get("method", ""))
+    route = getattr(scope.get("route"), "path", None) or path
+    fields: dict[str, Any] = {
+        "method": method,
+        "path": path,
+        "route": route,
+        "status": status,
+        "latency_ms": latency_ms,
+        # On the record itself, not only from the context: a handler that formats later
+        # (a queue) would find the context reset.
+        "request_id": request_id,
+    }
+    state = scope.get("state")
+    user_id = state.get(USER_ID_STATE) if isinstance(state, dict) else None
+    if isinstance(user_id, str) and user_id:
+        fields["user"] = user_hash(user_id)
+    _access.info("%s %s %s %sms", method, path, status, latency_ms, extra=fields)

@@ -40,6 +40,7 @@ from redis.exceptions import RedisError
 from common import permissions
 from common.audit import AuditEvent, AuditLog, route_template, source_ip
 from common.cookies import ACCESS_COOKIE, DEPLOYED_ACCESS_COOKIE
+from common.logging import USER_ID_STATE, current_request_id
 from common.regions import location_from_claims
 from common.valkey import degraded
 
@@ -322,6 +323,8 @@ class Authorizer:
         if location is None:
             raise _unauthorized()
         user_id, iat_ms = claims["sub"], claims["iat_ms"]
+        # For the request's access line, as a hash (common.logging, OBS-04).
+        request.scope.setdefault("state", {})[USER_ID_STATE] = user_id
         entry = await self.entry(user_id)
         caller = Caller(
             user_id=user_id,
@@ -368,7 +371,7 @@ class Authorizer:
                 status=status if status is not None else 200,
                 method=request.method,
                 route=route_template(request),
-                request_id=request.headers.get("x-request-id"),
+                request_id=current_request_id(request.headers),
                 source_ip=source_ip(request),
             )
         )

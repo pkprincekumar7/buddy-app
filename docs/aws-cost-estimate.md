@@ -6,7 +6,7 @@
 > **Region:** one backend region, ap-south-1, plus us-east-1 for the edge (CloudFront, WAF, ACM, Lambda@Edge). Each additional backend region adds its own copy of the per-region lines; see "Key caveats".
 > **Hours:** 720 h/month, with every environment **always on**. Non-prod environments can instead run on the nightly schedule; see "Scheduled non-prod environments".
 > **Traffic model:** 500 requests/MAU/month; 70% are API calls reaching ECS, 30% are static assets served from CloudFront. 2 MB CloudFront egress/MAU/month; 1 MB/MAU/month through the NAT Gateway (outbound LLM API traffic). Decimal units: 1 GB = 1,000 MB.
-> **Log volume:** ~175 KB/MAU/month (350 API requests × ~500 bytes per log entry).
+> **Log volume:** ~175 KB/MAU/month (350 API requests × ~500 bytes per log entry: about one access line per request, OBS-04, with other lines on top for errors and jobs).
 > **Pricing confidence:** ✓ = confirmed against AWS's Price List API (`pricing.us-east-1.amazonaws.com`). Re-verified 2026-10-23: ElastiCache (Valkey) `cache.t4g.*`, Firehose (us-east-1), public IPv4, CloudWatch metrics, alarms and log storage. Every other ✓ figure was verified September 2026. "Remaining estimates" lists the few that aren't verified.
 
 ---

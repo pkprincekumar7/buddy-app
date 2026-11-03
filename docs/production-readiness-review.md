@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 37 are done, 31 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-02):** of the 86 tracked findings, 38 are done, 30 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -187,7 +187,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | PRIV-03 | 🟡 Medium | Privacy | Children's voice/PII sent to LLM providers out of region | ⬜ Open |
 | PRIV-04 | 🟢 Low | Privacy | Soft-deleted child's data still readable | ✅ Done |
 | SEC-10 | 🟠 High | Security | API task role can overwrite the public APK | ✅ Done (only `shared` reads the APK prefix; no role can write assets) |
-| OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | 🟡 JSON logs with `request_id`/`trace_id`; access log line and ID propagation open |
+| OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | ✅ Done — one access line per request (hashed user), request id carried into jobs and events |
 | MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open · ⏸ Deferred |
 | DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
 | DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
@@ -1666,7 +1666,17 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### OBS-04 — No app logging config, request IDs or structured logs 🟡
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Logs are JSON with `request_id`, `trace_id` and level (`backend/common/logging.py:87-151`, `common/telemetry.py:97-99`). Still open: an access log line (path, status, `latency_ms`, hashed `user_id`), and passing the request ID into events and jobs (it travels only in OTel traces).
+> 🔄 **Current code (2026-11-03):** ✅ Done (buddy-common 0.28.0).
+> - **Logs.** Every line is JSON with `request_id`, `trace_id` and level, at INFO (`backend/common/logging.py`, `common/telemetry.py`).
+> - **Access line.** `RequestIdMiddleware`, on every service's public and internal app, writes one line per request (logger `common.access`) with `method`, `path`, `route` (the template), `status`, `latency_ms`, `request_id` and `user`. `user` is the first 16 hex characters of the SHA-256 of the signed-in user's id, which `common.authz` records on the request. Successful health checks are left out. A request that raises before responding logs status 500.
+> - **The request id follows the work.**
+>   - Internal calls already sent it.
+>   - A generation job now stores the id of the request that started it (`start_job`), and `claim_next` makes it current, so the worker's lines for that job carry it.
+>   - An event carries it as a `request_id` SNS attribute and outbox field, like `traceparent`, so the message body and the consumers' schemas are unchanged. `Event.new` takes the current id, and the consumer makes it current while the handler runs.
+>   - Audit records use `current_request_id`, so a request id this service generated is recorded too, not only one that came in a header.
+> - **Tests:** the access line's fields and route template, the user hash through `common.authz`, quiet health checks, a 500 before any response, the id on a job and back on its claim, and the id on an event, its outbox row, its attribute and in the consumer's handler. `common` and all nine services are at 100% coverage.
+> - **Docs.** `docs/infra-operations.md` ("Finding a request in the logs") has the Logs Insights queries. The cost estimate's log volume already assumed about one line per request.
+> - **Not checked:** that the lines arrive in CloudWatch, which needs a deployed environment.
 
 **Where:** `backend/app/main.py` (no `logging.basicConfig`/dictConfig for the API), `backend/CLAUDE.md`. The worker already configures plain-text INFO logging (`worker.py:36-39`).
 
