@@ -441,14 +441,13 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
     require_tool dockle DOCKLE "brew install goodwithtech/r/dockle" || true
 
     # Each service's image, as it ships: built once and shared by the trivy image scan, its
-    # SBOM (sbom-backend-<service>.cyclonedx.json) and dockle, then removed. GIT_SHA is the
-    # Dockerfile's apt-layer cache-bust key (CI passes the commit SHA); a per-day value re-runs
-    # `apt-get upgrade` at least daily, so the scan sees newly published Debian security
-    # patches instead of a stale cached layer.
+    # SBOM (sbom-backend-<service>.cyclonedx.json) and dockle, then removed. GIT_SHA is only
+    # the image's metadata. The base image is pinned by digest (CI-03), so the
+    # scan sees exactly what a deploy builds; new Debian fixes come as a Dependabot digest bump.
     scan_service_image() {
       local svc="$1" image="superpower-$1:check-scan"
       echo "Building the $svc image for scan..."
-      docker build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan-$(date +%Y%m%d)" \
+      docker build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan" \
         -t "$image" -f "$BACKEND/Dockerfile" "$ROOT" || return 1
       local status=0
       "$TRIVY" image --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --ignore-unfixed "$image" \

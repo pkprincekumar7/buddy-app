@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-05):** of the 86 tracked findings, 52 are done, 17 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-05):** of the 86 tracked findings, 53 are done, 16 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -205,8 +205,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Code done (timeout, no async retries, log group, failure alarm and destination, duplicate check); acceptance needs an applied env; fix 5 is the deferred SEC-03 |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
-| CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | 🟡 No direct prod deploy; each pushed image scanned and marked, promote requires the marker; signing, provenance, digest-pinned base and registry copy open |
-| CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | 🟡 Actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, Dependabot added; image digests open |
+| CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | 🟡 No direct prod deploy; each pushed image scanned and marked, promote requires the marker; digest-pinned base (no `apt-get upgrade`) and registry copy done; build once, provenance and signing open |
+| CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ✅ Done — actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, every image (base, local, CI, the collector) pinned by digest, Dependabot for all but the CI copies |
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open · ⏸ Deferred |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ✅ Done — old chunks kept, unhashed-only invalidation, the last 10 releases kept, `rollback-live-frontend` with no rebuild |
@@ -2302,7 +2302,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 > - **Tests:** `scripts/ecs-services.test.sh` covers the marker (60 tests with CI-09's), and `workflow-inputs.test.sh` covers the prod refusal. Both push loops were run, as written in the YAML, against fake `aws`, `docker` and `trivy`: new tag, re-run, unmarked tag in ECR, and unmarked tag in the target.
 > - **Still open:**
 >   - buildx with provenance and SBOM, and cosign signing and `cosign verify` (fixes 1–2);
->   - base images pinned by digest without `apt-get upgrade` (fix 4);
+>   - ~~base images pinned by digest without `apt-get upgrade` (fix 4)~~ **done 2026-11-05:** `backend/Dockerfile` builds both stages `FROM python:3.13.18-slim-trixie@sha256:d0a9e3…`, and the `apt-get upgrade` layer and its per-commit cache-bust are gone, so two builds of a commit start from the same base. Debian fixes arrive as Dependabot's weekly tag-and-digest bumps (`.github/dependabot.yml`). A local build of `users` scanned clean: Trivy found 0 HIGH/CRITICAL fixable issues, Debian 13.7 packages included;
 >   - copying signatures and attestations with the image once they exist (fix 5). The registry-to-registry copy itself is done (CI-09): promote copies by digest and fails unless the target digest is the source's, so the prod digest is the one scanned in the deploy (fix 6).
 >   - `promote-live-frontend` still rebuilds for the target, because `VITE_*` values are baked into the bundle, but only from a commit already deployed to stg.
 
@@ -2333,15 +2333,15 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-04 — Actions pinned by tag; binaries downloaded unverified 🟠
 
-> 🔄 **Current code (2026-11-02):** 🟡 Partial.
+> 🔄 **Current code (2026-11-05):** ✅ Done.
 > - **Actions:** all 103 `uses:` in `.github/workflows/` name a full commit SHA with the exact version as a comment. Each was resolved from its tag through the GitHub API, `@v5`/`@v3`-style majors to the release they point to (for example `actions/cache` → v5.1.0, `codeql-action` → v3.39.1). The acceptance grep below prints nothing.
 > - **Downloads:** `check.yml` checks every binary against a pinned SHA-256 before running it (`echo "<sha256>  <file>" | sha256sum --check --strict`, tested with GNU coreutils). The hashes come from GitHub's recorded asset digest for gitleaks, and from each release's checksums file for Dockle and Nuclei, whose releases have no recorded digest.
 > - **Gradle:** the Android build's wrapper pins `distributionSha256Sum` (`frontend-app/android/gradle/wrapper/gradle-wrapper.properties`, from Gradle's own `.sha256`), so it refuses a different Gradle 9.3.1 download.
 > - **Dependabot:** the new `.github/dependabot.yml` opens grouped weekly PRs for actions, pip (one PR across every backend requirements file, which must move together), npm (web and mobile) and the Dockerfiles, plus monthly Terraform providers. It ignores `buddy-common`, which is built from this repo, so it never looks that name up on PyPI.
 > - **`CODE_QUALITY_STANDARDS.md`** is updated to match.
 >
-> Still open:
-> - pinning service and base images by digest;
+> **2026-11-05: every image is pinned by digest.** The backend base (CI-03 fix 4); the frontend's `node:22.23.4-alpine3.24` and `nginx:1.31.6-alpine` (moved up from 1.27 to match the local gateway); docker-compose's `mongo`, `valkey`, `moto` and the gateway's `nginx`; CI's `mongo` (`scripts/ci-start-mongo.sh`) and `valkey` service containers; and the OpenTelemetry collector that ECS runs (`otel_collector_image`). Each is `tag@sha256:…`, the digest read from the registry. Dependabot bumps the Dockerfiles and docker-compose (a `docker-compose` ecosystem was added); the CI copies and the collector have no ecosystem, so `.github/dependabot.yml` says to move them with the compose PR.
+> Still open: nothing in this item.
 > - the optional repo setting that requires SHA-pinned actions.
 
 **Where:**

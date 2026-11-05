@@ -68,7 +68,7 @@ Status legend: ✅ in place · ⚠️ partial · ❌ missing
 | 6 | Readiness endpoint | Only each service's `/health` (liveness) and shared's `/api/health` (build info) | `/health/ready` checking Mongo + Valkey | [4](#4-backend--python--fastapi) |
 | 7 | Post-deploy smoke test | Deploy checks ECS steady state only | HTTP smoke test after each deploy | [15](#15-cicd-pipeline) |
 | 8 | Error monitoring | OpenTelemetry tracing in the backend; no Sentry | Sentry (backend + frontends) | [14](#14-observability-and-error-monitoring) |
-| 9 | Base image digests | `python:3.13-slim`, `node:22-alpine`, `nginx:1.27-alpine` by tag | Pinned by digest | [7](#7-container-security) |
+| 9 | Base image digests | ✅ Every image pinned as `tag@sha256:…` (Dockerfiles, docker-compose, CI, the collector) | Pinned by digest | [7](#7-container-security) |
 | 10 | CODEOWNERS | `.github/CODEOWNERS` missing | Present | [2](#2-github-repository-configuration) |
 | 11 | Branch protection | Not verifiable from the repo | 1 review, CI required, no force-push | [2](#2-github-repository-configuration) |
 | 12 | Pre-commit secrets + Terraform fmt | Gitleaks and `terraform fmt` run in CI only | Also on commit | [11](#11-security--cross-cutting) |
@@ -427,18 +427,20 @@ in the PR description. See `docs/aws-cost-estimate.md` for the current baseline.
 Already in place ✅: Hadolint on both Dockerfiles, Trivy image scan, Dockle (CIS benchmark), and
 CycloneDX SBOMs.
 
-### Base image digest pinning ❌
+### Base image digest pinning ✅
 
-Current images are mutable tags: `python:3.13-slim` (backend), `node:22-alpine` + `nginx:1.27-alpine`
-(frontend). Pin by digest and keep the tag as a comment:
+Every image is pinned as `tag@sha256:<index digest>`: `python:3.13.18-slim-trixie` (backend,
+both stages, with no `apt-get upgrade`), `node:22.23.4-alpine3.24` and `nginx:1.31.6-alpine`
+(frontend), docker-compose's `mongo`, `valkey`, `moto` and gateway `nginx`, CI's `mongo` and
+`valkey`, and the ECS collector image (`otel_collector_image`). To read a digest:
 
-```dockerfile
-# docker buildx imagetools inspect python:3.13-slim  → copy the index digest
-FROM python:3.13-slim@sha256:<digest>
+```bash
+docker buildx imagetools inspect python:3.13.18-slim-trixie   # the "Digest:" line
 ```
 
-Dependabot's `docker` ecosystem (Section 2) keeps pinned digests current. Tags can be moved
-upstream, so this is a supply-chain risk.
+Dependabot's `docker` and `docker-compose` ecosystems (Section 2) bump tag and digest together,
+including a new digest of the same tag when the base gets security fixes. CI's copies and the
+collector move by hand with the compose PR. Tags can be moved upstream; a digest can't.
 
 ---
 

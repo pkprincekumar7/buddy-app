@@ -88,7 +88,7 @@ jobs:
       # Health checks make GitHub wait until each service accepts connections
       # before the first step runs (it otherwise only waits for "started").
       valkey:
-        image: valkey/valkey:8.0.11-alpine
+        image: valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b
         ports:
           - 6379:6379
         options: >-
@@ -174,7 +174,7 @@ jobs:
         working-directory: backend
     services:
       valkey:
-        image: valkey/valkey:8.0.11-alpine
+        image: valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b
         ports:
           - 6379:6379
         options: >-
@@ -830,9 +830,8 @@ jobs:
 
       # ── Docker image scans (OS-level CVEs inside each service's image) ───────
       # One image per service (backend/Dockerfile, --build-arg SERVICE), found from the tree
-      # (backend/tools/services.py). GIT_SHA is the Dockerfile's apt-layer cache-bust key, so
-      # `apt-get upgrade` re-runs and the scan sees current Debian security patches even if a
-      # layer cache is ever added (check.sh passes a per-day value for the same reason).
+      # (backend/tools/services.py). The base image is pinned by digest (CI-03), so this scans
+      # the same base a deploy builds on; Debian fixes arrive as Dependabot digest bumps.
       - name: Build the service images
         run: |
           for svc in $(python backend/tools/services.py); do

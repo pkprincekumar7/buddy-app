@@ -5,10 +5,16 @@
 # A service image holds the pinned buddy-common version (with that service's extras) and
 # that service's code only, run by `python -m common.serve <name>`: public app on 8000,
 # internal app on 8001. SERVICE is required: there is no default image.
+#
+# The base image is pinned by digest (production-readiness review, CI-03 fix 4, CI-04), so two
+# builds of a commit start from the same bytes and the image Trivy scanned is the one deployed.
+# Debian security fixes arrive as a new digest of the same tag, which Dependabot proposes
+# weekly (.github/dependabot.yml, docker); there's no `apt-get upgrade` here to make builds
+# differ. Bump the tag and digest together, both stages.
 
 # ---- select: pick out what the chosen service needs ----------------------------------------
 # Throwaway stage: the whole backend/ tree is copied here, but only /out reaches the image.
-FROM python:3.13-slim AS select
+FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad AS select
 
 ARG SERVICE
 WORKDIR /src
@@ -38,28 +44,16 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip wheel --no-deps --wheel-dir /out/build ./common
 
 # ---- the image -----------------------------------------------------------------------------
-FROM python:3.13-slim
-
-# Git metadata baked in at build time — no .git directory or git binary needed.
-# CI passes real values via --build-arg; local/scan builds default to "unknown".
-# GIT_SHA is declared here (rather than down with the other GIT_* args) so it can
-# double as a cache-bust key for the apt-get layer below: referencing it in that
-# RUN command forces Docker to invalidate the cache on every real build (CI's
-# GIT_SHA changes every commit), instead of silently reusing a stale cached
-# layer that never re-fetches newly published Debian security patches (e.g.
-# openssl/libssl3t64 CVE-2026-14456) — apt-get itself would happily install
-# them, but a cached layer never re-runs apt-get update at all.
-ARG GIT_SHA=unknown
-
-# Pull in Debian security patches not yet baked into the base image (e.g. util-linux CVE-2026-53615).
-RUN echo "cache-bust: ${GIT_SHA}" \
-    && apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Git metadata baked in at build time — no .git directory or git binary needed.
+# CI passes real values via --build-arg; local/scan builds default to "unknown".
+ARG GIT_SHA=unknown
 ARG GIT_BRANCH=unknown
 ARG GIT_COMMITTED_AT=unknown
 ARG GIT_TAG=

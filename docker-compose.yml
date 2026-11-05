@@ -51,7 +51,7 @@ services:
   # The member is registered as localhost:27017, so every client connects with
   # directConnection=true, from the host and from other containers alike.
   mongo:
-    image: mongo:8.0.34
+    image: mongo:8.0.34@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
     command: ["--replSet", "rs0", "--bind_ip_all"]
     restart: unless-stopped
     networks:
@@ -79,7 +79,7 @@ services:
   # blocks valkey/valkey, set VALKEY_IMAGE=redis:7-alpine in .env: same protocol for what the
   # services use (GET/SET with expiry, Lua, SET NX, ACL users).
   valkey:
-    image: ${VALKEY_IMAGE:-valkey/valkey:8.0.11-alpine}
+    image: ${VALKEY_IMAGE:-valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b}
     restart: unless-stopped
     networks:
       - superpower_net
@@ -97,7 +97,7 @@ services:
   # Optional (profile "moto"): Moto in a container, for where the image is allowed. Otherwise
   # run moto_server from the backend venv, as above; same port, same API.
   moto:
-    image: motoserver/moto:5.2.3
+    image: motoserver/moto:5.2.3@sha256:91fd602a21f49cf9eb82fdf474015a3c131d40104c8297ea6a2ca920708ae32c
     profiles: ["moto"]
     restart: unless-stopped
     networks:
@@ -121,7 +121,7 @@ services:
   # service, and answers any other path with the ALB's 404. Generated from
   # shared/service-routes.json by scripts/sync-gateway.mjs.
   gateway:
-    image: nginx:1.31.6-alpine
+    image: nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     restart: unless-stopped
     networks:
       - superpower_net

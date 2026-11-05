@@ -53,7 +53,9 @@ updates:
       mobile:
         patterns: ["*"]
 
-  # Base images in backend/Dockerfile and frontend/Dockerfile.
+  # Base images in backend/Dockerfile and frontend/Dockerfile. The backend's is pinned as
+  # tag@digest (CI-03): Dependabot bumps both, including a new digest of the same tag when
+  # Debian ships security fixes, so that's how the deployed image gets them.
   - package-ecosystem: docker
     directories:
       - /backend
@@ -62,6 +64,18 @@ updates:
       interval: weekly
     groups:
       images:
+        patterns: ["*"]
+
+  # docker-compose.yml's local images (mongo, valkey, moto, the nginx gateway), pinned as
+  # tag@digest (CI-04): bumped together. CI's copies of mongo (scripts/ci-start-mongo.sh)
+  # and valkey (check.yml services) and the collector image (otel_collector_image) aren't
+  # covered by any ecosystem: move them with this PR.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      compose:
         patterns: ["*"]
 
   # Terraform providers (the committed .terraform.lock.hcl files): monthly.

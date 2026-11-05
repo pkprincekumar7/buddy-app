@@ -178,7 +178,7 @@ variable "runtime_sizes" {
 variable "otel_collector_image" {
   description = "The OpenTelemetry collector's image (AWS Distro for OpenTelemetry), pinned. It reads its configuration from AOT_CONFIG_CONTENT (otel_collector.tf)."
   type        = string
-  default     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0"
+  default     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0@sha256:cdd2092033efbad8f4289eb53c2d729fdc2167b5395d71c175628f7eb1eb78aa"
 }
 
 variable "worker_spot" {
