@@ -31,6 +31,7 @@ from shared.app.runtime import Runtime
 
 SPEECH = "/api/v1/speech/transcriptions"
 APK = "/api/v1/downloads/apk"
+LATEST = "app-assets/applications/android/latest.json"
 
 
 def live(test: Callable[[Running], Awaitable[None]], **options: Any) -> None:
@@ -203,9 +204,13 @@ def test_the_newest_apk_link_expires_in_300_seconds():
         for key in (
             "app-assets/applications/android/app-release-2026-10-01-10-00-00.apk",
             "app-assets/applications/android/app-release-2026-10-20-09-30-00.apk",
-            "app-assets/applications/android/notes.txt",
         ):
             r.s3.put_object(Bucket=BUCKET, Key=key, Body=b"apk")
+        # Builds alone aren't enough: the link is the one latest.json names (APP-11 f).
+        missing = await r.http.get(APK, headers=auth_header())
+        assert missing.status_code == 404 and _code(missing) == "apk_not_available"
+        latest = "app-assets/applications/android/app-release-2026-10-20-09-30-00.apk"
+        r.s3.put_object(Bucket=BUCKET, Key=LATEST, Body=json.dumps({"key": latest}).encode())
         body = (await r.http.get(APK, headers=auth_header())).json()
         assert body["filename"] == "superpower-android.apk" and body["expires_in"] == 300
         url = urlsplit(body["url"])
@@ -234,6 +239,14 @@ def test_apk_refusals():
         assert response.status_code == 503 and _code(response) == "downloads_unavailable"
 
     live(unreachable)
+
+    async def bad_pointer(r: Running) -> None:
+        for pointer in (b"not json", b'{"key": "elsewhere/app.apk"}', b'{"key": 3}'):
+            r.s3.put_object(Bucket=BUCKET, Key=LATEST, Body=pointer)
+            response = await r.http.get(APK, headers=auth_header())
+            assert response.status_code == 503 and _code(response) == "downloads_unavailable"
+
+    live(bad_pointer)
 
 
 # ── configuration ──────────────────────────────────────────────────────────────

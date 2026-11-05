@@ -571,6 +571,11 @@ class FlakyStorage(MemoryStorage):
             raise ConnectionError("valkey down")
         return await super().incr(*args, **kwargs)
 
+    async def acquire_entry(self, *args: Any, **kwargs: Any) -> bool:  # moving windows
+        if self.down:
+            raise ConnectionError("valkey down")
+        return await super().acquire_entry(*args, **kwargs)
+
 
 class SlowStorage(MemoryStorage):
     """A Valkey stand-in that takes `delay` seconds to answer, without blocking the loop."""
@@ -582,6 +587,10 @@ class SlowStorage(MemoryStorage):
     async def incr(self, *args: Any, **kwargs: Any) -> int:
         await asyncio.sleep(self.delay)
         return await super().incr(*args, **kwargs)
+
+    async def acquire_entry(self, *args: Any, **kwargs: Any) -> bool:  # moving windows
+        await asyncio.sleep(self.delay)
+        return await super().acquire_entry(*args, **kwargs)
 
 
 def test_limits_count_in_valkey_then_per_task_while_it_is_down(caplog):
@@ -601,7 +610,7 @@ def test_limits_count_in_valkey_then_per_task_while_it_is_down(caplog):
         assert [await limits.allow(item, "k2") for _ in range(2)] == [True, False]
         clock.now += RETRY_PRIMARY_AFTER_SECONDS
         assert await limits.allow(item, "k3")  # back on the primary
-        assert await storage.get(item.key_for("t", "k3")) == 1
+        assert (await storage.get_moving_window(item.key_for("t", "k3"), 2, 60))[1] == 1
 
     asyncio.run(main())
 
@@ -700,6 +709,50 @@ def test_client_ip_without_a_proxy_or_peer():
     assert proxied.client_ip(with_peer) == "198.51.100.1"  # no CloudFront header: the peer
     assert direct.client_ip(no_peer) == "unknown"
     assert proxied.client_ip(no_peer) == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("viewer", "counted"),
+    [
+        ("203.0.113.9:443", "203.0.113.9"),
+        ("[2001:db8:1:2:aaaa:bbbb:cccc:dddd]:443", "2001:db8:1:2::/64"),
+        ("[2001:db8:1:2::9]:443", "2001:db8:1:2::/64"),  # same /64: the same client
+        ("[::ffff:203.0.113.9]:443", "203.0.113.9"),  # IPv4-mapped: the IPv4 address
+        ("not-an-ip", "not-an-ip"),
+    ],
+)
+def test_ipv6_clients_are_counted_per_64(viewer, counted):
+    """APP-01: rotating addresses inside one /64 doesn't reset a client's limits."""
+    from starlette.requests import Request
+
+    limits = RateLimits(None, prefix="t", behind_proxy=True)
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"cloudfront-viewer-address", viewer.encode())],
+            "client": ("198.51.100.1", 1),
+        }
+    )
+    assert limits.client_ip(request) == counted
+
+
+def test_a_limit_moves_with_time_instead_of_resetting_at_the_minute():
+    """APP-11 b: a fixed window let a client spend its limit at :59 and again at :00."""
+    from unittest import mock
+
+    limits = RateLimits(None, prefix="t")
+    item = parse("2/minute")
+    now = [1_000_059.0]  # one second before a clock minute ends
+
+    async def hits(n: int) -> list[bool]:
+        return [await limits.allow(item, "edge") for _ in range(n)]
+
+    with mock.patch("time.time", lambda: now[0]):
+        assert asyncio.run(hits(2)) == [True, True]
+        now[0] += 2  # into the next clock minute
+        assert asyncio.run(hits(1)) == [False]  # still within the last 60 s
+        now[0] += 60
+        assert asyncio.run(hits(2)) == [True, True]
 
 
 def test_a_redis_url_builds_a_redis_storage():

@@ -28,6 +28,7 @@ Each account's password is generated and never printed. Exit code 0 when everyth
 from __future__ import annotations
 
 import io
+import json
 import math
 import struct
 import sys
@@ -236,6 +237,9 @@ def shared(j: Journey) -> None:
     )  # fmt: skip
     key = f"{APK_PREFIX}app-release-e2e-{uuid.uuid4()}.apk"
     s3.put_object(Bucket=ASSETS_BUCKET, Key=key, Body=b"e2e apk")
+    # What build-android-apk writes after each upload (APP-11 f).
+    latest = f"{APK_PREFIX}latest.json"
+    s3.put_object(Bucket=ASSETS_BUCKET, Key=latest, Body=json.dumps({"key": key}).encode())
     try:
         link = check(j.http.get(f"{API}/downloads/apk"), 200)
         if link["expires_in"] != 300 or link["filename"] != "superpower-android.apk":
@@ -247,6 +251,7 @@ def shared(j: Journey) -> None:
             raise WalkFailed(f"the APK download -> {got.status_code}")
     finally:
         s3.delete_object(Bucket=ASSETS_BUCKET, Key=key)
+        s3.delete_object(Bucket=ASSETS_BUCKET, Key=latest)
 
 
 # ── admin ──────────────────────────────────────────────────────────────────────

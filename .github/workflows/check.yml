@@ -5,6 +5,11 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  # Weekly, so new CVEs (Trivy, pip-audit, npm/yarn audit, retire.js) and CodeQL queries
+  # are checked against main even in a week with no push (production-readiness review,
+  # CI-17 b).
+  schedule:
+    - cron: "23 3 * * 1"
   workflow_dispatch:
 
 concurrency:
@@ -663,14 +668,20 @@ jobs:
           "
         working-directory: frontend-app
 
+      # The ISO week, so the retire.js database is fetched again at least weekly, not
+      # only when a lockfile changes (CI-17 a; check.sh refreshes weekly too).
+      - name: This week, for the retire.js cache key
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
       - name: Restore retire.js database cache
         id: retiredb_cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: frontend/retire-jsrepo.json
-          # Cache key tied to package-lock.json — refreshes when JS deps change.
-          # Falls back to any prior cache for this OS if the exact key misses.
-          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/yarn.lock') }}
+          # Refreshes when JS deps change and every week. An exact miss restores the
+          # latest older cache, but cache-hit is then false, so the fetch below runs.
+          key: retiredb-${{ runner.os }}-${{ steps.week.outputs.week }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/yarn.lock') }}
           restore-keys: retiredb-${{ runner.os }}-
 
       - name: Fetch retire.js vulnerability database
@@ -1114,16 +1125,15 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+          # Python and JS/TS are analysed from source: no build step (CI-17 b).
+          build-mode: none
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -1161,7 +1171,7 @@ jobs:
 
       - name: Upload ${{ matrix.tool }} results
         if: hashFiles(format('sarif/{0}.sarif', matrix.tool)) != ''
-        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: sarif/${{ matrix.tool }}.sarif
           category: ${{ matrix.tool }}
@@ -1183,3 +1193,5 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # What pull-requests: write is for: a summary on the PR when it fails (CI-17 e).
+          comment-summary-in-pr: on-failure

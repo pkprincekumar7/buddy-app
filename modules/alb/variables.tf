@@ -110,6 +110,17 @@ variable "routes" {
   }
 }
 
+variable "idle_timeout_seconds" {
+  description = "How long the ALB keeps an idle connection to a target (and to a client) open. The services keep theirs open longer (HTTP_KEEP_ALIVE_SECONDS = this + 5), so the ALB, not the target, closes an idle one: the other way round, it can reuse a connection the target just closed and answer 502 (production-readiness review, TF-03)."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.idle_timeout_seconds >= 1 && var.idle_timeout_seconds <= 4000
+    error_message = "idle_timeout_seconds must be 1–4000."
+  }
+}
+
 variable "deregistration_delay_seconds" {
   description = "How long the ALB waits for a deregistering target's in-flight requests to finish (it sends it no new ones, and finishes sooner once none are left). Set it a little above the longest request the services serve. AWS's default is 300 s, which every rolling deploy can wait through for old tasks."
   type        = number

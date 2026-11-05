@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-05):** of the 86 tracked findings, 44 are done, 25 partly done, 16 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-05):** of the 86 tracked findings, 47 are done, 22 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -149,7 +149,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ✅ Done — no expression in any `run:`; reusable workflows validate inputs in a first job |
 | SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open · ⏸ Deferred |
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open · ⏸ Deferred |
-| APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
+| APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`; IPv6 counted per /64); forwarding unverified in a deployed env |
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | ✅ Done — LLM calls run in worker jobs (no 504 path), SDK retries off, one time budget per call across fallbacks, Gemini on async `google-genai` |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ✅ Done — Valkey retried after 30 s; `ValkeyDegraded` metric and alarm |
@@ -159,7 +159,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | ✅ Done — photos are the child's own upload keys (EDGE-05); CSP `img-src` limited to self, data:, blob: and the uploads buckets |
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ✅ Done (1 MiB body cap in every service) |
 | APP-10 | 🟠 High | App | Child documents can grow without bound | ✅ Done (strict child model, bounded fields, 64 KB caps) |
-| APP-11 | 🟢 Low | App | Misc backend hygiene | 🟡 a, c, d, g done; e moot; b and f open |
+| APP-11 | 🟢 Low | App | Misc backend hygiene | ✅ Done — a–d, f, g done (moving-window limits, APK `latest.json` pointer); e moot |
 | DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | ⬜ Open — prod dedicated M10+ planned (build plan 9.1); dev/sbx/stg on M0 by design |
 | DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ⬜ Open |
 | DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ⬜ Open |
@@ -190,14 +190,14 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | ✅ Done — one access line per request (hashed user), request id carried into jobs and events |
 | MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open · ⏸ Deferred |
 | DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
-| DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
+| DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⚪ Moot — one AWS account per environment, so account services belong to one environment; the Atlas allowlist is updated by hand after each apply (owner's choice) |
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | 🟡 stg alerts too; ALB 5xx rate and p95, Valkey, CloudFront 5xx added (email, AWS-only); logs, canary, push open |
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ✅ Done (pending count is due jobs only; `OldestPendingJobAgeSeconds` with an alarm) |
 | OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ✅ Done (no-running-task alarm for every runtime, worker health checks) |
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open · ⏸ Deferred |
-| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Per-tier `runtime_sizes` (desired = min); load test, max counts and fixes 2, 4–9 open |
+| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Code done: deploy surge 150%, Spot workers, keep-alive and graceful shutdown, Atlas connection budget (stg/prod max counts lowered to fit); the load test open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0, right-sized nodes and an explicit `maxmemory-policy = noeviction` done; the working-set load test open |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | 🟡 HTTPS-only deny on all four Terraform policies; uploads-bucket policy and bucket imports open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
@@ -219,8 +219,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ✅ Done — only a single COMPLETED deployment is promoted; source regions must match |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ✅ Done — `terraform validate` on every stack and module; tflint with the AWS ruleset |
 | CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ✅ Done — every job in every workflow has a timeout; recovery runbook |
-| CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | 🟡 (d) done, (f) moot; (a), (b), (c), (e) open; (g) now three environment-bound jobs |
-| DOC-01 | 🟢 Low | Docs | Documentation drift | 🟡 Several fixed; five drifts remain (see the note) |
+| CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | ✅ Done — a–e done (weekly retire.js refresh, CodeQL v4 + weekly run, partial-plan warning, review comment), f moot; g not needed (one admin, no approvers) |
+| DOC-01 | 🟢 Low | Docs | Documentation drift | ✅ Done — every listed drift fixed or checked; the `AdministratorAccess` wording stays with SEC-04 (deferred) |
 | LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L6, L8, L9, L14, L18, L21 done; L15 partial; L16 moot; L13 no action; the rest open |
 
 ---
@@ -660,7 +660,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-01 — IP rate limits use the spoofable leftmost `X-Forwarded-For` 🟠 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. The client IP now comes from `CloudFront-Viewer-Address`, port stripped (`backend/common/audit.py:76-81`, used by `backend/common/limiter.py:73-79`); the leftmost-XFF code is gone. Still to check in a deployed environment: whether the origin request policy forwards that header (otherwise the limiter falls back to the ALB's IP). IPv6 /64 bucketing isn't done.
+> 🔄 **Current code (2026-11-05):** 🟡 Partial. The client IP comes from `CloudFront-Viewer-Address`, port stripped (`backend/common/audit.py`, used by `backend/common/limiter.py`); the leftmost-XFF code is gone. **IPv6 is now counted per /64** (`client_key`, buddy-common 0.31.0): rotating addresses inside one /64 doesn't reset the per-IP limits or the login throttle, an IPv4-mapped address counts as its IPv4 one, and the audit log keeps the full address. Still to check in a deployed environment: whether the origin request policy forwards that header (otherwise the limiter falls back to the ALB's IP).
 
 **Where:** `backend/app/limiter.py:17-25` (`return forwarded.split(",")[0].strip()`).
 
@@ -939,7 +939,7 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### APP-11 — Misc backend hygiene 🟢 (new in v3)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Done: (a) `auth/app/main.py:297`, (c) slowapi gone and `limits` pinned, (d) `auth/app/main.py:368`, (g) PyMongo async instead of Motor. Moot: (e), since there's no `asyncio.Lock`. Open: (b) still a fixed window (`backend/common/limiter.py:57`); (f) the APK prefix is listed on every request (`backend/shared/app/main.py:273-277`).
+> 🔄 **Current code (2026-11-05):** ✅ Done. Done earlier: (a), (c), (d), (g); (e) is moot. **(b)** The rate limits and the login throttle now use `MovingWindowRateLimiter` (the last N seconds, not the clock window), so a limit can't be spent twice across a window edge; the same Valkey keys and Lua access, so the RBAC rules are unchanged. **(f)** `build-android-apk` writes `app-assets/applications/android/latest.json` after each upload and keeps only the newest 5 APKs; `/downloads/apk` reads that one object (a bad pointer is a 503, none a 404) instead of listing every build.
 
 | # | Where | Issue | Fix |
 |---|-------|-------|-----|
@@ -1787,7 +1787,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DR-02 — Account-wide services live in the stg stack; NAT EIPs churn 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Account-wide services still live in the stg stack (`tfvars/stg.tfvars:55-56`, `security.tf:13-16`), and NAT EIPs are in `modules/network/main.tf:115`. `vpc.tf` now only calls `module "network"`.
+> 🔄 **Current code (2026-11-05):** ⚪ Moot by the account model. Each environment gets its own AWS account (`docs/environments.md`, section 1), so GuardDuty and CloudTrail belong to the one environment they're applied and destroyed with, and a destroy of one environment never affects another. While an environment is destroyed, the account's CloudTrail Event history (90 days of management events) still records activity. The NAT Elastic IPs stay per environment: after each apply, the owner updates the Atlas IP access list by hand (`docs/infra-operations.md`, "After every apply of an environment"). Sharing an account stays possible, with the one-GuardDuty rule in `docs/environments.md` section 5.
 
 **Where:**
 - `docs/environments.md:187` (the shared account's GuardDuty is owned by stg), and `stg.tfvars:62-63` + `security.tf:34` (stg's trail is the shared account's only CloudTrail; `enable_cloudtrail = false` in dev/sbx).
@@ -2004,13 +2004,14 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### TF-03 — Prod sizing: single-process uvicorn makes CPU scaling inert 🟠 (v2: raised)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Sizing is now per tier in `runtime_sizes` (`tfvars/prod.tfvars:30-36`), with desired = min:
-> - HTTP: 1024/2048, min 2, max 25.
-> - auth: 2048/4096, min 3.
-> - worker: 512/1024, min 1, max 5.
-> - generating worker: 1024/2048, max 10.
->
-> Each task runs one process serving two apps (public 8000, internal 8001) through `common.serve` (`backend/Dockerfile:105`). The "15 API / 5 worker" counts, `api_max_capacity = 200`/`worker_max_capacity = 50` and "single uvicorn on 4 vCPU" below are out of date. Still open: the load test, the max counts, and fixes 2 and 4–9 (no `deployment_maximum_percent`; no keep-alive or graceful-shutdown settings in `common/serve.py`).
+> 🔄 **Current code (2026-11-05):** 🟡 Partial. Sizing is per tier in `runtime_sizes`, with desired = min, and every fix that doesn't need a deployed environment is done (buddy-common 0.32.0):
+> - **Fix 2:** each service sets `deployment_maximum_percent`: 150 where the desired count is 2+, else 200 (one extra task), with the minimum 100% healthy (`modules/ecs-service`, which refuses a surge with no room for an extra task).
+> - **Fix 3:** already in place: HTTP runtimes track ALB requests per target (1000/min), CPU and memory. LLM calls are in workers, so long requests don't skew it.
+> - **Fix 5:** workers run on a capacity provider strategy: the first task on demand, then 3 `FARGATE_SPOT` per on-demand one (`worker_spot`; `spot_weight = 0` turns it off). Nothing is applied yet, so the service replacement this needs costs nothing.
+> - **Fix 6:** `common/serve.py` keeps idle connections `HTTP_KEEP_ALIVE_SECONDS` (the ALB's now explicit 60 s idle timeout + 5) and gives in-flight requests 25 s on SIGTERM, inside ECS's 30 s. No proxy trust was added.
+> - **Fix 8:** `mongodb_connection_budget` (required) fails the plan when every Mongo runtime at its peak × (pool 5 + 6 monitoring) exceeds it. Today's values overshot: stg 836 against M0's 500, prod 3190 against M10's 1500. By the owner's choice, stg's max counts were lowered to fit M0 (39 tasks, 429) and prod's to fit the planned M10 (http 10, auth 12, worker 3, generating-worker 6: 128 tasks, 1408).
+> - **Tests:** the stack test (8 runs: surge, Spot, keep-alive, the budget and its failure), the module test (18), `test_serve.py`.
+> - **Fixes 4 and 7 need no change:** workers already run at 256–1024 CPU, and there's one process per task (no `--workers`). **Still open:** the stg load test (fix 1's counts, with fix 9's bcrypt cost in a login storm), and raising prod's max counts with a larger Atlas tier (DB-01).
 
 **Where:** `infra-live-backend/terraform/tfvars/prod.tfvars`, `backend/Dockerfile:52` (uvicorn, no `--workers`), `ecs.tf:31,151,287`.
 
@@ -2630,7 +2631,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-17 — Misc CI hygiene 🟢 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. (d) is done: DAST starts the compose stack and waits for every service's health (`check.yml:910-930`). (f) is moot: services come from the validated `ecs_services` manifest (`scripts/ecs-services.sh:31-34`). Still open: (a) the retire.js cache key is lockfile-only (`check.yml:619`); (b) CodeQL is `@v3` with autobuild and no schedule; (c) the plan-skip notices remain (edge `:258`, frontend `:126`); (e) `pull-requests: write` has no comment (`:1027`). (g) is worse: each deploy now has three environment-bound jobs (resolve, build, deploy at `deploy-live-backend.yml:85,163,256`).
+> 🔄 **Current code (2026-11-05):** ✅ Done. (a) The retire.js cache key includes the ISO week. (b) CodeQL is `codeql-action` v4.39.1 with `build-mode: none` (no autobuild), and `check.yml` runs weekly (Monday 03:23 UTC) as well. (c) A skipped edge or frontend plan is a `Partial plan` warning and a line in the run summary, not a notice; it doesn't fail, since a first plan on a fresh environment has nothing to read. (d) was done earlier. (e) dependency-review comments on the PR when it fails (`comment-summary-in-pr: on-failure`). (f) is moot. (g) isn't needed: one admin, no approvers.
 
 | # | Where | Issue | Fix |
 |---|-------|-------|-----|
@@ -2648,7 +2649,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### DOC-01 — Documentation drift 🟢 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Fixed: pip-audit (`docs/ci-cd.md`), the coverage gate, worker autoscaling (`docs/infra-operations.md`), JWT `kid` support (`docs/jwt-keys.md`), ElastiCache and the cost rows. Still wrong: dependency-review "posts a summary comment" (`docs/ci-cd.md:157`), "unverified location hint" (`docs/jwt-keys.md:3`), `AdministratorAccess` (`docs/environments.md:149`, see SEC-04), the nginx CSP (`docs/static-assets.md:212`), and the CKV_AWS_116 reason (`infra-live-scheduler/terraform/lambda.tf:67`). Rows about `backend/app/*` and `worker.py` are moot.
+> 🔄 **Current code (2026-11-05):** ✅ Done. Fixed now: dependency-review's comment (`docs/ci-cd.md`, true since CI-17 e), restart and env changes (`docs/ci-cd.md`), and the deployed CSP coming from CloudFront, not nginx (`docs/static-assets.md`). Checked and already right: the frontend promotion paths and APK environments, the pip-audit ignore list, the coverage gate, tflint, the edge's location *hint* (`docs/jwt-keys.md`), zero-downtime key rotation (true since APP-02) and the CKV_AWS_116 reason. The `AdministratorAccess` wording stays with SEC-04 (deferred).
 
 | Doc | Statement | Reality |
 |-----|-----------|---------|

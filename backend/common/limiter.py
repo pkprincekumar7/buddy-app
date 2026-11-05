@@ -9,7 +9,10 @@ own database work:
     @router.patch("/{id}", dependencies=[Depends(limits.per_user("30/minute"))])
 
 Buckets are per (route template, method, identity), so two routes with the same limit don't
-share one. While Valkey is unreachable the limits are counted in process (per task, as
+share one. Each is a moving window (the last N seconds, not the current clock minute), so a
+client can't spend a limit twice across a window edge (production-readiness review,
+APP-11 b). An IPv6 client is counted per /64, the block one host or home network is
+usually given, so rotating addresses inside it doesn't reset its limits (APP-01). While Valkey is unreachable the limits are counted in process (per task, as
 today); Valkey is retried after 30 s rather than abandoned for the life of the task.
 Counting is async (redis-py's asyncio client, through `limits.aio`): a slow or unreachable
 Valkey holds up only the request being counted, never the event loop and every other
@@ -20,6 +23,7 @@ RBAC user with an IAM token (common.valkey, build plan 2.3).
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -28,13 +32,15 @@ from typing import Annotated, Any
 from fastapi import Depends, HTTPException, Request
 from limits import RateLimitItem, parse
 from limits.aio.storage import MemoryStorage, RedisStorage, Storage
-from limits.aio.strategies import FixedWindowRateLimiter
+from limits.aio.strategies import MovingWindowRateLimiter
 
 from common.audit import route_template, source_ip
 from common.authz import Caller, current_caller
 from common.valkey import degraded
 
 RETRY_PRIMARY_AFTER_SECONDS = 30.0
+# The IPv6 prefix counted as one client (APP-01).
+IPV6_CLIENT_PREFIX = 64
 
 _logger = logging.getLogger(__name__)
 
@@ -62,8 +68,8 @@ class RateLimits:
                 socket_timeout=2,
                 **(redis_options or {}),
             )
-        self._primary = FixedWindowRateLimiter(primary) if primary is not None else None
-        self._memory = FixedWindowRateLimiter(MemoryStorage())
+        self._primary = MovingWindowRateLimiter(primary) if primary is not None else None
+        self._memory = MovingWindowRateLimiter(MemoryStorage())
         self._primary_down_until = 0.0
 
     async def allow(self, item: RateLimitItem, *identifiers: str) -> bool:
@@ -81,12 +87,13 @@ class RateLimits:
         return await self._memory.hit(item, self.prefix, *identifiers)
 
     def client_ip(self, request: Request) -> str:
-        """The viewer's address: CloudFront's header behind the proxy, else the peer."""
-        if self.behind_proxy:
-            ip = source_ip(request)
-            if ip:
-                return ip
-        return request.client.host if request.client else "unknown"
+        """The client to count: the viewer's address (CloudFront's header behind the proxy,
+        else the peer), an IPv6 one as its /64. For limits only; the audit log keeps the
+        full address (common.audit.source_ip)."""
+        ip = source_ip(request) if self.behind_proxy else None
+        if not ip:
+            ip = request.client.host if request.client else "unknown"
+        return client_key(ip)
 
     async def _check(self, request: Request, item: RateLimitItem, identity: str) -> None:
         if not await self.allow(item, route_template(request), request.method, identity):
@@ -115,3 +122,16 @@ class RateLimits:
             await self._check(request, item, f"user:{caller.user_id}")
 
         return dependency
+
+
+def client_key(ip: str) -> str:
+    """IPv4 as it is; IPv6 as its /64 network (`2001:db8:1:2::/64`); anything else as given."""
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is not None:
+            return str(address.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{address}/{IPV6_CLIENT_PREFIX}", strict=False))
+    return str(address)

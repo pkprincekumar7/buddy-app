@@ -35,6 +35,15 @@ from common.validation import redact_validation_errors
 
 PUBLIC_PORT = 8000
 INTERNAL_PORT = 8001
+# How long an idle connection stays open: 5 s more than the ALB's idle timeout, which
+# Terraform passes as HTTP_KEEP_ALIVE_SECONDS, so the ALB is the one to close it and never
+# reuses one the task has just closed (an intermittent 502; production-readiness review,
+# TF-03). uvicorn's own default is 5 s. The default here is for the ALB's 60 s.
+DEFAULT_KEEP_ALIVE_SECONDS = 65
+# On SIGTERM, how long in-flight requests get before the servers stop anyway: under ECS's
+# 30 s stop timeout for HTTP runtimes, so the shutdown (lifespan, connection closes) still
+# runs before SIGKILL. The ALB has already drained the task by then.
+GRACEFUL_SHUTDOWN_SECONDS = 25
 
 _SERVICE_RE = re.compile(r"[a-z][a-z0-9_]{0,30}")
 
@@ -74,10 +83,16 @@ def load_apps(service: str) -> tuple[Any, Any]:
 
 
 # Containers listen on all interfaces; security groups limit who reaches each port.
-def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]:  # nosec B104
+def build_servers(
+    service: str,
+    host: str = "0.0.0.0",  # nosec B104
+    environ: Mapping[str, str] = os.environ,
+) -> list[uvicorn.Server]:
     """The public and internal servers for `service`, not started. Each app is behind the
     body cap (common.body_limit): 1 MiB, or the service's `MAX_BODY_BYTES`; a FastAPI app
-    also gets the redacted 422 handler (common.validation)."""
+    also gets the redacted 422 handler (common.validation). Idle connections stay open
+    HTTP_KEEP_ALIVE_SECONDS (TF-03)."""
+    keep_alive = int(environ.get("HTTP_KEEP_ALIVE_SECONDS") or DEFAULT_KEEP_ALIVE_SECONDS)
     apps = load_apps(service)
     for asgi in apps:
         if isinstance(asgi, FastAPI):
@@ -95,6 +110,8 @@ def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]: 
                 host=host,
                 port=port,
                 server_header=False,
+                timeout_keep_alive=keep_alive,
+                timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
             )
         )
         for asgi, port in ((public, PUBLIC_PORT), (internal, INTERNAL_PORT))
@@ -153,7 +170,7 @@ def main(argv: list[str], environ: Mapping[str, str] = os.environ) -> int:
             file=sys.stderr,
         )
         return 1
-    servers = build_servers(argv[0])
+    servers = build_servers(argv[0], environ=environ)
     setup_observability(argv[0], apps=load_apps(argv[0]))
     asyncio.run(serve(servers))
     # uvicorn returns normally when the app's startup fails (unsafe settings, a database it

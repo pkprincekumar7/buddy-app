@@ -95,8 +95,13 @@ locals {
     { name = "JWT_AUDIENCE", value = "${var.app_name}-api" },
   ]
 
+  # The ALB closes idle connections first: uvicorn keeps them 5 s longer, so the ALB never
+  # sends a request down one the task just closed (an intermittent 502, TF-03).
+  alb_idle_timeout_seconds = 60
+
   http_environment = [
     { name = "BEHIND_PROXY", value = "true" },
+    { name = "HTTP_KEEP_ALIVE_SECONDS", value = tostring(local.alb_idle_timeout_seconds + 5) },
   ]
 
   llm_environment = [
@@ -242,7 +247,9 @@ locals {
       r.kind == "worker" ? { events = local.events_policy[r.service] } : {},
       contains(local.generating_services, coalesce(r.service, "-")) ? { generation-switch = local.generation_switch_policy } : {},
       r.service == "shared" ? {
-        # The APK download link (13.3): the assets bucket's Android prefix only.
+        # The APK download link (13.3): the assets bucket's Android prefix only. It reads
+        # latest.json (APP-11 f); ListBucket stays so a missing one is NoSuchKey (no build
+        # yet, a 404), not AccessDenied.
         s3-apk = {
           Version = "2012-10-17"
           Statement = [
@@ -357,6 +364,16 @@ locals {
       min_capacity  = var.runtime_sizes[local.runtime_tier[k]].min_capacity
       max_capacity  = var.runtime_sizes[local.runtime_tier[k]].max_capacity
 
+      # A deploy starts at most half as many tasks again where that is at least one task
+      # (desired count 2+), else one more (TF-03). The first apply's desired count is the
+      # minimum.
+      deployment_maximum_percent = var.runtime_sizes[local.runtime_tier[k]].desired_count >= 2 ? 150 : 200
+      # Workers: an on-demand base, then mostly Spot (var.worker_spot).
+      capacity_provider_strategy = r.kind == "worker" && var.worker_spot.spot_weight > 0 ? [
+        { capacity_provider = "FARGATE", base = var.worker_spot.on_demand_base, weight = 1 },
+        { capacity_provider = "FARGATE_SPOT", base = 0, weight = var.worker_spot.spot_weight },
+      ] : []
+
       image   = r.kind == "collector" ? var.otel_collector_image : null # null: the service's ECR repository
       command = r.kind == "worker" ? ["python", "-m", "${r.service}.worker"] : null
 
@@ -414,6 +431,19 @@ locals {
   # -- Derived --------------------------------------------------------------------
 
   http_services = { for k, s in local.services : k => s if s.http != null }
+
+  # MongoDB connections at peak (TF-03, DB-02): each runtime but the collector holds one
+  # client per task, its pool (mongodb_max_pool_size) plus a monitoring and an RTT
+  # connection to each of the replica set's 3 members. The peak task count is the larger
+  # of max_capacity and a deploy's surge from the desired count.
+  mongo_monitoring_connections_per_task = 6
+  mongo_peak_tasks = {
+    for k, s in local.services : k => max(s.max_capacity, floor(s.desired_count * s.deployment_maximum_percent / 100))
+    if s.kind != "collector"
+  }
+  mongo_peak_connections = sum([
+    for k, n in local.mongo_peak_tasks : n * (var.mongodb_max_pool_size + local.mongo_monitoring_connections_per_task)
+  ])
 
   # What the deploy / restart / promote workflows read from SSM, in deploy order.
   # ecr_repository_url is the service's repository (a worker shares its service's);

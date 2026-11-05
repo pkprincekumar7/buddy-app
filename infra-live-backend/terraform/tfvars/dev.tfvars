@@ -60,3 +60,13 @@ enable_alb_access_logs = false
 # autoscaling, alarms and the dashboard use the free AWS/ECS metrics, so it
 # would only add ~$34/month of task-level metrics nobody reads.
 enable_container_insights = false
+
+# Accounts promote-live-backend copies this environment's images to: sbx's and stg's (one AWS
+# account per environment, CI-09). Uncomment with their 12-digit account IDs once known;
+# the target's deploy role also needs ECR pull on these repositories (docs/environments.md, 4).
+# ecr_pull_account_ids = ["111111111111", "222222222222"]
+
+# Atlas M0 allows 500 connections per cluster, for every region together: this is one
+# region's share (TF-03). A second region splits it (250 each), which needs lower max_capacity.
+# At peak (every runtime at max_capacity, pool 5 + 6 monitoring) it needs 374.
+mongodb_connection_budget = 500

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import re
@@ -46,6 +47,9 @@ AUDIO_TYPES: dict[str, str] = {
     "mp4": "audio/mp4",
 }
 APK_PREFIX = "app-assets/applications/android/"
+# Written by build-android-apk after each upload: {"key": "<the newest APK's key>"}, so a
+# link is one read, not a listing of every build (production-readiness review, APP-11 f).
+APK_LATEST = f"{APK_PREFIX}latest.json"
 APK_FILENAME = "superpower-android.apk"
 APK_URL_SECONDS = 300
 
@@ -271,18 +275,19 @@ async def transcribe(
 
 
 def _newest_apk_link(s3: Any, bucket: str) -> str | None:
-    """A presigned GET for the newest APK (keys carry a UTC timestamp), or None."""
-    pages = s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=APK_PREFIX)
-    keys = [
-        o["Key"] for page in pages for o in page.get("Contents", []) if o["Key"].endswith(".apk")
-    ]
-    if not keys:
+    """A presigned GET for the APK latest.json names, or None when there's no build yet."""
+    try:
+        pointer = s3.get_object(Bucket=bucket, Key=APK_LATEST)["Body"].read()
+    except s3.exceptions.NoSuchKey:
         return None
+    key = json.loads(pointer).get("key")
+    if not isinstance(key, str) or not key.startswith(APK_PREFIX) or not key.endswith(".apk"):
+        raise ValueError(f"{APK_LATEST} names no APK under {APK_PREFIX}")
     url: str = s3.generate_presigned_url(
         "get_object",
         Params={
             "Bucket": bucket,
-            "Key": max(keys),
+            "Key": key,
             "ResponseContentDisposition": f'attachment; filename="{APK_FILENAME}"',
         },
         ExpiresIn=APK_URL_SECONDS,

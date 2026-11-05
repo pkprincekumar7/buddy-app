@@ -61,6 +61,13 @@ def test_build_servers_puts_each_app_on_its_port(monkeypatch):
     )
     assert public.config.host == internal.config.host == "0.0.0.0"  # nosec B104
     assert not public.config.server_header
+    # TF-03: idle connections outlive the ALB's (60 s), and a stop finishes inside ECS's 30 s.
+    for server in (public, internal):
+        assert server.config.timeout_keep_alive == serve_mod.DEFAULT_KEEP_ALIVE_SECONDS == 65
+        assert server.config.timeout_graceful_shutdown == serve_mod.GRACEFUL_SHUTDOWN_SECONDS
+    assert serve_mod.GRACEFUL_SHUTDOWN_SECONDS < 30
+    tuned = serve_mod.build_servers("svc_demo", environ={"HTTP_KEEP_ALIVE_SECONDS": "125"})
+    assert {s.config.timeout_keep_alive for s in tuned} == {125}  # from Terraform
 
 
 def test_build_servers_redacts_every_fastapi_apps_422s(monkeypatch):
@@ -178,7 +185,7 @@ def test_main_needs_one_service_name(capsys):
 def test_main_serves_the_named_service(monkeypatch):
     seen = {}
 
-    def fake_build(service):
+    def fake_build(service, environ=None):
         seen["service"] = service
         return ["servers"]
 
@@ -208,7 +215,7 @@ def test_main_fails_when_an_app_does_not_start(monkeypatch, capsys):
         pass
 
     _fake_service(monkeypatch, "svc_down", app=_asgi, internal_app=_internal)
-    monkeypatch.setattr(serve_mod, "build_servers", lambda service: servers)
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service, environ: servers)
     monkeypatch.setattr(serve_mod, "serve", fake_serve)
     monkeypatch.setattr(serve_mod, "setup_observability", lambda service, apps: None)
     assert serve_mod.main(["svc_down"], environ={}) == 1

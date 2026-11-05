@@ -42,6 +42,9 @@ module "alb" {
   # would otherwise wait through.
   deregistration_delay_seconds = var.llm_timeout_seconds + 30
 
+  # The services keep idle connections 5 s longer (HTTP_KEEP_ALIVE_SECONDS, services.tf).
+  idle_timeout_seconds = local.alb_idle_timeout_seconds
+
   # Independent of enable_cloudtrail — see enable_alb_access_logs's description.
   enable_access_logs = var.enable_alb_access_logs
   access_logs_bucket = var.regional_logging_bucket_name

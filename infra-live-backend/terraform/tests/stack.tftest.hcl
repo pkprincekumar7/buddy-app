@@ -98,15 +98,17 @@ variables {
     "collector"         = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
   }
   enable_execute_command = false
-  openai_model           = "gpt-test"
-  anthropic_model        = "claude-test"
-  gemini_model           = "gemini-test"
-  llm_timeout_seconds    = 60
-  llm_hourly_limit       = 200
-  cookie_domain          = "superpower.example.com"
-  enable_all_alarms      = true
-  enable_basic_alarms    = true
-  jwt_public_keys        = { "key-v1" = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n" }
+  # These sizes peak at 290 Mongo tasks x (5 + 6) = 3190 connections (TF-03).
+  mongodb_connection_budget = 3190
+  openai_model              = "gpt-test"
+  anthropic_model           = "claude-test"
+  gemini_model              = "gemini-test"
+  llm_timeout_seconds       = 60
+  llm_hourly_limit          = 200
+  cookie_domain             = "superpower.example.com"
+  enable_all_alarms         = true
+  enable_basic_alarms       = true
+  jwt_public_keys           = { "key-v1" = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n" }
 }
 
 # Assertions use module outputs (a test can't see inside a child module);
@@ -206,7 +208,7 @@ run "prod_stack_wiring" {
     condition = [for e in jsondecode(module.service["auth"].container_definitions)[0].environment : e.name] == [
       "SERVICE_NAME", "APP_NAME", "APP_ENV", "AWS_REGION", "MONGODB_DB_NAME", "MONGODB_MAX_POOL_SIZE", "REDIS_URL", "REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID",
       "INTERNAL_DNS_SUFFIX", "INTERNAL_SIGNING_KID", "INTERNAL_PUBLIC_KEYS", "OTEL_EXPORTER_OTLP_ENDPOINT", "LOG_LEVEL", "PUBLIC_ORIGINS",
-      "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "COOKIE_SECURE", "COOKIE_SAMESITE",
+      "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "HTTP_KEEP_ALIVE_SECONDS", "COOKIE_SECURE", "COOKIE_SAMESITE",
       "DELETION_PARTICIPANTS",
     ]
     error_message = "Auth's HTTP container has exactly its env vars."
@@ -563,6 +565,57 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
       && !anytrue([for a in jsondecode(p.policy).Statement[0].Action : contains(["ecr:PutImage", "ecr:InitiateLayerUpload"], a)])
     ])
     error_message = "ecr_pull_account_ids: every service repository grants those accounts pull only (CI-09)."
+  }
+}
+
+run "tf03_deploys_spot_and_the_connection_budget" {
+  command = plan
+
+  assert {
+    condition     = local.mongo_peak_connections == 3190 && !contains(keys(local.mongo_peak_tasks), "otel-collector")
+    error_message = "Peak Mongo connections: every runtime but the collector at max_capacity, times pool 5 + 6 monitoring (TF-03)."
+  }
+  assert {
+    condition     = local.services["users"].deployment_maximum_percent == 150 && local.services["auth"].deployment_maximum_percent == 150 && local.services["users-worker"].deployment_maximum_percent == 200
+    error_message = "A deploy surges 150% where the desired count is 2+, else 200% (one extra task)."
+  }
+  assert {
+    condition = jsonencode(local.services["grow-worker"].capacity_provider_strategy) == jsonencode([
+      { base = 1, capacity_provider = "FARGATE", weight = 1 },
+      { base = 0, capacity_provider = "FARGATE_SPOT", weight = 3 },
+    ]) && length(local.services["users"].capacity_provider_strategy) == 0 && length(local.services["otel-collector"].capacity_provider_strategy) == 0
+    error_message = "Workers: one on-demand task, then mostly Spot; HTTP services and the collector on demand only."
+  }
+  assert {
+    condition     = contains(aws_ecs_cluster_capacity_providers.backend.capacity_providers, "FARGATE_SPOT")
+    error_message = "The cluster offers FARGATE_SPOT for the workers."
+  }
+  assert {
+    condition     = contains(local.http_environment, { name = "HTTP_KEEP_ALIVE_SECONDS", value = "65" }) && module.alb.idle_timeout_seconds == 60
+    error_message = "uvicorn keeps idle connections 5 s longer than the ALB's 60 s idle timeout (TF-03)."
+  }
+}
+
+run "connections_over_the_budget_fail_the_plan" {
+  command = plan
+
+  variables {
+    mongodb_connection_budget = 3189
+  }
+
+  expect_failures = [aws_ecs_cluster.backend]
+}
+
+run "spot_off_runs_workers_on_demand" {
+  command = plan
+
+  variables {
+    worker_spot = { on_demand_base = 1, spot_weight = 0 }
+  }
+
+  assert {
+    condition     = length(local.services["grow-worker"].capacity_provider_strategy) == 0
+    error_message = "spot_weight 0: workers on demand only, with the FARGATE launch type."
   }
 }
 

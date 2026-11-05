@@ -96,6 +96,32 @@ variable "desired_count" {
   type        = number
 }
 
+variable "deployment_maximum_percent" {
+  description = "Most tasks a deploy may run, as a percentage of the desired count (rounded down); the minimum healthy stays 100%. Below 200 bounds the deploy surge, and its Fargate vCPU, but needs a desired count of at least 2 to fit an extra task (production-readiness review, TF-03)."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.deployment_maximum_percent >= 150 && var.deployment_maximum_percent <= 200
+    error_message = "deployment_maximum_percent must be 150–200."
+  }
+}
+
+variable "capacity_provider_strategy" {
+  description = "Fargate capacity providers to spread tasks over (e.g. FARGATE_SPOT with an on-demand base); the cluster must offer each one. Empty: launch type FARGATE, on demand only."
+  type = list(object({
+    capacity_provider = string
+    weight            = number
+    base              = optional(number, 0)
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for s in var.capacity_provider_strategy : contains(["FARGATE", "FARGATE_SPOT"], s.capacity_provider)])
+    error_message = "capacity_provider_strategy supports FARGATE and FARGATE_SPOT only."
+  }
+}
+
 variable "enable_execute_command" {
   description = "Enable ECS Exec."
   type        = bool

@@ -25,10 +25,10 @@ elasticache_multi_az      = false
 # ECS — one uvicorn process per task, so scale out with more tasks, not bigger
 # ones (TF-03). Auth is bcrypt-bound and keeps two (docs/auth-users-split.md, 15.3).
 runtime_sizes = {
-  "http"              = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
-  "auth"              = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
-  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
-  "generating-worker" = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
+  "http"              = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 2 }
+  "auth"              = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 3 }
+  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 2 }
+  "generating-worker" = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
   "collector"         = { cpu = 256, memory = 512, desired_count = 2, min_capacity = 2, max_capacity = 2 }
 }
 
@@ -65,3 +65,13 @@ enable_alb_access_logs = true
 # autoscaling, alarms and the dashboard use the free AWS/ECS metrics, so it
 # would only add ~$34/month of task-level metrics nobody reads.
 enable_container_insights = false
+
+# Accounts promote-live-backend copies this environment's images to: prod's (one AWS
+# account per environment, CI-09). Uncomment with their 12-digit account IDs once known;
+# the target's deploy role also needs ECR pull on these repositories (docs/environments.md, 4).
+# ecr_pull_account_ids = ["111111111111"]
+
+# Atlas M0 allows 500 connections per cluster, for every region together: this is one
+# region's share (TF-03). The max_capacity values above are set to fit it: at peak
+# (39 tasks, pool 5 + 6 monitoring each) the tasks open 429.
+mongodb_connection_budget = 500

@@ -28,10 +28,10 @@ elasticache_multi_az      = true
 # tasks for availability, workers one each (SQS holds messages while a task is
 # replaced). desired_count is only used on the first apply; autoscaling owns it after.
 runtime_sizes = {
-  "http"              = { cpu = 1024, memory = 2048, desired_count = 2, min_capacity = 2, max_capacity = 25 }
-  "auth"              = { cpu = 2048, memory = 4096, desired_count = 3, min_capacity = 3, max_capacity = 30 }
-  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
-  "generating-worker" = { cpu = 1024, memory = 2048, desired_count = 1, min_capacity = 1, max_capacity = 10 }
+  "http"              = { cpu = 1024, memory = 2048, desired_count = 2, min_capacity = 2, max_capacity = 10 }
+  "auth"              = { cpu = 2048, memory = 4096, desired_count = 3, min_capacity = 3, max_capacity = 12 }
+  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
+  "generating-worker" = { cpu = 1024, memory = 2048, desired_count = 1, min_capacity = 1, max_capacity = 6 }
   "collector"         = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
 }
 
@@ -63,3 +63,9 @@ enable_alb_access_logs = true
 # Container Insights — on in prod only: task-level metrics, task counts and
 # performance log events for investigating incidents (~$34/month per cluster).
 enable_container_insights = true
+
+# Planned Atlas M10 (DB-01) allows 1500 connections per cluster, for every region
+# together: this is one region's share (TF-03). The max_capacity values above are set to
+# fit it: at peak (128 tasks, pool 5 + 6 monitoring each) the tasks open 1408. A larger
+# tier (M20/M30: 3000) lets them grow; a second region splits the budget.
+mongodb_connection_budget = 1500

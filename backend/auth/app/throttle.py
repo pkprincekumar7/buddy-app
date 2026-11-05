@@ -10,7 +10,9 @@ Counters are in Valkey, under the `auth` prefix its RBAC user may write
 (`LIMITS:LIMITER/auth/*`, build plan 2.3). While Valkey is unreachable they're counted per
 task, as the rate limits are, so a short outage weakens the throttle rather than blocking
 logins. Counting is async (`limits.aio`), so a slow Valkey never blocks the event loop
-(production-readiness review, APP-05).
+(production-readiness review, APP-05). The windows move (the last 15 minutes, not the
+current clock quarter-hour), as the rate limits' do (APP-11 b); the IP is the rate limits'
+client_ip, an IPv6 one as its /64 (APP-01).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from typing import Any
 
 from limits import RateLimitItem, parse
 from limits.aio.storage import MemoryStorage, RedisStorage, Storage
-from limits.aio.strategies import FixedWindowRateLimiter
+from limits.aio.strategies import MovingWindowRateLimiter
 
 from common.valkey import degraded
 
@@ -59,8 +61,8 @@ class LoginThrottle:
                 socket_timeout=2,
                 **(redis_options or {}),
             )
-        self._primary = FixedWindowRateLimiter(primary) if primary is not None else None
-        self._memory = FixedWindowRateLimiter(MemoryStorage())
+        self._primary = MovingWindowRateLimiter(primary) if primary is not None else None
+        self._memory = MovingWindowRateLimiter(MemoryStorage())
         self._primary_down_until = 0.0
 
     def _ids(self, kind: str, key: str, ip: str = "") -> tuple[str, ...]:

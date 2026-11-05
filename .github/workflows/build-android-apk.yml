@@ -163,8 +163,10 @@ jobs:
 
       # -------------------------------------------------------------------------
       # Authenticate with AWS via OIDC and push the APK to S3.
-      # The destination key includes a UTC timestamp so every build is retained:
+      # The destination key includes a UTC timestamp:
       #   app-assets/applications/android/app-release-YYYY-MM-DD-HH-MM-SS.apk
+      # then latest.json names it (what /downloads/apk reads), and only the newest
+      # APKS_KEPT builds stay (production-readiness review, APP-11 f).
       # -------------------------------------------------------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
@@ -176,7 +178,10 @@ jobs:
       - name: Push APK to S3
         env:
           ASSETS_BUCKET_NAME: ${{ vars.ASSETS_BUCKET_NAME }}
+          APK_PREFIX: app-assets/applications/android/
+          APKS_KEPT: "5"
         run: |
+          set -euo pipefail
           # Discover the APK dynamically — mirrors the iOS IPA discovery pattern.
           APK_FILE=$(find "frontend-app/android/app/build/outputs/apk/release" -name "*.apk" | head -1)
           if [[ -z "$APK_FILE" ]]; then
@@ -185,6 +190,20 @@ jobs:
             exit 1
           fi
           TIMESTAMP=$(date -u '+%Y-%m-%d-%H-%M-%S')
-          S3_KEY="app-assets/applications/android/app-release-${TIMESTAMP}.apk"
+          S3_KEY="${APK_PREFIX}app-release-${TIMESTAMP}.apk"
           aws s3 cp "$APK_FILE" "s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"
           echo "Uploaded to s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"
+
+          # After the upload, so the pointer never names a missing file.
+          jq -cn --arg key "$S3_KEY" '{key: $key}' \
+            | aws s3 cp - "s3://${ASSETS_BUCKET_NAME}/${APK_PREFIX}latest.json" --content-type application/json
+          echo "latest.json now names ${S3_KEY}"
+
+          # Older builds: the timestamped names sort by age, so all but the newest
+          # APKS_KEPT go (the one just uploaded is always the newest).
+          mapfile -t OLD < <(aws s3api list-objects-v2 --bucket "$ASSETS_BUCKET_NAME" --prefix "${APK_PREFIX}app-release-" \
+            --query 'Contents[].Key' --output json | jq -r --argjson keep "$APKS_KEPT" '(. // []) | map(select(endswith(".apk"))) | sort | .[:-$keep][]')
+          for KEY in "${OLD[@]}"; do
+            aws s3 rm "s3://${ASSETS_BUCKET_NAME}/${KEY}"
+          done
+          echo "Pruned ${#OLD[@]} older APK(s); kept the newest ${APKS_KEPT}."

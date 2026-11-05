@@ -14,6 +14,29 @@ Placeholders used below: `{app}` = `APP_NAME` environment variable (e.g. `superp
 
 ---
 
+## After every apply of an environment
+
+Each environment lives in its own AWS account and is applied and destroyed as a whole,
+account services included (production-readiness review, DR-02):
+
+- **Atlas IP access list.** The NAT gateways' Elastic IPs are created with the environment, so
+  every re-apply gets new ones. After `terraform-live-backend` (apply), copy each region's NAT
+  public IPs into the environment's Atlas project (Network Access → IP Access List) and remove the
+  old ones. The IPs are on the VPC console's NAT gateways page (filter `<APP_NAME>-nat-*-<env>`),
+  or:
+
+  ```
+  aws ec2 describe-nat-gateways --region <region> \
+    --filter "Name=tag:Name,Values=<APP_NAME>-nat-*-<env>" "Name=state,Values=available" \
+    --query 'NatGateways[].NatGatewayAddresses[].PublicIp' --output text
+  ```
+
+  Until that's done, the services can't reach MongoDB (their health checks fail).
+- **GuardDuty and CloudTrail** (stg and prod) are destroyed and re-created with the environment.
+  While it's destroyed, the account's **CloudTrail Event history** (90 days of management
+  events, kept by AWS with no trail) still records what happens, the destroy and the next
+  apply included.
+
 ## SSM Parameter Store — cross-module hand-off
 
 The modules and workflows never read each other's Terraform state. They exchange values through
@@ -253,6 +276,18 @@ Ed25519 key (`service_tokens.tf`).
     messages) and back in when it stays at 10 or below for 5 minutes; the generating ones also
     scale out on `PendingJobCount`.
   - **The collector** uses CPU.
+- **Deploys surge to 150%** of the desired count where that's at least one extra task
+  (desired count 2+), else to 200% (one extra task); the minimum stays 100% healthy (TF-03).
+- **Workers run mostly on Fargate Spot** (`worker_spot`): each keeps its first task on demand,
+  then 3 Spot tasks per further on-demand one. AWS can reclaim a Spot task with 2 minutes'
+  notice: it gets SIGTERM, finishes the job in hand (APP-06) and anything unfinished is
+  claimed again (JOB-01). HTTP services and the collector stay on demand.
+- **MongoDB connections are budgeted** (`mongodb_connection_budget`): the plan fails if every
+  runtime at its `max_capacity` could open more than the Atlas tier allows. Raise
+  `max_capacity` only with the budget, a smaller pool or a larger tier (TF-03).
+- **Keep-alive.** The ALB closes idle connections after 60 s; uvicorn keeps them 65 s
+  (`HTTP_KEEP_ALIVE_SECONDS`), so the ALB never reuses one a task has just closed (a 502). On
+  SIGTERM, in-flight requests get 25 s, inside ECS's 30 s stop timeout.
 - **Tracing.** Every runtime sends its spans to the collector; the collector keeps every error
   and every trace slower than 2 s, plus `xray_default_sampling_rate` of the rest. With more
   than one collector task, a trace's spans can land on different tasks, which each decide

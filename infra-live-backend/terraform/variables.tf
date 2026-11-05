@@ -181,8 +181,32 @@ variable "otel_collector_image" {
   default     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0"
 }
 
+variable "worker_spot" {
+  description = "How the workers spread over Fargate Spot (production-readiness review, TF-03): the first on_demand_base tasks of each worker on demand, then spot_weight Spot tasks for each further on-demand one. spot_weight = 0: on demand only. Spot tasks can be stopped with 2 minutes' notice; a worker finishes the job in hand on SIGTERM (APP-06) and an unfinished one is claimed again (JOB-01). HTTP services stay on demand."
+  type = object({
+    on_demand_base = number
+    spot_weight    = number
+  })
+  default = { on_demand_base = 1, spot_weight = 3 }
+
+  validation {
+    condition     = var.worker_spot.on_demand_base >= 0 && var.worker_spot.spot_weight >= 0 && var.worker_spot.spot_weight <= 1000
+    error_message = "worker_spot: on_demand_base and spot_weight must be 0 or more (spot_weight at most 1000)."
+  }
+}
+
+variable "mongodb_connection_budget" {
+  description = "MongoDB connections this region's tasks may open at most (TF-03, DB-02): the Atlas cluster's connection limit (M0: 500, M10: 1500, M20/M30: 3000), divided between the regions that share the cluster. Every Mongo runtime's peak task count (its max_capacity, or a deploy's surge if larger) times (mongodb_max_pool_size + 6 monitoring connections, 2 per replica-set member) must fit; the plan fails otherwise."
+  type        = number
+
+  validation {
+    condition     = var.mongodb_connection_budget >= 1
+    error_message = "mongodb_connection_budget must be positive."
+  }
+}
+
 variable "mongodb_max_pool_size" {
-  description = "MongoDB connections per task (MONGODB_MAX_POOL_SIZE). Atlas M0 (dev, sbx, stg) allows 500 connections per cluster across every task: 5 keeps a busy environment inside it (15.3)."
+  description = "MongoDB connections per task (MONGODB_MAX_POOL_SIZE). Every task's pool, plus its monitoring connections, counts toward the Atlas cluster's limit: mongodb_connection_budget checks the total (15.3, TF-03)."
   type        = number
   default     = 5
 }
@@ -338,13 +362,13 @@ variable "enable_container_insights" {
 # -- Security ------------------------------------------------------------------
 
 variable "enable_guardduty" {
-  description = "Provision GuardDuty detector with ECS Runtime Monitoring in this backend region. false on dev/sbx, true on stg/prod."
+  description = "Provision GuardDuty detector with ECS Runtime Monitoring in this backend region, created and destroyed with the environment (its own AWS account). false on dev/sbx, true on stg/prod. Environments sharing an account: only one may set it (docs/environments.md, 5)."
   type        = bool
   default     = true
 }
 
 variable "enable_cloudtrail" {
-  description = "Provision CloudTrail regional trail in this backend region. false on dev/sbx, true on stg/prod."
+  description = "Provision CloudTrail regional trail in this backend region, created and destroyed with the environment (its own AWS account; CloudTrail Event history covers the gaps). false on dev/sbx, true on stg/prod."
   type        = bool
   default     = true
 }

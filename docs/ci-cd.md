@@ -19,7 +19,7 @@ Fourteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 | `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
 | `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `sbx`, `stg`, `prod`) |
 | `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment |
-| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes). `service`: `all` or a comma-separated list, resolved from the `ecs_services` SSM list; services restart in parallel. |
+| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks on their current task definition, without a new build: picks up rotated Secrets Manager values. A changed env var or size from Terraform isn't picked up: `terraform-live-backend` apply registers it, `deploy-live-backend` rolls it out. `service`: `all` or a comma-separated list, resolved from the `ecs_services` SSM list; services restart in parallel. |
 
 ### Rules every workflow follows
 
@@ -176,7 +176,7 @@ Uploads the security scan's SARIF reports (semgrep, checkov, trivy config: the `
 
 ### `dependency-review`
 
-Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v5` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. Posts a summary comment on the PR. It runs independently of other jobs and does not block push pipelines.
+Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v5` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. When it fails, it posts a summary comment on the PR (`comment-summary-in-pr: on-failure`, CI-17); otherwise the summary is in the job log. It runs independently of other jobs and does not block push pipelines.
 
 | Step | Tool | What it checks |
 |---|---|---|

@@ -556,3 +556,81 @@ run "stop_timeout_over_fargates_maximum_is_refused" {
 
   expect_failures = [var.container]
 }
+
+# -- TF-03: deploy surge and Fargate Spot ------------------------------------------
+
+run "spot_strategy_replaces_the_launch_type" {
+  command = plan
+
+  variables {
+    role                       = "worker"
+    scaling_name               = "worker"
+    security_group_ids         = ["sg-worker"]
+    deployment_maximum_percent = 150
+    capacity_provider_strategy = [
+      { capacity_provider = "FARGATE", base = 1, weight = 1 },
+      { capacity_provider = "FARGATE_SPOT", weight = 3 },
+    ]
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+    }
+  }
+
+  assert {
+    condition     = length(aws_ecs_service.this.capacity_provider_strategy) == 2 && one([for s in aws_ecs_service.this.capacity_provider_strategy : s.base if s.capacity_provider == "FARGATE"]) == 1
+    error_message = "A capacity provider strategy (one on-demand task first) replaces the FARGATE launch type."
+  }
+  assert {
+    condition     = aws_ecs_service.this.deployment_maximum_percent == 150 && aws_ecs_service.this.deployment_minimum_healthy_percent == 100
+    error_message = "The deploy surge is bounded; the minimum stays 100% healthy."
+  }
+}
+
+run "a_surge_with_no_room_for_an_extra_task_is_refused" {
+  command = plan
+
+  variables {
+    role                       = "worker"
+    scaling_name               = "worker"
+    security_group_ids         = ["sg-worker"]
+    desired_count              = 1
+    min_capacity               = 1
+    deployment_maximum_percent = 150
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+    }
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
+run "only_fargate_capacity_providers" {
+  command = plan
+
+  variables {
+    role                       = "worker"
+    scaling_name               = "worker"
+    security_group_ids         = ["sg-worker"]
+    capacity_provider_strategy = [{ capacity_provider = "EC2", weight = 1 }]
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+    }
+  }
+
+  expect_failures = [var.capacity_provider_strategy]
+}

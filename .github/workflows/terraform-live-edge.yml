@@ -302,7 +302,10 @@ jobs:
           if [[ "$missing" -eq 0 ]]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           elif [[ "${ACTION}" == "plan" ]]; then
-            echo "::notice::infra-live-backend is not applied for this environment yet — skipping the plan. Apply it first, then plan this stack."
+            # A warning and the run summary, not a quiet notice: this run planned less than
+            # it was asked to (production-readiness review, CI-17 c).
+            echo "::warning title=Partial plan::infra-live-backend is not applied for this environment yet, so infra-live-edge was NOT planned. Apply infra-live-backend first, then plan this stack."
+            echo "### ⚠️ Partial plan: infra-live-edge was not planned (infra-live-backend isn't applied yet)" >> "$GITHUB_STEP_SUMMARY"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ERROR: Ensure infra-live-backend has been applied and the IAM role has ssm:GetParameter on this path."

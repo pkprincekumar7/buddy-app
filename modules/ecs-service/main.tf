@@ -105,7 +105,21 @@ resource "aws_ecs_service" "this" {
   cluster         = var.cluster_id
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  # A capacity provider strategy and a launch type are exclusive (TF-03).
+  launch_type = length(var.capacity_provider_strategy) == 0 ? "FARGATE" : null
+
+  dynamic "capacity_provider_strategy" {
+    for_each = var.capacity_provider_strategy
+    content {
+      capacity_provider = capacity_provider_strategy.value.capacity_provider
+      weight            = capacity_provider_strategy.value.weight
+      base              = capacity_provider_strategy.value.base
+    }
+  }
+
+  # Bounds the extra tasks a deploy starts; the minimum stays 100% healthy (TF-03).
+  deployment_maximum_percent         = var.deployment_maximum_percent
+  deployment_minimum_healthy_percent = 100
 
   enable_execute_command = var.enable_execute_command
 
@@ -154,6 +168,10 @@ resource "aws_ecs_service" "this" {
     precondition {
       condition     = var.service_discovery == null || var.internal_port != null
       error_message = "${local.family}: service_discovery registers the internal API, so it needs internal_port (8001, or 4318 for the collector)."
+    }
+    precondition {
+      condition     = var.deployment_maximum_percent == 200 || floor(var.desired_count * var.deployment_maximum_percent / 100) > var.desired_count
+      error_message = "${local.family}: deployment_maximum_percent ${var.deployment_maximum_percent} leaves no room for an extra task at desired_count ${var.desired_count}, so a deploy could never start one. Use 200, or a desired count of at least 2."
     }
     precondition {
       condition     = var.internal_port == null || var.internal_port != var.container.port

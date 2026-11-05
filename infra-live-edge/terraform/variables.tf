@@ -137,7 +137,7 @@ variable "cloudfront_price_class" {
 # -- Security -----------------------------------------------------------------
 
 variable "enable_guardduty" {
-  description = "Enable GuardDuty in us-east-1. Skipped on dev/sbx to avoid ~$22/mo cost."
+  description = "Enable GuardDuty in us-east-1, created and destroyed with the environment (its own AWS account). Skipped on dev/sbx to avoid ~$22/mo cost. Environments sharing an account: only one may set it (docs/environments.md, 5)."
   type        = bool
   default     = true
 }

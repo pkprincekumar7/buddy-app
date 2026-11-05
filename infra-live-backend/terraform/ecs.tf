@@ -36,11 +36,21 @@ resource "aws_ecs_cluster" "backend" {
   tags = {
     Name = "${var.app_name}-backend-cluster-${var.environment}"
   }
+
+  lifecycle {
+    # A scale-out or deploy must not run Atlas out of connections (TF-03, DB-02).
+    precondition {
+      condition     = local.mongo_peak_connections <= var.mongodb_connection_budget
+      error_message = "At peak, this region's tasks could open ${local.mongo_peak_connections} MongoDB connections (peak tasks x (mongodb_max_pool_size + ${local.mongo_monitoring_connections_per_task})), over mongodb_connection_budget = ${var.mongodb_connection_budget}. Lower runtime_sizes' max_capacity or mongodb_max_pool_size, or raise the budget with a larger Atlas tier."
+    }
+  }
 }
 
+# FARGATE_SPOT for the workers' extra tasks (var.worker_spot, TF-03); everything else
+# runs on FARGATE, the default.
 resource "aws_ecs_cluster_capacity_providers" "backend" {
   cluster_name       = aws_ecs_cluster.backend.name
-  capacity_providers = ["FARGATE"]
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
 
   default_capacity_provider_strategy {
     capacity_provider = "FARGATE"
@@ -82,11 +92,14 @@ module "service" {
     stop_timeout      = each.value.stop_timeout
   }
 
-  cluster_id             = aws_ecs_cluster.backend.id
-  cluster_name           = aws_ecs_cluster.backend.name
-  desired_count          = each.value.desired_count
-  enable_execute_command = var.enable_execute_command
-  subnet_ids             = module.network.private_subnet_ids
+  cluster_id    = aws_ecs_cluster.backend.id
+  cluster_name  = aws_ecs_cluster.backend.name
+  desired_count = each.value.desired_count
+  # 150% where the minimum leaves room for an extra task, else 200% (TF-03).
+  deployment_maximum_percent = each.value.deployment_maximum_percent
+  capacity_provider_strategy = each.value.capacity_provider_strategy
+  enable_execute_command     = var.enable_execute_command
+  subnet_ids                 = module.network.private_subnet_ids
   security_group_ids = concat(
     [aws_security_group.service[each.key].id],
     each.value.service != null ? [aws_security_group.internal_callers.id] : [],
@@ -116,6 +129,7 @@ module "service" {
   alarm_topic_arn         = aws_sns_topic.alerts.arn
 
   # An HTTP service registers with the target group, which must already be
-  # attached to the HTTPS listener.
-  depends_on = [module.alb]
+  # attached to the HTTPS listener; a worker's Spot tasks need the cluster to offer
+  # FARGATE_SPOT.
+  depends_on = [module.alb, aws_ecs_cluster_capacity_providers.backend]
 }

@@ -13,7 +13,7 @@ Read this top to bottom the first time. Afterwards, [Checklist](#9-checklist) is
 |---|---|
 | **Environment** | One isolated copy of the whole stack (backend, worker, Redis, edge, frontend). Named by a short lowercase id: `dev`, `qa`, `prod`, … |
 | **GitHub Environment** | One per environment (Settings → Environments), holding that environment's secrets. Every job that touches AWS binds to it, so it only ever sees its own secrets. |
-| **AWS account** | Any number of environments can share one account (e.g. `dev`, `sbx`, `stg`, `qa`), or have their own (e.g. `prod`). Each environment talks only to the account its `ROLE_ARN` belongs to. |
+| **AWS account** | **One account per environment** is the model: `dev`, `sbx`, `stg` and `prod` each in its own account, so account-wide services (GuardDuty, CloudTrail) and quotas belong to exactly one environment, and destroying one environment never touches another. Environments *can* share an account; section 5 lists what that needs. Each environment talks only to the account its `ROLE_ARN` belongs to. |
 | **Regions** | The backend runs as an independent stack per region (`ap-south-1`, `eu-west-1`, `us-east-1` — any subset). Edge (CloudFront, WAF, DNS, Lambda@Edge), frontend hosting and the scheduler always live in `us-east-1`. |
 
 Everything Terraform creates is named from `APP_NAME` + environment (+ region where AWS names
@@ -113,9 +113,11 @@ Settings that matter (backend):
 | `nat_gateway_count` | 1–3. Each NAT uses one Elastic IP — counts toward the account's per-region EIP quota (section 5). |
 | `elasticache_node_type`, `elasticache_replica_count`, `elasticache_multi_az` | `multi_az = true` needs `replica_count >= 1`. |
 | `runtime_sizes` | CPU, memory, desired count and the autoscaling range for each of the five tiers (`http`, `auth`, `worker`, `generating-worker`, `collector`); every one of the 18 runtimes uses one tier (`services.tf`). All of them count toward the account's Fargate vCPU quota (section 5). dev/sbx run every tier at 256 / 512 × 1; prod runs one task per worker. |
-| `mongodb_max_pool_size` | MongoDB connections per task (default 5). Multiply by every task in the environment to stay under the Atlas cluster's connection limit. |
+| `mongodb_max_pool_size` | MongoDB connections per task (default 5). |
+| `mongodb_connection_budget` | **Required.** The MongoDB connections this region's tasks may open: the Atlas cluster's limit (M0 500, M10 1500, M20/M30 3000), split between the regions sharing the cluster. The plan fails when every Mongo runtime at its peak (`max_capacity`, or a deploy's surge if larger) × (`mongodb_max_pool_size` + 6 monitoring connections) would exceed it (TF-03). Today: 500 in dev, sbx and stg (M0), 1500 in prod (M10); stg's and prod's `max_capacity` values are set to fit. |
+| `worker_spot` | Workers' share of Fargate Spot: `on_demand_base` tasks on demand, then `spot_weight` Spot tasks per further on-demand one (default 1 and 3). `spot_weight = 0` runs them on demand only. HTTP services and the collector always run on demand (TF-03). |
 | `service_token_key_versions` | Per service, the version of its service-token key pair (default 1). Bump one to rotate that key. |
-| `enable_guardduty` | **See section 5 — at most one environment per AWS account.** |
+| `enable_guardduty` | GuardDuty in this region, created and destroyed with the environment (on in stg and prod, off in dev and sbx for cost). With one account per environment, any environment may turn it on; in a shared account, see section 5. |
 | `enable_cloudtrail`, `enable_alb_access_logs` | Write to that region's `REGIONAL_LOGGING_BUCKET_NAMES` entry. |
 | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `xray_default_sampling_rate` | Observability level, and the share of ordinary traces the collector keeps (errors and slow traces are always kept). |
 | `enable_ops_email` | `true` requires the `OPS_EMAIL` variable. |
@@ -125,7 +127,7 @@ Settings that matter (edge):
 
 | Setting | Notes |
 |---|---|
-| `enable_guardduty` | Same rule as backend — section 5. |
+| `enable_guardduty` | The `us-east-1` detector; set it as the backend's. |
 | `enable_cloudtrail` | Needs `GLOBAL_LOGGING_BUCKET_NAME`. |
 | `enable_waf`, `enable_waf_logging` | `enable_waf_logging` needs `enable_waf` and `GLOBAL_LOGGING_BUCKET_NAME`. |
 | `cloudfront_price_class` | `PriceClass_100` (cheap) or `PriceClass_All`. |
@@ -142,10 +144,10 @@ Do this once in every AWS account that hosts at least one environment.
    Provider URL `https://token.actions.githubusercontent.com`, audience `sts.amazonaws.com`.
 2. **Deploy role** — IAM → Roles → Create role → Web identity → that provider, audience
    `sts.amazonaws.com`. Restrict the trust policy's `token.actions.githubusercontent.com:sub`
-   (operator `StringLike`) to exactly the environments living in this account, e.g.
-   - shared account: `repo:<owner>/buddy-app:environment:dev`, `…:environment:sbx`,
-     `…:environment:stg`, `…:environment:qa`
-   - prod account: `repo:<owner>/buddy-app:environment:prod`
+   (operator `StringLike`) to exactly the environment living in this account, e.g.
+   `repo:<owner>/buddy-app:environment:stg` in stg's account and
+   `repo:<owner>/buddy-app:environment:prod` in prod's (in a shared account, list each
+   environment it hosts).
 
    Attach `AdministratorAccess` (or a scoped policy covering ECS, ECR, ELB, EC2/VPC, ElastiCache,
    CloudFront, WAF, Lambda, S3, Route 53, ACM, Secrets Manager, SSM, IAM, CloudWatch, SNS,
@@ -154,6 +156,16 @@ Do this once in every AWS account that hosts at least one environment.
 3. **Terraform state bucket** in `us-east-1` (versioning on). One per account is enough —
    state keys already include `APP_NAME` and environment. Its name is the `STATE_BUCKET` variable.
 4. **Service quotas** (Service Quotas console, per region) — see section 5 for what to sum.
+5. **Promoting images from another account** (CI-09). `promote-live-backend` runs with the
+   *target* environment's `ROLE_ARN` and copies each image from the source environment's ECR,
+   so every promote path (dev↔sbx, dev→stg, sbx→stg, stg→prod) crosses accounts:
+   - in the **source** environment's backend tfvars, list each account it promotes to in
+     `ecr_pull_account_ids` (dev: sbx's and stg's; sbx: dev's and stg's; stg: prod's), then
+     apply it. Each service repository then grants those accounts pull, and nothing more;
+   - give the **target** account's deploy role `ecr:BatchGetImage`,
+     `ecr:GetDownloadUrlForLayer` and `ecr:BatchCheckLayerAvailability` on the source
+     repositories (`arn:aws:ecr:<region>:<source account>:repository/<APP_NAME>/<source env>/*`).
+     `AdministratorAccess` already includes them.
 
 ---
 
@@ -188,7 +200,7 @@ may share one — but the secret must still be set (section 6).
 
 | Thing | Rule |
 |---|---|
-| **GuardDuty** | AWS allows one detector per account per region. **At most one environment per account may set `enable_guardduty = true`** (in both its backend and edge tfvars). The edge stack owns the `us-east-1` detector; the backend stack creates it in its other regions. Today: `stg` in the shared account, `prod` in the prod account. |
+| **GuardDuty** | AWS allows one detector per account per region. The edge stack owns the `us-east-1` detector; the backend stack creates it in its other regions. With one account per environment this always holds. Environments that share an account: **at most one of them may set `enable_guardduty = true`** (in both its backend and edge tfvars), and destroying that one turns GuardDuty off for the others. |
 | OIDC provider | One per account (section 4). |
 
 ### Shared quotas (sum over every environment in the account, per region)
@@ -197,7 +209,7 @@ may share one — but the secret must still be set (section 6).
 |---|---|---|
 | Elastic IPs | 5 | `nat_gateway_count` of every environment in that region |
 | VPCs | 5 | one per environment, plus the default VPC |
-| Fargate On-Demand vCPU | account-specific (often low on new accounts) | Σ over the 18 runtimes of `min_capacity × cpu/1024` for its `runtime_sizes` tier, ×2 during rolling deploys (up to the `max_capacity` values when scaled out) |
+| Fargate On-Demand vCPU | account-specific (often low on new accounts) | Σ over the 18 runtimes of `min_capacity × cpu/1024` for its `runtime_sizes` tier, ×1.5 during rolling deploys where the tier's `desired_count` is 2 or more, ×2 where it's 1 (TF-03's surge limit; up to the `max_capacity` values when scaled out) |
 | CloudTrail trails | 5 | environments with `enable_cloudtrail = true` (+1 in `us-east-1` for an edge trail) |
 
 Raise anything that would exceed its quota **before** the first apply.

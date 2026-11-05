@@ -61,6 +61,7 @@ resource "aws_lb" "this" {
   subnets                    = var.public_subnet_ids
   security_groups            = [aws_security_group.alb.id]
   drop_invalid_header_fields = true
+  idle_timeout               = var.idle_timeout_seconds
 
   # Absent entirely (not just enabled=false) when off: the provider requires a
   # non-empty bucket whenever this block is present, even with enabled=false.
