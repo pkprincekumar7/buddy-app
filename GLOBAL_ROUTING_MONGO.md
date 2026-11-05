@@ -7,13 +7,17 @@
 >   multi-region infrastructure (incl. Atlas PrivateLink, Change 10d)
 
 > **Status (what is live vs planned)**
-> - **Live:** country → location assignment at registration; location-based API routing at the
->   edge to all three AWS backend regions (ap-south-1, eu-west-1, us-east-1 — the edge's
->   `backend_regions`); region-scoped workers; WAF geo-block (stg/prod).
-> - **Live, but not yet residency-enforcing:** the database. Every region's backend uses **one
->   MongoDB Atlas cluster in ap-south-1** (free tier). Documents already carry `location` and every
->   index on a to-be-sharded collection leads with it, so the data is shard-ready — but until the move to an Atlas Global
->   Cluster, all data physically lives in ap-south-1.
+> - **Live:** country → location assignment at registration; WAF geo-block (stg/prod).
+>   Location-based API routing to all three AWS backend regions (ap-south-1, eu-west-1,
+>   us-east-1) with region-scoped workers runs in **dev and sbx**. **stg and prod are served from
+>   ap-south-1 only** (`shared/routing.json` `served_from`, DEC-01): the edge sends every location
+>   there and its workers handle every location.
+> - **Not residency-enforcing:** the database. stg and prod each have **one Atlas M10 cluster in
+>   ap-south-1** (PrivateLink, DEC-02); dev and sbx share an M0 there. Documents already carry
+>   `location` and every index on a to-be-sharded collection leads with it, so the data is
+>   shard-ready, but until the move to an Atlas Global Cluster **every user's data is stored in
+>   India**, whatever their location. Where each kind of data goes, AI providers included:
+>   [docs/data-residency.md](docs/data-residency.md) (PRIV-03).
 > - **Planned:** Atlas Global Cluster with 3 zones — see the runbook.
 
 ---

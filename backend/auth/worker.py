@@ -36,7 +36,7 @@ def region_locations(runtime: Runtime) -> list[str] | None:
     """This region's locations; every location locally (one worker handles them all)."""
     if runtime.settings.app_env == "local":
         return None
-    return locations_for_region(runtime.settings.aws_region)
+    return locations_for_region(runtime.settings.aws_region, runtime.settings.app_env)
 
 
 def build_consumer(runtime: Runtime) -> Consumer:

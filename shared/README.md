@@ -15,6 +15,7 @@ node scripts/sync-routing.mjs --check  # what CI runs — fails if a copy is sta
 | `regions` | AWS region → `atlas_zone` (zone name on the Global Cluster) and the `locations` it serves. Each location belongs to exactly one region |
 | `countries` | Every country/territory a user can register from: ISO-3166-1 alpha-2 `code`, display `label`, assigned `location` |
 | `blocked_countries` | Never served — not offered, refused at registration, geo-blocked at the WAF |
+| `served_from` | Environment → the one region that serves **every** location there, e.g. `{"prod": "ap-south-1"}` (DEC-01). The edge routes every location to it, its workers handle every location, and Terraform refuses that environment's backend in any other region. Accounts keep their own `location`, so the data stays ready for the Global Cluster. Environments not listed route by `regions` |
 
 The script validates the file before generating anything: well-formed and unique codes, every
 country's location belongs to a region, every location has at least one country, no country is

@@ -72,10 +72,21 @@ mock_provider "aws" {
   alias = "ssm"
 }
 
+# The Atlas side of the PrivateLink endpoint (atlas.tf, DEC-02).
+mock_provider "mongodbatlas" {
+  mock_resource "mongodbatlas_privatelink_endpoint" {
+    defaults = {
+      endpoint_service_name = "com.amazonaws.vpce.ap-south-1.vpce-svc-0123456789abcdef0"
+      private_link_id       = "65f0a1b2c3d4e5f6a7b8c9d0"
+    }
+  }
+}
+
 variables {
-  aws_region  = "ap-south-1"
-  app_name    = "superpower"
-  environment = "prod"
+  aws_region       = "ap-south-1"
+  app_name         = "superpower"
+  environment      = "prod"
+  atlas_project_id = "0123456789abcdef01234567"
   vpc_cidrs = {
     "ap-south-1" = "10.22.0.0/16"
     "eu-west-1"  = "10.23.0.0/16"
@@ -529,6 +540,7 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     enable_basic_alarms       = false
     enable_container_insights = false
     ecr_pull_account_ids      = ["222222222222"]
+    atlas_project_id          = "" # dev: Atlas M0, the public endpoint
     runtime_sizes = {
       "http"              = { cpu = 256, memory = 512, desired_count = 1, min_capacity = 1, max_capacity = 2 }
       "auth"              = { cpu = 256, memory = 512, desired_count = 1, min_capacity = 1, max_capacity = 2 }
@@ -569,6 +581,10 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
   assert {
     condition     = module.redis.node_count == 1
     error_message = "Dev: single Valkey node."
+  }
+  assert {
+    condition     = length(aws_vpc_endpoint.atlas) == 0 && length(mongodbatlas_privatelink_endpoint.atlas) == 0
+    error_message = "Dev (M0): no Atlas PrivateLink endpoint (DEC-02)."
   }
   assert {
     condition = keys(aws_ecr_repository_policy.promote_pull) == keys(aws_ecr_repository.service) && alltrue([
@@ -664,4 +680,48 @@ run "a_region_outside_routing_json_is_refused" {
   }
 
   expect_failures = [var.aws_region]
+}
+
+# DEC-01 A: prod is served from ap-south-1 only (shared/routing.json served_from).
+run "prod_outside_its_served_region_is_refused" {
+  command = plan
+
+  variables {
+    aws_region = "eu-west-1"
+  }
+
+  expect_failures = [var.aws_region]
+}
+
+# DEC-02: stg and prod reach Atlas through PrivateLink, made end to end by Terraform.
+run "prod_reaches_atlas_through_privatelink" {
+  command = apply
+
+  assert {
+    condition = (
+      mongodbatlas_privatelink_endpoint.atlas[0].region == "ap-south-1"
+      && aws_vpc_endpoint.atlas[0].service_name == "com.amazonaws.vpce.ap-south-1.vpce-svc-0123456789abcdef0"
+      && aws_vpc_endpoint.atlas[0].vpc_endpoint_type == "Interface"
+      && mongodbatlas_privatelink_endpoint_service.atlas[0].provider_name == "AWS"
+    )
+    error_message = "Atlas's endpoint service, the VPC interface endpoint to it, and Atlas accepting it."
+  }
+  assert {
+    condition = (
+      aws_vpc_security_group_ingress_rule.atlas_endpoint_from_tasks[0].from_port == 1024
+      && aws_vpc_security_group_ingress_rule.atlas_endpoint_from_tasks[0].to_port == 65535
+      && aws_vpc_security_group_ingress_rule.atlas_endpoint_from_tasks[0].referenced_security_group_id == aws_security_group.internal_callers.id
+    )
+    error_message = "The endpoint admits Atlas's ports from the service tasks only."
+  }
+}
+
+run "prod_without_an_atlas_project_is_refused" {
+  command = plan
+
+  variables {
+    atlas_project_id = ""
+  }
+
+  expect_failures = [var.atlas_project_id]
 }

@@ -8,6 +8,7 @@ import pytest
 from common.regions import (
     ATLAS_ZONE_FOR_REGION,
     REGION_TO_LOCATIONS,
+    SERVED_FROM,
     location_from_claims,
     locations_for_region,
 )
@@ -28,6 +29,18 @@ def test_known_region_returns_its_locations():
     assert locations_for_region("eu-west-1") == ["eu"]
     assert locations_for_region("ap-south-1") == ["in", "apac", "me"]
     assert locations_for_region("us-east-1") == ["us", "br"]
+    # dev and sbx route by the map; they aren't in SERVED_FROM.
+    assert locations_for_region("eu-west-1", "dev") == ["eu"]
+
+
+def test_prod_is_served_from_one_region():
+    """DEC-01 A, DEC-02: stg's and prod's one region handles every location; another is refused."""
+    assert SERVED_FROM == {"stg": "ap-south-1", "prod": "ap-south-1"}
+    every = [loc for locs in REGION_TO_LOCATIONS.values() for loc in locs]
+    assert locations_for_region("ap-south-1", "prod") == every
+    with pytest.raises(ValueError, match="served from ap-south-1 only"):
+        locations_for_region("eu-west-1", "prod")
+    assert locations_for_region("", "prod") is None  # local: no scoping
 
 
 def test_unknown_region_fails_fast():
@@ -70,3 +83,4 @@ def test_generated_data_matches_shared_json():
     data = json.loads(ROUTING_JSON.read_text(encoding="utf-8"))
     assert {r: v["locations"] for r, v in data["regions"].items()} == REGION_TO_LOCATIONS
     assert {r: v["atlas_zone"] for r, v in data["regions"].items()} == ATLAS_ZONE_FOR_REGION
+    assert data.get("served_from", {}) == SERVED_FROM

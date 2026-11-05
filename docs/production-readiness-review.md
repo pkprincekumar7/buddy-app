@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-05):** of the 86 tracked findings, 53 are done, 16 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-05):** of the 86 tracked findings, 55 are done, 18 partly done, 10 open and 3 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -160,9 +160,9 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ✅ Done (1 MiB body cap in every service) |
 | APP-10 | 🟠 High | App | Child documents can grow without bound | ✅ Done (strict child model, bounded fields, 64 KB caps) |
 | APP-11 | 🟢 Low | App | Misc backend hygiene | ✅ Done — a–d, f, g done (moving-window limits, APK `latest.json` pointer); e moot |
-| DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | ⬜ Open — prod dedicated M10+ planned (build plan 9.1); stg on M10 (for the failover test); dev/sbx on M0 by design |
-| DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ⬜ Open |
-| DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ⬜ Open |
+| DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | 🟡 Decided: prod (and stg) on M10, auto-scaling to M30; prod's connection budget 1050 (70%) with max counts to fit; provisioning, backups/PITR and a test restore pending; dev/sbx on M0 by design |
+| DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ✅ Done — Option A: prod served from ap-south-1 only (`served_from` in routing.json, enforced by the edge, the workers and Terraform); dev/sbx/stg stay multi-region |
+| DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ✅ Done in code — PrivateLink in ap-south-1 for stg and prod, both halves in Terraform (Atlas provider); dev/sbx (M0) public with the NAT-IP allowlist |
 | DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ✅ Done (claim reads an index in order, jittered idle poll, 30 s socket timeout; connection budget with DB-01) |
 | DB-03 | 🟡 Medium | Database | Index creation at startup in every task | 🟡 Code done (indexes built in the background once per release, others verify, `index-problems` alarm); acceptance needs a deployed env |
 | DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
@@ -174,7 +174,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ✅ Done (status routes 300/min; clients back off to 5 s and retry a 429) |
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
 | JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
-| JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⬜ Open (matters only if DEC-01 = B) |
+| JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⚪ Moot — DEC-01 is A: prod's one region handles every location |
 | AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | ✅ Done (certs cached per Google's max-age, 5 s timeout, own thread pool) |
 | AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | ✅ Done — atomic claim, one refreshable branch per family, reuse revokes the family and alarms |
 | AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ✅ Done |
@@ -184,7 +184,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ✅ Done (unsafe stg/prod settings stop every runtime at startup, exit 1) |
 | PRIV-01 | 🟠 High | Privacy | Plaintext passwords and child PII written to logs | ✅ Done (not logged; 422s carry no submitted values, `backend/common/validation.py`) |
 | PRIV-02 | 🟠 High | Privacy | Deletion incomplete; worker recreates data; no 30-day purge | ✅ Done (deletion across services, tombstones, 30-day purge) |
-| PRIV-03 | 🟡 Medium | Privacy | Children's voice/PII sent to LLM providers out of region | ⬜ Open |
+| PRIV-03 | 🟡 Medium | Privacy | Children's voice/PII sent to LLM providers out of region | 🟡 Residency matrix written (`docs/data-residency.md`), routing docs corrected, prompts server-built without contact details; provider agreements, transfer basis and privacy policy are the owner's |
 | PRIV-04 | 🟢 Low | Privacy | Soft-deleted child's data still readable | ✅ Done |
 | SEC-10 | 🟠 High | Security | API task role can overwrite the public APK | ✅ Done (only `shared` reads the APK prefix; no role can write assets) |
 | OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | ✅ Done — one access line per request (hashed user), request id carried into jobs and events |
@@ -971,7 +971,11 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### DB-01 — M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later 🔴
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open, premise changed. Prod is planned as a dedicated M10+ cluster but isn't provisioned yet (build plan 9.1); stg is planned on M10 as well (2026-11-05, for DB-05's Test Failover), dev and sbx use M0 by design. Each service has its own database and `MONGODB_URI` secret (`services.tf:138-140`). Runbook Step 0 no longer applies: email ownership lives in auth's `email_index` collection (`auth/app/store.py:170-175`), with no unique `(location, email)` index.
+> 🔄 **Current code (2026-11-05):** 🟡 Decided, not provisioned. **Stage 1 is M10 for prod** (the owner's choice), in ap-south-1, with compute auto-scaling up to M30 for CPU and RAM. stg is M10 too (for DB-05's Test Failover); dev and sbx stay on M0 by design.
+> - **Connections:** prod's `mongodb_connection_budget` is 1050, 70% of M10's 1500 (this item's acceptance rule), and its max counts are lowered to fit: 93 tasks, 1023 connections at peak. The plan fails if they could exceed it (TF-03). Moving to M20 (3000, so 2100) is how prod grows past that; auto-scaling doesn't add connections.
+> - **Atlas settings, in the console** (`docs/infra-operations.md`, "Atlas clusters"): Cloud Backup with continuous PITR, snapshot copy to a second region, storage auto-scaling, termination protection, and a timed test restore before go-live (practised on stg first, `docs/stg-first-deploy.md`).
+> - **Already in place:** a database and a `MONGODB_URI` per service (`services.tf`), the user's own per service.
+> - **Still open:** provisioning those clusters and their settings, and the test restore. Private connectivity is DEC-02 (done in code: PrivateLink). Runbook Step 0 no longer applies: email ownership lives in auth's `email_index` collection, with no unique `(location, email)` index.
 
 **Where:** `GLOBAL_ROUTING_MONGO.md:13-16`, `GLOBAL_ROUTING_MONGO_ATLAS.md`, `docs/infra-architecture-multi-region.md` (Phase 0 "not started").
 
@@ -997,7 +1001,7 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 **Fix — Stage 1 (now):**
 1. Create the **M10 or M20** cluster in ap-south-1. Choose M20 if a load test (or the projected user count) shows M10 CPU or RAM saturating; the working set should fit in RAM.
 2. Enable **compute auto-scaling** with a floor of M10/M20 and a ceiling of **M30**, so **sustained** growth scales the tier. Auto-scaling reacts over tens of minutes with a rolling resize, so it doesn't absorb spikes. M30's connection limit equals M20's (about 3,000), so the M30 ceiling adds CPU and RAM but no connection headroom. Enable storage auto-scaling.
-3. Enable **Cloud Backup with continuous PITR**, and set **snapshot distribution (copy) to a second region** (e.g. eu-west-1), so backups survive an ap-south-1 outage. Do a test restore and record the RTO.
+3. Enable **Cloud Backup with continuous PITR**, and set **snapshot distribution (copy) to a second region** (ap-south-2 keeps it in India; e.g. eu-west-1 moves it to the EU, see `docs/data-residency.md`), so backups survive an ap-south-1 outage. Do a test restore and record the RTO.
 4. **Private connectivity** (see DEC-02):
    - ap-south-1: **PrivateLink** (or VPC peering) from the backend VPC.
    - eu-west-1/us-east-1 (**only if DEC-01 = B**): cross-region VPC peering or a Transit Gateway path. This **requires NET-01** (unique CIDRs) first.
@@ -1030,7 +1034,7 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### DEC-01 — Multi-region compute while the DB is single-region 🟠 (decision, new in v4)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. No decision is recorded; `shared/routing.json` is still the one routing source.
+> 🔄 **Current code (2026-11-05):** ✅ Decided and done: **Option A**, the owner's choice. `shared/routing.json` gained `served_from: {"prod": "ap-south-1"}` (the per-environment override the pitfalls below asked for). The edge routes every prod location to ap-south-1 (`infra-live-edge/terraform/routing.tf`; checked: prod maps all six locations there, stg keeps eu-west-1 and us-east-1). `locations_for_region` gives prod's ap-south-1 every location and refuses any other prod region (buddy-common 0.34.0). Terraform refuses prod's backend outside ap-south-1 and an edge `backend_regions` other than `["ap-south-1"]`, with a stack test. dev, sbx and stg keep the three-region map. Recorded in `docs/infra-architecture-multi-region.md`. Leaving it: remove prod from `served_from` once the Global Cluster exists.
 
 **Context:** The edge routes users to eu-west-1/us-east-1 backends by location, but in Stage 1 every DB round trip from those regions goes to ap-south-1 (about 120–250 ms each). An API request typically makes several Mongo calls: auth/user lookup, the child lookup, then the read or write. So a European user served from eu-west-1 can be **slower** than if served directly from ap-south-1. Their data also physically lives in India either way.
 
@@ -1056,7 +1060,7 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### DEC-02 — Private connectivity from backends to the ap-south-1 DB 🟠 (decision, new in v4)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Tasks reach Atlas through NAT egress (`infra-live-backend/terraform/security_groups.tf:6,15`); there's no PrivateLink in the Terraform.
+> 🔄 **Current code (2026-11-05):** ✅ Decided and done in code: **PrivateLink in ap-south-1**, made end to end by Terraform (the owner's choice). stg and prod each have one M10 cluster there and are served from that region only (`shared/routing.json` `served_from`, now including stg). `infra-live-backend/terraform/atlas.tf` creates Atlas's endpoint service (MongoDB Atlas provider 2.20.1, locked), the AWS interface endpoint in the private subnets (ports 1024–65535 from the service tasks only), and Atlas's acceptance of it, so a full destroy and re-apply needs no console step and no IP access list. `atlas_project_id` (the `ATLAS_PROJECT_ID` variable) is required wherever `served_from` applies; the project-scoped key comes from `MONGODB_ATLAS_PUBLIC_KEY` / `_PRIVATE_KEY`, on the plan and apply steps only. dev and sbx (M0, which has no PrivateLink) keep the public endpoint and the NAT-IP allowlist, accepted by the owner. Stack tests cover the endpoint, its security group, dev having none, and prod refusing an empty project. **Still to see:** the endpoint `Available` and tasks connecting, at the first stg apply (`docs/stg-first-deploy.md`).
 
 **Context:** Atlas private endpoints (PrivateLink) are regional, created in the cluster's region. A single-region cluster in ap-south-1 can be reached privately from **ap-south-1** with PrivateLink or VPC peering. The other regions need one of:
 
@@ -1371,7 +1375,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-08 — Region-scoped workers have no failover 🟢
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Workers handle only their region's locations, with no drain mode (`backend/common/regions.py:26-42`, `grow/app/generation.py:318`). This matters only if DEC-01 = B.
+> 🔄 **Current code (2026-11-05):** ⚪ Moot for prod: DEC-01 is A, so prod's one region (ap-south-1) handles every location and there's no other region to fail over to. dev, sbx and stg still have region-scoped workers with no drain mode; that's accepted outside prod. Revisit with DB-01 Stage 2.
 
 **Where:** `infra-live-backend/terraform/ecs.tf:233` (`WORKER_SCOPE_TO_REGION=true`).
 
@@ -1621,7 +1625,11 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### PRIV-03 — Children's voice/PII sent to LLM providers out of region 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Speech goes to OpenAI (`backend/shared/app/main.py:246-251`), and the LLM calls use the providers' global endpoints. There's no residency matrix.
+> 🔄 **Current code (2026-11-05):** 🟡 Partial: documented; the legal steps are the owner's.
+> - **Residency matrix:** `docs/data-residency.md` lists each kind of personal data, where it's stored, which processor receives it and in which region, for today and for later. Today stg and prod store every user's data in ap-south-1 (India): one M10 each, served from there only (DEC-01, DEC-02), the owner's deliberate, temporary choice. What leaves India: generation prompts (the child's first name, age, pronouns, onboarding answers, personality and growth-area answers) and voice recordings to OpenAI, Anthropic or Gemini on their global endpoints; redacted WAF logs (us-east-1); backup copies if their copy region is abroad (ap-south-2 keeps them in India).
+> - **Prompts:** built on the server from stored data; no endpoint accepts a client-built prompt, and no email, address or parent name is sent.
+> - **Docs corrected:** `GLOBAL_ROUTING_MONGO.md`, `GLOBAL_ROUTING_MONGO_ATLAS.md` and `docs/infra-architecture-multi-region.md` no longer suggest per-location residency is in effect.
+> - **Still open (the owner's, not code):** processing agreements with zero data retention with the three AI providers; the transfer basis and privacy policy for the markets served (DPDP Act for India; GDPR SCCs and a transfer risk assessment for any EU users; COPPA for US children); a qualified review. In-region AI processing per location (for example Azure OpenAI or Bedrock) waits for per-location storage (DB-01 Stage 2).
 
 **Where:** `backend/app/routers/audio.py:83-87` (audio → OpenAI Whisper), `backend/app/routers/llm.py`, the job prompts (all providers are global endpoints).
 
@@ -1787,7 +1795,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DR-02 — Account-wide services live in the stg stack; NAT EIPs churn 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-05):** ⚪ Moot by the account model. Each environment gets its own AWS account (`docs/environments.md`, section 1), so GuardDuty and CloudTrail belong to the one environment they're applied and destroyed with, and a destroy of one environment never affects another. While an environment is destroyed, the account's CloudTrail Event history (90 days of management events) still records activity. The NAT Elastic IPs stay per environment: after each apply, the owner updates the Atlas IP access list by hand (`docs/infra-operations.md`, "After every apply of an environment"). Sharing an account stays possible, with the one-GuardDuty rule in `docs/environments.md` section 5.
+> 🔄 **Current code (2026-11-05):** ⚪ Moot by the account model. Each environment gets its own AWS account (`docs/environments.md`, section 1), so GuardDuty and CloudTrail belong to the one environment they're applied and destroyed with, and a destroy of one environment never affects another. While an environment is destroyed, the account's CloudTrail Event history (90 days of management events) still records activity. The NAT Elastic IPs stay per environment. stg and prod no longer need them for Atlas (PrivateLink, DEC-02); in dev and sbx, after each apply, the owner updates the Atlas IP access list by hand (`docs/infra-operations.md`, "After every apply of an environment"). Sharing an account stays possible, with the one-GuardDuty rule in `docs/environments.md` section 5.
 
 **Where:**
 - `docs/environments.md:187` (the shared account's GuardDuty is owned by stg), and `stg.tfvars:62-63` + `security.tf:34` (stg's trail is the shared account's only CloudTrail; `enable_cloudtrail = false` in dev/sbx).
@@ -2009,7 +2017,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 > - **Fix 3:** already in place: HTTP runtimes track ALB requests per target (1000/min), CPU and memory. LLM calls are in workers, so long requests don't skew it.
 > - **Fix 5:** workers run on a capacity provider strategy: the first task on demand, then 3 `FARGATE_SPOT` per on-demand one (`worker_spot`; `spot_weight = 0` turns it off). Nothing is applied yet, so the service replacement this needs costs nothing.
 > - **Fix 6:** `common/serve.py` keeps idle connections `HTTP_KEEP_ALIVE_SECONDS` (the ALB's now explicit 60 s idle timeout + 5) and gives in-flight requests 25 s on SIGTERM, inside ECS's 30 s. No proxy trust was added.
-> - **Fix 8:** `mongodb_connection_budget` (required) fails the plan when every Mongo runtime at its peak × (pool 5 + 6 monitoring) exceeds it. Today's values overshot: stg 836 against M0's 500, prod 3190 against M10's 1500. stg then moved to M10 (2026-11-05, for DB-05's Test Failover), so its budget is 1500 and its max counts are back to 5 / 4 / 3 / 5 (76 tasks, 836). By the owner's choice, prod's max counts were lowered to fit the planned M10 (http 10, auth 12, worker 3, generating-worker 6: 128 tasks, 1408).
+> - **Fix 8:** `mongodb_connection_budget` (required) fails the plan when every Mongo runtime at its peak × (pool 5 + 6 monitoring) exceeds it. Today's values overshot: stg 836 against M0's 500, prod 3190 against M10's 1500. stg then moved to M10 (2026-11-05, for DB-05's Test Failover), so its budget is 1500 and its max counts are back to 5 / 4 / 3 / 5 (76 tasks, 836). By the owner's choice (DB-01: prod on M10), prod's budget is 1050, 70% of M10's 1500, and its max counts are http 7, auth 9, worker 3, generating-worker 4: 93 tasks, 1023 connections.
 > - **Tests:** the stack test (8 runs: surge, Spot, keep-alive, the budget and its failure), the module test (18), `test_serve.py`.
 > - **Fixes 4 and 7 need no change:** workers already run at 256–1024 CPU, and there's one process per task (no `--workers`). **Still open:** the stg load test (fix 1's counts, with fix 9's bcrypt cost in a login storm), and raising prod's max counts with a larger Atlas tier (DB-01).
 

@@ -91,7 +91,7 @@ class Runtime:
         """This region's locations; every location locally (one task serves them all)."""
         if self.settings.app_env == "local":
             return None
-        return locations_for_region(self.settings.aws_region)
+        return locations_for_region(self.settings.aws_region, self.settings.app_env)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> Runtime:

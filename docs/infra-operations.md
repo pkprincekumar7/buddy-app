@@ -19,8 +19,10 @@ Placeholders used below: `{app}` = `APP_NAME` environment variable (e.g. `superp
 Each environment lives in its own AWS account and is applied and destroyed as a whole,
 account services included (production-readiness review, DR-02):
 
-- **Atlas IP access list.** The NAT gateways' Elastic IPs are created with the environment, so
-  every re-apply gets new ones. After `terraform-live-backend` (apply), copy each region's NAT
+- **stg and prod: nothing to do for Atlas.** They reach their cluster through the PrivateLink
+  endpoint, which Terraform re-creates and links in Atlas on every apply (DEC-02).
+- **dev and sbx: the Atlas IP access list.** The NAT gateways' Elastic IPs are created with the
+  environment, so every re-apply gets new ones. After `terraform-live-backend` (apply), copy each region's NAT
   public IPs into the environment's Atlas project (Network Access → IP Access List) and remove the
   old ones. The IPs are on the VPC console's NAT gateways page (filter `<APP_NAME>-nat-*-<env>`),
   or:
@@ -531,6 +533,29 @@ the last admin being demoted), an `audit` row and the `audit.role_changed` log l
 role-change alarm watches. A manual edit does none of them.
 
 ---
+
+## Atlas clusters (stg and prod)
+
+The clusters aren't in Terraform (only stg's and prod's PrivateLink endpoint is, `atlas.tf`): these are set once per cluster in the Atlas console (production-readiness
+review, DB-01). dev and sbx stay on free M0 clusters, which have none of this.
+
+| Setting | stg (M10) | prod (M10) |
+|---|---|---|
+| Region | ap-south-1, 3 nodes across 3 AZs; the environment runs there only (`served_from`, DEC-01) | same |
+| Network access | **PrivateLink only**: Terraform's endpoint in the backend VPC (`atlas.tf`), no IP access list (DEC-02) | same |
+| Terraform's API key | Project Owner on this project only (`MONGODB_ATLAS_PUBLIC_KEY` / `_PRIVATE_KEY`) | same |
+| Compute auto-scaling | optional | **on**, floor M10, ceiling M30 (adds CPU and RAM; not connections) |
+| Storage auto-scaling | on | **on** |
+| Cloud Backup | on | **on, with continuous point-in-time restore** |
+| Snapshot copy to a second region | optional | **on**, so backups survive an ap-south-1 outage. **ap-south-2 (Hyderabad)** keeps them in India; another country's region moves them abroad ([data-residency.md](data-residency.md)) |
+| Termination protection | on | **on** |
+| Test restore | once, to learn the steps | **once before go-live**, restore to a new cluster and write down how long it took |
+| Connection budget | `mongodb_connection_budget = 1500` (peak 836) | `1050`, 70% of 1500 (peak 1023) |
+
+**Growing prod past M10:** compute auto-scaling handles CPU and RAM, but connections are fixed
+per tier (M10 1500; M20 and M30 3000). When prod needs more tasks than its budget allows, move
+to M20 first, then raise `mongodb_connection_budget` (70% of 3000 is 2100) and `max_capacity`
+in `prod.tfvars` together: the plan fails if the tasks could open more than the budget (TF-03).
 
 ## MongoDB indexes: built once per release
 

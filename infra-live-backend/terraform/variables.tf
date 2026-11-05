@@ -6,6 +6,13 @@ variable "aws_region" {
     condition     = contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), var.aws_region)
     error_message = "aws_region must be one of shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
+
+  # An environment in routing.json's served_from runs in that region only (prod until the
+  # Atlas Global Cluster: production-readiness review, DEC-01 A); nothing routes elsewhere.
+  validation {
+    condition     = lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, var.aws_region) == var.aws_region
+    error_message = "${var.environment} is served from one region only (shared/routing.json served_from, DEC-01): its backend can't be applied in ${var.aws_region}."
+  }
 }
 
 variable "app_name" {
@@ -196,7 +203,7 @@ variable "worker_spot" {
 }
 
 variable "mongodb_connection_budget" {
-  description = "MongoDB connections this region's tasks may open at most (TF-03, DB-02): the Atlas cluster's connection limit (M0: 500, M10: 1500, M20/M30: 3000), divided between the regions that share the cluster. Every Mongo runtime's peak task count (its max_capacity, or a deploy's surge if larger) times (mongodb_max_pool_size + 6 monitoring connections, 2 per replica-set member) must fit; the plan fails otherwise."
+  description = "MongoDB connections this region's tasks may open at most (TF-03, DB-02): the Atlas cluster's connection limit (M0: 500, M10: 1500, M20/M30: 3000), or 70% of it for headroom as prod does (DB-01), divided between the regions that share the cluster. Every Mongo runtime's peak task count (its max_capacity, or a deploy's surge if larger) times (mongodb_max_pool_size + 6 monitoring connections, 2 per replica-set member) must fit; the plan fails otherwise."
   type        = number
 
   validation {
@@ -403,4 +410,21 @@ variable "repository" {
   description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
   type        = string
   default     = ""
+}
+
+variable "atlas_project_id" {
+  description = "The Atlas project holding this environment's M10 cluster. Set (stg, prod): Terraform creates the PrivateLink endpoint to it (atlas.tf, DEC-02) and needs MONGODB_ATLAS_PUBLIC_KEY / MONGODB_ATLAS_PRIVATE_KEY. Empty (dev, sbx on M0): no private endpoint; the public connection string is used."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.atlas_project_id == "" || can(regex("^[0-9a-f]{24}$", var.atlas_project_id))
+    error_message = "atlas_project_id must be empty or a 24-character Atlas project ID."
+  }
+
+  # Served from one region (routing.json served_from) means one cluster reached privately.
+  validation {
+    condition     = var.atlas_project_id != "" || !contains(keys(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {})), var.environment)
+    error_message = "${var.environment} reaches its Atlas cluster through PrivateLink (DEC-02): set atlas_project_id (the ATLAS_PROJECT_ID variable)."
+  }
 }

@@ -28,12 +28,14 @@ HOST=https://<SUBDOMAIN>-stg.<DOMAIN_NAME>
 - [ ] Each with Block Public Access on, default encryption (SSE-S3) and no bucket policy of your own: Terraform writes the policies (HTTPS-only, CloudFront access, log delivery) and the uploads CORS and lifecycle rules.
 
 ### MongoDB Atlas
-- [ ] stg's cluster (**M10**, `ap-south-1`: a paid tier, about $60 a month, chosen so Atlas's Test Failover can run, DB-05) with cloud backup on, and one database user per service but shared ([ci-cd.md](ci-cd.md), `MONGODB_URIS`).
-- [ ] Network Access: leave it for now. The NAT IPs only exist after the backend apply (step 3).
+- [ ] stg's cluster (**M10**, `ap-south-1`: a paid tier, about $60 a month, chosen so Atlas's Test Failover can run, DB-05) with cloud backup, storage auto-scaling and termination protection on ([infra-operations.md](infra-operations.md), "Atlas clusters"), and one database user per service but shared ([ci-cd.md](ci-cd.md), `MONGODB_URIS`).
+- [ ] An Atlas API key for Terraform (Project → Access Manager → API Keys), with **Project Owner** on stg's project only; it creates and removes the PrivateLink endpoint (DEC-02). Keep its public and private parts for the GitHub secrets below.
+- [ ] Network Access: add **no** IP access list entries. stg's tasks reach the cluster only through the PrivateLink endpoint Terraform makes.
+- [ ] Each service's connection string is the cluster's **private-endpoint** one (`mongodb+srv://<cluster>-pl-0.<id>.mongodb.net/…`); Atlas shows it under Connect → Private Endpoint once the endpoint exists. Check it after step 3.
 
 ### GitHub Environment `stg`
-- [ ] Variables and secrets from [environments.md](environments.md) section 6: `ROLE_ARN`, `APP_NAME`, `STATE_BUCKET`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, `JWT_PUBLIC_KEYS` (and `JWT_KEY_ID` if not `key-v1`), the three `*_MODEL`s, `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`; the three region maps `ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES`, `REGIONAL_LOGGING_BUCKET_NAMES`; `OPS_EMAIL` (alarms are on in stg).
-- [ ] Secrets: `JWT_PRIVATE_KEY`, `ORIGIN_VERIFY_SECRET` (`openssl rand -hex 32`; not `ORIGIN_VERIFY_SECRET_NEXT`), `MONGODB_URIS`, `EMAIL_HMAC_PEPPER` (back it up), at least one LLM key.
+- [ ] Variables and secrets from [environments.md](environments.md) section 6: `ATLAS_PROJECT_ID` (stg's Atlas project ID), `ROLE_ARN`, `APP_NAME`, `STATE_BUCKET`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, `JWT_PUBLIC_KEYS` (and `JWT_KEY_ID` if not `key-v1`), the three `*_MODEL`s, `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`; the three region maps `ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES`, `REGIONAL_LOGGING_BUCKET_NAMES`; `OPS_EMAIL` (alarms are on in stg).
+- [ ] Secrets: `JWT_PRIVATE_KEY`, `ORIGIN_VERIFY_SECRET` (`openssl rand -hex 32`; not `ORIGIN_VERIFY_SECRET_NEXT`), `MONGODB_URIS` (the private-endpoint strings), `EMAIL_HMAC_PEPPER` (back it up), at least one LLM key, and `MONGODB_ATLAS_PUBLIC_KEY` / `MONGODB_ATLAS_PRIVATE_KEY` (the API key above).
 - [ ] Only if the nightly schedule will be used: `GIT_ACTIONS_PAT`.
 
 ### Outside AWS
@@ -48,17 +50,11 @@ HOST=https://<SUBDOMAIN>-stg.<DOMAIN_NAME>
   the stack before them is applied (CI-17). Read the backend plan: 18 ECS services, Valkey, ALB, VPC.
   The run also creates the service-token key pairs in SSM (SEC-01); that's expected.
 
-## 3. Apply the backend, then open Atlas to it
+## 3. Apply the backend; check the private endpoint
 
 - [ ] Run **terraform-live-backend**: `action = apply`, `environment = stg`, `aws_regions = ap-south-1`.
   The services start on the `:latest` placeholder and stay unhealthy until the first deploy; that's expected.
-- [ ] Atlas Network Access: add the NAT public IPs ([infra-operations.md](infra-operations.md), "After every apply of an environment"):
-
-  ```bash
-  aws ec2 describe-nat-gateways --region "$REGION" \
-    --filter "Name=tag:Name,Values=$APP-nat-*-$ENV" "Name=state,Values=available" \
-    --query 'NatGateways[].NatGatewayAddresses[].PublicIp' --output text
-  ```
+- [ ] In Atlas (Network Access → Private Endpoint), stg's AWS endpoint in ap-south-1 shows **Available**. Compare the cluster's private-endpoint connection string (Connect → Private Endpoint) with `MONGODB_URIS`; if a service's differs, update its value with `put-secret-value` ([infra-operations.md](infra-operations.md), "Rotating a value") and restart it.
 
 - [ ] Confirm the `OPS_EMAIL` SNS subscription email.
 
@@ -138,6 +134,9 @@ Only if the schedule will be used:
 ### L12: read-only root filesystem on Fargate
 - [ ] In the ECS console, make a new revision of one worker's task definition with *Read-only root file system* on and a `/tmp` bind-mount volume, and run it as a one-off task. If its heartbeat works (the task turns healthy), L12 can be done in Terraform the same way; if `/tmp` isn't writable for `appuser`, it needs another approach.
 
+### DB-01: a restore, once
+- [ ] Restore a stg snapshot to a new cluster in Atlas and note how long it took. This is the practice run; prod's is required before go-live ([infra-operations.md](infra-operations.md), "Atlas clusters"). Delete the restored cluster afterwards.
+
 ### Promotion, later (CI-03, CI-09)
 - [ ] When dev has its own account and a release: in dev's backend tfvars set `ecr_pull_account_ids` to stg's account, apply dev, give stg's deploy role ECR pull on dev's repositories, then run **promote-live-backend** dev → stg. It copies each image by digest; the run fails if the digest changes.
 
@@ -146,4 +145,4 @@ Only if the schedule will be used:
 ## 7. After the checks
 
 - [ ] Update each item's entry in [production-readiness-review.md](production-readiness-review.md) with what was seen.
-- [ ] Leave stg running, or destroy it with **terraform-live-all** `action = destroy` (it removes everything Terraform made, the service-token keys included; the buckets and Atlas stay). After the next apply, update the Atlas allow-list again (step 3).
+- [ ] Leave stg running, or destroy it with **terraform-live-all** `action = destroy` (it removes everything Terraform made, the service-token keys included; the buckets and Atlas stay). The next apply re-creates the private endpoint and links it in Atlas by itself (DEC-02).

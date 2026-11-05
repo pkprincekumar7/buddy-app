@@ -28,10 +28,10 @@ elasticache_multi_az      = true
 # tasks for availability, workers one each (SQS holds messages while a task is
 # replaced). desired_count is only used on the first apply; autoscaling owns it after.
 runtime_sizes = {
-  "http"              = { cpu = 1024, memory = 2048, desired_count = 2, min_capacity = 2, max_capacity = 10 }
-  "auth"              = { cpu = 2048, memory = 4096, desired_count = 3, min_capacity = 3, max_capacity = 12 }
+  "http"              = { cpu = 1024, memory = 2048, desired_count = 2, min_capacity = 2, max_capacity = 7 }
+  "auth"              = { cpu = 2048, memory = 4096, desired_count = 3, min_capacity = 3, max_capacity = 9 }
   "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
-  "generating-worker" = { cpu = 1024, memory = 2048, desired_count = 1, min_capacity = 1, max_capacity = 6 }
+  "generating-worker" = { cpu = 1024, memory = 2048, desired_count = 1, min_capacity = 1, max_capacity = 4 }
   "collector"         = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
 }
 
@@ -64,8 +64,10 @@ enable_alb_access_logs = true
 # performance log events for investigating incidents (~$34/month per cluster).
 enable_container_insights = true
 
-# Planned Atlas M10 (DB-01) allows 1500 connections per cluster, for every region
-# together: this is one region's share (TF-03). The max_capacity values above are set to
-# fit it: at peak (128 tasks, pool 5 + 6 monitoring each) the tasks open 1408. A larger
-# tier (M20/M30: 3000) lets them grow; a second region splits the budget.
-mongodb_connection_budget = 1500
+# prod runs on Atlas M10 (DB-01, decided 2026-11-05), which allows 1500 connections per
+# cluster, for every region together. The budget is 70% of that (1050), the headroom DB-01
+# asks for (Atlas's own connections, a failover, one-off tasks), and this is one region's
+# share (TF-03). The max_capacity values above fit it: at peak (93 tasks, pool 5 + 6
+# monitoring each) the tasks open 1023. Atlas compute auto-scaling (up to M30) adds CPU and
+# RAM, not connections: moving to M20 (3000) is what raises this, with the max counts.
+mongodb_connection_budget = 1050

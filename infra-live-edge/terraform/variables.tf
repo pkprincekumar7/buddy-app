@@ -46,6 +46,15 @@ variable "backend_regions" {
     condition     = alltrue([for r in var.backend_regions : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
     error_message = "backend_regions may only contain shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
+
+  # An environment in routing.json's served_from has that one backend region (DEC-01 A).
+  validation {
+    condition = (
+      lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, null) == null
+      || (length(var.backend_regions) == 1 && var.backend_regions[0] == lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, ""))
+    )
+    error_message = "${var.environment} is served from one region only (shared/routing.json served_from, DEC-01): backend_regions must be just that region."
+  }
 }
 
 # The region that serves the jwt_validator Lambda@Edge's PUBLIC_PATHS

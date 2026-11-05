@@ -114,7 +114,7 @@ Settings that matter (backend):
 | `elasticache_node_type`, `elasticache_replica_count`, `elasticache_multi_az` | `multi_az = true` needs `replica_count >= 1`. |
 | `runtime_sizes` | CPU, memory, desired count and the autoscaling range for each of the five tiers (`http`, `auth`, `worker`, `generating-worker`, `collector`); every one of the 18 runtimes uses one tier (`services.tf`). All of them count toward the account's Fargate vCPU quota (section 5). dev/sbx run every tier at 256 / 512 × 1; prod runs one task per worker. |
 | `mongodb_max_pool_size` | MongoDB connections per task (default 5). |
-| `mongodb_connection_budget` | **Required.** The MongoDB connections this region's tasks may open: the Atlas cluster's limit (M0 500, M10 1500, M20/M30 3000), split between the regions sharing the cluster. The plan fails when every Mongo runtime at its peak (`max_capacity`, or a deploy's surge if larger) × (`mongodb_max_pool_size` + 6 monitoring connections) would exceed it (TF-03). Today: 500 in dev and sbx (M0), 1500 in stg and prod (M10); prod's `max_capacity` values are set to fit. |
+| `mongodb_connection_budget` | **Required.** The MongoDB connections this region's tasks may open: the Atlas cluster's limit (M0 500, M10 1500, M20/M30 3000), split between the regions sharing the cluster. The plan fails when every Mongo runtime at its peak (`max_capacity`, or a deploy's surge if larger) × (`mongodb_max_pool_size` + 6 monitoring connections) would exceed it (TF-03). Keep the peak at or under 70% of the limit, for headroom (DB-01). Today: 500 in dev and sbx (M0), 1500 in stg (M10, peak 836), 1050 in prod (70% of M10, peak 1023; its `max_capacity` values are set to fit). |
 | `worker_spot` | Workers' share of Fargate Spot: `on_demand_base` tasks on demand, then `spot_weight` Spot tasks per further on-demand one (default 1 and 3). `spot_weight = 0` runs them on demand only. HTTP services and the collector always run on demand (TF-03). |
 | `service-token-versions.json` | Not a variable: a file next to the tfvars, `{service: version}` (default 1 each), read by Terraform and by `scripts/service-token-keys.sh`. Bump a service's version to rotate its service-token key pair (SEC-01; `docs/infra-operations.md`). |
 | `enable_guardduty` | GuardDuty in this region, created and destroyed with the environment (on in stg and prod, off in dev and sbx for cost). With one account per environment, any environment may turn it on; in a shared account, see section 5. |
@@ -265,6 +265,7 @@ Under **Settings → Environments → `<env>` → Variables** (not Secrets): thr
 | Name (kind) | When |
 |---|---|
 | `GLOBAL_LOGGING_BUCKET_NAME` (variable) | Always for `prod`; for others when edge `enable_cloudtrail` or `enable_waf_logging` is `true` |
+| `ATLAS_PROJECT_ID` (variable), `MONGODB_ATLAS_PUBLIC_KEY` and `MONGODB_ATLAS_PRIVATE_KEY` (secrets) | stg and prod (required): the Atlas project and a project-scoped API key, for the PrivateLink endpoint Terraform makes (DEC-02). Not set in dev and sbx |
 | `OPS_EMAIL` (variable) | When backend `enable_ops_email = true` or edge `enable_alarms = true` (both on in stg and prod), or scheduler `enable_alarms = true` (stg). Use a team address, since variables show in logs. |
 | `GIT_ACTIONS_PAT` (secret) | When using the scheduler (`terraform-live-scheduler.yml`) — GitHub PAT with `repo` + `workflow` scopes |
 | `IOS_CLIENT_ID`, `IOS_APPLE_TEAM_ID`, `IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64` (secrets) | Only for building iOS IPAs (`build-ios-ipa.yml`) |
@@ -276,7 +277,7 @@ Under **Settings → Environments → `<env>` → Variables** (not Secrets): thr
 | Where | What |
 |---|---|
 | Google Cloud → OAuth client (Web) | Add `https://<public hostname>` to **Authorized JavaScript origins**. |
-| MongoDB Atlas | Create the database user / cluster for the environment, and allow the environment's NAT Elastic IPs (EC2 → Elastic IPs, after the backend apply) in **Network Access**. |
+| MongoDB Atlas | Create the cluster and one database user per service. **stg and prod** (M10, ap-south-1): no IP access list; Terraform makes the PrivateLink endpoint (`ATLAS_PROJECT_ID`, the `MONGODB_ATLAS_*` key, DEC-02), and `MONGODB_URIS` holds the private-endpoint strings. **dev and sbx** (M0): allow the NAT Elastic IPs in **Network Access** after each backend apply. |
 
 ---
 

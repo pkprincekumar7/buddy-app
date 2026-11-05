@@ -13,7 +13,8 @@
 //
 // Not generated — they read shared/routing.json directly at plan time:
 //   infra-live-edge/terraform/routing.tf (Lambda@Edge routing, CloudFront
-//   uploads routing, WAF geo-block). No dependencies: plain Node 18+.
+//   uploads routing, WAF geo-block), and the backend and edge region checks
+//   (served_from, DEC-01). No dependencies: plain Node 18+.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,7 +40,7 @@ try {
 } catch (err) {
   fail(`cannot read/parse: ${err.message}`);
 }
-const { regions, blocked_countries: blocked, countries } = data;
+const { regions, blocked_countries: blocked, countries, served_from: servedFrom = {} } = data;
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 if (!isObject(regions))
   fail('"regions" must be an object of AWS region → { atlas_zone, locations }');
@@ -68,6 +69,15 @@ for (const [region, cfg] of Object.entries(regions)) {
     if (locationToRegion.has(loc)) fail(`location ${loc} assigned to two regions`);
     locationToRegion.set(loc, region);
   }
+}
+
+// served_from: environment → the one region serving every location there (DEC-01).
+const ENVIRONMENTS = ['dev', 'sbx', 'stg', 'prod'];
+if (!isObject(servedFrom)) fail('"served_from" must be an object of environment → AWS region');
+for (const [env, region] of Object.entries(servedFrom)) {
+  if (!ENVIRONMENTS.includes(env)) fail(`served_from: unknown environment ${JSON.stringify(env)}`);
+  if (!Object.hasOwn(regions, region))
+    fail(`served_from.${env}: ${JSON.stringify(region)} is not one of the regions`);
 }
 
 const blockedSet = new Set();
@@ -142,6 +152,14 @@ function pyRegions() {
   ];
 }
 
+function pyServedFrom() {
+  const entries = Object.entries(servedFrom).map(([e, r]) => `"${e}": "${r}"`);
+  return [
+    '# Environment → the one region serving every location there (DEC-01; empty: by the map above).',
+    `SERVED_FROM: dict[str, str] = {${entries.join(', ')}}`,
+  ];
+}
+
 function pyZones() {
   return [
     '# AWS region → Atlas Global Cluster zone holding its locations (backend/tools/atlas_zone_ranges.py).',
@@ -156,7 +174,7 @@ const pyFile = (...blocks) =>
 
 // Every service: region scoping for workers and relays (docs/auth-users-split.md, 4.1).
 function renderCommonRegions() {
-  return pyFile(pyRegions(), pyZones());
+  return pyFile(pyRegions(), pyServedFrom(), pyZones());
 }
 
 // auth only: registration resolves a location from the country (section 16).

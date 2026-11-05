@@ -8,6 +8,18 @@ required. When implementing, refer only to this file.
 
 ## Background & Decision Trail
 
+### Decision: prod runs in ap-south-1 only until the Global Cluster (DEC-01, 2026-11-05)
+
+prod's database is one Atlas cluster in ap-south-1 (M10, DB-01). A request served from eu-west-1
+or us-east-1 would make several round trips to it, about 120–250 ms each, and the three regions
+would share M10's connection budget. So **prod is served from ap-south-1 alone**
+(`shared/routing.json` `served_from: {"prod": "ap-south-1"}`): the edge routes every location
+there, ap-south-1's workers handle every location, and Terraform refuses prod's backend in any
+other region (`aws_region`, edge `backend_regions`). Users keep their own `location`, so the data
+stays shard-ready. dev, sbx and stg keep the three-region routing, which keeps the multi-region
+stacks and pipelines exercised. When the Global Cluster arrives (DB-01 Stage 2), remove prod from
+`served_from`, apply its other regions, and the routing map takes over.
+
 ### Why not API Gateway with a Lambda Authorizer?
 
 #### Architecture difference

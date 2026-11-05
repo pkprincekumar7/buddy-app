@@ -14,6 +14,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.28"
     }
+    # The Atlas side of the PrivateLink endpoint in stg and prod (atlas.tf, DEC-02).
+    mongodbatlas = {
+      source  = "mongodb/mongodbatlas"
+      version = "2.20.1"
+    }
   }
 }
 

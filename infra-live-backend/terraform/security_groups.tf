@@ -3,7 +3,8 @@
 # The ALB's lives in ../../modules/alb, Redis's in ../../modules/redis and the
 # VPC endpoints' in ../../modules/network (TF-01).
 #
-# Unrestricted egress via NAT for LLM APIs and MongoDB Atlas. In stg/prod, AWS
+# Unrestricted egress via NAT for LLM APIs, and MongoDB Atlas in dev/sbx (stg and prod reach
+# their cluster through the PrivateLink endpoint instead, atlas.tf, DEC-02). In stg/prod, AWS
 # service traffic (ECR, Secrets Manager, CloudWatch, X-Ray) routes via VPC
 # Interface Endpoints before reaching NAT; in dev/sbx all of it goes through
 # NAT. Inbound: an HTTP service's port only from the ALB, and a registered

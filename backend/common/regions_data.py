@@ -9,6 +9,9 @@ REGION_TO_LOCATIONS: dict[str, list[str]] = {
     "us-east-1": ["us", "br"],
 }
 
+# Environment → the one region serving every location there (DEC-01; empty: by the map above).
+SERVED_FROM: dict[str, str] = {"stg": "ap-south-1", "prod": "ap-south-1"}
+
 # AWS region → Atlas Global Cluster zone holding its locations (backend/tools/atlas_zone_ranges.py).
 ATLAS_ZONE_FOR_REGION: dict[str, str] = {
     "ap-south-1": "APAC",

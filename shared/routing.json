@@ -5,6 +5,8 @@
     "eu-west-1": { "atlas_zone": "EU", "locations": ["eu"] },
     "us-east-1": { "atlas_zone": "AMERICAS", "locations": ["us", "br"] }
   },
+  "_about_served_from": "Environments served from one region only, every location routed there (production-readiness review, DEC-01 A, DEC-02): stg and prod until the Atlas Global Cluster, since each has one M10 cluster in ap-south-1 reached by PrivateLink. dev and sbx use the regions above.",
+  "served_from": { "stg": "ap-south-1", "prod": "ap-south-1" },
   "blocked_countries": ["BY", "CN", "CU", "IR", "KP", "RU", "SY"],
   "countries": [
     { "code": "AD", "location": "eu", "label": "Andorra" },
