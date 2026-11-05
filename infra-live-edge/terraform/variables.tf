@@ -43,8 +43,8 @@ variable "backend_regions" {
   }
 
   validation {
-    condition     = alltrue([for r in var.backend_regions : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
-    error_message = "backend_regions may only contain: ap-south-1, eu-west-1, us-east-1."
+    condition     = alltrue([for r in var.backend_regions : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
+    error_message = "backend_regions may only contain shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
 }
 

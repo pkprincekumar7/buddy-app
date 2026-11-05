@@ -653,3 +653,15 @@ run "runtime_sizes_needs_every_tier" {
 
   expect_failures = [var.runtime_sizes]
 }
+
+# The region allow-list is shared/routing.json's regions (TF-01), the same list the
+# workflows check typed regions against.
+run "a_region_outside_routing_json_is_refused" {
+  command = plan
+
+  variables {
+    aws_region = "us-west-2"
+  }
+
+  expect_failures = [var.aws_region]
+}

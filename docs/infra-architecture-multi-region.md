@@ -500,10 +500,11 @@ to any subset of the three regions, not just "all three."
 ### 7. `.github/workflows/terraform-live-all.yml` — implemented, with flexible region selection
 
 `backend_region` is gone here too, replaced by the same `backend_regions` JSON-array input,
-`fromJson()`'d where a matrix over regions is needed (backend apply/destroy jobs). The
-`aws_region`/region-choice dropdown offers single regions and multi-region combinations
-(e.g. `'["ap-south-1"]'`, `'["ap-south-1","eu-west-1"]'`) rather than a fixed 3-option list —
-more flexible than this section's original "add the two new regions" proposal. The
+`fromJson()`'d where a matrix over regions is needed (backend apply/destroy jobs). Every
+region input is free text, a comma-separated list such as `ap-south-1,eu-west-1` (callers may
+pass a JSON array), checked against `shared/routing.json`'s regions and turned into a JSON
+array by the workflow's first job (production-readiness review, TF-01). There's no list of
+region combinations to keep. The
 sequencing note (can't bootstrap all regions in one `terraform-live-all` run before each
 backend region's SSM parameter exists) still holds and is unchanged.
 
@@ -1034,7 +1035,6 @@ When adding a fourth region in future:
 - [ ] The new region's SSM check happens automatically — `terraform-live-edge.yml`'s
       "Verify SSM parameters exist and are readable" step already loops over whatever
       `backend_regions` JSON array is passed in; no hardcoded per-region check to add
-- [ ] Add the new region, and any new multi-region combination including it, to
-      `terraform-live-all.yml`'s `backend_regions` workflow_dispatch options (a JSON-array
-      choice list, not a single `aws_region` — see Change 7)
+- [ ] Nothing to add to the workflows: their region inputs are free text checked against
+      `shared/routing.json`, and Terraform's region validations read the same file (TF-01)
 - [ ] Apply `infra-live-edge`

@@ -26,23 +26,14 @@ on:
           - dev
           - sbx
           - stg
-      # workflow_dispatch has no native multi-select input, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
-      # region means hand-adding its combinations here too (2^n - 1 total).
-      # Each selected region runs as its own parallel matrix instance.
+      # Free text, checked against shared/routing.json's regions in the validate job and
+      # turned into a JSON array there (TF-01): adding a region is one line in that file.
+      # Each region runs as its own parallel matrix instance.
       aws_regions:
-        description: "AWS region(s) — each runs as a separate parallel job"
+        description: "AWS region(s), comma-separated, e.g. ap-south-1 or ap-south-1,eu-west-1 (supported: shared/routing.json's regions)"
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
   workflow_call:
     inputs:
       service:
@@ -52,9 +43,8 @@ on:
       environment:
         type: string
         required: true
-      # JSON array, e.g. '["ap-south-1","eu-west-1"]' — same shape as the
-      # workflow_dispatch choice. Each image is built once and pushed to every
-      # region in it.
+      # A JSON array, e.g. '["ap-south-1","eu-west-1"]', or a comma-separated
+      # list. Each image is built once and pushed to every region in it.
       aws_regions:
         type: string
         required: true
@@ -85,11 +75,15 @@ jobs:
     name: Validate Inputs
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      # The checked regions as a JSON array: what every later job reads (TF-01).
+      regions: ${{ steps.check.outputs.regions }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Check inputs
+        id: check
         env:
           ENVIRONMENT: ${{ inputs.environment }}
           REGIONS:     ${{ inputs.aws_regions }}
@@ -97,7 +91,7 @@ jobs:
           set -euo pipefail
           source scripts/workflow-inputs.sh
           check_deploy_environment "$ENVIRONMENT"
-          check_regions "$REGIONS"
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # Resolve once, before building: which runtimes the selection covers, which
@@ -149,7 +143,7 @@ jobs:
       - name: List services and images
         id: list
         env:
-          FIRST_REGION: ${{ fromJson(inputs.aws_regions)[0] }}
+          FIRST_REGION: ${{ fromJson(needs.validate.outputs.regions)[0] }}
           SELECTION: ${{ inputs.service }}
           APP_NAME: ${{ vars.APP_NAME }}
           ENVIRONMENT: ${{ inputs.environment }}
@@ -185,7 +179,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     name: Build & Push (${{ matrix.image_service }})
-    needs: resolve
+    needs: [validate, resolve]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -210,7 +204,7 @@ jobs:
       # the build, not halfway through the pushes.
       - name: Resolve ECR repositories
         env:
-          REGIONS: ${{ inputs.aws_regions }}
+          REGIONS: ${{ needs.validate.outputs.regions }}
           IMAGE_SERVICE: ${{ matrix.image_service }}
           APP_NAME: ${{ vars.APP_NAME }}
           ENVIRONMENT: ${{ inputs.environment }}
@@ -303,13 +297,13 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy Live Backend (${{ matrix.aws_region }})
-    needs: [resolve, build]
+    needs: [validate, resolve, build]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     environment: ${{ inputs.environment }}
 
     steps:

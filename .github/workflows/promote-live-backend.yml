@@ -30,23 +30,14 @@ on:
           - sbx
           - stg
           - prod
-      # workflow_dispatch has no native multi-select input, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
-      # region means hand-adding its combinations here too (2^n - 1 total).
-      # Each selected region runs as its own parallel matrix instance.
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       aws_regions:
-        description: "AWS region(s) — each runs as a separate parallel job"
+        description: "AWS region(s), comma-separated, e.g. ap-south-1 or ap-south-1,eu-west-1 (supported: shared/routing.json's regions)"
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
 
 permissions:
   id-token: write
@@ -72,7 +63,22 @@ jobs:
     name: Validate Promotion
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      # The checked regions as a JSON array: what every later job reads (TF-01).
+      regions: ${{ steps.regions.outputs.regions }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check regions
+        id: regions
+        env:
+          REGIONS: ${{ inputs.aws_regions }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
+
       - name: Validate promotion direction
         env:
           SOURCE_ENV: ${{ inputs.source_env }}
@@ -117,7 +123,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     environment: ${{ inputs.source_env }}
 
     steps:
@@ -217,7 +223,7 @@ jobs:
   # -------------------------------------------------------------------------
   same_release:
     name: Check Source Regions Match
-    needs: export
+    needs: [validate, export]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -247,7 +253,7 @@ jobs:
   # -------------------------------------------------------------------------
   promote:
     name: Promote Live Backend (${{ matrix.aws_region }})
-    needs: [export, same_release]
+    needs: [validate, export, same_release]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # One parallel instance per selected region. fail-fast: false — an
@@ -256,7 +262,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     environment: ${{ inputs.target_env }}
 
     steps:

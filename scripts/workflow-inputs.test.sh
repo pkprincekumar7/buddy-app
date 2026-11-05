@@ -58,6 +58,17 @@ refuses "an unsupported region in the list" check_regions '["eu-west-1","us-west
 refuses "a bare string" check_regions 'eu-west-1'
 refuses "not JSON" check_regions "['eu-west-1']"
 refuses "a non-string entry" check_regions '[1]'
+check "a comma list becomes a JSON array" "$(regions_json 'ap-south-1, eu-west-1')" '["ap-south-1","eu-west-1"]'
+check "one region" "$(regions_json eu-west-1)" '["eu-west-1"]'
+check "a JSON array passes through, compacted" "$(regions_json '[ "us-east-1" ]')" '["us-east-1"]'
+check "stray commas and spaces are ignored" "$(regions_json ' ap-south-1 ,, ')" '["ap-south-1"]'
+refuses "nothing typed" regions_json ""
+refuses "only commas" regions_json " , "
+refuses "an unsupported region in the comma list" regions_json "ap-south-1,us-west-2"
+refuses "a repeated region in the comma list" regions_json "eu-west-1,eu-west-1"
+# shellcheck disable=SC2016 # the literal text is the point
+refuses "shell in the comma list" regions_json 'eu-west-1,$(id)'
+refuses "a broken JSON array" regions_json '["eu-west-1"'
 
 accepts "bootstrap auto" check_bootstrap_region auto '["eu-west-1"]'
 accepts "bootstrap in the list" check_bootstrap_region eu-west-1 '["ap-south-1","eu-west-1"]'

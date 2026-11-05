@@ -14,8 +14,8 @@ variable "target_aws_regions" {
   type        = list(string)
 
   validation {
-    condition     = length(var.target_aws_regions) > 0 && alltrue([for r in var.target_aws_regions : contains(["ap-south-1", "us-east-1", "eu-west-1"], r)])
-    error_message = "target_aws_regions must be a non-empty list of valid regions: ap-south-1, us-east-1, eu-west-1."
+    condition     = length(var.target_aws_regions) > 0 && alltrue([for r in var.target_aws_regions : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
+    error_message = "target_aws_regions must be a non-empty list of shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
 }
 

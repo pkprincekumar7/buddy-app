@@ -51,25 +51,14 @@ on:
         options:
           - "true"
           - "false"
-      # Same rationale as terraform-live-edge.yml/terraform-live-all.yml's
-      # backend_regions: GitHub Actions workflow_dispatch has no native
-      # multi-select, so every valid non-empty combination of the 3
-      # supported regions is enumerated below — adding a 4th region means
-      # hand-adding its combinations here too (2^n - 1 total), in all three
-      # files. This is the COMPLETE region set the daily schedules will send
-      # to terraform-live-all.yml on every run — not additive across applies.
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       target_aws_regions:
-        description: "Pick the FULL set of regions the daily schedules should apply/destroy. Run 'plan' first to check for unintended deletions before 'apply'."
+        description: "The FULL set of regions the daily schedules should apply/destroy, comma-separated, e.g. ap-south-1,eu-west-1. Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
 
 permissions:
   id-token: write
@@ -85,8 +74,34 @@ env:
   TF_VAR_aws_region: "us-east-1"
 
 jobs:
+  # Checks the inputs before the environment's secrets are loaded (SEC-07), and turns the
+  # typed regions into the JSON array the schedules send (TF-01).
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      regions: ${{ steps.check.outputs.regions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        id: check
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION:      ${{ inputs.action }}
+          REGIONS:     ${{ inputs.target_aws_regions }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          check_action "$ACTION"
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
+
   terraform:
     name: "Terraform Scheduler — ${{ inputs.environment }} / ${{ inputs.action }}"
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
@@ -96,7 +111,7 @@ jobs:
     env:
       TF_IN_AUTOMATION: "1"
       TF_VAR_app_name:            ${{ vars.APP_NAME }}
-      TF_VAR_repository:         ${{ github.repository }}
+      TF_VAR_repository:          ${{ github.repository }}
       TF_VAR_environment:         ${{ inputs.environment }}
       # TF_VAR_github_pat is set on the plan, apply and destroy steps only
       # (SEC-06): a job-level secret reaches every step, third-party
@@ -108,7 +123,7 @@ jobs:
       # already works (Terraform's -var-file on the command line would beat
       # TF_VAR_* otherwise, since -var-file is evaluated after environment
       # variables).
-      TF_VAR_target_aws_regions: ${{ inputs.target_aws_regions }}
+      TF_VAR_target_aws_regions: ${{ needs.validate.outputs.regions }}
       # The dispatcher's alert email (alarms.tf, SCH-01), where enable_alarms = true (stg).
       TF_VAR_ops_email: ${{ vars.OPS_EMAIL }}
 

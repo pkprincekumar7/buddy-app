@@ -24,23 +24,14 @@ on:
           - sbx
           - stg
           - prod
-      # workflow_dispatch has no native multi-select input, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
-      # region means hand-adding its combinations here too (2^n - 1 total).
-      # Each selected region runs as its own parallel matrix instance.
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       aws_regions:
-        description: "AWS region(s) — each runs as a separate parallel job"
+        description: "AWS region(s), comma-separated, e.g. ap-south-1 or ap-south-1,eu-west-1 (supported: shared/routing.json's regions)"
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
   workflow_call:
     inputs:
       action:
@@ -73,11 +64,15 @@ jobs:
     name: Validate Inputs
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      # The checked regions as a JSON array: the terraform matrix (TF-01).
+      regions: ${{ steps.check.outputs.regions }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Check inputs
+        id: check
         env:
           ENVIRONMENT: ${{ inputs.environment }}
           ACTION:      ${{ inputs.action }}
@@ -87,7 +82,7 @@ jobs:
           source scripts/workflow-inputs.sh
           check_environment "$ENVIRONMENT"
           check_action "$ACTION"
-          check_regions "$REGIONS"
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
 
   terraform:
     name: Terraform Live Backend ${{ inputs.action }} (${{ matrix.aws_region }})
@@ -100,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions || format('["{0}"]', inputs.aws_region)) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     # Job-level (not workflow-level) so the lock stays per-region now that
     # one run can target several regions.
     concurrency:

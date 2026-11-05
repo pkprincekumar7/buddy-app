@@ -3,8 +3,8 @@ variable "aws_region" {
   type        = string
 
   validation {
-    condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.aws_region)
-    error_message = "aws_region must be one of: ap-south-1, eu-west-1, us-east-1."
+    condition     = contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), var.aws_region)
+    error_message = "aws_region must be one of shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
 }
 
@@ -46,8 +46,8 @@ variable "vpc_cidrs" {
   }
 
   validation {
-    condition     = alltrue([for r in keys(var.vpc_cidrs) : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
-    error_message = "vpc_cidrs keys may only be: ap-south-1, eu-west-1, us-east-1."
+    condition     = alltrue([for r in keys(var.vpc_cidrs) : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
+    error_message = "vpc_cidrs keys may only be shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
 
   validation {

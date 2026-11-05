@@ -24,31 +24,14 @@ on:
           - sbx
           - stg
           - prod
-      # Full rationale (kept here, not in description below, since the GitHub
-      # UI renders that field as a single short helper line, not a paragraph):
-      # this is the single source of truth for the module's region-aware
-      # resources — the jwt_validator Lambda@Edge's location-based /api/*
-      # routing AND which regions' uploads buckets get CloudFront
-      # origins/behaviours (see infra-live-edge/terraform/variables.tf). Pick
-      # the FULL set of every region that should stay active — Terraform is
-      # declarative, so leaving out a previously-applied region here destroys
-      # its edge config rather than preserving it. GitHub Actions
-      # workflow_dispatch has no native multi-select input, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice — adding a 4th region means hand-adding its
-      # combinations too (2^n - 1 total).
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       backend_regions:
-        description: "Pick the FULL set of active regions (not just the new one). Run 'plan' first to check for unintended deletions before 'apply'."
+        description: "The FULL set of active regions, comma-separated (not just the new one), e.g. ap-south-1,eu-west-1. Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
       # Which region's ALB serves login, Google sign-in, health and hint-less
       # register/refresh/logout (see infra-live-edge/terraform/variables.tf).
       # "auto" = first region in backend_regions (the original behaviour).
@@ -57,12 +40,7 @@ on:
         description: "Region that serves login/health. 'auto' = first of backend_regions; a named region must be in backend_regions."
         required: false
         default: "auto"
-        type: choice
-        options:
-          - auto
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+        type: string
   workflow_call:
     inputs:
       action:
@@ -97,7 +75,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TF_VERSION: "1.16.4"
   TF_VAR_environment:     ${{ inputs.environment }}
-  TF_VAR_backend_regions: ${{ inputs.backend_regions }}
   # || 'auto' covers any dispatch that omits the input entirely.
   TF_VAR_bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
 
@@ -112,11 +89,15 @@ jobs:
     name: Validate Inputs
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      # The checked regions as a JSON array: what the terraform job reads (TF-01).
+      regions: ${{ steps.check.outputs.regions }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Check inputs
+        id: check
         env:
           ENVIRONMENT:      ${{ inputs.environment }}
           ACTION:           ${{ inputs.action }}
@@ -127,8 +108,9 @@ jobs:
           source scripts/workflow-inputs.sh
           check_environment "$ENVIRONMENT"
           check_action "$ACTION"
-          check_regions "$BACKEND_REGIONS"
-          check_bootstrap_region "$BOOTSTRAP_REGION" "$BACKEND_REGIONS"
+          REGIONS=$(regions_json "$BACKEND_REGIONS")
+          check_bootstrap_region "$BOOTSTRAP_REGION" "$REGIONS"
+          echo "regions=$REGIONS" >> "$GITHUB_OUTPUT"
 
   terraform:
     name: Terraform Live Edge ${{ inputs.action }}
@@ -141,11 +123,13 @@ jobs:
         working-directory: infra-live-edge/terraform
     env:
       TF_IN_AUTOMATION: "1"
+      # The checked JSON array, not the typed text (TF-01).
+      TF_VAR_backend_regions: ${{ needs.validate.outputs.regions }}
       # Resolved per GitHub environment, so dev/sbx/stg/prod each use their own values:
       # vars.* = environment variables (non-sensitive names, IDs, ARNs, public
       # keys), secrets.* = environment secrets (credentials only). See docs/ci-cd.md.
       TF_VAR_app_name:                      ${{ vars.APP_NAME }}
-      TF_VAR_repository:                   ${{ github.repository }}
+      TF_VAR_repository:                    ${{ github.repository }}
       TF_VAR_domain_name:                   ${{ vars.DOMAIN_NAME }}
       TF_VAR_subdomain:                     ${{ vars.SUBDOMAIN }}
       TF_VAR_hosted_zone_id:                ${{ vars.HOSTED_ZONE_ID }}
@@ -241,7 +225,7 @@ jobs:
       - name: Resolve uploads bucket names
         env:
           UPLOADS_BUCKET_NAMES: ${{ vars.UPLOADS_BUCKET_NAMES }}
-          BACKEND_REGIONS:      ${{ inputs.backend_regions }}
+          BACKEND_REGIONS:      ${{ needs.validate.outputs.regions }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           if ! jq -e 'type == "object"' <<<"${UPLOADS_BUCKET_NAMES:-}" >/dev/null 2>&1; then
@@ -272,7 +256,7 @@ jobs:
         env:
           APP_NAME: ${{ vars.APP_NAME }}
           ENVIRONMENT: ${{ inputs.environment }}
-          BACKEND_REGIONS: ${{ inputs.backend_regions }}
+          BACKEND_REGIONS: ${{ needs.validate.outputs.regions }}
           ACTION: ${{ inputs.action }}
         run: |
           # A missing parameter fails apply. A plan instead skips the Terraform
@@ -348,7 +332,7 @@ jobs:
         if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
         env:
           ENVIRONMENT: ${{ inputs.environment }}
-          BACKEND_REGIONS: ${{ inputs.backend_regions }}
+          BACKEND_REGIONS: ${{ needs.validate.outputs.regions }}
           BOOTSTRAP_REGION: ${{ inputs.bootstrap_region || 'auto' }}
         run: |
           {
@@ -388,7 +372,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         env:
           ENVIRONMENT: ${{ inputs.environment }}
-          BACKEND_REGIONS: ${{ inputs.backend_regions }}
+          BACKEND_REGIONS: ${{ needs.validate.outputs.regions }}
         run: |
           {
             echo "### Terraform Destroy Plan — edge / ${ENVIRONMENT} / us-east-1 / Backend regions: ${BACKEND_REGIONS}"

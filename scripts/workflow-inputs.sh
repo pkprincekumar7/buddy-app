@@ -10,7 +10,9 @@
 # use them read them from env:, quoted, never as ${{ }} inside a script.
 #
 # The region allow-list is shared/routing.json's `regions` (the same list the
-# backend and frontends route with).
+# backend and frontends route with): the one place a region is added (TF-01). The
+# workflows take regions as free text and turn them into a checked JSON array
+# (regions_json) in their validate job, so there's no list of every combination to keep.
 #
 # Tests: scripts/workflow-inputs.test.sh
 
@@ -72,6 +74,21 @@ check_regions() {
   while IFS= read -r region; do
     check_region "$region" || return 1
   done < <(jq -r '.[]' <<<"$1")
+}
+
+# regions_json VALUE → VALUE as a checked JSON array of regions (TF-01). VALUE is what a
+# person types, a comma-separated list ("ap-south-1, eu-west-1"), or what a caller passes,
+# already a JSON array ('["ap-south-1"]', as terraform-live-all and the scheduler do).
+# Prints the array on stdout; refuses anything check_regions refuses.
+regions_json() {
+  local value="$1" json
+  if [[ "$value" == \[* ]]; then
+    json="$value"
+  else
+    json=$(jq -cn --arg v "$value" '$v | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+  fi
+  check_regions "$json" || return 1
+  jq -c . <<<"$json"
 }
 
 # check_bootstrap_region VALUE REGIONS_JSON → error unless VALUE is "auto" or
