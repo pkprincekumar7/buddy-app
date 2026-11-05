@@ -66,6 +66,18 @@ check "nothing is written when nothing needs it (optional LLM keys still REPLACE
 echo '{"MONGODB_URI":"REPLACE_ME","OPENAI_API_KEY":"x","ANTHROPIC_API_KEY":"y","GEMINI_API_KEY":"z"}' > "$FAKE/secrets/grow"
 fill_service_secrets "$ARNS" >/dev/null 2>&1
 check "a required key still REPLACE_ME refills that secret only" "$(sed 's/.*://' "$FAKE/puts" | paste -sd, -)" "grow"
+check "only that key is filled; the others keep their values (SEC-05)" "$(jq -c . "$FAKE/secrets/grow")" '{"MONGODB_URI":"mongodb+srv://grow-user@test","OPENAI_API_KEY":"x","ANTHROPIC_API_KEY":"y","GEMINI_API_KEY":"z"}'
+
+rm -f "$FAKE/puts"
+echo '{"MONGODB_URI":"REPLACE_ME","JWT_PRIVATE_KEY":"rotated","GOOGLE_CLIENT_ID":"","EMAIL_HMAC_PEPPER":"rotated"}' > "$FAKE/secrets/auth"
+JWT_PRIVATE_KEY="" EMAIL_HMAC_PEPPER="" fill_service_secrets "$ARNS" >/dev/null 2>&1 \
+  && check "a set key needs no value: only the REPLACE_ME one is read" "$(jq -c . "$FAKE/secrets/auth")" '{"MONGODB_URI":"mongodb+srv://auth-user@test","JWT_PRIVATE_KEY":"rotated","GOOGLE_CLIENT_ID":"","EMAIL_HMAC_PEPPER":"rotated"}' \
+  || fail "a set key needs no value"
+
+rm -f "$FAKE/puts"
+echo '{"MONGODB_URI":"mongodb+srv://grow-user@test","OPENAI_API_KEY":"x","ANTHROPIC_API_KEY":"REPLACE_ME","GEMINI_API_KEY":"z"}' > "$FAKE/secrets/grow"
+ANTHROPIC_API_KEY="fake-anthropic" fill_service_secrets "$ARNS" >/dev/null 2>&1
+check "an optional key added later is filled, the rest kept" "$(jq -c . "$FAKE/secrets/grow")" '{"MONGODB_URI":"mongodb+srv://grow-user@test","OPENAI_API_KEY":"x","ANTHROPIC_API_KEY":"fake-anthropic","GEMINI_API_KEY":"z"}'
 
 # -- missing values -----------------------------------------------------------------
 placeholders

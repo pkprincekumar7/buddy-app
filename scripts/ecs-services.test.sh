@@ -19,6 +19,7 @@ mkdir -p "$FAKE/bin" "$FAKE/ssm"
 cat > "$FAKE/bin/aws" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE/calls"
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
 arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "$2"; return; }; shift; done; }
 case "$1 $2" in
   "ssm get-parameter")
@@ -45,15 +46,16 @@ case "$1 $2" in
   "ecs update-service")
     if [ -n "${FAKE_NO_DEPLOYMENT:-}" ]; then echo '{"serviceName":"x","deployment":null}'
     else echo '{"serviceName":"x","status":"ACTIVE","desiredCount":2,"deployment":"ecs-svc/new"}'; fi ;;
+  "ecr get-login-password") echo "fake-ecr-token" ;;
   # ECR: one file per tag, $FAKE/ecr/<repo with / as _>/<tag>, holding the manifest;
-  # the digest is a checksum of it, so two tags on one manifest share a digest.
+  # the digest is its SHA-256, so two tags on one manifest share a digest.
   "ecr describe-images"|"ecr batch-get-image"|"ecr put-image")
     dir="$FAKE/ecr/$(arg --repository-name "$@" | tr '/' '_')"
     tag="$(arg --image-ids "$@" | sed 's/^imageTag=//')"
     case "$2" in
       describe-images)
         [ -f "$dir/$tag" ] || { echo "ImageNotFoundException" >&2; exit 254; }
-        echo "sha256:$(cksum < "$dir/$tag" | cut -d' ' -f1)" ;;
+        echo "sha256:$(sha256 < "$dir/$tag")" ;;
       batch-get-image)
         if [ -f "$dir/$tag" ]; then jq -cn --rawfile m "$dir/$tag" '{manifest: $m, media: "application/vnd.oci.image.manifest.v1+json"}'
         else echo '{"manifest": null, "media": null}'; fi ;;
@@ -67,6 +69,32 @@ case "$1 $2" in
 esac
 EOF
 chmod +x "$FAKE/bin/aws"
+
+# -- fake crane: auth login and copy, against the fake ECR above -------------------
+# copy finds the source manifest by digest; FAKE_CRANE_REWRITE makes it store another
+# manifest (a copy that changed the digest).
+cat > "$FAKE/bin/crane" <<'EOF'
+#!/usr/bin/env bash
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
+case "$1 $2" in
+  "auth login") echo "crane auth login $3 $4 $5 $6 password=$(cat)" >> "$FAKE/calls" ;;
+  copy*)
+    echo "crane $*" >> "$FAKE/calls"
+    src="$2" dst="$3"
+    srepo="${src%@*}"; srepo="${srepo#*/}"; digest="${src##*@}"
+    drepo="${dst%:*}"; drepo="${drepo#*/}"; tag="${dst##*:}"
+    for f in "$FAKE/ecr/$(tr '/' '_' <<<"$srepo")"/*; do
+      [ "sha256:$(sha256 < "$f")" = "$digest" ] || continue
+      mkdir -p "$FAKE/ecr/$(tr '/' '_' <<<"$drepo")"
+      if [ -n "${FAKE_CRANE_REWRITE:-}" ]; then echo "rewritten" > "$FAKE/ecr/$(tr '/' '_' <<<"$drepo")/$tag"
+      else cp "$f" "$FAKE/ecr/$(tr '/' '_' <<<"$drepo")/$tag"; fi
+      exit 0
+    done
+    echo "fake crane: $src not found" >&2; exit 1 ;;
+  *) echo "fake crane: unexpected call: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE/bin/crane"
 export PATH="$FAKE/bin:$PATH"
 
 # shellcheck source=scripts/ecs-services.sh
@@ -172,6 +200,29 @@ cp "$R/20261102-abc" "$R/20261101-old-scanned"
 is_scanned ap-south-1 sp/dev/users 20261101-old && fail "a marker on a different image is refused" || ok "a marker on a different image doesn't count"
 if out=$(mark_scanned ap-south-1 sp/dev/users nope 2>&1); then fail "marking a missing tag is an error"; else
   [[ "$out" == *"sp/dev/users:nope isn't in ECR"* ]] && ok "marking a missing tag is an error" || fail "missing tag message" "$out"; fi
+
+# -- copying by digest (CI-09) ------------------------------------------------------
+reset_polls
+ecr_login ap-south-1 1.dkr.ecr.ap-south-1.amazonaws.com 2.dkr.ecr.ap-south-1.amazonaws.com 1.dkr.ecr.ap-south-1.amazonaws.com
+check "one login per distinct registry, the token on stdin" "$(grep -c '^crane auth login' "$FAKE/calls")" "2"
+grep -q '^crane auth login 2.dkr.ecr.ap-south-1.amazonaws.com -u AWS --password-stdin password=fake-ecr-token' "$FAKE/calls" \
+  && ok "the ECR token reaches crane through stdin" || fail "login call" "$(cat "$FAKE/calls")"
+SRC_DIGEST="$(image_digest ap-south-1 sp/dev/users 20261102-abc)"
+SRC="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$SRC_DIGEST"
+DST="2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users"
+copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 20261102-abc >/dev/null && ok "copying an image" || fail "copying an image"
+check "the target tag is the source digest" "$(image_digest ap-south-1 sp/prod/users 20261102-abc)" "$SRC_DIGEST"
+reset_polls
+out=$(copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 20261102-abc)
+[[ "$out" == *"already $SRC_DIGEST in the target"* ]] && ! grep -q '^crane copy' "$FAKE/calls" \
+  && ok "copying again is a no-op" || fail "copying again" "$out"
+OLD_SRC="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$(image_digest ap-south-1 sp/dev/users 20261101-old)"
+if out=$(copy_image ap-south-1 "$OLD_SRC" "$DST" sp/prod/users 20261102-abc 2>&1); then fail "a tag holding another image is refused"; else
+  [[ "$out" == *"another build of the same tag"* ]] && ok "a tag holding another image is refused" || fail "tag clash message" "$out"; fi
+if out=$(FAKE_CRANE_REWRITE=1 copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 20261103-new 2>&1); then fail "a copy that changed the digest is refused"; else
+  [[ "$out" == *"was copied as sha256:"* ]] && ok "a copy that changed the digest is refused" || fail "digest change message" "$out"; fi
+if out=$(copy_image ap-south-1 "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users:20261102-abc" "$DST" sp/prod/users x 2>&1); then fail "a source by tag is refused"; else
+  [[ "$out" == *"isn't pinned to a digest"* ]] && ok "a source by tag, not digest, is refused" || fail "tag source message" "$out"; fi
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"

@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-02):** of the 86 tracked findings, 41 are done, 27 partly done, 17 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-05):** of the 86 tracked findings, 44 are done, 25 partly done, 16 open and 1 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -144,14 +144,14 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | 🟡 `Authorization`/`Cookie` redacted, BLOCK/COUNT only; log-bucket expiry (manual bucket) open |
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open · ⏸ Deferred |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
-| SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | 🟡 Secret reads fail closed (fix 1); per-key merge open |
+| SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | ✅ Done — reads fail closed, only `REPLACE_ME` keys are filled; the Redis parts are moot (IAM auth) |
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ✅ Done — secrets on the Terraform plan/apply steps only, `terraform_wrapper: false` |
 | SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ✅ Done — no expression in any `run:`; reusable workflows validate inputs in a first job |
 | SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open · ⏸ Deferred |
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open · ⏸ Deferred |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`); forwarding unverified in a deployed env; IPv6 /64 open |
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
-| APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path), SDK retries off; an overall time budget open |
+| APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | ✅ Done — LLM calls run in worker jobs (no 504 path), SDK retries off, one time budget per call across fallbacks, Gemini on async `google-genai` |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ✅ Done — Valkey retried after 30 s; `ValkeyDegraded` metric and alarm |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ✅ Done (rate limits and the login throttle count through `limits.aio`) |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ✅ Done (workers finish the job in hand on SIGTERM, get `llm_timeout_seconds` + 30 s to stop, and have a heartbeat health check) |
@@ -170,7 +170,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
 | JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | ✅ Done (attempts counted at claim, SDK retries off, failed-jobs alarm per circle) |
 | JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | ✅ Done (hourly limit, output caps, LLM token metrics with an hourly alarm, SSM kill switch) |
-| JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ✅ Done — next provider on a failure, per-provider breaker, Gemini on its own threads |
+| JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ✅ Done — next provider on a failure, per-provider breaker, Gemini on the async `google-genai` SDK |
 | JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ✅ Done (status routes 300/min; clients back off to 5 s and retry a 429) |
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
 | JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
@@ -210,8 +210,8 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open · ⏸ Deferred |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ✅ Done — old chunks kept, unhashed-only invalidation, the last 10 releases kept, `rollback-live-frontend` with no rebuild |
-| CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
-| CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | 🟡 `images.json` read with jq instead of sourced; still `docker save` artifacts |
+| CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | 🟡 SARIF from semgrep, checkov and trivy uploaded; checkov scans every root; the rulesets (GitHub settings) open |
+| CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ✅ Done — `crane copy` by digest, registry to registry; target digest checked; no tarballs (cosign copy waits on CI-03 signing) |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
 | CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
@@ -543,7 +543,7 @@ custom_error_response {
 
 ### SEC-05 — Secrets init step can overwrite rotated secrets 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Fix 1 is done: `scripts/fill-service-secrets.sh:79-82` fails on any read error. Still open: one `REPLACE_ME` rewrites the whole JSON (`:52-58,87`) instead of merging per key. The Redis "two sources of truth" part is moot (IAM auth). The workflow and `secrets.tf` lines below are stale.
+> 🔄 **Current code (2026-11-04):** ✅ Done. Fix 1: `scripts/fill-service-secrets.sh` fails on any read error. Fix 2: only keys still `REPLACE_ME` are filled (`secret_json`); every other key keeps its value and needs no GitHub value, and a secret with nothing to fill isn't written. `fill-service-secrets.test.sh` covers it (15 tests: one placeholder among rotated keys, a later optional key, a removed GitHub value). Fixes 3–5 (the Redis token) are moot: Valkey uses IAM auth, with no token. The workflow and `secrets.tf` lines below are stale.
 
 **Where:** `.github/workflows/terraform-live-backend.yml:373-376`, and `infra-live-backend/terraform/secrets.tf:51-67`.
 
@@ -722,7 +722,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-03 — LLM calls >60 s return 504 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. There's no synchronous `/llm/invoke` any more: LLM calls run inside worker jobs (for example `backend/discover/app/generation.py:132`), so the 504 path is gone. `deregistration_delay` is `llm_timeout + 30` (`alb.tf:43`). SDK retries are now off (JOB-02). Still open: there's no overall time budget, and Gemini uses the deprecated `google.generativeai`.
+> 🔄 **Current code (2026-11-05):** ✅ Done. There's no synchronous `/llm/invoke` any more: LLM calls run inside worker jobs (for example `backend/discover/app/generation.py:132`), so the 504 path is gone. `deregistration_delay` is `llm_timeout + 30` (`alb.tf:43`). SDK retries are now off (JOB-02). **Fix 2 is done (buddy-common 0.30.0):** one `invoke()` has one budget, `LLM_TIMEOUT_SECONDS`, across every fallback provider. Each provider gets what's left, and an `asyncio.timeout` ends the call there even when the SDK's per-read timeout wouldn't. So the longest call is what the worker's stop timeout and the ALB drain already allow (`+ 30 s`); before, a fallback could run up to 3 × 65 s. **Fix 5 is done:** Gemini runs on the async `google-genai` 2.32.0 client (`client.aio`, no `retry_options`, so no SDK retries), like OpenAI and Anthropic. A timed-out Gemini call is now cancelled instead of holding a thread, so its thread pool is gone, and a `MAX_TOKENS` stop is refused as a cut-off answer, as the other two do. `google-genai` needs httpx ≥ 0.28.1 and google-auth ≥ 2.56, so every service now pins httpx 0.28.1 and auth pins google-auth 2.62.0. All nine services' tests pass at 100% coverage, and pip-audit finds nothing. Fixes 3 and 6 were settled with the worker move (no HTTP path waits on an LLM).
 
 **Where:**
 - `infra-live-backend/terraform/tfvars/prod.tfvars:29` (`llm_timeout_seconds = 90`) and `backend/app/routers/llm.py:54` (synchronous `/llm/invoke`).
@@ -1297,8 +1297,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 > 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.26.0; `backend/common/generation/llm.py`).
 > - **Fallback.** `LlmClient.invoke` tries every configured provider in `PRIORITY` order (OpenAI, Anthropic, Gemini) until one answers. Each attempt logs its own `llm_call` line, with a new `attempt` field (2 or more means a fallback). A provider asked for by name gets no fallback.
 > - **Breaker.** A provider whose call errored or timed out is skipped for `BREAKER_SECONDS` (60 s, per task), so later calls don't wait on it. An unusable answer (empty, cut off, not JSON) falls back too but doesn't trip it. If every breaker is open, all providers are tried in order rather than none.
-> - **Gemini's threads.** Its synchronous SDK now runs on its own pool (`gemini-*` threads, at most 8), not the default pool that `asyncio.to_thread` work such as the boto3 calls shares. The deprecated `google.generativeai` SDK is unchanged: moving to `google-genai` is a dependency change of its own.
-> - **Tests:** an OpenAI 503 answered by Anthropic, then OpenAI skipped until the breaker closes; a bad answer falling back without tripping it; every provider failing; no fallback when one is named; Gemini on its own threads. `common` is at 100% coverage.
+> - **Gemini off the shared threads.** Gemini now runs on the async `google-genai` SDK (APP-03, buddy-common 0.30.0), so it uses no threads at all and a timed-out call is cancelled. Before that, its synchronous SDK had its own pool of at most 8 threads.
+> - **Tests:** an OpenAI 503 answered by Anthropic, then OpenAI skipped until the breaker closes; a bad answer falling back without tripping it; every provider failing; no fallback when one is named; Gemini's own threads, since replaced by the async client (APP-03). `common` is at 100% coverage.
 > - **Cost:** a fallback is one more LLM call for that attempt, at most one per configured provider.
 
 **Where:** `backend/app/services/llm_service.py:105` (`resolve_provider` picks the first configured provider), `:189` (Gemini sync call via `to_thread` on the shared default pool).
@@ -2297,12 +2297,12 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 > 🔄 **Current code (2026-11-02):** 🟡 Partial (fixes 3 and part of 1).
 > - **No fresh build reaches prod.** `deploy-live-backend` and `deploy-live-frontend` no longer offer `prod`, and their `validate` job refuses it through `workflow_call` too (`check_deploy_environment` in `scripts/workflow-inputs.sh`). For prod, `terraform-live-all` applies infrastructure and skips both deploy steps; a `prod-deploy-skipped` job says so in the run. The scheduler can never start prod (`infra-live-scheduler/terraform/variables.tf`), so no daily run is affected.
 > - **The pushed image is the scanned image.** Each build in `deploy-live-backend` is scanned by Trivy (HIGH/CRITICAL with a fix fails, `.trivyignore` as in `check.yml`) before any push. Each pushed image also gets a `<tag>-scanned` ECR tag on the same digest, written by copying the manifest, so it can't point at another image. A re-run that finds the tag already pushed (another build of the commit) pulls and scans that image before marking it.
-> - **Promote moves only scanned images.** The export job requires the marker on the live image's digest in the source. The promote job marks the copy in the target, so stg → prod accepts it in turn, and refuses a target tag that exists without the marker.
-> - **Tests:** `scripts/ecs-services.test.sh` covers the marker (52 tests), and `workflow-inputs.test.sh` covers the prod refusal. Both push loops were run, as written in the YAML, against fake `aws`, `docker` and `trivy`: new tag, re-run, unmarked tag in ECR, and unmarked tag in the target.
+> - **Promote moves only scanned images.** The export job requires the marker on the live image's digest in the source. The promote job marks the copy in the target, so stg → prod accepts it in turn, and refuses a target tag that already holds a different digest (CI-09).
+> - **Tests:** `scripts/ecs-services.test.sh` covers the marker (60 tests with CI-09's), and `workflow-inputs.test.sh` covers the prod refusal. Both push loops were run, as written in the YAML, against fake `aws`, `docker` and `trivy`: new tag, re-run, unmarked tag in ECR, and unmarked tag in the target.
 > - **Still open:**
 >   - buildx with provenance and SBOM, and cosign signing and `cosign verify` (fixes 1–2);
 >   - base images pinned by digest without `apt-get upgrade` (fix 4);
->   - a registry-to-registry copy that keeps the digest (fixes 5–6, with CI-09). Today the target can store the same image under a new digest after `docker save`/`load`, and promote notes when it does, so the first acceptance criterion holds for content, not always for the digest.
+>   - copying signatures and attestations with the image once they exist (fix 5). The registry-to-registry copy itself is done (CI-09): promote copies by digest and fails unless the target digest is the source's, so the prod digest is the one scanned in the deploy (fix 6).
 >   - `promote-live-frontend` still rebuilds for the target, because `VITE_*` values are baked into the bundle, but only from a commit already deployed to stg.
 
 **Where:**
@@ -2456,7 +2456,10 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-08 — CodeQL non-gating; no SARIF upload; required checks unverified 🟢 (v2: rewritten)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. CodeQL (`analyze@v3`, `check.yml:1016`) still doesn't gate the build, and there's no SARIF upload for the other scanners.
+> 🔄 **Current code (2026-11-04):** 🟡 Partial.
+> - **SARIF uploaded.** The security scan writes SARIF from semgrep (`--sarif-output`), checkov (`-o sarif`) and a whole-repo `trivy config`, as the `sarif-reports` artifact. A separate `code-scanning` job, the only one besides CodeQL with `security-events: write`, uploads each under its own category. It skips fork and Dependabot PRs, whose token is read-only.
+> - **Found on the way: checkov scanned only `infra-live-backend`.** Given several `-d`, checkov 3.2.529 scans the first directory once per flag. CI and `check.sh` now scan from the repo root once. That surfaced 8 findings in edge and scheduler, now skipped with reasons in the code: Lambda@Edge can't use a VPC, DLQ or X-Ray; the scheduler's Lambda environment and schedule input hold no secrets.
+> - **Still open (GitHub settings, not code):** a ruleset requiring the `Check` jobs and CodeQL results (High+ blocks), written up in `docs/ci-cd.md` under `code-scanning`.
 
 > v2 correction: v1 claimed many security checks were non-blocking. That's **wrong**: every `continue-on-error` step is listed in its aggregator. `check.yml:641-672` covers all 23 security-scan steps (gitleaks, hadolint ×2, bandit, semgrep, pip-audit, checkov, npm audit, yarn audit, retire ×2, trivy vuln ×3, license ×3, config ×4, image, dockle), and `:795-806` covers openapi_drift, spectral and nuclei. The `outcome == failure` logic is correct.
 
@@ -2474,7 +2477,13 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-09 — Promotion moves images via `docker save` artifacts 🟡
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. `images.json` read with jq replaces the sourced `images.env` (`promote-live-backend.yml:180,277`). Images still move as `docker save` artifacts (`:191,195`).
+> 🔄 **Current code (2026-11-04):** ✅ Done.
+> - **No tarballs.** The export job uploads only `images.json` (each live image's tag and digest, read with jq, never sourced). The `docker save`/`load` steps and the image artifact are gone.
+> - **Registry to registry, by digest.** The promote job installs `crane` v0.22.1, checked against its release SHA-256, signs in to the source and target registries with one ECR token on stdin (`ecr_login`), and copies `<source repo>@<digest>` to `<target repo>:<tag>` (`copy_image` in `scripts/ecs-services.sh`).
+> - **Digest verified.** `copy_image` fails when the target tag already holds another digest, or when the copy's digest isn't the source's. An existing tag on the same digest is a no-op, so a re-run is safe. The scan marker is then added in the target as before (CI-03).
+> - **Across accounts:** `ecr_pull_account_ids` (`infra-live-backend`, default empty) adds a pull-only repository policy to every service repository for the listed accounts. The target role's own IAM policy, outside this repo, must allow the same pull actions (`docs/infra-operations.md`).
+> - **Tests:** `scripts/ecs-services.test.sh` (60 tests) runs the helpers against a fake ECR and a fake `crane`: copy, re-run, tag clash, a copy that changes the digest, a source by tag. The stack test checks the policy is pull-only and absent by default.
+> - **Not in scope until CI-03 signs images:** `cosign copy` of signatures and attestations, and `cosign verify` after the copy.
 
 **Where:** `promote-live-backend.yml:251-294` (`docker save | gzip` at `:278`, artifact retention 1 day at `:292`), and `:392` (`source promote/images.env`).
 

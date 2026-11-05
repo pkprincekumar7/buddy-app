@@ -19,4 +19,4 @@ import-linter==2.15
 # for local end-to-end runs, since Docker Desktop's org policy blocks the motoserver image here.
 moto[server,sns,sqs,s3]==5.2.3
 pytest-cov==6.0.0
-httpx==0.27.2
+httpx==0.28.1

@@ -164,14 +164,22 @@ image (e.g. the API and the worker must both handle a job written by the other v
 three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.test.sh`).
 
 `promote-live-backend` does the same, but takes the image from the source environment's running
-task definition instead of building one: an export job (source environment's role) pulls it, and
-the promote job (target's role) pushes it into its service's repository in the target under the
-same tag before registering the revision. Only an image with the scan marker on the same digest in
-the source is promoted, and the promote job adds the marker in the target too, so stg → prod
-accepts it in turn. The run notes when the target stored the image under a different digest
-(`docker save`/`load` compresses the layers again; same content). The target never references the source's ECR, so source and target can
-be different AWS accounts, and the target is unaffected when the source repo expires the image or
-the source environment is destroyed. `restart-live-backend` forces a new deployment of the
+task definition instead of building one: an export job (source environment's role) reads its tag
+and digest, and the promote job (target's role) copies it by digest with `crane`, registry to
+registry, into its service's repository in the target under the same tag before registering the
+revision. The copy keeps the digest, and the job fails if the target's digest differs, or if the
+tag is already in the target as another image. No image moves through workflow artifacts. Only an
+image with the scan marker on the same digest in the source is promoted, and the promote job adds
+the marker in the target too, so stg → prod accepts it in turn. The target runs from its own ECR,
+never the source's, so it is unaffected when the source repo expires the image or the source
+environment is destroyed.
+
+Source and target can be different AWS accounts. Then the target's role has to read the source
+repositories: list the target account in the source environment's `ecr_pull_account_ids`
+(`infra-live-backend` tfvars; it adds a pull-only repository policy to every service repository),
+and allow the target `ROLE_ARN` (managed outside this repo) `ecr:BatchGetImage`,
+`ecr:GetDownloadUrlForLayer` and `ecr:BatchCheckLayerAvailability` on those repositories. In one
+account, the role's own IAM permissions are enough and the list stays empty. `restart-live-backend` forces a new deployment of the
 current revision without registering one.
 
 ### Which workflow to run
@@ -263,14 +271,15 @@ own service's.
 
 - **Created with placeholders.** Terraform writes `REPLACE_ME` for every key and then ignores
   the value (`ignore_changes = [secret_string]`).
-- **Filled on the first apply only.** After `terraform apply`, `terraform-live-backend` runs
-  `scripts/fill-service-secrets.sh`. A secret with a required key still `REPLACE_ME` (or with
-  every key still `REPLACE_ME`) gets all its keys from the GitHub environment: its own entry of
-  `MONGODB_URIS`, `JWT_PRIVATE_KEY`, `EMAIL_HMAC_PEPPER`, `GOOGLE_CLIENT_ID` and the LLM keys.
-  Any other secret is left alone, so manual rotations are never overwritten. Nothing is written
-  unless every secret that needs it can be, so a missing `MONGODB_URIS` entry leaves no secret
+- **Placeholders filled, key by key.** After every `terraform apply`, `terraform-live-backend`
+  runs `scripts/fill-service-secrets.sh`. Each key still `REPLACE_ME` gets its value from the
+  GitHub environment: the service's own entry of `MONGODB_URIS`, `JWT_PRIVATE_KEY`,
+  `EMAIL_HMAC_PEPPER`, `GOOGLE_CLIENT_ID` or an LLM key. Every key with another value is kept
+  as it is, so manual rotations are never overwritten, and only placeholder keys need their
+  GitHub value (SEC-05). A secret with nothing to fill isn't written. Nothing is written unless
+  every secret that needs it can be, so a missing `MONGODB_URIS` entry leaves no secret
   half-filled. An unset `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` stays `REPLACE_ME`: the services
-  start, but those providers are unavailable.
+  start, but those providers are unavailable; set it in GitHub later and the next apply fills it.
 - **Hard-deleted on destroy.** `recovery_window_in_days = 0` means `terraform destroy` deletes
   the secret immediately, with no 30-day recovery window, so a re-apply doesn't hit a name clash.
   ⚠ This is irreversible — back up the values first.

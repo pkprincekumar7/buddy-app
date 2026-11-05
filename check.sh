@@ -388,12 +388,8 @@ if require_tool hadolint HADOLINT "brew install hadolint"; then
 fi
 
 run "checkov (Terraform IaC)" \
-    bash -c "'$CHECKOV' \
-      -d '$ROOT/infra-live-backend/terraform' \
-      -d '$ROOT/infra-live-edge/terraform' \
-      -d '$ROOT/infra-live-frontend/terraform' \
-      -d '$ROOT/infra-live-scheduler/terraform' \
-      -d '$ROOT/modules' \
+    bash -c "cd '$ROOT' && '$CHECKOV' -d . \
+      --skip-path node_modules --skip-path '\.terraform' --skip-path '\.venv' \
       --framework terraform --quiet --compact --skip-download"
 
 if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then

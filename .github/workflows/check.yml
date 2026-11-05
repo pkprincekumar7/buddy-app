@@ -560,7 +560,9 @@ jobs:
         continue-on-error: true
         run: |
           read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
-          semgrep --config p/security-audit --error backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" frontend/src/ frontend-app/src/
+          mkdir -p sarif
+          semgrep --config p/security-audit --error --sarif-output=sarif/semgrep.sarif \
+            backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" frontend/src/ frontend-app/src/
 
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
@@ -568,17 +570,16 @@ jobs:
         run: |
           bash scripts/audit-backend-services.sh pip-audit python
 
+      # Every Terraform root and module in one scan from the repo root: checkov 3.2
+      # given several -d scans only the first, once per flag (CI-08).
       - name: Checkov (Terraform IaC security)
         id: checkov
         continue-on-error: true
         run: |
-          checkov \
-            -d infra-live-backend/terraform \
-            -d infra-live-edge/terraform \
-            -d infra-live-frontend/terraform \
-            -d infra-live-scheduler/terraform \
-            -d modules \
-            --framework terraform --quiet --compact --skip-download
+          mkdir -p sarif
+          checkov -d . --framework terraform --quiet --compact --skip-download \
+            --skip-path node_modules --skip-path '\.terraform' --skip-path '\.venv' \
+            -o cli -o sarif --output-file-path console,sarif/checkov.sarif
 
       # ── Node.js security tools ───────────────────────────────────────────────
       - name: Set up Node
@@ -792,6 +793,26 @@ jobs:
         id: trivy_config_modules
         continue-on-error: true
         run: trivy config modules --exit-code 1 --severity HIGH,CRITICAL
+
+      # The same rule set over the whole repo, as SARIF for GitHub code scanning
+      # (CI-08); reporting only, the five steps above gate.
+      - name: Trivy config (SARIF report)
+        if: always()
+        run: |
+          mkdir -p sarif
+          trivy config . --severity HIGH,CRITICAL --format sarif --output sarif/trivy-config.sarif \
+            --skip-dirs '**/node_modules' --skip-dirs '**/.terraform' --skip-dirs '**/.venv'
+
+      # Picked up by the code-scanning job, which alone may write security events.
+      - name: Upload SARIF reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sarif-reports
+          path: sarif/
+          retention-days: 7
+          if-no-files-found: warn
+          overwrite: true
 
       # ── Docker image scans (OS-level CVEs inside each service's image) ───────
       # One image per service (backend/Dockerfile, --build-arg SERVICE), found from the tree
@@ -1105,6 +1126,45 @@ jobs:
         uses: github/codeql-action/analyze@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
         with:
           category: "/language:${{ matrix.language }}"
+
+  # Uploads the security scan's SARIF (semgrep, checkov, trivy config) to GitHub code
+  # scanning, next to CodeQL's, so findings keep a triage history (production-readiness
+  # review, CI-08). Its own job: security-events: write never reaches the job that runs
+  # the scanners. Skipped where GitHub gives a read-only token (fork and Dependabot
+  # PRs). Blocking merges on findings is a repository ruleset (docs/ci-cd.md).
+  code-scanning:
+    name: Upload Code Scanning Results
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: security-scan
+    if: >-
+      always() && needs.security-scan.result != 'skipped' && github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [semgrep, checkov, trivy-config]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download SARIF reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sarif-reports
+          path: sarif/
+
+      - name: Upload ${{ matrix.tool }} results
+        if: hashFiles(format('sarif/{0}.sarif', matrix.tool)) != ''
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        with:
+          sarif_file: sarif/${{ matrix.tool }}.sarif
+          category: ${{ matrix.tool }}
 
   dependency-review:
     name: Dependency Review

@@ -497,6 +497,10 @@ run "prod_stack_wiring" {
     condition     = toset(one(aws_s3_bucket_cors_configuration.uploads.cors_rule).allowed_methods) == toset(["POST", "GET"])
     error_message = "Uploads are form POSTs (their policy limits the size), not PUTs (APP-07)."
   }
+  assert {
+    condition     = length(aws_ecr_repository_policy.promote_pull) == 0
+    error_message = "No ecr_pull_account_ids: no repository policy (CI-09)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -511,6 +515,7 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     enable_all_alarms         = false
     enable_basic_alarms       = false
     enable_container_insights = false
+    ecr_pull_account_ids      = ["222222222222"]
     runtime_sizes = {
       "http"              = { cpu = 256, memory = 512, desired_count = 1, min_capacity = 1, max_capacity = 2 }
       "auth"              = { cpu = 256, memory = 512, desired_count = 1, min_capacity = 1, max_capacity = 2 }
@@ -551,6 +556,13 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
   assert {
     condition     = module.redis.node_count == 1
     error_message = "Dev: single Valkey node."
+  }
+  assert {
+    condition = keys(aws_ecr_repository_policy.promote_pull) == keys(aws_ecr_repository.service) && alltrue([
+      for p in aws_ecr_repository_policy.promote_pull : jsondecode(p.policy).Statement[0].Principal.AWS == ["arn:aws:iam::222222222222:root"]
+      && !anytrue([for a in jsondecode(p.policy).Statement[0].Action : contains(["ecr:PutImage", "ecr:InitiateLayerUpload"], a)])
+    ])
+    error_message = "ecr_pull_account_ids: every service repository grants those accounts pull only (CI-09)."
   }
 }
 

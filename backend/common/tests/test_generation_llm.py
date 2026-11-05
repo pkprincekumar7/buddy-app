@@ -56,26 +56,30 @@ class FakeAnthropic:
 
 
 class FakeGemini:
-    def __init__(self, text: str = '{"ok": "g"}', delay: float = 0) -> None:
-        self.text, self.delay = text, delay
-        self.models: list[dict[str, Any]] = []
-        self.options: list[dict[str, Any]] = []
+    """google-genai's async client (client.aio): models.generate_content."""
 
-    def GenerativeModel(self, **kwargs: Any) -> Any:  # noqa: N802 - the SDK's name
-        self.models.append(kwargs)
-        outer = self
+    def __init__(
+        self, text: str | None = '{"ok": "g"}', delay: float = 0, finish: str = "STOP"
+    ) -> None:
+        self.text, self.delay, self.finish = text, delay, finish
+        self.calls: list[dict[str, Any]] = []
+        self.models = types.SimpleNamespace(generate_content=self._generate)
+        self.closed = False
 
-        class Model:
-            def generate_content(self, prompt: str, **options: Any) -> Any:
-                outer.options.append(options)
-                if outer.delay:
-                    import time
+    async def _generate(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        usage = types.SimpleNamespace(prompt_token_count=2, candidates_token_count=1)
+        finish = types.SimpleNamespace(value=self.finish)  # the SDK's FinishReason enum
+        return types.SimpleNamespace(
+            text=self.text,
+            usage_metadata=usage,
+            candidates=[types.SimpleNamespace(finish_reason=finish)],
+        )
 
-                    time.sleep(outer.delay)
-                usage = types.SimpleNamespace(prompt_token_count=2, candidates_token_count=1)
-                return types.SimpleNamespace(text=outer.text, usage_metadata=usage)
-
-        return Model()
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 CONFIG = LlmConfig(timeout_seconds=5)
@@ -95,7 +99,7 @@ def test_openai_is_first_and_logs_one_line_without_the_prompt(caplog):
         result = asyncio.run(client.invoke("about Mira", schema={"type": "object"}))
     assert result.data == {"ok": True} and (result.input_tokens, result.output_tokens) == (11, 7)
     call = openai.calls[0]
-    assert call["model"] == "gpt-5.4-mini" and call["timeout"] == 5
+    assert call["model"] == "gpt-5.4-mini" and 4.9 < call["timeout"] <= 5  # the budget left
     assert call["response_format"] == {"type": "json_object"}
     assert call["max_completion_tokens"] == 4096  # the cap; reasoning models reject max_tokens
     assert "OUTPUT SCHEMA" in call["messages"][0]["content"]
@@ -117,16 +121,20 @@ def test_anthropic_and_gemini():
     assert (result.provider, result.data, result.output_tokens) == ("anthropic", {"ok": 1}, 3)
     assert anthropic.calls[0]["max_tokens"] == 4096
     gemini = FakeGemini()
-    result = asyncio.run(_client(gemini_module=gemini).invoke("p"))
+    result = asyncio.run(_client(gemini_client=gemini).invoke("p"))
     assert (result.provider, result.data, result.input_tokens) == ("gemini", {"ok": "g"}, 2)
-    assert gemini.models[0]["model_name"] == "gemini-3-flash"
-    options = gemini.options[0]
-    assert options["generation_config"]["max_output_tokens"] == 4096
-    assert options["request_options"] == {"timeout": 5, "retry": None}  # no SDK retries
+    call = gemini.calls[0]
+    assert (call["model"], call["contents"]) == ("gemini-3-flash", "p")
+    config = call["config"]
+    assert config["max_output_tokens"] == 4096
+    assert config["response_mime_type"] == "application/json"
+    assert "OUTPUT SCHEMA" not in config["system_instruction"]  # no schema asked for here
+    assert 4900 < config["http_options"]["timeout"] <= 5000  # milliseconds: the budget left
+    assert "retry_options" not in config["http_options"]  # google-genai then never retries
 
 
 def test_a_preferred_provider_must_be_configured():
-    client = _client(openai_client=FakeOpenAI(), gemini_module=FakeGemini())
+    client = _client(openai_client=FakeOpenAI(), gemini_client=FakeGemini())
     assert asyncio.run(client.invoke("p", provider="gemini")).provider == "gemini"
     with pytest.raises(LlmConfigError, match="ANTHROPIC_API_KEY"):
         asyncio.run(client.invoke("p", provider="anthropic"))
@@ -144,6 +152,8 @@ def test_a_preferred_provider_must_be_configured():
         ({"anthropic_client": FakeAnthropic(text=None)}, "no content"),
         ({"openai_client": FakeOpenAI(finish="length")}, "openai stopped at the output-token cap"),
         ({"anthropic_client": FakeAnthropic(stop="max_tokens")}, "anthropic stopped at the"),
+        ({"gemini_client": FakeGemini(finish="MAX_TOKENS")}, "gemini stopped at the"),
+        ({"gemini_client": FakeGemini(text=None)}, "no content"),
     ],
 )
 def test_unusable_answers_are_retryable_errors(clients, message, caplog):
@@ -155,10 +165,9 @@ def test_unusable_answers_are_retryable_errors(clients, message, caplog):
     assert "outcome=bad_response" in caplog.text
 
 
-def test_a_slow_gemini_call_times_out(caplog, monkeypatch):
-    monkeypatch.setattr(llm, "GEMINI_GRACE_SECONDS", 0.0)
+def test_a_slow_gemini_call_times_out(caplog):
     client = LlmClient(
-        LlmConfig(timeout_seconds=0.05), circle="grow", gemini_module=FakeGemini(delay=0.3)
+        LlmConfig(timeout_seconds=0.05), circle="grow", gemini_client=FakeGemini(delay=0.3)
     )
     with caplog.at_level("INFO", logger="common.generation.llm"), pytest.raises(TimeoutError):
         asyncio.run(client.invoke("p"))
@@ -230,7 +239,7 @@ def test_an_openai_outage_falls_back_to_anthropic_and_skips_openai_for_a_while(c
 
 def test_an_unusable_answer_falls_back_without_tripping_the_breaker():
     openai, gemini = FakeOpenAI(content="not json"), FakeGemini()
-    client = _client(openai_client=openai, gemini_module=gemini)
+    client = _client(openai_client=openai, gemini_client=gemini)
     assert asyncio.run(client.invoke("p")).provider == "gemini"
     assert asyncio.run(client.invoke("p")).provider == "gemini"
     assert len(openai.calls) == 2  # tried again: one bad answer isn't an outage
@@ -252,33 +261,51 @@ def test_when_every_provider_fails_the_last_error_is_raised():
         asyncio.run(client.invoke("p"))
 
 
+class SlowOpenAI(FakeOpenAI):
+    """A call that hangs past any SDK timeout (it ignores its timeout argument)."""
+
+    async def _create(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        await asyncio.sleep(10)
+        return await super()._create(**kwargs)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._create))
+
+
+def test_one_budget_covers_every_fallback(caplog):
+    """APP-03: a hung provider is cut off at the budget, even when its SDK doesn't stop,
+    and the next one gets only what's left of it."""
+    openai, anthropic = SlowOpenAI(), FakeAnthropic()
+    client = LlmClient(
+        LlmConfig(timeout_seconds=0.2),
+        circle="grow",
+        openai_client=openai,
+        anthropic_client=anthropic,
+    )
+    with caplog.at_level("INFO", logger="common.generation.llm"), pytest.raises(TimeoutError):
+        asyncio.run(client.invoke("p"))
+    lines = [r.llm_call for r in caplog.records if hasattr(r, "llm_call")]
+    assert [(c["provider"], c["outcome"]) for c in lines] == [("openai", "timeout")]
+    assert lines[0]["duration_ms"] < 1000  # cut at the budget, not the 10 s hang
+    assert "LLM time budget (0.2s) spent; not trying anthropic" in caplog.text
+    assert anthropic.calls == []
+
+
+def test_a_fast_failure_leaves_the_rest_of_the_budget_to_the_fallback():
+    anthropic = FakeAnthropic()
+    client = _client(openai_client=DownOpenAI(), anthropic_client=anthropic)
+    assert asyncio.run(client.invoke("p")).provider == "anthropic"
+    assert 4.9 < anthropic.calls[0]["timeout"] <= 5
+
+
 def test_a_provider_asked_for_by_name_has_no_fallback():
     openai, anthropic = DownOpenAI(), FakeAnthropic()
     client = _client(openai_client=openai, anthropic_client=anthropic)
     with pytest.raises(ProviderDown):
         asyncio.run(client.invoke("p", provider="openai"))
     assert anthropic.calls == []
-
-
-def test_gemini_runs_on_its_own_threads():
-    names: list[str] = []
-
-    class Recording(FakeGemini):
-        def GenerativeModel(self, **kwargs: Any) -> Any:  # noqa: N802 - the SDK's name
-            model = super().GenerativeModel(**kwargs)
-            real = model.generate_content
-
-            def generate_content(prompt: str, **options: Any) -> Any:
-                import threading
-
-                names.append(threading.current_thread().name)
-                return real(prompt, **options)
-
-            model.generate_content = generate_content
-            return model
-
-    asyncio.run(_client(gemini_module=Recording()).invoke("p"))
-    assert names and names[0].startswith("gemini")  # not asyncio.to_thread's default pool
 
 
 def test_config_from_env_and_real_sdk_clients():
@@ -300,6 +327,7 @@ def test_config_from_env_and_real_sdk_clients():
     assert client.available() == {"openai": True, "anthropic": True, "gemini": True}
     # The job retries a failed call; SDK retries on top would multiply its calls (JOB-02).
     assert (client._openai.max_retries, client._anthropic.max_retries) == (0, 0)
+    assert client._gemini._api_client._http_options.retry_options is None  # never retries
     asyncio.run(client.aclose())
     assert LlmClient(LlmConfig.from_env({}), circle="grow").available() == dict.fromkeys(
         llm.PRIORITY, False
@@ -307,9 +335,10 @@ def test_config_from_env_and_real_sdk_clients():
 
 
 def test_aclose_closes_what_it_can():
-    openai = FakeOpenAI()
-    asyncio.run(_client(openai_client=openai, gemini_module=FakeGemini()).aclose())
-    assert openai.closed
+    openai, gemini = FakeOpenAI(), FakeGemini()
+    asyncio.run(_client(openai_client=openai, gemini_client=gemini).aclose())
+    assert openai.closed and gemini.closed
+    asyncio.run(_client(openai_client=FakeOpenAI()).aclose())  # no Gemini to close
 
 
 # ── the hourly LLM limit ───────────────────────────────────────────────────────

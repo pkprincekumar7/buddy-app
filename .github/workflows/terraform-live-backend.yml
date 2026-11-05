@@ -422,7 +422,7 @@ jobs:
       # active backend region (docs/infra-operations.md — Secrets Manager).
       # The service-token signing keys aren't here: Terraform generates them.
       # -------------------------------------------------------------------------
-      - name: Initialise service secrets (first apply only)
+      - name: Initialise service secrets (REPLACE_ME keys only)
         if: inputs.action == 'apply'
         env:
           MONGODB_URIS:      ${{ secrets.MONGODB_URIS }}

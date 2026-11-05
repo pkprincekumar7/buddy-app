@@ -64,3 +64,28 @@ resource "aws_ecr_lifecycle_policy" "service" {
     ]
   })
 }
+
+# Pull for the accounts promote-live-backend copies to (CI-09): the promote job, in the
+# target account, reads the source image by digest with crane. Read-only actions.
+resource "aws_ecr_repository_policy" "promote_pull" {
+  for_each = length(var.ecr_pull_account_ids) > 0 ? aws_ecr_repository.service : {}
+
+  repository = each.value.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PromotePull"
+        Effect    = "Allow"
+        Principal = { AWS = [for id in var.ecr_pull_account_ids : "arn:aws:iam::${id}:root"] }
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages",
+          "ecr:GetDownloadUrlForLayer"
+        ]
+      }
+    ]
+  })
+}

@@ -13,9 +13,15 @@ A call that fails at one provider is tried at the next one configured, in PRIORI
 (JOB-04): an OpenAI 429 or outage no longer fails the job while Anthropic or Gemini could
 answer. A provider whose call errored or timed out is then skipped for BREAKER_SECONDS (a
 circuit breaker, per task), so later calls don't wait on it; an unusable answer falls back
-too but doesn't trip it. A provider asked for by name gets no fallback. Gemini's SDK is
-synchronous: its calls run on their own thread pool, not the default one the boto3 calls
-and other `to_thread` work share, so a slow Gemini can't starve them.
+too but doesn't trip it. A provider asked for by name gets no fallback.
+
+One invoke() has one time budget, LlmConfig.timeout_seconds (LLM_TIMEOUT_SECONDS),
+fallbacks included (APP-03): each provider gets what's left of it, and a hard
+asyncio.timeout ends the call there even if the SDK's own timeout (which applies per read,
+not to the whole call) hasn't. A stopping worker gets LLM_TIMEOUT_SECONDS + 30 s and the
+ALB drains for as long (infra-live-backend), so a fallback can't outlast either. Gemini
+runs on the async google-genai SDK (its client.aio), as OpenAI and Anthropic do, so a
+timed-out Gemini call is cancelled, not left running on a thread.
 
 The provider SDKs come with the `[generation]` extra; only the workers of discover, grow,
 transform and release get LLM keys.
@@ -29,7 +35,6 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -37,14 +42,8 @@ from common.generation.prompts import system_message
 
 ProviderName = Literal["openai", "anthropic", "gemini"]
 PRIORITY: tuple[ProviderName, ...] = ("openai", "anthropic", "gemini")
-# Gemini gets its own timeout as well, on top of the SDK's: its call runs in a thread.
-GEMINI_GRACE_SECONDS = 5.0
 # How long a provider that failed is skipped for (JOB-04).
 BREAKER_SECONDS = 60.0
-# Gemini's own threads (its SDK blocks); a call past its timeout keeps one until the SDK's
-# own timeout ends it, so this caps how many a Gemini slowdown can hold.
-GEMINI_THREADS = 8
-_gemini_pool = ThreadPoolExecutor(max_workers=GEMINI_THREADS, thread_name_prefix="gemini")
 
 _logger = logging.getLogger(__name__)
 
@@ -122,7 +121,7 @@ class LlmClient:
         circle: str,
         openai_client: Any = None,
         anthropic_client: Any = None,
-        gemini_module: Any = None,
+        gemini_client: Any = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Clients may be passed in (tests); otherwise each is built from its key, if set."""
@@ -134,7 +133,7 @@ class LlmClient:
         self._anthropic = (
             anthropic_client if anthropic_client is not None else self._build_anthropic()
         )
-        self._gemini = gemini_module if gemini_module is not None else self._build_gemini()
+        self._gemini = gemini_client if gemini_client is not None else self._build_gemini()
 
     def _build_openai(self) -> Any:
         if not self.config.openai_api_key:
@@ -151,12 +150,12 @@ class LlmClient:
         return anthropic.AsyncAnthropic(api_key=self.config.anthropic_api_key, max_retries=0)
 
     def _build_gemini(self) -> Any:
+        """google-genai's async client. It retries nothing unless asked (no retry_options)."""
         if not self.config.gemini_api_key:
             return None
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=self.config.gemini_api_key)
-        return genai
+        return genai.Client(api_key=self.config.gemini_api_key).aio
 
     def available(self) -> dict[ProviderName, bool]:
         return {
@@ -201,21 +200,33 @@ class LlmClient:
         provider: ProviderName | None = None,
     ) -> LlmResult:
         """Run one generation and return its JSON object, falling back to the next provider
-        on a failure (JOB-04). Logs one `llm_call` line per provider tried."""
-        *fallbacks, last = self.candidates(provider)
-        for attempt, resolved in enumerate(fallbacks, start=1):
+        on a failure (JOB-04) while the call's time budget lasts (APP-03). Logs one
+        `llm_call` line per provider tried; raises the last provider's error."""
+        candidates = self.candidates(provider)
+        deadline = time.monotonic() + self.config.timeout_seconds
+        error: Exception | None = None
+        for attempt, resolved in enumerate(candidates, start=1):
+            budget = deadline - time.monotonic()
+            if error is not None and budget <= 0:
+                _logger.warning(
+                    "LLM time budget (%ss) spent; not trying %s",
+                    self.config.timeout_seconds,
+                    resolved,
+                )
+                break
             try:
-                return await self._invoke_one(resolved, prompt, schema, attempt)
+                return await self._invoke_one(resolved, prompt, schema, attempt, budget)
             except Exception as exc:
                 self._failed(resolved, exc)
-                _logger.warning(
-                    "LLM %s failed (%s); trying the next provider", resolved, type(exc).__name__
-                )
-        try:
-            return await self._invoke_one(last, prompt, schema, len(fallbacks) + 1)
-        except Exception as exc:
-            self._failed(last, exc)
-            raise
+                error = exc
+                if attempt < len(candidates):
+                    _logger.warning(
+                        "LLM %s failed (%s); trying the next provider",
+                        resolved,
+                        type(exc).__name__,
+                    )
+        assert error is not None  # candidates() is never empty
+        raise error
 
     def _failed(self, provider: ProviderName, exc: Exception) -> None:
         """Trip the breaker for an outage (an error or timeout), not for one unusable answer."""
@@ -223,17 +234,23 @@ class LlmClient:
             self._down_until[provider] = self.clock() + BREAKER_SECONDS
 
     async def _invoke_one(
-        self, resolved: ProviderName, prompt: str, schema: dict[str, Any] | None, attempt: int
+        self,
+        resolved: ProviderName,
+        prompt: str,
+        schema: dict[str, Any] | None,
+        attempt: int,
+        budget: float,
     ) -> LlmResult:
         model = self.config.model(resolved)
         started = time.monotonic()
         outcome, result = "error", None
         try:
-            result = await {
-                "openai": self._call_openai,
-                "anthropic": self._call_anthropic,
-                "gemini": self._call_gemini,
-            }[resolved](prompt, system_message(schema), model)
+            async with asyncio.timeout(budget):
+                result = await {
+                    "openai": self._call_openai,
+                    "anthropic": self._call_anthropic,
+                    "gemini": self._call_gemini,
+                }[resolved](prompt, system_message(schema), model, budget)
             outcome = "ok"
             return result
         except TimeoutError:
@@ -264,14 +281,14 @@ class LlmClient:
                 extra={"llm_call": call},
             )
 
-    async def _call_openai(self, prompt: str, system: str, model: str) -> LlmResult:
+    async def _call_openai(self, prompt: str, system: str, model: str, budget: float) -> LlmResult:
         completion = await self._openai.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             # max_completion_tokens, not max_tokens: reasoning models accept only this one.
             max_completion_tokens=self.config.max_output_tokens,
-            timeout=self.config.timeout_seconds,
+            timeout=budget,
         )
         if not completion.choices:
             raise LlmResponseError(
@@ -288,13 +305,15 @@ class LlmClient:
             getattr(usage, "completion_tokens", None),
         )
 
-    async def _call_anthropic(self, prompt: str, system: str, model: str) -> LlmResult:
+    async def _call_anthropic(
+        self, prompt: str, system: str, model: str, budget: float
+    ) -> LlmResult:
         message = await self._anthropic.messages.create(
             model=model,
             max_tokens=self.config.max_output_tokens,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            timeout=self.config.timeout_seconds,
+            timeout=budget,
         )
         if getattr(message, "stop_reason", None) == "max_tokens":
             raise LlmResponseError(_CAPPED.format(provider="anthropic"))
@@ -308,27 +327,22 @@ class LlmClient:
             getattr(usage, "output_tokens", None),
         )
 
-    async def _call_gemini(self, prompt: str, system: str, model: str) -> LlmResult:
-        def call() -> Any:
-            generative = self._gemini.GenerativeModel(model_name=model, system_instruction=system)
-            # retry=None turns off the SDK's own retry (on 503, for up to 600 s), which would
-            # also keep this thread running after the wait_for below has given up on it.
-            return generative.generate_content(
-                prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "max_output_tokens": self.config.max_output_tokens,
-                },
-                request_options={"timeout": self.config.timeout_seconds, "retry": None},
-            )
-
-        # The Gemini SDK is synchronous: its own threads keep the event loop, and the default
-        # pool the rest of the task's thread work shares, free (JOB-04).
-        loop = asyncio.get_running_loop()
-        response = await asyncio.wait_for(
-            loop.run_in_executor(_gemini_pool, call),
-            self.config.timeout_seconds + GEMINI_GRACE_SECONDS,
+    async def _call_gemini(self, prompt: str, system: str, model: str, budget: float) -> LlmResult:
+        response = await self._gemini.models.generate_content(
+            model=model,
+            contents=prompt,
+            config={
+                "system_instruction": system,
+                "response_mime_type": "application/json",
+                "max_output_tokens": self.config.max_output_tokens,
+                # Milliseconds; _invoke_one's timeout is the hard stop.
+                "http_options": {"timeout": max(1, int(budget * 1000))},
+            },
         )
+        candidates = getattr(response, "candidates", None) or []
+        finish = getattr(candidates[0], "finish_reason", None) if candidates else None
+        if getattr(finish, "value", finish) == "MAX_TOKENS":
+            raise LlmResponseError(_CAPPED.format(provider="gemini"))
         usage = getattr(response, "usage_metadata", None)
         return LlmResult(
             _parse_json(getattr(response, "text", None), "gemini"),
@@ -343,3 +357,6 @@ class LlmClient:
             close = getattr(client, "close", None)
             if close is not None:
                 await close()
+        close = getattr(self._gemini, "aclose", None)
+        if close is not None:
+            await close()

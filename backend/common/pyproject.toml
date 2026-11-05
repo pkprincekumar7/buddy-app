@@ -42,7 +42,7 @@ dependencies = [
 # Installed only by the services that need them (section 2): generation by discover, grow,
 # transform and release (the LLM provider SDKs); uploads by children and transform (boto3).
 [project.optional-dependencies]
-generation = ["anthropic>=0.49", "google-generativeai>=0.8", "openai>=1.68"]
+generation = ["anthropic>=0.49", "google-genai>=2.32", "openai>=1.68"]
 uploads = ["boto3>=1.35"]
 
 # Flat layout: this directory is the `common` package itself, so imports read

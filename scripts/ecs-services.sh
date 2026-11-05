@@ -135,6 +135,50 @@ mark_scanned() {
   [ "$rc" -eq 0 ] && is_scanned "$region" "$repo" "$tag"
 }
 
+# -- promoting by digest (production-readiness review, CI-09) --------------------
+# promote-live-backend copies each image registry to registry with crane, so the
+# target runs the exact digest the source scanned; no image moves through artifacts.
+
+# ecr_login REGION HOST...: crane signed in to each ECR registry HOST with one ECR
+# token for the current role (valid for any registry the role may read or write). The
+# token goes through stdin only, never an argument or the log.
+ecr_login() {
+  local region="$1" password host
+  shift
+  password=$(aws ecr get-login-password --region "$region") || return 1
+  for host in $(printf '%s\n' "$@" | sort -u); do
+    crane auth login "$host" -u AWS --password-stdin <<<"$password" >/dev/null || return 1
+  done
+}
+
+# copy_image REGION SOURCE REPO REPO_NAME TAG: copies SOURCE (<repo>@sha256:...) to
+# REPO:TAG in the target, unless TAG is already that very image; fails if TAG holds
+# another one, or if the copy didn't keep the digest.
+copy_image() {
+  local region="$1" source="$2" repo="$3" repo_name="$4" tag="$5" want got
+  want="${source##*@}"
+  if [[ ! "$want" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "ERROR: $source isn't pinned to a digest." >&2
+    return 1
+  fi
+  got=$(image_digest "$region" "$repo_name" "$tag")
+  if [ -n "$got" ]; then
+    if [ "$got" != "$want" ]; then
+      echo "ERROR: $repo:$tag is already in the target as $got, not $want: another build of the same tag. Deploy a new release to the source, then promote that." >&2
+      return 1
+    fi
+    echo "$repo:$tag is already $want in the target."
+    return 0
+  fi
+  crane copy "$source" "$repo:$tag" || return 1
+  got=$(image_digest "$region" "$repo_name" "$tag")
+  if [ "$got" != "$want" ]; then
+    echo "ERROR: $repo:$tag was copied as ${got:-nothing}, not $want." >&2
+    return 1
+  fi
+  echo "Copied $source to $repo:$tag."
+}
+
 # register_with_image FAMILY CONTAINER IMAGE → ARN of a new revision of FAMILY
 # that is the current one with CONTAINER's image swapped for IMAGE. Everything
 # else (env vars, secrets refs, CPU/memory, logging, sidecars) is kept exactly

@@ -88,6 +88,7 @@ resource "aws_lambda_function" "dispatcher" {
   #checkov:skip=CKV_AWS_50:X-Ray tracing not required for this simple dispatcher
   #checkov:skip=CKV_AWS_272:Code signing not required for internal infrastructure Lambda
   #checkov:skip=CKV_AWS_115:Reserved concurrency not required — invoked at most twice daily
+  #checkov:skip=CKV_AWS_173:The environment holds only the PAT secret's ARN and the repo/workflow names, no secret values; AWS-managed encryption is enough
 
   function_name    = "${var.app_name}-${var.environment}-github-dispatcher"
   role             = aws_iam_role.lambda_exec.arn

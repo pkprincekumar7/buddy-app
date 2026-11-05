@@ -365,3 +365,18 @@ variable "llm_tokens_alarm_per_hour" {
     error_message = "llm_tokens_alarm_per_hour must be positive."
   }
 }
+
+# The AWS accounts promote-live-backend copies this environment's images to, when
+# they're other accounts (production-readiness review, CI-09): each gets pull on every
+# service repository. Empty (the default): no repository policy; same-account promotes
+# need none.
+variable "ecr_pull_account_ids" {
+  description = "AWS account IDs allowed to pull this environment's service images (promote targets in other accounts)."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for id in var.ecr_pull_account_ids : can(regex("^[0-9]{12}$", id))])
+    error_message = "ecr_pull_account_ids must be 12-digit AWS account IDs."
+  }
+}

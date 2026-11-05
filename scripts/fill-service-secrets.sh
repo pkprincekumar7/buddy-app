@@ -5,8 +5,9 @@
 # (terraform-live-backend.yml). Terraform creates every
 # <app>/<env>/<service>-secrets with REPLACE_ME for each of its keys
 # (infra-live-backend/terraform/secrets.tf); this writes the real values from the
-# GitHub environment, once. A secret with its required keys already set is left
-# alone, so values rotated by hand are never overwritten.
+# GitHub environment. Only keys still REPLACE_ME are filled, one by one; a key with
+# any other value is kept as it is, so values rotated by hand are never overwritten
+# (production-readiness review, SEC-05). A secret with nothing to fill isn't written.
 #
 # Source it:  source scripts/fill-service-secrets.sh
 #             fill_service_secrets "$(terraform output -json service_secret_arns)"
@@ -24,10 +25,6 @@
 # Needs: aws (credentials for the secrets' region), jq.
 # Tests: scripts/fill-service-secrets.test.sh (runs against a fake `aws`).
 
-# Keys that may stay REPLACE_ME: each service needs at least one LLM key, which
-# the workflow checks before apply, not every one.
-OPTIONAL_SECRET_KEYS='["OPENAI_API_KEY","ANTHROPIC_API_KEY","GEMINI_API_KEY"]'
-
 # value_for SERVICE KEY → the value to write for KEY in SERVICE's secret, or an
 # error naming what's missing.
 value_for() {
@@ -41,6 +38,8 @@ value_for() {
       printf '%s' "${!key}" ;;
     GOOGLE_CLIENT_ID)
       printf '%s' "${GOOGLE_CLIENT_ID:-}" ;;
+    # May stay REPLACE_ME: each service needs at least one LLM key, which the
+    # workflow checks before apply, not every one.
     OPENAI_API_KEY | ANTHROPIC_API_KEY | GEMINI_API_KEY)
       printf '%s' "${!key:-REPLACE_ME}" ;;
     *)
@@ -49,27 +48,20 @@ value_for() {
   esac
 }
 
-# needs_init SECRET_JSON → success if a required key is still REPLACE_ME, or if
-# every key is (an untouched secret, such as shared's, whose only key is optional).
-needs_init() {
-  jq -e --argjson opt "$OPTIONAL_SECRET_KEYS" '
-    to_entries
-    | any(.value == "REPLACE_ME" and (.key as $k | $opt | index($k) | not))
-      or all(.value == "REPLACE_ME")' <<<"$1" >/dev/null
-}
-
-# secret_json SERVICE KEYS_JSON → the full secret JSON for SERVICE, every key filled.
+# secret_json SERVICE CURRENT_JSON → CURRENT_JSON with each REPLACE_ME key filled;
+# every other key, and the key order, as they were. Only the keys being filled need
+# a value, so a GitHub secret removed after the first apply doesn't block later ones.
 secret_json() {
-  local service="$1" keys="$2" key value out='{}'
+  local service="$1" out="$2" key value
   while IFS= read -r key; do
     value=$(value_for "$service" "$key") || return 1
-    out=$(jq -c --arg k "$key" --arg v "$value" '. + {($k): $v}' <<<"$out")
-  done < <(jq -r '.[]' <<<"$keys")
+    out=$(jq -c --arg k "$key" --arg v "$value" '.[$k] = $v' <<<"$out")
+  done < <(jq -r 'to_entries[] | select(.value == "REPLACE_ME") | .key' <<<"$out")
   printf '%s\n' "$out"
 }
 
 # fill_service_secrets ARNS_JSON — ARNS_JSON is service → secret ARN (Terraform's
-# service_secret_arns output). Every secret that needs filling is built first;
+# service_secret_arns output). Every secret with a key to fill is built first;
 # nothing is written unless all of them can be, so a missing value leaves no
 # secret half-done.
 fill_service_secrets() {
@@ -80,11 +72,11 @@ fill_service_secrets() {
       echo "ERROR: could not read $service's secret ($arn)." >&2
       return 1
     }
-    if ! needs_init "$current"; then
+    body=$(secret_json "$service" "$current") || return 1
+    if jq -e --argjson new "$body" '. == $new' <<<"$current" >/dev/null; then
       echo "$service: already set — left alone (rotate with put-secret-value, docs/infra-operations.md)."
       continue
     fi
-    body=$(secret_json "$service" "$(jq -c 'keys_unsorted' <<<"$current")") || return 1
     bodies+=("$body")
     to_fill+=("$service")
     arns_to_fill+=("$arn")
