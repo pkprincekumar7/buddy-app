@@ -15,6 +15,7 @@ Web frontend: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **TanSt
 | Frontend pages and routing | [docs/frontend.md](docs/frontend.md) |
 | GitHub Actions workflows, AWS OIDC, secrets | [docs/ci-cd.md](docs/ci-cd.md) |
 | Adding an environment (dev/qa/stg/perf/prod…) across AWS accounts and regions | [docs/environments.md](docs/environments.md) |
+| First stg apply and deploy, and the checks that need a running environment | [docs/stg-first-deploy.md](docs/stg-first-deploy.md) |
 | Running tests and coverage | [docs/tests.md](docs/tests.md) |
 | Infrastructure architecture (multi-region backend, edge routing, deployment sequence) | [docs/infra-architecture-multi-region.md](docs/infra-architecture-multi-region.md) |
 | Per-service AWS cost breakdown and hourly rates | [docs/aws-cost-estimate.md](docs/aws-cost-estimate.md) |

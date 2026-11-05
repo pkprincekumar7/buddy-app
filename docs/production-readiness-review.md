@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-05):** of the 86 tracked findings, 50 are done, 19 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-05):** of the 86 tracked findings, 52 are done, 17 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -63,7 +63,7 @@ Since the review, the backend was rebuilt as nine services sharing `backend/comm
 
 What still stands in the way:
 
-- **The database:** the prod cluster isn't provisioned yet. The plan is dedicated M10+, with dev, sbx and stg on M0 by design. It stays single-region in ap-south-1 until the Global Cluster (DB-01, DEC-01, DEC-02).
+- **The database:** the prod cluster isn't provisioned yet. The plan is dedicated M10+, with stg on M10 too (so Atlas's Test Failover can run there, DB-05) and dev and sbx on M0 by design. It stays single-region in ap-south-1 until the Global Cluster (DB-01, DEC-01, DEC-02).
 - **Pipelines:**
   - prod can be deployed or applied from any branch (CI-01, deferred);
   - plan and apply run in one job (CI-02, deferred);
@@ -101,7 +101,7 @@ As it stands it suits **dev and stg**. Prod needs Phase 0 (the database) and Pha
      Valkey (IAM auth, a user per service): login throttles, rate and LLM limits, authz:{sub} cache
      SNS/SQS: events between services        S3 uploads: presigned PUT and GET (no CloudFront origin)
      MongoDB Atlas, ap-south-1, one database per service
-       dev/sbx/stg: M0 → prod: dedicated M10+ (planned, build plan 9.1) → future: M30+ Global Cluster
+       dev/sbx: M0 · stg: M10 → prod: dedicated M10+ (planned, build plan 9.1) → future: M30+ Global Cluster
 ```
 
 ### What's done well (keep these)
@@ -141,7 +141,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); the scheduler PAT is still in state (with SEC-03, deferred) |
-| SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | 🟡 `Authorization`/`Cookie` redacted, BLOCK/COUNT only; log-bucket expiry (manual bucket) open |
+| SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ✅ Done in code — `Authorization`/`Cookie` redacted, BLOCK/COUNT only, WAF logs expire after 90 days (`waf_log_retention_days`); seeing `REDACTED` needs a prod apply |
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open · ⏸ Deferred |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | ✅ Done — reads fail closed, only `REPLACE_ME` keys are filled; the Redis parts are moot (IAM auth) |
@@ -160,7 +160,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ✅ Done (1 MiB body cap in every service) |
 | APP-10 | 🟠 High | App | Child documents can grow without bound | ✅ Done (strict child model, bounded fields, 64 KB caps) |
 | APP-11 | 🟢 Low | App | Misc backend hygiene | ✅ Done — a–d, f, g done (moving-window limits, APK `latest.json` pointer); e moot |
-| DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | ⬜ Open — prod dedicated M10+ planned (build plan 9.1); dev/sbx/stg on M0 by design |
+| DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | ⬜ Open — prod dedicated M10+ planned (build plan 9.1); stg on M10 (for the failover test); dev/sbx on M0 by design |
 | DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ⬜ Open |
 | DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ⬜ Open |
 | DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ✅ Done (claim reads an index in order, jittered idle poll, 30 s socket timeout; connection budget with DB-01) |
@@ -197,7 +197,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | ✅ Done — modules, lock files, per-region variables, edge providers; region inputs are free text checked against `shared/routing.json`, which Terraform's validations read too (no `edge-origin` module: nothing left for it) |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open · ⏸ Deferred |
-| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Code done: deploy surge 150%, Spot workers, keep-alive and graceful shutdown, Atlas connection budget (stg/prod max counts lowered to fit); the load test open |
+| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Code done: deploy surge 150%, Spot workers, keep-alive and graceful shutdown, Atlas connection budget (prod max counts lowered to fit M10; stg on M10 too); the load test open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0, right-sized nodes and an explicit `maxmemory-policy = noeviction` done; the working-set load test open |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ✅ Done — HTTPS-only deny on all five bucket policies (uploads added); the buckets stay manual by the owner's choice, since they must outlive a destroy |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
@@ -210,7 +210,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open · ⏸ Deferred |
 | CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ✅ Done — old chunks kept, unhashed-only invalidation, the last 10 releases kept, `rollback-live-frontend` with no rebuild |
-| CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | 🟡 SARIF from semgrep, checkov and trivy uploaded; checkov scans every root; the rulesets (GitHub settings) open |
+| CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ✅ Done — SARIF from semgrep, checkov and trivy uploaded; checkov scans every root; no required-checks ruleset, by the owner's choice (one maintainer) |
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ✅ Done — `crane copy` by digest, registry to registry; target digest checked; no tarballs (cosign copy waits on CI-03 signing) |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
@@ -481,7 +481,7 @@ custom_error_response {
 
 ### SEC-02 — WAF logs capture tokens and cookies 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. `aws_wafv2_web_acl_logging_configuration.main` (`infra-live-edge/terraform/waf_logging.tf`) now redacts the `authorization` and `cookie` headers and has a `logging_filter` that drops everything except `BLOCK`, `COUNT` and `EXCLUDED_AS_COUNT` requests. Logging is still prod-only (`enable_waf_logging`). Still open: lifecycle expiry on the log bucket, which is created by hand outside Terraform. The acceptance check needs a prod apply.
+> 🔄 **Current code (2026-11-05):** ✅ Done in code. `aws_wafv2_web_acl_logging_configuration.main` (`infra-live-edge/terraform/waf_logging.tf`) redacts the `authorization` and `cookie` headers and keeps only `BLOCK`, `COUNT` and `EXCLUDED_AS_COUNT` requests. **The log bucket now expires them:** `aws_s3_bucket_lifecycle_configuration.global_logging` deletes `waf-logs/` and `waf-logs-errors/` objects after `waf_log_retention_days` (default 90) and aborts incomplete uploads after 7 days, on the manually created bucket, which stays. It's the bucket's whole lifecycle configuration, so any other rule goes there too (`docs/environments.md`). CloudTrail logs keep no expiry. Logging is still prod-only (`enable_waf_logging`); the acceptance check (`REDACTED` in a record) needs a prod apply.
 
 **Where:** `infra-live-edge/terraform/waf_logging.tf:82-87` has no `redacted_fields` and no `logging_filter`. Logging is prod-only. (`X-Origin-Verify` isn't exposed, because it's added after WAF.)
 
@@ -971,7 +971,7 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### DB-01 — M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later 🔴
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open, premise changed. Prod is planned as a dedicated M10+ cluster but isn't provisioned yet (build plan 9.1); dev, sbx and stg use M0 by design. Each service has its own database and `MONGODB_URI` secret (`services.tf:138-140`). Runbook Step 0 no longer applies: email ownership lives in auth's `email_index` collection (`auth/app/store.py:170-175`), with no unique `(location, email)` index.
+> 🔄 **Current code (2026-11-01):** ⬜ Open, premise changed. Prod is planned as a dedicated M10+ cluster but isn't provisioned yet (build plan 9.1); stg is planned on M10 as well (2026-11-05, for DB-05's Test Failover), dev and sbx use M0 by design. Each service has its own database and `MONGODB_URI` secret (`services.tf:138-140`). Runbook Step 0 no longer applies: email ownership lives in auth's `email_index` collection (`auth/app/store.py:170-175`), with no unique `(location, email)` index.
 
 **Where:** `GLOBAL_ROUTING_MONGO.md:13-16`, `GLOBAL_ROUTING_MONGO_ATLAS.md`, `docs/infra-architecture-multi-region.md` (Phase 0 "not started").
 
@@ -2009,7 +2009,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 > - **Fix 3:** already in place: HTTP runtimes track ALB requests per target (1000/min), CPU and memory. LLM calls are in workers, so long requests don't skew it.
 > - **Fix 5:** workers run on a capacity provider strategy: the first task on demand, then 3 `FARGATE_SPOT` per on-demand one (`worker_spot`; `spot_weight = 0` turns it off). Nothing is applied yet, so the service replacement this needs costs nothing.
 > - **Fix 6:** `common/serve.py` keeps idle connections `HTTP_KEEP_ALIVE_SECONDS` (the ALB's now explicit 60 s idle timeout + 5) and gives in-flight requests 25 s on SIGTERM, inside ECS's 30 s. No proxy trust was added.
-> - **Fix 8:** `mongodb_connection_budget` (required) fails the plan when every Mongo runtime at its peak × (pool 5 + 6 monitoring) exceeds it. Today's values overshot: stg 836 against M0's 500, prod 3190 against M10's 1500. By the owner's choice, stg's max counts were lowered to fit M0 (39 tasks, 429) and prod's to fit the planned M10 (http 10, auth 12, worker 3, generating-worker 6: 128 tasks, 1408).
+> - **Fix 8:** `mongodb_connection_budget` (required) fails the plan when every Mongo runtime at its peak × (pool 5 + 6 monitoring) exceeds it. Today's values overshot: stg 836 against M0's 500, prod 3190 against M10's 1500. stg then moved to M10 (2026-11-05, for DB-05's Test Failover), so its budget is 1500 and its max counts are back to 5 / 4 / 3 / 5 (76 tasks, 836). By the owner's choice, prod's max counts were lowered to fit the planned M10 (http 10, auth 12, worker 3, generating-worker 6: 128 tasks, 1408).
 > - **Tests:** the stack test (8 runs: surge, Spot, keep-alive, the budget and its failure), the module test (18), `test_serve.py`.
 > - **Fixes 4 and 7 need no change:** workers already run at 256–1024 CPU, and there's one process per task (no `--workers`). **Still open:** the stg load test (fix 1's counts, with fix 9's bcrypt cost in a login storm), and raising prod's max counts with a larger Atlas tier (DB-01).
 
@@ -2460,7 +2460,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 > 🔄 **Current code (2026-11-04):** 🟡 Partial.
 > - **SARIF uploaded.** The security scan writes SARIF from semgrep (`--sarif-output`), checkov (`-o sarif`) and a whole-repo `trivy config`, as the `sarif-reports` artifact. A separate `code-scanning` job, the only one besides CodeQL with `security-events: write`, uploads each under its own category. It skips fork and Dependabot PRs, whose token is read-only.
 > - **Found on the way: checkov scanned only `infra-live-backend`.** Given several `-d`, checkov 3.2.529 scans the first directory once per flag. CI and `check.sh` now scan from the repo root once. That surfaced 8 findings in edge and scheduler, now skipped with reasons in the code: Lambda@Edge can't use a VPC, DLQ or X-Ray; the scheduler's Lambda environment and schedule input hold no secrets.
-> - **Still open (GitHub settings, not code):** a ruleset requiring the `Check` jobs and CodeQL results (High+ blocks), written up in `docs/ci-cd.md` under `code-scanning`.
+> - **Rulesets: not added, by the owner's choice** (2026-11-05). With one maintainer, `main` keeps its existing `MergeToMainBranch` ruleset (no deletion or force-push, PRs only), and the `Check` results and CodeQL alerts are read before merging rather than enforced. `docs/ci-cd.md` (`code-scanning`) describes the ruleset to add if more people join.
 
 > v2 correction: v1 claimed many security checks were non-blocking. That's **wrong**: every `continue-on-error` step is listed in its aggregator. `check.yml:641-672` covers all 23 security-scan steps (gitleaks, hadolint ×2, bandit, semgrep, pip-audit, checkov, npm audit, yarn audit, retire ×2, trivy vuln ×3, license ×3, config ×4, image, dockle), and `:795-806` covers openapi_drift, spectral and nuclei. The `outcome == failure` logic is correct.
 

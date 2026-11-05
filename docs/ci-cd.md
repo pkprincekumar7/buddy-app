@@ -172,7 +172,7 @@ CodeQL requires `security-events: write` permission (set at the job level) to up
 
 Uploads the security scan's SARIF reports (semgrep, checkov, trivy config: the `sarif-reports` artifact, kept 7 days) to **Security → Code scanning**, one category per tool, next to CodeQL's, so findings keep a triage history (production-readiness review, CI-08). It's a separate job so `security-events: write` never reaches the job that runs the scanners. It runs even when the scan failed, and is skipped where GitHub gives a read-only token: pull requests from forks and Dependabot.
 
-**Repository settings that make these results gate merges** (Settings → Rules → Rulesets, on `main`; they live in GitHub, not in this repo):
+**Repository settings that would make these results gate merges** (Settings → Rules → Rulesets, on `main`; they live in GitHub, not in this repo). Not set today: with one maintainer, the results are read before merging instead. Add them when more people work on the repo:
 - **Require status checks to pass:** the `Check` workflow's jobs (at least `Security Scan`, `CodeQL`, the backend and frontend jobs).
 - **Require code scanning results:** CodeQL, with security alerts at High or higher (and alerts at Error) blocking. Add semgrep, checkov and trivy-config too once their first results have been triaged.
 

@@ -25,10 +25,10 @@ elasticache_multi_az      = false
 # ECS — one uvicorn process per task, so scale out with more tasks, not bigger
 # ones (TF-03). Auth is bcrypt-bound and keeps two (docs/auth-users-split.md, 15.3).
 runtime_sizes = {
-  "http"              = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 2 }
-  "auth"              = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 3 }
-  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 2 }
-  "generating-worker" = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
+  "http"              = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
+  "auth"              = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
+  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
+  "generating-worker" = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
   "collector"         = { cpu = 256, memory = 512, desired_count = 2, min_capacity = 2, max_capacity = 2 }
 }
 
@@ -71,7 +71,7 @@ enable_container_insights = false
 # the target's deploy role also needs ECR pull on these repositories (docs/environments.md, 4).
 # ecr_pull_account_ids = ["111111111111"]
 
-# Atlas M0 allows 500 connections per cluster, for every region together: this is one
-# region's share (TF-03). The max_capacity values above are set to fit it: at peak
-# (39 tasks, pool 5 + 6 monitoring each) the tasks open 429.
-mongodb_connection_budget = 500
+# stg runs on Atlas M10 (2026-11-05: Atlas's Test Failover needs M10 or above, DB-05), which
+# allows 1500 connections per cluster, for every region together: this is one region's share
+# (TF-03). At peak (76 tasks, pool 5 + 6 monitoring each) the tasks open 836.
+mongodb_connection_budget = 1500

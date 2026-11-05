@@ -20,7 +20,7 @@
 | **Workers** (4: auth, users, children, onboarding) task × min tasks | 0.25 / 0.5 × 1 | 0.25 / 0.5 × 1 | 0.5 / 1 × 1 | 0.5 / 1 × 1 | `runtime_sizes.worker` |
 | **Generating workers** (4: discover, grow, transform, release) task × min tasks | 0.25 / 0.5 × 1 | 0.25 / 0.5 × 1 | 0.5 / 1 × 1 | 1 / 2 × 1 | `runtime_sizes.generating-worker` |
 | **OpenTelemetry collector** task × tasks | 0.25 / 0.5 × 1 | 0.25 / 0.5 × 1 | 0.25 / 0.5 × 2 | 0.5 / 1 × 2 | `runtime_sizes.collector` |
-| Autoscaling max per runtime (HTTP / auth / worker / generating / collector) | 2 / 2 / 2 / 2 / 1 | 2 / 2 / 2 / 2 / 1 | 2 / 3 / 2 / 3 / 2 | 10 / 12 / 3 / 6 / 4 | `max_capacity`, set to fit `mongodb_connection_budget` (TF-03) |
+| Autoscaling max per runtime (HTTP / auth / worker / generating / collector) | 2 / 2 / 2 / 2 / 1 | 2 / 2 / 2 / 2 / 1 | 5 / 4 / 3 / 5 / 2 | 10 / 12 / 3 / 6 / 4 | `max_capacity`, set to fit `mongodb_connection_budget` (TF-03) |
 | Fargate Spot | workers beyond their first task: 3 Spot per on-demand | same | same | same | `worker_spot` |
 | ADOT sidecar | off | off | off | off | `enable_adot_sidecar` |
 | **ElastiCache** (Valkey 8.0) | `cache.t4g.micro` × 1 | `cache.t4g.micro` × 1 | `cache.t4g.small` × 1 | `cache.t4g.medium` × 2 (primary + 1 replica, multi-AZ) | `elasticache_*`, `modules/redis` |

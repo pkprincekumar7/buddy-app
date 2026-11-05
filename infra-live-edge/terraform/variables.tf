@@ -169,6 +169,17 @@ variable "enable_waf_logging" {
   }
 }
 
+variable "waf_log_retention_days" {
+  description = "Days WAF log objects (waf-logs/, waf-logs-errors/) stay in the global logging bucket before S3 deletes them (SEC-02)."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.waf_log_retention_days >= 1 && floor(var.waf_log_retention_days) == var.waf_log_retention_days
+    error_message = "waf_log_retention_days must be a whole number of days, 1 or more."
+  }
+}
+
 variable "global_logging_bucket_name" {
   description = "Pre-existing S3 bucket in us-east-1 for CloudTrail and WAF logs. Set from GLOBAL_LOGGING_BUCKET_NAME GitHub secret. Must be non-empty when enable_cloudtrail = true or enable_waf_logging = true."
   type        = string

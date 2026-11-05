@@ -172,3 +172,49 @@ resource "aws_s3_bucket_policy" "global_logging" {
     ]
   })
 }
+
+# ---------------------------------------------------------------------------
+# Global logging bucket lifecycle (production-readiness review, SEC-02)
+# WAF logs are kept var.waf_log_retention_days, then deleted, so blocked
+# requests' details (redacted, but still IPs, paths and query strings) don't
+# pile up for ever. The bucket itself is manual and outlives the environment;
+# this rule set is its whole lifecycle configuration, so a rule added by hand
+# would be replaced: add it here. CloudTrail logs (cloudtrail/) have no expiry.
+# ---------------------------------------------------------------------------
+
+resource "aws_s3_bucket_lifecycle_configuration" "global_logging" {
+  count    = (var.enable_cloudtrail || var.enable_waf_logging) ? 1 : 0
+  provider = aws.us_east_1
+  bucket   = var.global_logging_bucket_name
+
+  rule {
+    id     = "expire-waf-logs"
+    status = "Enabled"
+    filter {
+      prefix = "waf-logs/"
+    }
+    expiration {
+      days = var.waf_log_retention_days
+    }
+  }
+
+  rule {
+    id     = "expire-waf-log-errors"
+    status = "Enabled"
+    filter {
+      prefix = "waf-logs-errors/"
+    }
+    expiration {
+      days = var.waf_log_retention_days
+    }
+  }
+
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}

@@ -52,8 +52,9 @@ class ServiceSettings(BaseSettings):
     # ── MongoDB (section 4) ──
     mongodb_uri: str = Field(validation_alias="MONGODB_URI")
     mongodb_db_name: str = Field(validation_alias="MONGODB_DB_NAME")
-    # Atlas M0 (dev, sbx, stg) allows 500 connections per cluster across every task of every
-    # service: 5 per task keeps a busy environment well inside that (15.3).
+    # Every task's pool counts toward the Atlas cluster's connection limit (M0 in dev and sbx:
+    # 500; M10 in stg and prod: 1500), across every task of every service. Terraform's
+    # mongodb_connection_budget checks the peak total (15.3, TF-03).
     mongodb_max_pool_size: int = Field(
         default=5, ge=1, le=100, validation_alias="MONGODB_MAX_POOL_SIZE"
     )
