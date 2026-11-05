@@ -14,11 +14,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.28"
     }
-    # Service-token key pairs (service_tokens.tf).
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
   }
 }
 
@@ -30,6 +25,10 @@ provider "aws" {
       Project     = var.app_name
       Environment = var.environment
       ManagedBy   = "terraform"
+      # Where the code is, and how sensitive this stack's data is: children's profiles and parents' accounts (PII)
+      # (production-readiness review, L2).
+      Repo               = var.repository
+      DataClassification = "confidential"
     }
   }
 }
@@ -46,6 +45,10 @@ provider "aws" {
       Project     = var.app_name
       Environment = var.environment
       ManagedBy   = "terraform"
+      # Where the code is, and how sensitive this stack's data is: children's profiles and parents' accounts (PII)
+      # (production-readiness review, L2).
+      Repo               = var.repository
+      DataClassification = "confidential"
     }
   }
 }

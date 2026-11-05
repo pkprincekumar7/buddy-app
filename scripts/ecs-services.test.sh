@@ -281,6 +281,21 @@ if out=$(deploy_image cluster "$ALL" image_for 2>&1); then fail "a failed rollou
     && ok "the failure names the failed service and how to re-run it" || fail "failure summary" "$out"
 fi
 
+# CI-12: a part-way failure says the environment runs mixed images, in the log and the summary.
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"; printf '%s\n' "$FAILED" > "$FAKE/states-superpower-worker-prod"
+export GITHUB_STEP_SUMMARY="$WORK/summary.md"; : > "$GITHUB_STEP_SUMMARY"
+out=$(deploy_image cluster "$ALL" image_for 2>&1) || true
+[[ "$out" == *"::warning title=Mixed images::"*"backend, reports on the new image, worker still on the previous one"* ]] \
+  && ok "a mixed-image warning annotation" || fail "mixed-image warning" "$out"
+summary=$(cat "$GITHUB_STEP_SUMMARY")
+[[ "$summary" == *"### ⚠️ Mixed images"* && "$summary" == *"| backend | new |"* && "$summary" == *"| worker | previous (rolled back by ECS) |"* && "$summary" == *"\`service=worker\`"* ]] \
+  && ok "the run summary lists each service's image and the re-run" || fail "mixed-image summary" "$summary"
+reset_polls; printf '%s\n' "$FAILED" > "$FAKE/states"; : > "$GITHUB_STEP_SUMMARY"
+out=$(deploy_image cluster "$ALL" image_for 2>&1) || true
+[[ "$out" != *"Mixed images"* && ! -s "$GITHUB_STEP_SUMMARY" ]] \
+  && ok "every service failing isn't mixed: all on the previous image" || fail "all-failed isn't mixed" "$out"
+unset GITHUB_STEP_SUMMARY
+
 reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
 broken_image() { [ "$(jq -r .name <<<"$1")" = "reports" ] && return 1; echo "repo:x"; }
 if out=$(deploy_image cluster "$ALL" broken_image 2>&1); then fail "an IMAGE_FOR failure fails the deploy"; else

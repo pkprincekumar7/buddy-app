@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-05):** of the 86 tracked findings, 47 are done, 22 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-05):** of the 86 tracked findings, 49 are done, 20 partly done, 15 open and 2 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -140,7 +140,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
 | EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
-| SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth (no token in state); the scheduler PAT and the service-token private keys are still in state |
+| SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); the scheduler PAT is still in state (with SEC-03, deferred) |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | 🟡 `Authorization`/`Cookie` redacted, BLOCK/COUNT only; log-bucket expiry (manual bucket) open |
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open · ⏸ Deferred |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
@@ -199,7 +199,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open · ⏸ Deferred |
 | TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Code done: deploy surge 150%, Spot workers, keep-alive and graceful shutdown, Atlas connection budget (stg/prod max counts lowered to fit); the load test open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0, right-sized nodes and an explicit `maxmemory-policy = noeviction` done; the working-set load test open |
-| TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | 🟡 HTTPS-only deny on all four Terraform policies; uploads-bucket policy and bucket imports open |
+| TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ✅ Done — HTTPS-only deny on all five bucket policies (uploads added); the buckets stay manual by the owner's choice, since they must outlive a destroy |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (body rule), rate rule scoped to `/api/` and raised; the rest ⏸ deferred (auth-route rule, version pins, count-mode switch) |
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Code done (timeout, no async retries, log group, failure alarm and destination, duplicate check); acceptance needs an applied env; fix 5 is the deferred SEC-03 |
@@ -214,14 +214,14 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ✅ Done — `crane copy` by digest, registry to registry; target digest checked; no tarballs (cosign copy waits on CI-03 signing) |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
-| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
+| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | ✅ Done — lock per environment; a part-way failure is a `Mixed images` warning and run-summary table with the re-run (no automatic rollback) |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | 🟡 Build (`npm ci --ignore-scripts`) before credentials; the two-job split (drops `id-token` from the build) ⏸ deferred |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ✅ Done — only a single COMPLETED deployment is promoted; source regions must match |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ✅ Done — `terraform validate` on every stack and module; tflint with the AWS ruleset |
 | CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ✅ Done — every job in every workflow has a timeout; recovery runbook |
 | CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | ✅ Done — a–e done (weekly retire.js refresh, CodeQL v4 + weekly run, partial-plan warning, review comment), f moot; g not needed (one admin, no approvers) |
 | DOC-01 | 🟢 Low | Docs | Documentation drift | ✅ Done — every listed drift fixed or checked; the `AdministratorAccess` wording stays with SEC-04 (deferred) |
-| LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L6, L8, L9, L14, L18, L21 done; L15 partial; L16 moot; L13 no action; the rest open |
+| LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L2 (Repo, DataClassification), L5, L6, L7, L8, L9, L14, L15, L18, L20, L21 done; L16 moot; L13 no action; the rest open |
 
 ---
 
@@ -455,7 +455,7 @@ custom_error_response {
 
 ### SEC-01 — Secrets stored in Terraform state 🟠
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Valkey now uses IAM auth (`modules/redis/main.tf:141-150`), so the Redis AUTH token, `elasticache.tf:78` and its variable are gone. The scheduler PAT is still plaintext in state (`infra-live-scheduler/terraform/secrets.tf:34`). **New:** the service-token RSA private keys come from `tls_private_key` (`infra-live-backend/terraform/service_tokens.tf:18,39`), so they are in state too. The fix should cover them.
+> 🔄 **Current code (2026-11-05):** 🟡 Partial. Valkey uses IAM auth (`modules/redis/main.tf`), so the Redis AUTH token is gone. **The service-token private keys are now out of state:** `scripts/service-token-keys.sh` makes each Ed25519 pair with OpenSSL outside Terraform (private key through a 0600 temp file, never an argument or the log) into SSM, `<service>/service_token/<kid>/{private,public}`. `terraform-live-backend` runs it before every plan (creating only what's missing) and deletes the pairs after a destroy. Terraform reads only the public keys (`data.aws_ssm_parameter`) and builds the private parameter's ARN for `INTERNAL_SIGNING_KEY` and the execution role, so no private key is in state or a plan; `tls_private_key` and the tls provider are gone. Kid versions moved to `service-token-versions.json`, read by both. `service-token-keys.test.sh` (22 tests) covers create, re-run, a half-written pair, rotation, errors and destroy. **Still open:** the scheduler PAT in state (`infra-live-scheduler/terraform/secrets.tf`), which belongs with SEC-03 (deferred).
 
 **Where:**
 - Redis token: `infra-live-backend/terraform/elasticache.tf:78`, passed via `terraform-live-backend.yml:287-291`.
@@ -2083,7 +2083,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### TF-05 — Bucket policies: no TLS-only deny; manual buckets 🟡
 
-> 🔄 **Current code (2026-11-02):** 🟡 Partial. All four Terraform-managed bucket policies now end with a `DenyInsecureTransport` statement (`Deny`, `s3:*` on the bucket and its objects, when `aws:SecureTransport = false`): `regional_logging` (`infra-live-backend/terraform/s3.tf`), `backend_assets_cf` and `global_logging` (`infra-live-edge/terraform/s3_backend_policy.tf`, `waf_logging.tf`) and `frontend` (`infra-live-frontend/terraform/s3_policy.tf`). Each takes effect as an in-place policy update on that stack's next apply. The backend stack test asserts the statement. **Open:** (1) the uploads buckets have no Terraform-managed policy (`s3_uploads_policy.tf` no longer exists; the backend manages only CORS and lifecycle). Adding one would replace any policy set by hand, so first check each uploads bucket's policy in the S3 console. (2) The buckets themselves aren't in Terraform state (no `import {}` blocks).
+> 🔄 **Current code (2026-11-05):** ✅ Done. Every Terraform-managed bucket policy ends with `DenyInsecureTransport`, and **the uploads buckets now have one too** (`aws_s3_bucket_policy.uploads`, `infra-live-backend/terraform/s3.tf`): the only statement, since access is the task roles' IAM. It's removed with the environment, like the uploads CORS and lifecycle rules, while the bucket and its photos stay; the stack test asserts it. **The buckets stay outside Terraform state, by the owner's choice** (no `import {}`). They're created by hand and outlive the environment on purpose (uploads and logs must survive a destroy, as the Atlas data does), so an environment stack owning them would delete them, or fail on a non-empty bucket, at every destroy.
 
 **Where:** `infra-live-edge/terraform/s3_uploads_policy.tf`, `s3_backend_policy.tf`, `infra-live-frontend/terraform/s3_policy.tf`, `infra-live-backend/terraform/s3.tf:85` (`regional_logging`).
 
@@ -2540,7 +2540,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-12 — Concurrency groups per service allow overlapping deploys 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial (matches the tracker). Deploy and promote lock per environment (`deploy-live-backend.yml:69`, `promote-live-backend.yml:60`). Mixed images are reported but not reconciled (`ecs-services.sh:221-223`).
+> 🔄 **Current code (2026-11-05):** ✅ Done. Deploy, promote and restart lock per environment. When a rollout fails part-way, `deploy_image` (`scripts/ecs-services.sh`) now adds a `Mixed images` warning annotation and a run-summary table: each service, whether it's on the new image or the previous one (rolled back by ECS), and the `service=` re-run that ends it. Nothing is rolled back automatically, since that could undo a good release; every change already has to work across versions (`docs/infra-operations.md`). `ecs-services.test.sh` covers both the mixed and the all-failed cases (63 tests).
 
 **Where:** `deploy-live-backend.yml:67`, `promote-live-backend.yml:62` and `restart-live-backend.yml:52` all use `group: deploy-live-backend-superpower-<env>-<service>`.
 
@@ -2684,12 +2684,12 @@ The "Where" column is from 2026-10-18; the status column gives the current locat
 | # | Where | Item | Fix | Status (2026-11-01) |
 |---|-------|------|-----|------|
 | L1 | all `provider.tf` | `~> 6.28`, no committed lock file | Commit `.terraform.lock.hcl`; `init -lockfile=readonly` (TF-01) | ✅ Lock files committed; workflows use `-lockfile=readonly` |
-| L2 | `default_tags` | Only Project/Environment/ManagedBy | Add `Owner`, `CostCenter`, `Repo`, `DataClassification` | ⬜ Open (`infra-live-backend/terraform/provider.tf:28-33`) |
+| L2 | `default_tags` | Only Project/Environment/ManagedBy | Add `Owner`, `CostCenter`, `Repo`, `DataClassification` | ✅ Done: `Repo` (from the workflows' `github.repository`) and `DataClassification` per stack (backend confidential, edge and scheduler internal, frontend public). `Owner`/`CostCenter` left out: one owner, no cost centres |
 | L3 | `infra-live-edge/terraform/response_headers.tf:175` | CORS allow-methods omits PUT. The backend has no PUT routes, and CloudFront `allowed_methods` can't drop PUT (it accepts only {GET,HEAD}, {GET,HEAD,OPTIONS} or all 7) | Leave as-is with a comment, or add PUT to CORS for symmetry | ⬜ Open (`response_headers.tf:167`) |
 | L4 | `response_headers.tf:88-89` | CSP `img-src https:` and `style-src 'unsafe-inline'` | `img-src 'self' data: blob:`, with APP-08. `blob:` is needed for upload previews (`frontend/src/hooks/useNinetyDayPlan.ts:334`, `URL.createObjectURL`); add the uploads CDN host only if it differs from the SPA host. Keep `style-src 'unsafe-inline'`: the CSP is a static CloudFront policy over S3, so nonces aren't possible, and framer-motion needs inline styles | ⬜ Open (`response_headers.tf:89`) |
-| L5 | `response_headers.tf:79,214,252` | HSTS `preload` on a subdomain does nothing | Remove it, or preload the apex deliberately | ⬜ Open (`response_headers.tf:79,206,244`) |
+| L5 | `response_headers.tf:79,214,252` | HSTS `preload` on a subdomain does nothing | Remove it, or preload the apex deliberately | ✅ Done: `preload = false` on all three policies; checkov's CKV_AWS_259 skipped with the reason |
 | L6 | `infra-live-backend/terraform/variables.tf:194` | `jwt_key_id` description says "CloudFront Function" | Say "Lambda@Edge" | ✅ Done (`variables.tf:225`) |
-| L7 | `jwt-validator-lambda.js.tpl:151,155,322` | 503 body leaks the location/region name | Generic message; log details | ⬜ Open (`jwt-validator-lambda.js.tpl:189,193,390`) |
+| L7 | `jwt-validator-lambda.js.tpl:151,155,322` | 503 body leaks the location/region name | Generic message; log details | ✅ Done: the 503 body is a generic `Service Unavailable`; the location or region goes to the function's log (test checks the body) |
 | L8 | `elasticache.tf:68` | `engine_version = "7.1"` hard-coded | Variable (Appendix A) | ✅ Variable (`modules/redis/variables.tf:90`) |
 | L9 | `ecs.tf:123,259` | ADOT image `v0.40.0` hard-coded twice | Variable/local; keep current. **v7:** the image now lives in one place (`modules/ecs-service`), and the sidecar is **off everywhere** because the app isn't instrumented; see [auth-users-split.md](auth-users-split.md) 15.5. | ✅ Variable (`variables.tf:181`) |
 | L10 | `vpc.tf:10` | VPC flow logs disabled (CKV2_AWS_11) | Enable in prod (S3, Parquet) | ⬜ Open (`modules/network/main.tf:49`) |
@@ -2697,12 +2697,12 @@ The "Where" column is from 2026-10-18; the status column gives the current locat
 | L12 | `ecs.tf` (API + worker) | No `readonlyRootFilesystem`, no `stopTimeout`. The container is already non-root (`Dockerfile:42-45`) | Read-only root plus a task-level ephemeral `volume` (no host path) mounted at `/tmp`; Fargate doesn't support `linuxParameters.tmpfs`. `stopTimeout` ≤ 120 (the Fargate maximum); worker see APP-06 | 🟡 Workers' `stopTimeout` done (APP-06); `readonlyRootFilesystem` open; non-root is now `Dockerfile:97` |
 | L13 | — | v1 said `.DS_Store` files were committed: **wrong**, they're gitignored and untracked | No action | — No action |
 | L14 | `terraform-live-backend.yml:139-141,279-283`; `docs/ci-cd.md:214-218` | Non-secret config stored as **secrets**: model names, `APP_NAME`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, ACM ARNs, bucket names, `STATE_BUCKET`, `JWT_PUBLIC_KEYS`. They show as `***` in logs (hard to review) but appear unmasked in the `tfplan.txt` artifact (the ACM ARNs reveal the account ID) | Move to environment **variables** (`vars.*`) | ✅ Moved to `vars.*` (`terraform-live-backend.yml:90`) |
-| L15 | `jwt-validator-lambda.js.tpl:56,60,96` | `${kid}`, `${jwt_key_id}`, `${region}` interpolated into single-quoted JS without `jsonencode` | Use `jsonencode` (as `:87` already does) | 🟡 `${region}` still un-encoded (`jwt-validator-lambda.js.tpl:136`); the others fixed |
+| L15 | `jwt-validator-lambda.js.tpl:56,60,96` | `${kid}`, `${jwt_key_id}`, `${region}` interpolated into single-quoted JS without `jsonencode` | Use `jsonencode` (as `:87` already does) | ✅ Done: the region keys are `jsonencode`d too; no plain `${…}` is left in the template |
 | L16 | `backend/app/services/s3_uploads.py:27-34`; `downloads.py:58` | `get_s3_client` caches one client and ignores later `region` arguments. This is latent today, because every caller passes `settings.aws_region`. `downloads.py:58` creates a new `boto3.client` on **every** request | Cache per region. Update `tests/test_s3_uploads.py:61` (`test_the_first_region_wins_for_the_process_lifetime` pins the current behaviour). Reuse a cached client in downloads | ⚪ Moot: the files are gone; `backend/common/uploads.py:94` builds a client per config and region |
 | L17 | `vpc_endpoints.tf` | No `monitoring` interface endpoint, so `PutMetricData` goes via NAT | Add it in stg/prod | ⬜ Open (`modules/network/endpoints.tf:25-31`) |
 | L18 | `ecs.tf:240` | Worker receives `JWT_PRIVATE_KEY` it doesn't need (shared `Settings` requires it) | Make it optional for the worker, and don't inject it. `derive_jwt_public_key` and `validate_jwt_private_key` (`settings.py:42-82`) parse it unconditionally, so they must skip an empty key | ✅ Only auth gets `JWT_PRIVATE_KEY` (`services.tf:138`) |
 | L19 | `ecr.tf` | Basic scan-on-push only; no continuous rescanning | `aws_ecr_registry_scanning_configuration { scan_type = "ENHANCED" }` with a repository filter, in the prod account. It's registry-level (per account and region, not in `ecr.tf`) and replaces basic scan-on-push | ⬜ Open |
-| L20 | `vpc.tf:1` | `aws_availability_zones` doesn't filter `opt-in-status`; opting into a Local Zone would reorder the AZs and shift all subnets | Filter `opt-in-not-required`, or pin AZ IDs | ⬜ Open (`modules/network/main.tf:21-23`) |
+| L20 | `vpc.tf:1` | `aws_availability_zones` doesn't filter `opt-in-status`; opting into a Local Zone would reorder the AZs and shift all subnets | Filter `opt-in-not-required`, or pin AZ IDs | ✅ Done: `opt-in-status = opt-in-not-required` filter (`modules/network/main.tf`) |
 | L21 | `tfvars/{dev,sbx,stg}.tfvars` | `cache.t3.*` Redis nodes | Switch to `cache.t4g.*` (cheaper, Graviton)  ✅ **Done 2026-10-23:** all environments use Valkey `cache.t4g.*` (TF-04) | ✅ Done |
 
 ---

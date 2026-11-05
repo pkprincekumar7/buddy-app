@@ -18,3 +18,9 @@ variable "spa_bucket_name" {
   description = "Pre-existing S3 frontend assets bucket name (us-east-1)"
   type        = string
 }
+
+variable "repository" {
+  description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
+  type        = string
+  default     = ""
+}

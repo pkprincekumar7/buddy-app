@@ -85,6 +85,7 @@ jobs:
     env:
       TF_IN_AUTOMATION: "1"
       TF_VAR_app_name:             ${{ vars.APP_NAME }}
+      TF_VAR_repository:          ${{ github.repository }}
       TF_VAR_spa_bucket_name: ${{ vars.SPA_BUCKET_NAME }}
 
     steps:

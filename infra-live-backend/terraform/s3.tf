@@ -1,7 +1,8 @@
 # ---------------------------------------------------------------------------
 # S3 — uploads bucket configuration (this backend region)
-# The bucket is created manually. Terraform manages CORS, lifecycle, and IAM
-# only, referencing the bucket via var.uploads_bucket_name.
+# The bucket is created manually and outlives the environment (the photos must survive a
+# destroy, as the Atlas data does). Terraform manages its CORS, lifecycle and policy, and
+# the IAM that reaches it, referencing it via var.uploads_bucket_name.
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket_cors_configuration" "uploads" {
@@ -64,6 +65,30 @@ locals {
     "eu-west-1"  = "156460612806"
     "us-east-1"  = "127311923021"
   }
+}
+
+# Plain HTTP refused on the uploads bucket too (production-readiness review, TF-05). The
+# only callers are the services' S3 clients and browsers using their presigned POST and
+# GET URLs, all HTTPS (the regional endpoint, backend/common/uploads.py). The bucket has
+# no other policy (no grants: access is the task roles' IAM), so this one is the whole of
+# it; a statement added by hand would be replaced. Removed with the environment, like the
+# CORS and lifecycle rules, while the bucket and its photos stay.
+resource "aws_s3_bucket_policy" "uploads" {
+  bucket = var.uploads_bucket_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = ["arn:aws:s3:::${var.uploads_bucket_name}", "arn:aws:s3:::${var.uploads_bucket_name}/*"]
+        Condition = { Bool = { "aws:SecureTransport" = "false" } }
+      }
+    ]
+  })
 }
 
 # ---------------------------------------------------------------------------

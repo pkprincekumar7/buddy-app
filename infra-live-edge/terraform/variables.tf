@@ -198,3 +198,9 @@ variable "ops_email" {
     error_message = "ops_email must be set when enable_alarms = true (the OPS_EMAIL GitHub environment variable)."
   }
 }
+
+variable "repository" {
+  description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
+  type        = string
+  default     = ""
+}

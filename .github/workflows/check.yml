@@ -391,6 +391,9 @@ jobs:
       - name: Run fill-service-secrets.sh tests
         run: bash scripts/fill-service-secrets.test.sh
 
+      - name: Run service-token-keys.sh tests
+        run: bash scripts/service-token-keys.test.sh
+
       # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07),
       # against a fake aws CLI.
       - name: Run frontend-publish.sh tests
@@ -415,7 +418,7 @@ jobs:
         run: bash scripts/check-service-lists.sh
 
       - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh scripts/frontend-release.test.sh scripts/workflow-inputs.sh scripts/workflow-inputs.test.sh
+        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/service-token-keys.sh scripts/service-token-keys.test.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh scripts/frontend-release.test.sh scripts/workflow-inputs.sh scripts/workflow-inputs.test.sh
 
   terraform-lint:
     name: Terraform Lint

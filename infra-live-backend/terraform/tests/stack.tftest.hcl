@@ -1,8 +1,8 @@
 # terraform test for the whole backend stack — mock AWS provider: no
 # credentials, nothing is created. Checks that the modules (../../modules,
 # TF-01) are wired together for the split's runtimes (services.tf,
-# docs/auth-users-split.md 15). The tls provider is real: it generates the
-# service-token key pairs locally.
+# docs/auth-users-split.md 15). The service-token public keys are mocked SSM reads:
+# scripts/service-token-keys.sh makes the pairs outside Terraform (SEC-01).
 # Run from infra-live-backend/terraform:
 #   terraform init -backend=false && terraform test
 
@@ -20,6 +20,9 @@ mock_provider "aws" {
   }
   mock_data "aws_caller_identity" {
     defaults = { account_id = "111111111111" }
+  }
+  mock_data "aws_ssm_parameter" {
+    defaults = { value = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n" }
   }
 
   # The mock's random ARNs fail the provider's own ARN validation wherever one
@@ -218,7 +221,7 @@ run "prod_stack_wiring" {
     error_message = "Auth is the only service with JWT_PRIVATE_KEY; no LLM keys."
   }
   assert {
-    condition     = jsondecode(module.service["auth"].container_definitions)[0].secrets[0] == { name = "MONGODB_URI", valueFrom = "${aws_secretsmanager_secret.service["auth"].arn}:MONGODB_URI::" } && jsondecode(module.service["auth"].container_definitions)[0].secrets[4].valueFrom == aws_ssm_parameter.signing_key["auth"].arn
+    condition     = jsondecode(module.service["auth"].container_definitions)[0].secrets[0] == { name = "MONGODB_URI", valueFrom = "${aws_secretsmanager_secret.service["auth"].arn}:MONGODB_URI::" } && jsondecode(module.service["auth"].container_definitions)[0].secrets[4].valueFrom == "arn:aws:ssm:ap-south-1:111111111111:parameter/superpower/prod/backend/ap-south-1/auth/service_token/auth-v1/private"
     error_message = "Secrets reference <secret ARN>:<key>::; the signing key comes from SSM."
   }
   assert {
@@ -322,7 +325,7 @@ run "prod_stack_wiring" {
 
   # -- isolation (15.1) -----------------------------------------------------------
   assert {
-    condition     = jsondecode(aws_iam_role_policy.execution_secrets["users-worker"].policy).Statement[0].Resource == [aws_secretsmanager_secret.service["users"].arn] && jsondecode(aws_iam_role_policy.execution_secrets["users-worker"].policy).Statement[1].Resource == [aws_ssm_parameter.signing_key["users"].arn]
+    condition     = jsondecode(aws_iam_role_policy.execution_secrets["users-worker"].policy).Statement[0].Resource == [aws_secretsmanager_secret.service["users"].arn] && jsondecode(aws_iam_role_policy.execution_secrets["users-worker"].policy).Statement[1].Resource == ["arn:aws:ssm:ap-south-1:111111111111:parameter/superpower/prod/backend/ap-south-1/users/service_token/users-v1/private"]
     error_message = "A runtime's execution role reads only its own service's secret and signing key."
   }
   assert {
@@ -356,8 +359,8 @@ run "prod_stack_wiring" {
     error_message = "Each service signs with kid <service>-v1 by default; every runtime gets every public key."
   }
   assert {
-    condition     = aws_ssm_parameter.signing_key["users"].type == "SecureString" && aws_ssm_parameter.signing_key["users"].value == tls_private_key.service["users"].private_key_pem
-    error_message = "The private key is a SecureString."
+    condition     = data.aws_ssm_parameter.service_token_public["users"].name == "/superpower/prod/backend/ap-south-1/users/service_token/users-v1/public" && startswith(local.internal_public_keys["users"]["users-v1"], "-----BEGIN PUBLIC KEY-----")
+    error_message = "Each public key is read from the key script's String parameter (SEC-01)."
   }
   assert {
     condition     = jsondecode(aws_ssm_parameter.internal_public_keys.value) == local.internal_public_keys
@@ -503,6 +506,14 @@ run "prod_stack_wiring" {
     condition     = length(aws_ecr_repository_policy.promote_pull) == 0
     error_message = "No ecr_pull_account_ids: no repository policy (CI-09)."
   }
+  assert {
+    condition = one(jsondecode(aws_s3_bucket_policy.uploads.policy).Statement) == {
+      Sid       = "DenyInsecureTransport", Effect = "Deny", Principal = "*", Action = "s3:*"
+      Resource  = ["arn:aws:s3:::superpower-uploads-ap-south-1", "arn:aws:s3:::superpower-uploads-ap-south-1/*"]
+      Condition = { Bool = { "aws:SecureTransport" = "false" } }
+    }
+    error_message = "The uploads bucket refuses plain HTTP, and grants nothing (TF-05)."
+  }
 }
 
 run "dev_has_no_interface_endpoints_or_sustained_alarms" {
@@ -641,17 +652,4 @@ run "runtime_sizes_needs_every_tier" {
   }
 
   expect_failures = [var.runtime_sizes]
-}
-
-run "rotating_a_service_token_key" {
-  command = plan
-
-  variables {
-    service_token_key_versions = { users = 2 }
-  }
-
-  assert {
-    condition     = local.signing_kid["users"] == "users-v2" && local.signing_kid["auth"] == "auth-v1"
-    error_message = "Bumping a service's version changes only its kid."
-  }
 }

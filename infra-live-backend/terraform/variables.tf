@@ -211,12 +211,6 @@ variable "mongodb_max_pool_size" {
   default     = 5
 }
 
-variable "service_token_key_versions" {
-  description = "Service-token key version per service (default 1): bump one to rotate that service's Ed25519 key pair and kid (service_tokens.tf)."
-  type        = map(number)
-  default     = {}
-}
-
 variable "enable_execute_command" {
   description = "Enable ECS Exec (aws ecs execute-command) for live container debugging. Disable in prod."
   type        = bool
@@ -403,4 +397,10 @@ variable "ecr_pull_account_ids" {
     condition     = alltrue([for id in var.ecr_pull_account_ids : can(regex("^[0-9]{12}$", id))])
     error_message = "ecr_pull_account_ids must be 12-digit AWS account IDs."
   }
+}
+
+variable "repository" {
+  description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
+  type        = string
+  default     = ""
 }

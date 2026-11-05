@@ -353,6 +353,33 @@ deploy_image() {
   echo "Rolled out: ${succeeded[*]:-none}"
   if [ "${#failed[@]}" -gt 0 ]; then
     echo "ERROR: rollout failed for: ${failed[*]}. Those services are back on their previous image (ECS circuit breaker); the others run the new one. Fix and re-run with service=$(IFS=,; echo "${failed[*]}")." >&2
+    if [ "${#succeeded[@]}" -gt 0 ]; then
+      mixed_images_notice "$(IFS=,; echo "${succeeded[*]}")" "$(IFS=,; echo "${failed[*]}")"
+    fi
     return 1
   fi
+}
+
+# mixed_images_notice ROLLED_OUT FAILED (comma-separated names): when a rollout fails
+# part-way, the environment runs two releases at once. Nothing rolls the others back
+# (that could undo a good release); this makes the state impossible to miss instead: a
+# warning annotation and a section in the run summary, with the re-run that ends it
+# (production-readiness review, CI-12).
+mixed_images_notice() {
+  local moved="$1" left_behind="$2"
+  echo "::warning title=Mixed images::This environment now runs two releases: ${moved//,/, } on the new image, ${left_behind//,/, } still on the previous one. Re-run with service=${left_behind} once the failure is fixed."
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  {
+    echo "### ⚠️ Mixed images"
+    echo
+    echo "The rollout stopped part-way, so this environment runs two releases until it's re-run."
+    echo "Every change must already work across versions (docs/infra-operations.md), but don't leave it this way."
+    echo
+    echo "| Service | Image |"
+    echo "|---|---|"
+    tr ',' '\n' <<<"$moved" | sed 's/.*/| & | new |/'
+    tr ',' '\n' <<<"$left_behind" | sed 's/.*/| & | previous (rolled back by ECS) |/'
+    echo
+    echo "Fix the failure, then re-run this workflow with \`service=${left_behind}\`."
+  } >> "$GITHUB_STEP_SUMMARY"
 }

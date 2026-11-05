@@ -55,6 +55,7 @@ locals {
 }
 
 resource "aws_cloudfront_response_headers_policy" "frontend_security" {
+  #checkov:skip=CKV_AWS_259:HSTS is enforced (2 years, includeSubDomains); only `preload` is off, because preload lists take an apex domain and this is a subdomain (L5)
   name    = "${var.app_name}-frontend-security-${var.environment}"
   comment = "Security headers + CSP for the ${var.app_name} React SPA (${var.environment})"
 
@@ -76,11 +77,12 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
       override        = true
     }
 
-    # Enforce HTTPS for 2 years; opt in to browser preload lists.
+    # Enforce HTTPS for 2 years. No `preload`: browsers' preload lists take only an apex
+    # domain, so on this subdomain it did nothing (production-readiness review, L5).
     strict_transport_security {
       access_control_max_age_sec = 63072000
       include_subdomains         = true
-      preload                    = true
+      preload                    = false
       override                   = true
     }
 
@@ -145,6 +147,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 # responses.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "api_security" {
+  #checkov:skip=CKV_AWS_259:HSTS is enforced (2 years, includeSubDomains); only `preload` is off, because preload lists take an apex domain and this is a subdomain (L5)
   name    = "${var.app_name}-api-security-${var.environment}"
   comment = "Security headers for FastAPI /api/* responses (${var.environment})"
 
@@ -207,7 +210,7 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
     strict_transport_security {
       access_control_max_age_sec = 63072000
       include_subdomains         = true
-      preload                    = true
+      preload                    = false
       override                   = true
     }
 
@@ -232,6 +235,7 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
 # so there is no security benefit in setting them on image/binary assets.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "assets" {
+  #checkov:skip=CKV_AWS_259:HSTS is enforced (2 years, includeSubDomains); only `preload` is off, because preload lists take an apex domain and this is a subdomain (L5)
   name    = "${var.app_name}-assets-${var.environment}"
   comment = "Security headers for static asset responses (/app-assets/*) (${var.environment})"
 
@@ -245,7 +249,7 @@ resource "aws_cloudfront_response_headers_policy" "assets" {
     strict_transport_security {
       access_control_max_age_sec = 63072000
       include_subdomains         = true
-      preload                    = true
+      preload                    = false
       override                   = true
     }
   }

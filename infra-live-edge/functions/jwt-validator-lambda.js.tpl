@@ -137,7 +137,7 @@ const LOCATION_TO_REGION = {
 // fails closed the same way an unmapped location does.
 const REGIONAL_ALB_FQDNS = {
 %{ for region, fqdn in regional_alb_fqdns ~}
-  '${region}': ${jsonencode(fqdn)},
+  ${jsonencode(region)}: ${jsonencode(fqdn)},
 %{ endfor ~}
 }
 
@@ -179,9 +179,11 @@ function unauthorized() {
 
 // No default region: a location absent from LOCATION_TO_REGION, or a region
 // absent from REGIONAL_ALB_FQDNS (not yet deployed), fails the request
-// instead of guessing an origin.
-function serviceUnavailable(message) {
-  return jsonErrorResponse(503, 'Service Unavailable', message)
+// instead of guessing an origin. The reason (location, region) goes to the
+// log only; the caller gets a generic body (production-readiness review, L7).
+function serviceUnavailable(reason) {
+  console.error('jwt validator: no backend for this request: ' + reason)
+  return jsonErrorResponse(503, 'Service Unavailable', 'Service Unavailable')
 }
 
 // Resolves the token's location claim to a regional ALB FQDN. Throws (never

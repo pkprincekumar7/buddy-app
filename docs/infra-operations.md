@@ -181,7 +181,8 @@ Then, in each region:
 Everything else (env vars, secret references, CPU/memory, roles) is carried over unchanged. The
 `:latest` placeholder never runs after the first deploy. If a service fails to stabilise, the
 ECS circuit breaker rolls it back and the others carry on. The step then fails, naming the services
-left on their previous image and the `service=` value to re-run them with. Because the services
+left on their previous image and the `service=` value to re-run them with, and the run shows a
+**Mixed images** warning and a summary table of which service runs which image (CI-12). Because the services
 are rolled out together, any change must keep working while some services still run the previous
 image (e.g. the API and the worker must both handle a job written by the other version). The rollout logic is shared by all
 three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.test.sh`).
@@ -318,10 +319,24 @@ own service's.
 - **Hard-deleted on destroy.** `recovery_window_in_days = 0` means `terraform destroy` deletes
   the secret immediately, with no 30-day recovery window, so a re-apply doesn't hit a name clash.
   ⚠ This is irreversible — back up the values first.
-- **Service-token keys aren't here.** Terraform generates them (`service_tokens.tf`) into
-  `/{app}/{env}/backend/{region}/<service>/internal_signing_key` (SSM SecureString). To rotate one,
-  bump its entry in `service_token_key_versions`, apply, and redeploy every runtime: the others
-  learn the new public key from their `INTERNAL_PUBLIC_KEYS` when they restart.
+- **Service-token keys aren't here, nor in Terraform state** (SEC-01).
+  `scripts/service-token-keys.sh` makes one Ed25519 pair per service and kid, as
+  `/{app}/{env}/backend/{region}/<service>/service_token/<kid>/private` (SecureString) and
+  `…/public` (String). `terraform-live-backend` runs it before every plan, creating only what's
+  missing, and deletes the pairs after a destroy. Terraform reads only the public keys
+  (`INTERNAL_PUBLIC_KEYS`) and points `INTERNAL_SIGNING_KEY` at the private parameter.
+  - **To rotate one,** bump the service's version in
+    `infra-live-backend/terraform/service-token-versions.json` (for example `{"users": 2}`), run
+    `terraform-live-backend` apply, then `deploy-live-backend` for `all`: the others learn the new
+    public key from `INTERNAL_PUBLIC_KEYS` when they restart. The old pair is deleted.
+  - **A pair deleted by hand** is recreated (new keys) on the next apply; deploy `all` after it.
+  - **Running Terraform from a laptop,** create the pairs first, from
+    `infra-live-backend/terraform` with that environment's AWS credentials (needs OpenSSL 3):
+
+    ```
+    source ../../scripts/service-token-keys.sh
+    ensure_service_token_keys <APP_NAME> <env> <region> service-token-versions.json $(python3 ../../backend/tools/services.py)
+    ```
 
 ### Rotating a value
 

@@ -2,46 +2,49 @@
 # Service tokens — one Ed25519 key pair per service (docs/auth-users-split.md, 13.2)
 #
 # Every internal call carries a token signed with the caller's own private key.
-# Terraform generates the pairs here:
-#   - each private key goes into an SSM SecureString in this region, which only
-#     that service's runtimes can read (their execution roles, iam.tf), injected
-#     as INTERNAL_SIGNING_KEY;
-#   - the public keys form INTERNAL_PUBLIC_KEYS ({service: {kid: PEM}}), given to
-#     every runtime and published as a non-secret SSM parameter.
-# The private keys are also in Terraform state, which is treated as sensitive.
+# scripts/service-token-keys.sh makes the pairs, outside Terraform, so no private key is
+# in Terraform state or a plan (production-readiness review, SEC-01). terraform-live-backend
+# runs it before every plan, and deletes the pairs after a destroy. Each pair is two SSM
+# parameters in this region:
+#   /<app>/<env>/backend/<region>/<service>/service_token/<kid>/private  SecureString
+#   /<app>/<env>/backend/<region>/<service>/service_token/<kid>/public   String
+# Here:
+#   - each runtime's INTERNAL_SIGNING_KEY points at its service's private parameter,
+#     which only that service's execution role may read (iam.tf); Terraform never reads it;
+#   - the public keys form INTERNAL_PUBLIC_KEYS ({service: {kid: PEM}}), given to every
+#     runtime and published as a non-secret SSM parameter.
 #
-# Rotation (same pattern as JWT_PUBLIC_KEYS): bump the service's entry in
-# var.service_token_key_versions (new kid + new key), apply, deploy the service;
-# the old public key isn't kept, so callers' cached keys roll over on redeploy.
+# Rotation: bump the service's version in service-token-versions.json (new kid, new pair;
+# the script deletes the old one), run terraform-live-backend apply, then deploy every
+# runtime. The old public key isn't kept, so callers' cached keys roll over on redeploy.
 # ---------------------------------------------------------------------------
 
-resource "tls_private_key" "service" {
-  for_each = toset(local.split_services)
-
-  algorithm = "ED25519"
-}
+data "aws_caller_identity" "current" {}
 
 locals {
-  signing_kid = { for s in local.split_services : s => "${s}-v${lookup(var.service_token_key_versions, s, 1)}" }
+  # {service: version}, read by the key script too; a service not listed is version 1.
+  service_token_key_versions = jsondecode(file("${path.module}/service-token-versions.json"))
+
+  signing_kid = { for s in local.split_services : s => "${s}-v${lookup(local.service_token_key_versions, s, 1)}" }
+
+  service_token_prefix = { for s in local.split_services : s => "/${var.app_name}/${var.environment}/backend/${var.aws_region}/${s}/service_token/${local.signing_kid[s]}" }
+
+  # Built from the name: the private key is never read into state.
+  signing_key_arn = {
+    for s in local.split_services : s => "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.service_token_prefix[s]}/private"
+  }
 
   internal_public_keys = {
-    for s in local.split_services : s => { (local.signing_kid[s]) = tls_private_key.service[s].public_key_pem }
+    for s in local.split_services : s => { (local.signing_kid[s]) = data.aws_ssm_parameter.service_token_public[s].value }
   }
 }
 
-resource "aws_ssm_parameter" "signing_key" {
-  #checkov:skip=CKV_AWS_337:AWS-managed key (aws/ssm), as for the service secrets (secrets.tf CKV_AWS_149): access is limited by each execution role's ssm:GetParameters on its own parameter; a CMK adds a key policy per service without changing who can read it
+# Public keys only (a String parameter); a missing one fails the plan with its name: run
+# scripts/service-token-keys.sh ensure first (the workflow always does).
+data "aws_ssm_parameter" "service_token_public" {
   for_each = toset(local.split_services)
 
-  name        = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/${each.key}/internal_signing_key"
-  description = "${each.key}'s service-token private key (Ed25519, kid ${local.signing_kid[each.key]})"
-  type        = "SecureString"
-  value       = tls_private_key.service[each.key].private_key_pem
-
-  tags = {
-    Name    = "${var.app_name}-${each.key}-signing-key-${var.environment}-${var.aws_region}"
-    Service = each.key
-  }
+  name = "${local.service_token_prefix[each.key]}/public"
 }
 
 # The public-key map, for anything outside the tasks that verifies service tokens.

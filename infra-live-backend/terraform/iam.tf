@@ -60,7 +60,7 @@ resource "aws_iam_role_policy" "execution_secrets" {
       {
         Effect   = "Allow"
         Action   = ["ssm:GetParameters"]
-        Resource = [aws_ssm_parameter.signing_key[each.value.service].arn]
+        Resource = [local.signing_key_arn[each.value.service]]
       },
     ]
   })

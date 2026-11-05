@@ -241,6 +241,8 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
     const accessToken = signJwt({ sub: 'u1', type: 'access', location: 'cn' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
     const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': accessToken } }))
     assert.equal(res.status, '503')
+    // L7: the body says nothing about locations or regions.
+    assert.ok(!/cn|region|location|provisioned/i.test(res.body), res.body)
   })
 
   await t.test('mobile: refresh_token sent as Authorization: Bearer (no cookie jar) still routes correctly', async () => {

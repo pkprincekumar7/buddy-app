@@ -116,7 +116,7 @@ Settings that matter (backend):
 | `mongodb_max_pool_size` | MongoDB connections per task (default 5). |
 | `mongodb_connection_budget` | **Required.** The MongoDB connections this region's tasks may open: the Atlas cluster's limit (M0 500, M10 1500, M20/M30 3000), split between the regions sharing the cluster. The plan fails when every Mongo runtime at its peak (`max_capacity`, or a deploy's surge if larger) × (`mongodb_max_pool_size` + 6 monitoring connections) would exceed it (TF-03). Today: 500 in dev, sbx and stg (M0), 1500 in prod (M10); stg's and prod's `max_capacity` values are set to fit. |
 | `worker_spot` | Workers' share of Fargate Spot: `on_demand_base` tasks on demand, then `spot_weight` Spot tasks per further on-demand one (default 1 and 3). `spot_weight = 0` runs them on demand only. HTTP services and the collector always run on demand (TF-03). |
-| `service_token_key_versions` | Per service, the version of its service-token key pair (default 1). Bump one to rotate that key. |
+| `service-token-versions.json` | Not a variable: a file next to the tfvars, `{service: version}` (default 1 each), read by Terraform and by `scripts/service-token-keys.sh`. Bump a service's version to rotate its service-token key pair (SEC-01; `docs/infra-operations.md`). |
 | `enable_guardduty` | GuardDuty in this region, created and destroyed with the environment (on in stg and prod, off in dev and sbx for cost). With one account per environment, any environment may turn it on; in a shared account, see section 5. |
 | `enable_cloudtrail`, `enable_alb_access_logs` | Write to that region's `REGIONAL_LOGGING_BUCKET_NAMES` entry. |
 | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `xray_default_sampling_rate` | Observability level, and the share of ordinary traces the collector keeps (errors and slow traces are always kept). |
@@ -177,7 +177,7 @@ These are the only things that can collide. Everything else is unique by name au
 
 | Thing | Rule | Why |
 |---|---|---|
-| S3 buckets: `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, the `UPLOADS_BUCKET_NAMES` entries | Never share between environments. | The edge/frontend stacks replace the bucket's whole policy with one that trusts only this environment's CloudFront — a shared bucket breaks the other environment with 403s. |
+| S3 buckets: `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, the `UPLOADS_BUCKET_NAMES` entries | Never share between environments. | The edge/frontend stacks replace the bucket's whole policy with one that trusts only this environment's CloudFront — a shared bucket breaks the other environment with 403s. The backend stack replaces each uploads bucket's policy with its HTTPS-only one (TF-05). |
 | `GLOBAL_LOGGING_BUCKET_NAME` | Must differ from that environment's `us-east-1` entry in `REGIONAL_LOGGING_BUCKET_NAMES`. | Both stacks replace that bucket's policy; the edge one has no ALB-log grant. |
 | `DOMAIN_NAME` + `SUBDOMAIN` + environment | Must produce hostnames no other environment uses. | CloudFront aliases are globally unique across all of AWS. |
 | `MONGODB_URIS` / databases | Each service has its own database (named after the service) and its own Atlas user, per environment. | Shared data. |

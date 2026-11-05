@@ -117,6 +117,7 @@ jobs:
       # vars.* = environment variables (non-sensitive names, IDs, ARNs, public
       # keys), secrets.* = environment secrets (credentials only). See docs/ci-cd.md.
       TF_VAR_app_name:            ${{ vars.APP_NAME }}
+      TF_VAR_repository:         ${{ github.repository }}
       TF_VAR_domain_name:         ${{ vars.DOMAIN_NAME }}
       TF_VAR_hosted_zone_id:      ${{ vars.HOSTED_ZONE_ID }}
       TF_VAR_assets_bucket_name: ${{ vars.ASSETS_BUCKET_NAME }}
@@ -374,6 +375,20 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      # The service-token key pairs, made here rather than by Terraform so no private key
+      # is in state or a plan (SEC-01). Before every plan, destroy plans included: the plan
+      # reads the public keys. Creates only what's missing; never prints a key.
+      - name: Ensure service-token keys
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGION: ${{ matrix.aws_region }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/service-token-keys.sh
+          read -ra SERVICES <<< "$(python3 ../../backend/tools/services.py | tr '\n' ' ')"
+          ensure_service_token_keys "$APP_NAME" "$ENVIRONMENT" "$REGION" service-token-versions.json "${SERVICES[@]}"
+
       - name: Terraform Plan
         if: inputs.action == 'plan' || inputs.action == 'apply'
         env:
@@ -468,3 +483,15 @@ jobs:
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         run: terraform apply -auto-approve tfplan.bin
+
+      # After the stack is gone, its key pairs too: a destroy leaves nothing (SEC-01).
+      - name: Delete service-token keys
+        if: inputs.action == 'destroy'
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGION: ${{ matrix.aws_region }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/service-token-keys.sh
+          delete_service_token_keys "$APP_NAME" "$ENVIRONMENT" "$REGION"

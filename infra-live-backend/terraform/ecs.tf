@@ -84,7 +84,7 @@ module "service" {
     # service's secret JSON as an env var, plus the service-token signing key.
     secrets = concat(
       [for k in each.value.secret_keys : { name = k, valueFrom = "${aws_secretsmanager_secret.service[each.value.service].arn}:${k}::" }],
-      each.value.service != null ? [{ name = "INTERNAL_SIGNING_KEY", valueFrom = aws_ssm_parameter.signing_key[each.value.service].arn }] : [],
+      each.value.service != null ? [{ name = "INTERNAL_SIGNING_KEY", valueFrom = local.signing_key_arn[each.value.service] }] : [],
     )
     log_group_name    = aws_cloudwatch_log_group.service[each.key].name
     log_stream_prefix = each.key
