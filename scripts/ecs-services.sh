@@ -179,6 +179,98 @@ copy_image() {
   echo "Copied $source to $repo:$tag."
 }
 
+# -- signing (production-readiness review, CI-03) ---------------------------------
+# deploy-live-backend signs every image it pushes, keyless: cosign gets a short-lived
+# certificate for the workflow's GitHub OIDC identity, and the signature is stored next to
+# the image as `sha256-<hex>.sig` (and the SBOM attestation as `.att`), with a public
+# Rekor log entry. Every rollout first checks the signature came from this repository's
+# deploy-live-backend workflow; promote copies it along with the image. cosign reads the
+# registry login docker or crane wrote.
+
+COSIGN_OIDC_ISSUER="https://token.actions.githubusercontent.com"
+
+# signer_identity → the pattern a valid signature's certificate must match: this repo's
+# deploy-live-backend workflow, run from a branch or tag (a call from terraform-live-all
+# signs as that same workflow file).
+signer_identity() {
+  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is unset}"
+  printf '^https://github\\.com/%s/\\.github/workflows/deploy-live-backend\\.yml@refs/(heads|tags)/.+$\n' "${repo//./\\.}"
+}
+
+# verify_signature REF (<repo>@sha256:...): success if REF carries a valid signature from
+# signer_identity. QUIET=1 prints nothing; otherwise a failure says why.
+verify_signature() {
+  local ref="$1" out
+  if [[ ! "$ref" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    echo "ERROR: $ref isn't pinned to a digest, so its signature can't be checked." >&2
+    return 1
+  fi
+  if out=$(cosign verify --certificate-identity-regexp "$(signer_identity)" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$ref" 2>&1); then
+    return 0
+  fi
+  [ -n "${QUIET:-}" ] || echo "ERROR: $ref has no valid signature from $(signer_identity): $(tail -n 1 <<<"$out")" >&2
+  return 1
+}
+
+# sign_image REF: signs REF unless it's already signed (a re-run: tags are immutable, so a
+# second .sig write would fail), then checks the signature.
+sign_image() {
+  local ref="$1"
+  if QUIET=1 verify_signature "$ref"; then
+    echo "$ref is already signed."
+    return 0
+  fi
+  cosign sign --yes "$ref" >/dev/null || return 1
+  verify_signature "$ref" && echo "Signed $ref."
+}
+
+# attest_sbom REF FILE: attaches FILE (a CycloneDX SBOM of REF) as a signed attestation,
+# unless REF already has one.
+attest_sbom() {
+  local ref="$1" file="$2"
+  if cosign verify-attestation --type cyclonedx --certificate-identity-regexp "$(signer_identity)" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$ref" >/dev/null 2>&1; then
+    echo "$ref already has its SBOM attestation."
+    return 0
+  fi
+  cosign attest --yes --type cyclonedx --predicate "$file" "$ref" >/dev/null || return 1
+  echo "Attested the SBOM of $ref."
+}
+
+# copy_signatures SOURCE_REPO TARGET_REPO DIGEST: copies DIGEST's signature and SBOM
+# attestation (`sha256-<hex>.sig`, `.att`) from SOURCE_REPO to TARGET_REPO, after the
+# image itself (copy_image). Missing in the source: an error for .sig, skipped for .att.
+copy_signatures() {
+  local source="$1" target="$2" digest="$3" kind tag
+  for kind in sig att; do
+    tag="sha256-${digest#sha256:}.$kind"
+    if ! crane digest "$source:$tag" >/dev/null 2>&1; then
+      [ "$kind" = att ] && continue
+      echo "ERROR: $source@$digest has no signature ($tag) to promote. Deploy it again with deploy-live-backend, then promote." >&2
+      return 1
+    fi
+    if crane digest "$target:$tag" >/dev/null 2>&1; then
+      continue
+    fi
+    crane copy "$source:$tag" "$target:$tag" || return 1
+  done
+}
+
+# tag_for_digest REGION REPO_NAME DIGEST → the release tag of DIGEST in REPO_NAME (not
+# its -scanned marker), for a task definition that runs <repo>@<digest>.
+tag_for_digest() {
+  local region="$1" repo="$2" digest="$3" tag
+  tag=$(aws ecr describe-images --region "$region" --repository-name "$repo" --image-ids imageDigest="$digest" \
+    --query 'imageDetails[0].imageTags' --output json 2>/dev/null \
+    | jq -r --arg s "$SCANNED_SUFFIX" '(. // [])[] | select(endswith($s) | not)' | head -n 1)
+  if [ -z "$tag" ]; then
+    echo "ERROR: $repo@$digest has no release tag in ECR ($region)." >&2
+    return 1
+  fi
+  printf '%s\n' "$tag"
+}
+
 # register_with_image FAMILY CONTAINER IMAGE → ARN of a new revision of FAMILY
 # that is the current one with CONTAINER's image swapped for IMAGE. Everything
 # else (env vars, secrets refs, CPU/memory, logging, sidecars) is kept exactly

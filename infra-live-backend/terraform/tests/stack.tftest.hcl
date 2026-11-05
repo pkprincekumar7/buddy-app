@@ -725,3 +725,13 @@ run "prod_without_an_atlas_project_is_refused" {
 
   expect_failures = [var.atlas_project_id]
 }
+
+# CI-03: cosign's signature and attestation tags don't count against the 30 kept releases.
+run "signatures_have_their_own_lifecycle_rule" {
+  command = plan
+
+  assert {
+    condition     = [for r in jsondecode(aws_ecr_lifecycle_policy.service["auth"].policy).rules : r.selection.countNumber] == [7, 60, 30] && jsondecode(aws_ecr_lifecycle_policy.service["auth"].policy).rules[1].selection.tagPrefixList == ["sha256-"]
+    error_message = "Untagged after 7 days, then the newest 60 sha256-* signature items, then the newest 30 releases."
+  }
+}

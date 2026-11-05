@@ -290,6 +290,26 @@ jobs:
             echo "Scanned: $IMAGE ($(image_digest "$REGION" "$REPO_NAME" "$TAG"))"
           done < ecr_targets.txt
 
+      - name: Install cosign
+        run: bash scripts/install-cosign.sh
+
+      # Each region's pushed image is signed by this workflow (keyless, its GitHub OIDC
+      # identity), with its CycloneDX SBOM attached as a signed attestation (CI-03). Every
+      # rollout checks the signature first (scripts/ecs-services.sh verify_signature). The
+      # SBOM is of the image as it is in ECR, so a re-run's existing image gets its own.
+      - name: Sign the images and attest their SBOMs
+        env:
+          TAG: ${{ needs.resolve.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          source scripts/ecs-services.sh
+          while read -r REGION REPO; do
+            REF="$REPO@$(image_digest "$REGION" "${REPO#*/}" "$TAG")"
+            trivy image --quiet --format cyclonedx --output sbom.cyclonedx.json "$REF"
+            sign_image "$REF"
+            attest_sbom "$REF" sbom.cyclonedx.json
+          done < ecr_targets.txt
+
   # ---------------------------------------------------------------------------
   # Roll the pushed images out to ECS, one parallel instance per region.
   # fail-fast: false — an in-flight rollout in one region must never be
@@ -329,11 +349,23 @@ jobs:
       # end, naming the services left on their previous image. The collector
       # (a pinned image) isn't deployed. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
+      - name: Install cosign
+        run: bash scripts/install-cosign.sh
+
+      # cosign reads the registry login docker writes, to check signatures (CI-03).
+      - name: Sign in to ECR
+        env:
+          REGION: ${{ matrix.aws_region }}
+        run: |
+          REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${REGION}.amazonaws.com"
+          aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+
       - name: Deploy services
         env:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
           SELECTION: ${{ inputs.service }}
           IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+          REGION: ${{ matrix.aws_region }}
         run: |
           source scripts/ecs-services.sh
 
@@ -349,11 +381,16 @@ jobs:
           echo "Cluster:  $CLUSTER"
           echo "Services: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
 
-          # Each runtime runs its service's image from its service's repository.
+          # Each runtime runs its service's image from its service's repository, pinned by
+          # digest, and only once its signature checks out (CI-03): what ECS runs is exactly
+          # what this workflow built, scanned and signed.
           service_image() {
-            local repo
+            local repo digest
             repo=$(jq -r '.ecr_repository_url' <<<"$1")
             [ -n "$repo" ] && [ "$repo" != "null" ] || { echo "ERROR: no ECR repository for $(jq -r .name <<<"$1")." >&2; return 1; }
-            echo "$repo:$IMAGE_TAG"
+            digest=$(image_digest "$REGION" "${repo#*/}" "$IMAGE_TAG")
+            [ -n "$digest" ] || { echo "ERROR: $repo:$IMAGE_TAG isn't in ECR ($REGION)." >&2; return 1; }
+            verify_signature "$repo@$digest" || return 1
+            echo "$repo@$digest"
           }
           deploy_image "$CLUSTER" "$SERVICES" service_image

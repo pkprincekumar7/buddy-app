@@ -186,9 +186,12 @@ jobs:
           while IFS= read -r ENTRY; do
             NAME=$(jq -r .name <<<"$ENTRY")
             IMAGE=$(live_image "$CLUSTER" "$(jq -r .service <<<"$ENTRY")" "$(jq -r .container <<<"$ENTRY")")
+            # deploy-live-backend pins task definitions by digest (CI-03): its release tag,
+            # what the target is tagged with, comes from ECR.
             if [[ "$IMAGE" == *@* ]]; then
-              echo "ERROR: $NAME runs $IMAGE, pinned by digest; promote expects tag-based images (as deploy-live-backend pushes)."
-              exit 1
+              PINNED_REPO="${IMAGE%@*}"
+              TAG=$(tag_for_digest "$REGION" "${PINNED_REPO#*/}" "${IMAGE##*@}") || exit 1
+              IMAGE="$PINNED_REPO:$TAG"
             fi
             # Only an image a scan passed (CI-03): deploy-live-backend marks each one
             # it scanned <tag>-scanned, and each promote carries the marker along.
@@ -299,6 +302,9 @@ jobs:
           name: promote-images-${{ matrix.aws_region }}
           path: promote/
 
+      - name: Install cosign
+        run: bash scripts/install-cosign.sh
+
       # crane copies an image registry to registry and keeps its digest (CI-09).
       # Checked against the SHA-256 GitHub records for the release asset before it
       # runs (CI-04). Bump the version and the digest together.
@@ -351,16 +357,21 @@ jobs:
             TAG="${SRC##*:}"
             ecr_login "$REGION" "${SRC%%/*}" "${REPO%%/*}"
             copy_image "$REGION" "${SRC%:*}@${SRC_DIGEST}" "$REPO" "$REPO_NAME" "$TAG"
+            # The signature and SBOM attestation travel with the image (CI-03).
+            copy_signatures "${SRC%:*}" "$REPO" "$SRC_DIGEST"
             mark_scanned "$REGION" "$REPO_NAME" "$TAG"
           done < <(jq -r 'map([.image_service, .image, .digest]) | unique | .[] | @tsv' promote/images.json)
 
           # The target-ECR copy of the image exported for this service: its
           # own repository, the source's tag.
+          # Pinned by digest, and only once the signature deploy-live-backend made in the
+          # source checks out in the target (CI-03).
           target_image() {
-            local src repo
-            src=$(jq -r --arg n "$(jq -r .name <<<"$1")" '.[] | select(.name == $n) | .image' promote/images.json)
+            local digest repo
+            digest=$(jq -r --arg n "$(jq -r .name <<<"$1")" '.[] | select(.name == $n) | .digest' promote/images.json)
             repo=$(jq -r '.ecr_repository_url' <<<"$1")
             [ -n "$repo" ] && [ "$repo" != "null" ] || { echo "ERROR: no ECR repository for $(jq -r .name <<<"$1") in the target." >&2; return 1; }
-            echo "$repo:${src##*:}"
+            verify_signature "$repo@$digest" || return 1
+            echo "$repo@$digest"
           }
           deploy_image "$CLUSTER" "$SERVICES" target_image

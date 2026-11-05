@@ -54,6 +54,15 @@ case "$1 $2" in
     tag="$(arg --image-ids "$@" | sed 's/^imageTag=//')"
     case "$2" in
       describe-images)
+        ids="$(arg --image-ids "$@")"
+        if [[ "$ids" == imageDigest=* ]]; then  # every tag on that digest, as JSON
+          want="${ids#imageDigest=}"; tags='[]'
+          for f in "$dir"/*; do
+            [ -f "$f" ] && [ "sha256:$(sha256 < "$f")" = "$want" ] && tags=$(jq -c --arg t "$(basename "$f")" '. + [$t]' <<<"$tags")
+          done
+          [ "$tags" != '[]' ] || { echo "ImageNotFoundException" >&2; exit 254; }
+          echo "$tags"; exit 0
+        fi
         [ -f "$dir/$tag" ] || { echo "ImageNotFoundException" >&2; exit 254; }
         echo "sha256:$(sha256 < "$dir/$tag")" ;;
       batch-get-image)
@@ -78,9 +87,17 @@ cat > "$FAKE/bin/crane" <<'EOF'
 sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
 case "$1 $2" in
   "auth login") echo "crane auth login $3 $4 $5 $6 password=$(cat)" >> "$FAKE/calls" ;;
+  digest*)
+    repo="${2%:*}"; repo="${repo#*/}"; f="$FAKE/ecr/$(tr '/' '_' <<<"$repo")/${2##*:}"
+    [ -f "$f" ] && echo "sha256:$(sha256 < "$f")" || { echo "MANIFEST_UNKNOWN" >&2; exit 1; } ;;
   copy*)
     echo "crane $*" >> "$FAKE/calls"
     src="$2" dst="$3"
+    if [[ "$src" != *@* ]]; then  # tag to tag: a signature or attestation
+      sr="${src%:*}"; sr="${sr#*/}"; dr="${dst%:*}"; dr="${dr#*/}"
+      mkdir -p "$FAKE/ecr/$(tr '/' '_' <<<"$dr")"
+      cp "$FAKE/ecr/$(tr '/' '_' <<<"$sr")/${src##*:}" "$FAKE/ecr/$(tr '/' '_' <<<"$dr")/${dst##*:}"; exit $?
+    fi
     srepo="${src%@*}"; srepo="${srepo#*/}"; digest="${src##*@}"
     drepo="${dst%:*}"; drepo="${drepo#*/}"; tag="${dst##*:}"
     for f in "$FAKE/ecr/$(tr '/' '_' <<<"$srepo")"/*; do
@@ -95,6 +112,31 @@ case "$1 $2" in
 esac
 EOF
 chmod +x "$FAKE/bin/crane"
+
+# -- fake cosign: a signature is the sha256-<hex>.sig tag in the fake ECR, holding the
+# signer's identity (FAKE_SIGNER, else this repo's deploy workflow); .att likewise.
+cat > "$FAKE/bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+echo "cosign $*" >> "$FAKE/calls"
+arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "$2"; return; }; shift; done; }
+ref="${*: -1}"; repo="${ref%@*}"; repo="${repo#*/}"; hex="${ref##*@sha256:}"
+dir="$FAKE/ecr/$(tr '/' '_' <<<"$repo")"
+signer="${FAKE_SIGNER:-https://github.com/acme/buddy-app/.github/workflows/deploy-live-backend.yml@refs/heads/main}"
+check() {  # check FILE: present, signed by an identity the regexp allows, by GitHub's issuer
+  [ -f "$1" ] && grep -Eq -- "$(arg --certificate-identity-regexp "$@")" "$1" \
+    && [ "$(arg --certificate-oidc-issuer "$@")" = "https://token.actions.githubusercontent.com" ] \
+    || { echo "Error: no matching signatures"; exit 1; }
+}
+case "$1" in
+  verify) check "$dir/sha256-$hex.sig" "$@" ;;
+  verify-attestation) check "$dir/sha256-$hex.att" "$@" ;;
+  sign) mkdir -p "$dir"; printf '%s' "$signer" > "$dir/sha256-$hex.sig" ;;
+  attest) mkdir -p "$dir"; { printf '%s\n' "$signer"; cat "$(arg --predicate "$@")"; } > "$dir/sha256-$hex.att" ;;
+  *) echo "fake cosign: unexpected call: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE/bin/cosign"
+export GITHUB_REPOSITORY="acme/buddy-app"
 export PATH="$FAKE/bin:$PATH"
 
 # shellcheck source=scripts/ecs-services.sh
@@ -223,6 +265,41 @@ if out=$(FAKE_CRANE_REWRITE=1 copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 
   [[ "$out" == *"was copied as sha256:"* ]] && ok "a copy that changed the digest is refused" || fail "digest change message" "$out"; fi
 if out=$(copy_image ap-south-1 "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users:20261102-abc" "$DST" sp/prod/users x 2>&1); then fail "a source by tag is refused"; else
   [[ "$out" == *"isn't pinned to a digest"* ]] && ok "a source by tag, not digest, is refused" || fail "tag source message" "$out"; fi
+
+# -- signing (CI-03) ----------------------------------------------------------------
+check "the signer is this repo's deploy workflow, dots escaped" "$(GITHUB_REPOSITORY=acme/my.app signer_identity)" \
+  '^https://github\.com/acme/my\.app/\.github/workflows/deploy-live-backend\.yml@refs/(heads|tags)/.+$'
+REF="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$(image_digest ap-south-1 sp/dev/users 20261102-abc)"
+if out=$(verify_signature "$REF" 2>&1); then fail "an unsigned image is refused"; else
+  [[ "$out" == *"has no valid signature"* ]] && ok "an unsigned image is refused" || fail "unsigned message" "$out"; fi
+reset_polls
+out=$(sign_image "$REF") && [[ "$out" == "Signed $REF." ]] && verify_signature "$REF" \
+  && ok "signing an image makes it verify" || fail "signing" "$out"
+reset_polls
+out=$(sign_image "$REF")
+[[ "$out" == *"already signed"* ]] && ! grep -q '^cosign sign' "$FAKE/calls" \
+  && ok "a signed image isn't signed again (immutable tags)" || fail "re-sign" "$out"
+OTHER="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$(image_digest ap-south-1 sp/dev/users 20261101-old)"
+FAKE_SIGNER="https://github.com/acme/buddy-app/.github/workflows/other.yml@refs/heads/main" cosign sign --yes "$OTHER"
+verify_signature "$OTHER" 2>/dev/null && fail "a signature from another workflow is refused" || ok "a signature from another workflow is refused"
+FAKE_SIGNER="https://github.com/evil/buddy-app/.github/workflows/deploy-live-backend.yml@refs/heads/main" cosign sign --yes "$OTHER"
+verify_signature "$OTHER" 2>/dev/null && fail "a signature from another repo is refused" || ok "a signature from another repo is refused"
+if verify_signature "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users:20261102-abc" 2>/dev/null; then fail "a ref by tag is refused"; else ok "a ref by tag, not digest, is refused"; fi
+echo '{"bomFormat":"CycloneDX"}' > "$WORK/sbom.json"
+check "an SBOM attestation" "$(attest_sbom "$REF" "$WORK/sbom.json")" "Attested the SBOM of $REF."
+check "attesting again is a no-op" "$(attest_sbom "$REF" "$WORK/sbom.json")" "$REF already has its SBOM attestation."
+DIGEST="${REF##*@}"
+copy_signatures "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users" "2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users" "$DIGEST" \
+  && [ -f "$FAKE/ecr/sp_prod_users/sha256-${DIGEST#sha256:}.sig" ] && [ -f "$FAKE/ecr/sp_prod_users/sha256-${DIGEST#sha256:}.att" ] \
+  && ok "promote copies the signature and the attestation" || fail "copy_signatures"
+check "the copied signature verifies in the target" "$(verify_signature "2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users@$DIGEST" && echo yes)" "yes"
+UNSIGNED="$(image_digest ap-south-1 sp/dev/users 20261102-abc-scanned)"
+echo '{"schemaVersion":2,"layers":["c"]}' > "$R/20261103-new"
+NEW="$(image_digest ap-south-1 sp/dev/users 20261103-new)"
+if out=$(copy_signatures "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users" "2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users" "$NEW" 2>&1); then fail "promoting an unsigned image fails"; else
+  [[ "$out" == *"has no signature"* ]] && ok "promoting an unsigned image fails" || fail "unsigned promote message" "$out"; fi
+check "a digest's release tag, not its -scanned marker" "$(tag_for_digest ap-south-1 sp/dev/users "$UNSIGNED")" "20261102-abc"
+if tag_for_digest ap-south-1 sp/dev/users "sha256:$(printf '0%.0s' {1..64})" 2>/dev/null; then fail "an unknown digest has no tag"; else ok "an unknown digest has no release tag"; fi
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"

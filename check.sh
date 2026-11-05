@@ -270,7 +270,7 @@ if command -v shellcheck >/dev/null 2>&1; then
   run "shellcheck (scripts/ecs-services.sh)" \
       shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh" \
         "$ROOT/scripts/fill-service-secrets.sh" "$ROOT/scripts/fill-service-secrets.test.sh" \
-        "$ROOT/scripts/service-token-keys.sh" "$ROOT/scripts/service-token-keys.test.sh" \
+        "$ROOT/scripts/service-token-keys.sh" "$ROOT/scripts/service-token-keys.test.sh" "$ROOT/scripts/install-cosign.sh" \
         "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh" \
         "$ROOT/scripts/frontend-publish.sh" "$ROOT/scripts/frontend-publish.test.sh" "$ROOT/scripts/frontend-release.test.sh" \
         "$ROOT/scripts/workflow-inputs.sh" "$ROOT/scripts/workflow-inputs.test.sh"

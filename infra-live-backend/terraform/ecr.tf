@@ -31,7 +31,10 @@ resource "aws_ecr_repository" "service" {
   }
 }
 
-# Keep the last 30 tagged images; remove untagged images after 7 days.
+# Keep the last 30 tagged images; remove untagged images after 7 days. Signatures and SBOM
+# attestations (cosign's `sha256-<hex>.sig` / `.att` tags, CI-03) have their own rule, ahead
+# of the images': an item a higher-priority rule matches isn't counted by a lower one, so
+# they never push real releases out of the 30. 60 is two per kept image.
 resource "aws_ecr_lifecycle_policy" "service" {
   for_each = aws_ecr_repository.service
 
@@ -52,6 +55,17 @@ resource "aws_ecr_lifecycle_policy" "service" {
       },
       {
         rulePriority = 2
+        description  = "Keep only the last 60 signatures and attestations"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["sha256-"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 60
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 3
         description  = "Keep only the last 30 tagged images"
         selection = {
           tagStatus      = "tagged"

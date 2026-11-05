@@ -150,7 +150,7 @@ registers a **new revision**:
 | Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_NAME`, `APP_ENV`, `AWS_REGION`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user) + `REDIS_REPLICATION_GROUP_ID`, `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `PUBLIC_ORIGINS` (the web app's origin, `https://<cookie_domain>`: the cross-site cookie check, AUTH-05), the `JWT_*` verification settings (`JWT_KEY_ID`, `JWT_PUBLIC_KEYS`, `JWT_ISSUER`, `JWT_AUDIENCE`). HTTP runtimes: `BEHIND_PROXY`; auth's cookie settings (`COOKIE_SECURE`, `COOKIE_SAMESITE`; the cookies are host-only, so there's no domain to set). Auth and its worker: `DELETION_PARTICIPANTS`. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform (HTTP and worker): `UPLOADS_BUCKET_NAME`, `UPLOADS_URL_TTL_SECONDS`; shared: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
 | Secret references | ARN pointers (not values) into the runtime's own service secret, plus `INTERNAL_SIGNING_KEY` from its SSM SecureString. Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `EMAIL_HMAC_PEPPER`. Generating workers: `MONGODB_URI` + the three LLM keys (their HTTP runtimes get `MONGODB_URI` only). Shared: `OPENAI_API_KEY`. The others: `MONGODB_URI`. The collector: none |
 | Infrastructure | log group, health check, execution/task role, network mode |
-| Image | the service's repository at `:latest` — a placeholder; see below (the collector: the pinned `otel_collector_image`) |
+| Image | the service's repository at `:latest` — a placeholder until the first deploy, which registers `<repo>@sha256:<digest>` (signed, CI-03); see below (the collector: the pinned `otel_collector_image`) |
 
 Every ECS **service** has `ignore_changes = [task_definition, desired_count]`. Terraform
 therefore registers the new revision but never switches a service to it. The revision stays idle
@@ -167,6 +167,31 @@ pushes it as `:<YYYYMMDD>-<short-sha>` to that service's repository in every sel
 with a second tag on the same image, `:<YYYYMMDD>-<short-sha>-scanned` (CI-03). A re-run finds
 the tag already there; since that's another build of the commit, it pulls and scans it before
 adding the marker.
+
+**Signed images (CI-03).** After the push, each region's image is **signed** by the build job
+with cosign, keyless: the certificate names this repository's `deploy-live-backend.yml` and the
+GitHub OIDC issuer, and Sigstore's public log (Rekor) records it. Its CycloneDX SBOM (Trivy) is
+attached as a signed attestation. The signature and attestation are stored next to the image as
+`sha256-<hex>.sig` / `.att`, and ECR's lifecycle keeps the newest 60 of them apart from the 30
+releases. **Before any rollout**, the deploy and promote jobs check the signature
+(`verify_signature` in `scripts/ecs-services.sh`) and register the task definition with
+`<repo>@sha256:…`, the digest they checked, so ECS can only run that image. Promote copies the
+signature and attestation along with the image (`copy_signatures`). Restart keeps the current
+task definition, so it runs the same verified digest. cosign is installed checksum-pinned
+(`scripts/install-cosign.sh`, v2.6.5).
+
+To check an image by hand (with the registry login `aws ecr get-login-password | docker login`):
+
+```bash
+cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/<owner>/buddy-app/\.github/workflows/deploy-live-backend\.yml@refs/(heads|tags)/.+$' \
+  <account>.dkr.ecr.<region>.amazonaws.com/<app>/<env>/<service>@sha256:<digest>
+cosign verify-attestation --type cyclonedx …same flags… <image>@sha256:<digest>   # the SBOM
+```
+
+**If Sigstore is unreachable,** signing and verification fail, so deploys and promotes stop
+rather than run an unchecked image. Wait for Sigstore (status.sigstore.dev) and re-run; the
+run is safe to repeat. There's no switch to skip the check.
 `prod` can't be deployed this way, from the dropdown or through `workflow_call`. It gets
 releases only through promote.
 Then, in each region:
