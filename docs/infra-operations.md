@@ -575,7 +575,7 @@ review, DB-01). dev and sbx stay on free M0 clusters, which have none of this. *
 | Snapshot copy to a second region | optional | **on**, so backups survive an ap-south-1 outage. **ap-south-2 (Hyderabad)** keeps them in India; another country's region moves them abroad ([data-residency.md](data-residency.md)) |
 | Termination protection | on | **on** |
 | Test restore | once, to learn the steps | **once before go-live**, restore to a new cluster and write down how long it took |
-| Connection budget | `mongodb_connection_budget = 1500` (peak 836) | `1050`, 70% of 1500 (peak 1023) |
+| Connection budget | `mongodb_connection_budget = 1050`, 70% of 1500 (peak 836) | `1050`, 70% of 1500 (peak 1023) |
 
 **Growing prod past M10:** compute auto-scaling handles CPU and RAM, but connections are fixed
 per tier (M10 1500; M20 and M30 3000). When prod needs more tasks than its budget allows, move

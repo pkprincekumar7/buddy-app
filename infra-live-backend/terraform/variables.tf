@@ -1,5 +1,5 @@
 variable "aws_region" {
-  description = "AWS region to deploy resources. This module is applied once per region as an independent stack (its state key already includes {region} — see provider.tf); each region needs its own ACM cert, uploads bucket, and logging bucket, resolved via GitHub Environment Secrets in terraform-live-backend.yml."
+  description = "AWS region to deploy resources. This module is applied once per region as an independent stack (its state key already includes {region} — see provider.tf); each region needs its own ACM cert, uploads bucket, and logging bucket, each this region's entry of the ACM_CERTIFICATE_ARNS, UPLOADS_BUCKET_NAMES and REGIONAL_LOGGING_BUCKET_NAMES GitHub environment variables (terraform-live-backend.yml)."
   type        = string
 
   validation {

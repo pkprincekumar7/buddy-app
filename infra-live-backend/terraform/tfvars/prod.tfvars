@@ -51,8 +51,8 @@ xray_default_sampling_rate = 0.01
 enable_ops_email           = true
 
 # Security — GuardDuty and CloudTrail always enabled on prod
-# regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name
-# GitHub secret (REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1) — do not set here
+# regional_logging_bucket_name comes from this region's entry of the
+# REGIONAL_LOGGING_BUCKET_NAMES GitHub environment variable — do not set here
 enable_guardduty  = true
 enable_cloudtrail = true
 

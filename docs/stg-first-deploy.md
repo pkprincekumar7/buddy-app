@@ -125,7 +125,7 @@ Only if the schedule will be used:
 - [ ] Pause LLM generation first, so the test costs nothing ([infra-operations.md](infra-operations.md), "Pausing LLM generation").
 - [ ] Load the read paths (`/api/health`, `/api/v1/auth/me`, a child's profile) with a load tool (k6, Locust) up to the point stg scales to its `max_capacity`, and watch:
   - ECS CPU and memory per service, and that scaling settles at or below `max_capacity`;
-  - Atlas connections staying under M10's 1500 (the budget says 836 at peak);
+  - Atlas connections staying under the budget, 1050 (70% of M10's 1500; 836 at peak);
   - ALB 5xx and p95 latency, and the alarms that fire;
   - Valkey `DatabaseMemoryUsagePercentage` and evictions (TF-04's working set).
 - [ ] A burst of logins, for auth's bcrypt cost (TF-03 fix 9).

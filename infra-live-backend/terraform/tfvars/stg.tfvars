@@ -52,8 +52,8 @@ xray_default_sampling_rate = 0.05
 enable_ops_email           = true
 
 # Security — GuardDuty and CloudTrail enabled on stg
-# regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name
-# GitHub secret (REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1) — do not set here
+# regional_logging_bucket_name comes from this region's entry of the
+# REGIONAL_LOGGING_BUCKET_NAMES GitHub environment variable — do not set here
 enable_guardduty  = true
 enable_cloudtrail = true
 
@@ -72,6 +72,7 @@ enable_container_insights = false
 # ecr_pull_account_ids = ["111111111111"]
 
 # stg runs on Atlas M10 (2026-11-05: Atlas's Test Failover needs M10 or above, DB-05), which
-# allows 1500 connections per cluster, for every region together: this is one region's share
-# (TF-03). At peak (76 tasks, pool 5 + 6 monitoring each) the tasks open 836.
-mongodb_connection_budget = 1500
+# allows 1500 connections per cluster, for every region together. The budget is 70% of that
+# (1050), the same headroom as prod (DB-01), and this is one region's share (TF-03). At peak
+# (76 tasks, pool 5 + 6 monitoring each) the tasks open 836.
+mongodb_connection_budget = 1050
