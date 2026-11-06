@@ -511,6 +511,12 @@
           },
           "status": {
             "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed"
+            ],
             "title": "Status"
           },
           "error": {

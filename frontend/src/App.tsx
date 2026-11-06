@@ -19,7 +19,6 @@ import { TtsProvider } from '@/lib/TtsContext';
 import { AmbientAudioProvider } from '@/lib/AmbientAudioContext';
 import { AppThemeProvider } from '@/lib/theme';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
@@ -278,10 +277,6 @@ function AppShell() {
         <Route path="*" element={<Navigate to="/Login" replace />} />
       </Routes>
     );
-  }
-
-  if (authError?.type === 'user_not_registered') {
-    return <UserNotRegisteredError />;
   }
 
   if (!isAuthenticated) {

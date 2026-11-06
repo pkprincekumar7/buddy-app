@@ -24,7 +24,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Literal
 
 import bson
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
@@ -297,7 +297,7 @@ class Started(BaseModel):
 class Job(BaseModel):
     job_id: str
     kind: Kind
-    status: str
+    status: Literal["pending", "processing", "completed", "failed"]
     error: str | None
     created_at: datetime
     completed_at: datetime | None

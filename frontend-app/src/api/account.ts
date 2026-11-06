@@ -69,9 +69,17 @@ export const account = {
     await unwrap(services.auth.POST('/api/v1/auth/google', { body }));
   },
 
-  /** End this session on the server (best effort), then forget the tokens. */
+  /** End this session on the server (best effort), then forget the tokens. Auth's logout
+   *  ends the session its refresh token names, read from the Bearer header as refresh reads
+   *  it (no cookie jar), so this sends that token, not the access token. */
   async logout(): Promise<void> {
-    await unwrap(services.auth.POST('/api/v1/auth/logout')).catch(() => {});
+    const refresh = await tokenStore.getRefresh();
+    await unwrap(
+      services.auth.POST(
+        '/api/v1/auth/logout',
+        refresh ? { headers: { Authorization: `Bearer ${refresh}` } } : {},
+      ),
+    ).catch(() => {});
     await tokenStore.clear();
   },
 

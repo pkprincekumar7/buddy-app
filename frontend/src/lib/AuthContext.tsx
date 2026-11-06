@@ -17,16 +17,10 @@ import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
 type UserData = CurrentUser;
 
-interface AuthErrorUnknown {
+interface AuthErrorValue {
   type: 'unknown';
   message: string;
 }
-
-interface AuthErrorUserNotRegistered {
-  type: 'user_not_registered';
-}
-
-type AuthErrorValue = AuthErrorUnknown | AuthErrorUserNotRegistered;
 
 interface AuthContextValue {
   user: UserData | null;

@@ -116,6 +116,23 @@ describe('the account (build plan 7.2)', () => {
     expect(await AsyncStorage.getItem(ACCESS)).toBeNull();
   });
 
+  it('signs out with the refresh token, so the server ends that session', async () => {
+    await AsyncStorage.setItem(ACCESS, 'access-1');
+    await AsyncStorage.setItem('superpower:refresh_token', 'refresh-1');
+    let sent: string | null = null;
+    globalThis.fetch = jest.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        sent = new Request(input as RequestInfo, init).headers.get(
+          'Authorization',
+        );
+        return new Response(null, { status: 204 });
+      },
+    ) as typeof fetch;
+    await account.logout();
+    expect(sent).toBe('Bearer refresh-1');
+    expect(await AsyncStorage.getItem('superpower:refresh_token')).toBeNull();
+  });
+
   it('signs out of every device with logout-all', async () => {
     const seen = network(() => new Response(null, { status: 204 }));
     await account.logoutAll();

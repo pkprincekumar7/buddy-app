@@ -42,6 +42,8 @@ const NO_REFRESH = new Set(
 );
 
 async function withToken(input: Request): Promise<Request> {
+  // A caller that sends its own token keeps it: logout sends the refresh token.
+  if (input.headers.has('Authorization')) return input;
   const access = await tokenStore.getAccess();
   if (!access) return input;
   const headers = new Headers(input.headers);

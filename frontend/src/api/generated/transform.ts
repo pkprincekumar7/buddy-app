@@ -153,8 +153,11 @@ export interface components {
              * @enum {string}
              */
             kind: "life_pathway" | "plan" | "event_tracker";
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "processing" | "completed" | "failed";
             /** Error */
             error: string | null;
             /**

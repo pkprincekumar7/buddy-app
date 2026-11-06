@@ -104,8 +104,11 @@ export interface components {
              * @constant
              */
             kind: "observations";
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "processing" | "completed" | "failed";
             /** Error */
             error: string | null;
             /**

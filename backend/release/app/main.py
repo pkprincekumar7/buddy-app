@@ -250,7 +250,7 @@ class Started(BaseModel):
 class Job(BaseModel):
     job_id: str
     kind: Literal["observations"]
-    status: str
+    status: Literal["pending", "processing", "completed", "failed"]
     error: str | None
     created_at: datetime
     completed_at: datetime | None

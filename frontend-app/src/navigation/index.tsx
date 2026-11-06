@@ -36,7 +36,6 @@ import Observations from '@/screens/Observations';
 import Connect from '@/screens/Connect';
 import AccountSettings from '@/screens/AccountSettings';
 import PageNotFound from '@/screens/PageNotFound';
-import UserNotRegisteredError from '@/screens/UserNotRegisteredError';
 import { withStackWindow } from './withStackWindow';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -116,9 +115,6 @@ function RootNavigator() {
       </View>
     );
   }
-
-  if (authError?.type === 'user_not_registered')
-    return <UserNotRegisteredError />;
 
   return (
     <Stack.Navigator screenOptions={withLayout}>
