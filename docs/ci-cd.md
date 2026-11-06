@@ -35,7 +35,7 @@ A change to a workflow keeps to these (production-readiness review SEC-06, SEC-0
 
 **Region inputs.** Every workflow that takes regions (`aws_regions`, `backend_regions`, `target_aws_regions`) takes them as free text: one region or a comma-separated list, such as `ap-south-1,eu-west-1`. A calling workflow may pass a JSON array instead. The first job checks each region against `shared/routing.json`'s regions and turns the list into the JSON array the later jobs read (`regions_json`, `scripts/workflow-inputs.sh`); `bootstrap_region` is free text too (`auto` or one of those regions). Terraform's region validations read the same file, so allowing a new region is one entry in `shared/routing.json` (TF-01); each environment still needs that region's own values (`vpc_cidrs`, its ACM certificate and buckets).
 
-[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has fourteen jobs. `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `backend-services` waits for the matrix; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
+[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has fifteen jobs. `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, `terraform-lint` and `terraform-test` start in parallel immediately; `backend-test` starts once `backend-lint` passes, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `backend-services` waits for the matrix; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 ### `backend-lint` (Python 3.13)
 
@@ -82,7 +82,15 @@ The install step runs `pip install -r requirements-dev.txt -r requirements-lint.
 | `tflint (infra-live-frontend)` | tflint 0.62.1 + AWS ruleset | Same for frontend infra (S3 bucket policy) |
 | `tflint (infra-live-scheduler)` | tflint 0.62.1 + AWS ruleset | Same for scheduler infra (EventBridge Scheduler) |
 | `tflint (modules)` | tflint 0.62.1 + AWS ruleset | Each shared module under `modules/` on its own |
-| `terraform test` | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, and all four stacks once per environment with its own tfvars (`tests/envs`), against mock providers (no credentials, nothing created) |
+
+### `terraform-test`
+
+Runs alongside `terraform-lint`, so the tests don't wait for validate and tflint. Both jobs keep the Terraform providers in an Actions cache between runs, keyed by the lock files.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| `terraform test` (modules + `infra-live-backend`) | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, against mock providers (no credentials, nothing created) |
+| `terraform test` per environment | Terraform 1.16.4 | All four stacks once per environment with its own tfvars (`tests/envs`), against mock providers |
 
 ### `lambda-edge-test` (Node.js 22)
 

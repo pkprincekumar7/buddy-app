@@ -427,12 +427,12 @@ jobs:
       - name: ShellCheck (every shell script)
         run: git ls-files -z '*.sh' | xargs -0 shellcheck -x
 
+  # Lint and test are two jobs that run side by side, so the tests don't wait for validate
+  # and tflint (validate inits every stack and module, CI-15; the tests init them again).
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest
-    # validate inits every stack and module (CI-15); the provider cache below cuts
-    # the repeat AWS provider downloads.
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -449,12 +449,21 @@ jobs:
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
 
-      # Shared by the inits below. Terraform reuses a cached provider only where the
-      # lock file has its Linux hash (the stacks do); elsewhere it downloads it again.
+      # Providers shared by every init in this job, and kept between runs, keyed by the lock
+      # files: a version change in any of them starts a fresh cache. Terraform reuses a cached
+      # provider only where the lock file has its Linux hash (the stacks do); elsewhere it
+      # downloads it again.
       - name: Share the Terraform provider cache
         run: |
           mkdir -p "$RUNNER_TEMP/tf-plugin-cache"
           echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tf-plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore the Terraform provider cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/tf-plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-${{ runner.os }}-
 
       # A misspelled argument or attribute, a wrong type or a missing reference fails
       # here (CI-15), not at plan time in an environment. -backend=false: no state, no
@@ -498,6 +507,39 @@ jobs:
             echo "── tflint $m"
             tflint --chdir="$m" --config="$GITHUB_WORKSPACE/.tflint.hcl"
           done
+
+  terraform-test:
+    name: Terraform Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
+
+      # Providers shared by every init in this job, and kept between runs, keyed by the lock
+      # files: a version change in any of them starts a fresh cache. Terraform reuses a cached
+      # provider only where the lock file has its Linux hash (the stacks do); elsewhere it
+      # downloads it again.
+      - name: Share the Terraform provider cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/tf-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tf-plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore the Terraform provider cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/tf-plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-${{ runner.os }}-
 
       # terraform test against a mock AWS provider: no credentials, nothing is
       # created. Each module's own tests, plus the backend stack's wiring test.

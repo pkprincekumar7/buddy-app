@@ -111,7 +111,8 @@ Configure on GitHub → Settings → Branches (or a ruleset) for `main`:
 - Require 1 approved review before merging
 - Dismiss stale reviews on new pushes
 - Require status checks: `backend-lint`, `backend-test`, `frontend-lint`, `frontend-app-lint`,
-  `lambda-edge-test`, `terraform-lint`, `security-scan`, `dast`, `codeql`, `dependency-review`
+  `lambda-edge-test`, `terraform-lint`, `terraform-test`, `security-scan`, `dast`, `codeql`,
+  `dependency-review`
 - No force-push, no deletion
 
 ### Dependabot ✅
@@ -804,7 +805,7 @@ metrics to the ones an alarm or a scaling policy needs.
 `check.yml` runs on every PR to `main`, on every push to `main`, and on manual dispatch. Jobs:
 `backend-lint`, `backend-test`, `backend-service-list`, `backend-service` (one per service, found
 from the tree), `backend-services` (the stable gate), `frontend-lint`, `frontend-app-lint`,
-`lambda-edge-test`, `terraform-lint`, `security-scan`, `dast`, `codeql`, `dependency-review`. pip, npm and yarn
+`lambda-edge-test`, `terraform-lint`, `terraform-test`, `security-scan`, `dast`, `codeql`, `dependency-review`. pip, npm and yarn
 caching is configured through the `setup-*` actions.
 
 Deployment is manual (`workflow_dispatch`):
