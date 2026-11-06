@@ -562,7 +562,7 @@ role-change alarm watches. A manual edit does none of them.
 ## Atlas clusters (stg and prod)
 
 The clusters aren't in Terraform (only stg's and prod's PrivateLink endpoint is, `atlas.tf`): these are set once per cluster in the Atlas console (production-readiness
-review, DB-01). dev and sbx stay on free M0 clusters, which have none of this.
+review, DB-01). dev and sbx stay on free M0 clusters, which have none of this. **Every environment has its own Atlas project and cluster** (`superpower-dev`, `superpower-sbx`, `superpower-stg`, `superpower-prod`): the database names are the same in each (the services' names), so environments must never share a cluster ([environments.md](environments.md), section 5).
 
 | Setting | stg (M10) | prod (M10) |
 |---|---|---|

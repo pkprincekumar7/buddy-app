@@ -250,8 +250,10 @@ implementation (see Change 1 and the corrected "Fallback behaviour" note above) 
 
 The backend side of this diagram is live: all three regions (ap-south-1, eu-west-1,
 us-east-1) run behind the shared CloudFront distribution. The **database** side is still the
-target state — today every region uses one Atlas M0 cluster in ap-south-1, reached via each
-region's NAT gateways, with no PrivateLink. The MongoDB Atlas Global Cluster box (and Change
+target state. Today each environment has its own single-region Atlas cluster in ap-south-1:
+stg and prod an M10 each, served from ap-south-1 only and reached through PrivateLink
+(`infra-live-backend/terraform/atlas.tf`, DEC-01, DEC-02); dev and sbx an M0 each, reached
+from all three regions through their NAT gateways. The MongoDB Atlas Global Cluster box (and Change
 10d) is the remaining work — see the Deployment Order and Required Changes sections below for
 what's missing and in what order it needs to be built.
 
@@ -312,8 +314,9 @@ their ALB FQDNs to SSM.
 
 ```
 Phase 0  — Atlas tier upgrade + terraform-atlas bootstrap   ← not started
-           Today's cluster is Atlas M0 (free tier), managed manually, single region
-           (ap-south-1) — there is no Atlas Terraform module in this repo at all yet.
+           Today each environment has its own single-region cluster in ap-south-1, created
+           by hand (dev, sbx: M0; stg, prod: M10). Terraform manages only stg's and prod's
+           PrivateLink endpoint (infra-live-backend/terraform/atlas.tf, DEC-02).
            M0 does not support Global Clusters, custom zone sharding, or PrivateLink;
            all three require upgrading to a paid, dedicated tier first. This is a real
            cost decision to make explicitly, not a config toggle — see Change 10d.
@@ -355,9 +358,9 @@ Phase 6  — restart-live-backend (per region, service = all: auth, admin, backe
 > **ap-south-1 prerequisite:** phase 0 (Atlas tier upgrade + Terraform bootstrap) and
 > phases 1a, 2a, 5a, and 6 for ap-south-1 must all be completed before expanding to new
 > regions — none of these have started. Confirmed by checking the actual repo state:
-> there is no `infra-live-atlas` directory, no `terraform-atlas.yml` workflow, and no
-> `aws_vpc_endpoint`/PrivateLink resources anywhere in `infra-live-backend`. The existing
-> MongoDB setup is a manually-managed Atlas **M0 (free tier)** cluster, single region —
+> there is no `infra-live-atlas` directory and no `terraform-atlas.yml` workflow. Since
+> 2026-11-05, `infra-live-backend/terraform/atlas.tf` makes stg's and prod's PrivateLink
+> endpoint to their M10 clusters (DEC-02); dev and sbx use a manually-managed Atlas **M0 (free tier)** cluster each, single region —
 > not yet sharded or multi-region at the database layer, and M0 cannot support Global
 > Clusters, sharding, or PrivateLink until upgraded (see Change 10d). A broader
 > zone-sharding scheme exists elsewhere spanning up to 8 zones across roughly 10 AWS
@@ -729,9 +732,10 @@ Then apply:
 > **Corrected premise (previously wrong in this doc):** an earlier version of this
 > section assumed a Terraform-managed `mongodbatlas_advanced_cluster.main` resource
 > already existed as a single-region `REPLICASET`, needing an Option A/B decision to
-> get to `GEOSHARDED`. Checked against the actual repo: **no Atlas Terraform resource
-> exists at all** — the current cluster is **Atlas M0 (free tier)**, created and managed
-> manually through the Atlas console, single region, ap-south-1, for cost reasons. There
+> get to `GEOSHARDED`. Checked against the actual repo: the clusters themselves aren't in
+> Terraform (only stg's and prod's PrivateLink endpoint is, `atlas.tf`, since 2026-11-05).
+> Each environment's cluster is created by hand in its own Atlas project, single region,
+> ap-south-1: an **M0 (free tier)** for dev and sbx, an M10 for stg and prod. There
 > is no REPLICASET-to-GEOSHARDED migration to perform on an existing
 > Terraform resource, because there is no existing Terraform resource — this is a
 > **from-scratch bootstrap**, not a conversion.

@@ -12,7 +12,7 @@ DEC-01): every user, whatever their country, is handled there, and each environm
 Atlas M10 cluster in ap-south-1**, reached privately (PrivateLink, DEC-02). So every user's data
 is stored in India. Each account still records its own `location` (`in`, `apac`, `me`, `eu`,
 `us`, `br`), so the data can move to per-location storage later without a rewrite. dev and sbx
-run in three regions against one Atlas M0 cluster in ap-south-1, with test data only.
+run in three regions, each against its own Atlas M0 cluster in ap-south-1, with test data only.
 
 ## The matrix (stg and prod)
 
@@ -37,7 +37,7 @@ run in three regions against one Atlas M0 cluster in ap-south-1, with test data 
 | Database backups | Atlas Cloud Backup | ap-south-1, plus the snapshot-copy region | — | The copy region is a choice: **ap-south-2 (Hyderabad)** keeps backups in India; another country's region moves them abroad (`docs/infra-operations.md`, "Atlas clusters") |
 
 dev and sbx: the same services and stores, test data only, in the region that serves each
-location (ap-south-1, eu-west-1 or us-east-1), with the database on Atlas M0 in ap-south-1.
+location (ap-south-1, eu-west-1 or us-east-1), with each environment's database on its own Atlas M0 in ap-south-1.
 
 ## What leaves India today
 

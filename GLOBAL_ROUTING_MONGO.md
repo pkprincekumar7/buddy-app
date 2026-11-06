@@ -13,7 +13,7 @@
 >   ap-south-1 only** (`shared/routing.json` `served_from`, DEC-01): the edge sends every location
 >   there and its workers handle every location.
 > - **Not residency-enforcing:** the database. stg and prod each have **one Atlas M10 cluster in
->   ap-south-1** (PrivateLink, DEC-02); dev and sbx share an M0 there. Documents already carry
+>   ap-south-1** (PrivateLink, DEC-02); dev and sbx each have their own M0 there (every environment has its own Atlas project and cluster, since the database names are the same in each). Documents already carry
 >   `location` and every index on a to-be-sharded collection leads with it, so the data is
 >   shard-ready, but until the move to an Atlas Global Cluster **every user's data is stored in
 >   India**, whatever their location. Where each kind of data goes, AI providers included:

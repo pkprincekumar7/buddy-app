@@ -11,7 +11,7 @@ each user's data is stored in their own region. For *why* the design looks like 
 
 | | Today | Target |
 |---|---|---|
-| Cluster | stg and prod: one Atlas **M10** each in **ap-south-1**, over PrivateLink (DB-01, DEC-02). dev and sbx: one **M0** (free) in ap-south-1 | Atlas **Global Cluster**, M30+, MongoDB **8.0** |
+| Cluster | stg and prod: one Atlas **M10** each in **ap-south-1**, over PrivateLink (DB-01, DEC-02). dev and sbx: an **M0** (free) each in ap-south-1. Every environment has its own Atlas project and cluster | Atlas **Global Cluster**, M30+, MongoDB **8.0** |
 | Used by | stg and prod: every service in ap-south-1 only (`served_from`, DEC-01). dev and sbx: every service in ap-south-1, eu-west-1 and us-east-1. One database per service (`auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release`), each with its own `MONGODB_URI` | Every region; one cluster; mongos routes by `location` |
 | Data residency | Not enforced — everything is stored in ap-south-1 (India); see [docs/data-residency.md](docs/data-residency.md) | Each document stored only in its location's zone |
 | App readiness | Every user-owned document has `location`; every unique index on a to-be-sharded collection is `{location, _id}`; login avoids scatter-gather | Ready: see Step 0 |
