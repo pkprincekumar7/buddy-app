@@ -12,7 +12,7 @@ resource "aws_s3_bucket_policy" "frontend" {
   lifecycle {
     precondition {
       condition     = data.aws_ssm_parameter.s3_bucket_name.value == var.spa_bucket_name
-      error_message = "spa_bucket_name in tfvars (\"${var.spa_bucket_name}\") does not match the bucket name written to SSM by infra-live-edge. Update the tfvars value to match the SSM parameter."
+      error_message = "spa_bucket_name (\"${var.spa_bucket_name}\") does not match the bucket name infra-live-edge wrote to SSM. Both come from the SPA_BUCKET_NAME variable: re-apply infra-live-edge so it writes the current value."
     }
   }
 
@@ -34,9 +34,9 @@ resource "aws_s3_bucket_policy" "frontend" {
         }
       },
       {
-        # Allows CloudFront to receive 404 (instead of 403) for missing objects.
-        # Without this, S3 returns 403 for missing keys because OAC lacks ListBucket,
-        # and CloudFront's custom_error_response for 403 would intercept API errors.
+        # Lets a missing file be a real 404, not S3's 403 (S3 answers 403 for a missing
+        # key when the caller can't list the bucket), so a missing JS or CSS chunk is a 404
+        # (production-readiness review, EDGE-03).
         Sid    = "AllowCloudFrontOACListBucket"
         Effect = "Allow"
         Principal = {

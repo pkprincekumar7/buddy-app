@@ -16,7 +16,7 @@ terraform {
   }
 }
 
-# Both providers are hardcoded to us-east-1 — every resource in this
+# The provider is hardcoded to us-east-1 — every resource in this
 # module (S3 bucket policy, SSM reads) lives in us-east-1. There is no
 # aws_region variable; hardcoding prevents accidental cross-region drift.
 provider "aws" {
