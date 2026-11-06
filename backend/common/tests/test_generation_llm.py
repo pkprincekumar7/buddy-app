@@ -334,6 +334,22 @@ def test_config_from_env_and_real_sdk_clients():
     )
 
 
+def test_a_key_still_at_its_placeholder_is_unconfigured():
+    # terraform-live-backend leaves an LLM key it has no value for at REPLACE_ME: calling a
+    # provider with it would fail every time, and a fallback would try it (JOB-04).
+    config = LlmConfig.from_env(
+        {"OPENAI_API_KEY": "REPLACE_ME", "ANTHROPIC_API_KEY": "sk-ant-test", "GEMINI_API_KEY": ""}
+    )
+    assert (config.openai_api_key, config.anthropic_api_key, config.gemini_api_key) == (
+        "",
+        "sk-ant-test",
+        "",
+    )
+    client = LlmClient(config, circle="grow")
+    assert client.available() == {"openai": False, "anthropic": True, "gemini": False}
+    asyncio.run(client.aclose())
+
+
 def test_aclose_closes_what_it_can():
     openai, gemini = FakeOpenAI(), FakeGemini()
     asyncio.run(_client(openai_client=openai, gemini_client=gemini).aclose())

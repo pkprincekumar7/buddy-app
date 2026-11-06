@@ -17,12 +17,12 @@ from typing import Any
 
 import boto3
 from botocore.config import Config
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from common.authz import Authorizer, AuthzConfig
 from common.internal_client import InternalClient, authz_fill
 from common.limiter import RateLimits
-from common.settings_base import ServiceSettings
+from common.settings_base import ServiceSettings, filled
 
 SERVICE = "shared"
 # The APK bucket is one global bucket in us-east-1, whatever region serves the request.
@@ -47,6 +47,13 @@ class SharedSettings(ServiceSettings):
     assets_bucket_name: str | None = Field(default=None, validation_alias="ASSETS_BUCKET_NAME")
     # Moto locally (0.3); unset in AWS.
     aws_endpoint_url: str | None = Field(default=None, validation_alias="AWS_ENDPOINT_URL")
+
+    # A key the secret holds no value for (UNFILLED_SECRET) is no key: speech-to-text answers
+    # 503 transcription_not_configured, not a 502 from OpenAI refusing it.
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def _unfilled_is_unset(cls, value: Any) -> Any:
+        return filled(value) or None
 
 
 @dataclass

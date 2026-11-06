@@ -46,6 +46,10 @@ DEFAULT_KEEP_ALIVE_SECONDS = 65
 GRACEFUL_SHUTDOWN_SECONDS = 25
 
 _SERVICE_RE = re.compile(r"[a-z][a-z0-9_]{0,30}")
+# The variable whose absence leaves a service in its unconfigured mode (503 to everything
+# but /health). A service names another with `CONFIGURED_BY` in its app.main: shared, which
+# has no database, is configured by JWT_PUBLIC_KEYS.
+DEFAULT_CONFIGURED_BY = "MONGODB_URI"
 
 
 class Runnable(Protocol):
@@ -68,11 +72,20 @@ class _Server(uvicorn.Server):
         yield
 
 
-def load_apps(service: str) -> tuple[Any, Any]:
-    """`service`'s public and internal ASGI apps."""
+def _main_module(service: str) -> Any:
     if not _SERVICE_RE.fullmatch(service):
         raise ValueError(f"invalid service name {service!r}")
-    module = importlib.import_module(f"{service}.app.main")
+    return importlib.import_module(f"{service}.app.main")
+
+
+def configured_by(service: str) -> str:
+    """The variable `service` needs to leave its unconfigured mode (DEFAULT_CONFIGURED_BY)."""
+    return str(getattr(_main_module(service), "CONFIGURED_BY", DEFAULT_CONFIGURED_BY))
+
+
+def load_apps(service: str) -> tuple[Any, Any]:
+    """`service`'s public and internal ASGI apps."""
+    module = _main_module(service)
     apps = []
     for attr in ("app", "internal_app"):
         asgi = getattr(module, attr, None)
@@ -145,18 +158,21 @@ async def serve(servers: Sequence[Runnable]) -> None:
             loop.remove_signal_handler(sig)
 
 
-def unsafe_http_environment(environ: Mapping[str, str]) -> list[str]:
+def unsafe_http_environment(
+    environ: Mapping[str, str], configured_by: str = DEFAULT_CONFIGURED_BY
+) -> list[str]:
     """What an HTTP runtime in stg or prod mustn't start with (AUTH-07); the settings check
     the rest (common.settings_base). Only these two are HTTP's alone: a worker has no proxy
-    in front of it, and the image's unconfigured mode (no MONGODB_URI: 503 to everything)
-    is for running it outside an environment, not for serving users."""
+    in front of it, and the image's unconfigured mode (no `configured_by`, the service's
+    CONFIGURED_BY: 503 to everything) is for running it outside an environment, not for
+    serving users."""
     if environ.get("APP_ENV") not in STRICT_ENVS:
         return []
     problems = []
     if environ.get("BEHIND_PROXY", "").strip().lower() not in {"1", "true", "yes", "on"}:
         problems.append("BEHIND_PROXY isn't true: client IPs would be the ALB's")
-    if not environ.get("MONGODB_URI", "").strip():
-        problems.append("MONGODB_URI is unset: every route but /health would answer 503")
+    if not environ.get(configured_by, "").strip():
+        problems.append(f"{configured_by} is unset: every route but /health would answer 503")
     return problems
 
 
@@ -164,7 +180,7 @@ def main(argv: list[str], environ: Mapping[str, str] = os.environ) -> int:
     if len(argv) != 1:
         print("usage: python -m common.serve <service>", file=sys.stderr)
         return 2
-    if problems := unsafe_http_environment(environ):
+    if problems := unsafe_http_environment(environ, configured_by(argv[0])):
         print(
             f"unsafe settings for APP_ENV={environ['APP_ENV']}: " + "; ".join(problems),
             file=sys.stderr,

@@ -284,6 +284,10 @@ def test_from_env_needs_no_database(fake_aws_credentials, monkeypatch, tmp_path)
     local_url = full.s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": "k"})
     assert local_url.startswith(f"http://localhost:5050/{BUCKET}/k?")
     asyncio.run(full.aclose())
+    # An OpenAI key the secret holds no value for (REPLACE_ME) is no key: a 503, not OpenAI's 401.
+    unfilled = Runtime.from_env(_env(OPENAI_API_KEY="REPLACE_ME"))
+    assert unfilled.openai is None
+    asyncio.run(unfilled.aclose())
     aws = Runtime.from_env(_env(ASSETS_BUCKET_NAME=BUCKET))
     assert aws.s3.meta.endpoint_url == "https://s3.us-east-1.amazonaws.com"
     aws_url = aws.s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": "k"})
@@ -331,6 +335,15 @@ def test_closing_closes_the_openai_client_and_the_cache():
         assert r.openai.closed and cache.closed
 
     live(test)
+
+
+def test_stg_and_prod_start_shared_without_a_database(monkeypatch):
+    # common.serve's stg/prod check reads CONFIGURED_BY: shared has no MONGODB_URI.
+    from common import serve
+
+    assert serve.configured_by("shared") == "JWT_PUBLIC_KEYS"
+    task = {"APP_ENV": "prod", "BEHIND_PROXY": "true", **_env()}
+    assert serve.unsafe_http_environment(task, serve.configured_by("shared")) == []
 
 
 def test_an_oversized_body_is_refused_before_the_form_is_parsed():

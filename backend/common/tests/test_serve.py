@@ -234,11 +234,27 @@ HTTP_ENV = {"APP_ENV": "prod", "BEHIND_PROXY": "true", "MONGODB_URI": "mongodb+s
     ],
 )
 def test_main_refuses_an_unsafe_http_runtime_in_stg_and_prod(monkeypatch, capsys, env, problem):
+    _fake_service(monkeypatch, "svc_unsafe", app=_asgi, internal_app=_internal)
     monkeypatch.setattr(serve_mod, "build_servers", lambda service: pytest.fail("served"))
     for app_env in ("stg", "prod"):
-        assert serve_mod.main(["svc"], environ={**HTTP_ENV, **env, "APP_ENV": app_env}) == 1
+        assert serve_mod.main(["svc_unsafe"], environ={**HTTP_ENV, **env, "APP_ENV": app_env}) == 1
         err = capsys.readouterr().err
         assert f"unsafe settings for APP_ENV={app_env}" in err and problem in err
+
+
+def test_a_service_without_a_database_needs_its_own_variable_instead(monkeypatch, capsys):
+    # shared has no database: JWT_PUBLIC_KEYS is what configures it (its CONFIGURED_BY).
+    _fake_service(
+        monkeypatch, "svc_nodb", app=_asgi, internal_app=_internal, CONFIGURED_BY="JWT_PUBLIC_KEYS"
+    )
+    _fake_service(monkeypatch, "svc_db", app=_asgi, internal_app=_internal)
+    assert serve_mod.configured_by("svc_nodb") == "JWT_PUBLIC_KEYS"
+    assert serve_mod.configured_by("svc_db") == "MONGODB_URI"
+    no_db = {"APP_ENV": "prod", "BEHIND_PROXY": "true", "JWT_PUBLIC_KEYS": '{"k": "pem"}'}
+    assert serve_mod.unsafe_http_environment(no_db, "JWT_PUBLIC_KEYS") == []
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service: pytest.fail("served"))
+    assert serve_mod.main(["svc_nodb"], environ={**no_db, "JWT_PUBLIC_KEYS": ""}) == 1
+    assert "JWT_PUBLIC_KEYS is unset" in capsys.readouterr().err
 
 
 def test_only_stg_and_prod_need_the_http_settings():

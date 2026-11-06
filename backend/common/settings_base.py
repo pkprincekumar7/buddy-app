@@ -31,6 +31,16 @@ class UnsafeSettingsError(RuntimeError):
 # As the rate limits' client (common.limiter).
 VALKEY_TIMEOUT_SECONDS = 2
 
+# What a key of a service's secret holds until it's given a value: Terraform creates every key
+# with it, and terraform-live-backend leaves an optional one without a value (an LLM
+# provider's) at it, so it's filled once one is set (scripts/fill-service-secrets.sh).
+UNFILLED_SECRET = "REPLACE_ME"
+
+
+def filled(value: str | None) -> str:
+    """`value`, or "" when it's unset or still UNFILLED_SECRET: a key nobody gave a value."""
+    return "" if value is None or value.strip() == UNFILLED_SECRET else value
+
 
 class ServiceSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

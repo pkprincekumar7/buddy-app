@@ -34,6 +34,9 @@ from common.limiter import RateLimits
 from common.routers import PolicyRouter, public
 from shared.app.runtime import SERVICE, Runtime
 
+# No database (13.3): the runtime is built when the token keys are set (common.serve reads
+# this to check a stg or prod task has them).
+CONFIGURED_BY = "JWT_PUBLIC_KEYS"
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 # common.serve's cap on a request body: the recording plus the form's own parts.
 MAX_BODY_BYTES = MAX_AUDIO_BYTES + 512 * 1024
@@ -87,7 +90,7 @@ def configure(runtime: Runtime | None) -> None:
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Both apps share one Runtime per process; the last one to stop closes it."""
     global _users
-    if _runtime is None and os.environ.get("JWT_PUBLIC_KEYS"):
+    if _runtime is None and os.environ.get(CONFIGURED_BY):
         configure(Runtime.from_env())
     _users += 1
     try:

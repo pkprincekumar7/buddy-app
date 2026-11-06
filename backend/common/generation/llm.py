@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from common.generation.prompts import system_message
+from common.settings_base import filled
 
 ProviderName = Literal["openai", "anthropic", "gemini"]
 PRIORITY: tuple[ProviderName, ...] = ("openai", "anthropic", "gemini")
@@ -75,11 +76,12 @@ class LlmConfig:
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> LlmConfig:
         defaults = cls()
         return cls(
-            openai_api_key=environ.get("OPENAI_API_KEY", ""),
+            # A provider with no key yet is unconfigured, not one to call and fail.
+            openai_api_key=filled(environ.get("OPENAI_API_KEY")),
             openai_model=environ.get("OPENAI_MODEL", defaults.openai_model),
-            anthropic_api_key=environ.get("ANTHROPIC_API_KEY", ""),
+            anthropic_api_key=filled(environ.get("ANTHROPIC_API_KEY")),
             anthropic_model=environ.get("ANTHROPIC_MODEL", defaults.anthropic_model),
-            gemini_api_key=environ.get("GEMINI_API_KEY", ""),
+            gemini_api_key=filled(environ.get("GEMINI_API_KEY")),
             gemini_model=environ.get("GEMINI_MODEL", defaults.gemini_model),
             timeout_seconds=float(environ.get("LLM_TIMEOUT_SECONDS", defaults.timeout_seconds)),
         )
