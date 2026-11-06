@@ -221,8 +221,9 @@ jobs:
           REDIS_URL: redis://localhost:6379
           REQUIRE_LIVE_SERVICES: "1"
           # Not what the tests run as: each testkit pins APP_ENV=local (it sets the event
-          # topics' prefix). A different value here checks that nothing leaks in from the
-          # environment.
+          # topics' prefix), and auth's conftest pins it in the process too, for the cookie
+          # names common.cookies reads at import. A different value here checks that nothing
+          # else leaks in from the environment.
           APP_ENV: dev
 
       # backend/openapi/<service>.json is committed; Spectral lints the

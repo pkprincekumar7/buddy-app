@@ -69,9 +69,13 @@ services:
       - mongo_data:/data/db
     healthcheck:
       # Initiates the replica set on first start, then reports healthy once it's primary.
+      # HOME=/tmp: the image's HOME is /data/db, which the entrypoint chowns on first start,
+      # and mongosh's lock files appearing and going there mid-chown make it exit.
       test:
         [
           "CMD",
+          "env",
+          "HOME=/tmp",
           "mongosh",
           "--quiet",
           "--eval",
