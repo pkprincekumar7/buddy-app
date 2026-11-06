@@ -105,8 +105,8 @@ check "a pair per service and kid (version 1 by default)" "$(names)" \
   "$P/auth/service_token/auth-v1/private,$P/auth/service_token/auth-v1/public,$P/users/service_token/users-v2/private,$P/users/service_token/users-v2/public"
 check "the private key is a SecureString, the public one a String" \
   "$(field "$P/auth/service_token/auth-v1/private" type),$(field "$P/auth/service_token/auth-v1/public" type)" "SecureString,String"
-[[ "$(value "$P/auth/service_token/auth-v1/private")" == "-----BEGIN PRIVATE KEY-----"* ]] \
-  && [[ "$(value "$P/auth/service_token/auth-v1/public")" == "-----BEGIN PUBLIC KEY-----"* ]] \
+[[ "$(value "$P/auth/service_token/auth-v1/private")" == "-----BEGIN PRIVATE KEY-----"* ]] &&  # gitleaks:allow (a PEM header, no key)
+  [[ "$(value "$P/auth/service_token/auth-v1/public")" == "-----BEGIN PUBLIC KEY-----"* ]] \
   && ok "PKCS#8 private and SPKI public PEMs, as tls_private_key wrote" || fail "PEM formats"
 derived=$(value "$P/auth/service_token/auth-v1/private" | "$OPENSSL" pkey -pubout 2>/dev/null)
 check "the public key is the private key's" "$derived" "$(value "$P/auth/service_token/auth-v1/public")"

@@ -9,3 +9,7 @@
 6a63fa1ba4544363e295a71f26d3cf0d3d25acdb:backend/tests/test_settings.py:generic-api-key:92
 6a63fa1ba4544363e295a71f26d3cf0d3d25acdb:modules/redis/tests/redis.tftest.hcl:generic-api-key:15
 6a63fa1ba4544363e295a71f26d3cf0d3d25acdb:infra-live-backend/terraform/tests/stack.tftest.hcl:generic-api-key:62
+#
+# 00922c1 — service-token-keys.test.sh checks that a generated key starts with the PEM header
+# "-----BEGIN PRIVATE KEY-----"; the test makes its keys while it runs, none is in the file.
+00922c13a6e3c28bfdc19df5c2ab51288f47555f:scripts/service-token-keys.test.sh:private-key:108
