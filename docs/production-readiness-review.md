@@ -1,6 +1,6 @@
 # Production Readiness Review — Terraform & GitHub Actions
 
-> **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
+> **Updated 2026-11-06 (v9):** the verdict, architecture and tracker reflect the fixes and decisions of 2026-11-01 to 2026-11-06 (see the revision history). **v8 (2026-11-01)** checked every finding against the code after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
 > **Status (2026-11-06):** of the 86 tracked findings, 56 are done, 18 partly done, 9 open and 3 moot; DR-01, CI-01, CI-02, CI-05, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred, and SEC-03 is partly done with the rest deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
@@ -18,6 +18,7 @@
 | v5 | 2026-10-18 | Five-way verification pass (edge/security, pipelines, backend, infra/DB, internal consistency) against code and installed library versions. Fixed fixes that would have broken things: the PRIV-01 `errors()` kwargs, the EDGE-04 `aud` rollout order, uvicorn `--forwarded-allow-ips`, the CI-02 plan job without an environment, the SEC-05 same-stack secret, the CSP missing `blob:`, Fargate tmpfs, and the CI-04/SEC-07 grep commands. Corrected line numbers (TF-02, EDGE-05 schemas), counts (seven dropdowns, `check.yml` timeouts, approvals), the DB-02 connection math (per-node, surge) and the DB-01 index description. Added pitfalls (DEC-01 routing, JOB-02 attempts, AUTH-02 tombstones, JOB-06 write skew, TF-03 Spot replacement, Atlas CIDR immutability). Rebuilt the phase table so each item has one home, and added Phase 7 for the Global Cluster. Missing acceptance criteria added. |
 | v6–v7 | 2026-10-19 – 2026-10-23 | Implementation notes inline (marked **v6**/**v7**) as findings were fixed: EDGE-04, EDGE-05, APP-02, NET-01, TF-01, TF-03, TF-04, CI-12, L21. |
 | v8 | 2026-11-01 | Re-checked every finding against the code after the backend split (nine services, `backend/common`, per-service workers, SNS/SQS events, Valkey with IAM auth) and the removal of the monolith. Rewrote the verdict, architecture, "What's done well" and the tracker; added a **Current code** note to every finding and a status column to the low-severity table; marked finished items in the implementation order and Appendix A. New issues found: the service-token private keys are in Terraform state (SEC-01), and FastAPI's default 422 response echoes the submitted value, passwords included (PRIV-01, fixed the same day in `backend/common/validation.py`). |
+| v9 | 2026-11-02 – 2026-11-06 | Implementation and owner decisions, each recorded in its finding's 🔄 note: image signing, SBOM attestations and digest-pinned rollouts (CI-03), registry-to-registry promote (CI-09), every image pinned by digest (CI-04), service-token keys out of Terraform state (SEC-01), PrivateLink to Atlas M10 for stg and prod, both served from ap-south-1 (DB-01, DEC-01, DEC-02), Atlas connection budget, Spot workers and deploy surge (TF-03), the data-residency matrix (PRIV-03), and the one-admin, one-account-per-environment operating model (CI-08, DR-02). |
 
 ---
 
@@ -51,43 +52,30 @@ Rules for whoever implements these:
 
 ## Overall verdict
 
-**Still not ready for large-scale, multi-region production, though most of the backend findings are now fixed** (v8, 2026-11-01).
+**Close to ready for a first production launch in one region; not yet for multi-region production** (v9, 2026-11-06).
 
-Since the review, the backend was rebuilt as nine services sharing `backend/common`. That closed or narrowed most of the application findings:
-- the 1 MiB body cap (APP-09) and bounded child documents (APP-10);
-- fenced job leases (JOB-01) and transactional job starts (JOB-06);
-- deletion across every service with a 30-day purge (PRIV-02), and 422s that don't echo passwords or other submitted values (PRIV-01);
-- admin audit and session revocation on lock (AUTH-03);
-- the client IP from `CloudFront-Viewer-Address` (APP-01);
-- no task role that can write the public APK (SEC-10).
+Most findings are now fixed in code (56 done, 18 partly done). What's left is mostly things that can only be checked against a running environment, a few owner steps, and items the owner deferred.
+
+Done since the backend split, among others:
+- **Images:** scanned, signed with cosign (keyless) and SBOM-attested in the deploy; every rollout checks the signature and runs the image by digest; prod gets only images promoted from stg, copied by digest (CI-03, CI-04, CI-09).
+- **Database:** stg and prod each have one Atlas M10 in ap-south-1, reached through PrivateLink made by Terraform, and both are served from ap-south-1 only; peak connections are budgeted to 70% of M10 (DB-01, DEC-01, DEC-02, TF-03).
+- **Secrets:** no private key in Terraform state (SEC-01, the service-token keys); per-key secret fills (SEC-05).
+- **Backend:** cookie sessions with refresh rotation (AUTH-02, AUTH-05), LLM spend metrics, alarms and a kill switch (JOB-02, JOB-03), presigned upload size limits (APP-07), moving-window rate limits with IPv6 /64 buckets (APP-01, APP-11).
 
 What still stands in the way:
+- **Checks in a deployed stg** ([stg-first-deploy.md](stg-first-deploy.md)): edge 404s and secret rotation (EDGE-02, EDGE-03), the viewer-IP header (APP-01), index builds and an Atlas failover and restore (DB-01, DB-03, DB-05), PrivateLink in use (DEC-02), a failed deploy reported as failed (CI-11), the scheduler (SCH-01), and the load tests (TF-03, TF-04).
+- **Owner steps outside the repo:** provisioning the Atlas clusters and their backups, AI-provider data agreements, the privacy policy and transfer basis (PRIV-03), and the IAM restriction on the deployed-SHA parameter (CI-10).
+- **Deferred by the owner,** worth revisiting before prod: prod destroy protection (DR-01), prod applies only from `main` (CI-01), per-environment OIDC trust and a narrower deploy role (SEC-04), release-signed mobile builds (MOB-01), plus CI-02, CI-05, SEC-03 (its remaining fixes), SEC-08, SEC-09, TF-02 and parts of WAF-01 and CI-13.
+- **Optional hardening with a small AWS cost:** flow logs, a KMS key for the alert topic, a monitoring endpoint, ECR enhanced scanning (L10, L11, L17, L19), and CloudFront logs and an uptime canary (OBS-01).
 
-- **The database:** the prod cluster isn't provisioned yet. The plan is dedicated M10+, with stg on M10 too (so Atlas's Test Failover can run there, DB-05) and dev and sbx on M0 by design. It stays single-region in ap-south-1 until the Global Cluster (DB-01, DEC-01, DEC-02).
-- **Pipelines:**
-  - prod can be deployed or applied from any branch (CI-01, deferred);
-  - plan and apply run in one job (CI-02, deferred);
-  - the image CI scans isn't the image deployed (CI-03).
-- **Identity and secrets:**
-  - the OIDC trust is documented as a wildcard on an admin role (SEC-04, deferred);
-  - secrets sit in Terraform state, now including the service-token private keys (SEC-01).
-- **Safety and operations:**
-  - prod can still be destroyed quickly (DR-01, deferred);
-  - alerts go to email only (OBS-01);
-  - mobile builds are debug-signed (MOB-01);
-  - no separate rate limit on the auth routes, and unpinned managed rule groups (WAF-01).
-- **Remaining backend items:**
-  - no LLM spend metric or kill switch, and no dead-job alarm (JOB-02, JOB-03);
-  - the refresh token in the response body and the `Domain` cookie (AUTH-05).
-
-As it stands it suits **dev and stg**. Prod needs Phase 0 (the database) and Phase 1 first.
+As it stands it suits **dev and stg** now, and **prod in ap-south-1** once the stg checks pass and the deferred prod-safety items are settled. Multi-region prod waits for the Atlas Global Cluster (DB-01 Stage 2).
 
 ### Current architecture
 
 ```
               ┌──────── CloudFront + WAF + Lambda@Edge (JWT check, origin pick) ────────┐
  Users ──────►│  /*  → S3 (SPA, spa-rewrite function)     /app-assets/* → S3              │
-              │  /api/* → the regional ALB picked from the JWT/location                  │
+              │  /api/* → the regional ALB picked from the JWT/location (stg, prod: ap-south-1) │
               └───────┬───────────────────────────────────────────────────┬─────────────┘
   login/google/health/hint-less refresh → bootstrap_region                 per-location region
                       ▼                                                    ▼
@@ -99,9 +87,9 @@ As it stands it suits **dev and stg**. Prod needs Phase 0 (the database) and Pha
                        generation jobs (discover, grow, transform, release)
                      ─► OpenTelemetry collector
      Valkey (IAM auth, a user per service): login throttles, rate and LLM limits, authz:{sub} cache
-     SNS/SQS: events between services        S3 uploads: presigned PUT and GET (no CloudFront origin)
-     MongoDB Atlas, ap-south-1, one database per service
-       dev/sbx: M0 · stg: M10 → prod: dedicated M10+ (planned, build plan 9.1) → future: M30+ Global Cluster
+     SNS/SQS: events between services        S3 uploads: presigned POST (5 MB cap) and GET (no CloudFront origin)
+     MongoDB Atlas, ap-south-1, one database per service (stg, prod: through PrivateLink)
+       dev/sbx: M0 · stg: M10 · prod: M10 (auto-scaling to M30) → future: M30+ Global Cluster
 ```
 
 ### What's done well (keep these)
@@ -118,7 +106,7 @@ As it stands it suits **dev and stg**. Prod needs Phase 0 (the database) and Pha
 - State uses S3 native locking (`use_lockfile = true`), with committed provider lock files read with `-lockfile=readonly`. Variables have strict validation, including blocking scheduler schedules in prod (`infra-live-scheduler/terraform/variables.tf:67-69`), and prod never receives a stop schedule (`scheduler.tf:109-112`).
 - The scheduler always dispatches against the default branch (`scheduler.tf:84`).
 - Sensitive variables are marked `sensitive = true` (`origin_verify_secret`, `github_pat`), and only the **text** plan is uploaded as an artifact, never the binary.
-- GitHub to AWS uses OIDC, with no long-lived keys. Promotion moves the **same image** forward.
+- GitHub to AWS uses OIDC, with no long-lived keys. Promotion moves the **same image** forward, by digest, with its signature, and every rollout checks that signature (CI-03).
 - CI scanning is broad:
   - checkov, gitleaks (checksum-verified), semgrep, bandit and CodeQL;
   - trivy, Dockle and an SBOM for every service image;
@@ -221,7 +209,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ✅ Done — every job in every workflow has a timeout; recovery runbook |
 | CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | ✅ Done — a–e done (weekly retire.js refresh, CodeQL v4 + weekly run, partial-plan warning, review comment), f moot; g not needed (one admin, no approvers) |
 | DOC-01 | 🟢 Low | Docs | Documentation drift | ✅ Done — every listed drift fixed or checked; the `AdministratorAccess` wording stays with SEC-04 (deferred) |
-| LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L2 (Repo, DataClassification), L5, L6, L7, L8, L9, L14, L15, L18, L20, L21 done; L16 moot; L13 no action; the rest open |
+| LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L2 (Repo, DataClassification), L3, L4, L5, L6, L7, L8, L9, L14, L15, L18, L20, L21 done; L16 moot; L13 no action; L12 on hold for stg; L10, L11, L17, L19 open |
 
 ---
 
@@ -2465,7 +2453,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-08 — CodeQL non-gating; no SARIF upload; required checks unverified 🟢 (v2: rewritten)
 
-> 🔄 **Current code (2026-11-04):** 🟡 Partial.
+> 🔄 **Current code (2026-11-05):** ✅ Done.
 > - **SARIF uploaded.** The security scan writes SARIF from semgrep (`--sarif-output`), checkov (`-o sarif`) and a whole-repo `trivy config`, as the `sarif-reports` artifact. A separate `code-scanning` job, the only one besides CodeQL with `security-events: write`, uploads each under its own category. It skips fork and Dependabot PRs, whose token is read-only.
 > - **Found on the way: checkov scanned only `infra-live-backend`.** Given several `-d`, checkov 3.2.529 scans the first directory once per flag. CI and `check.sh` now scan from the repo root once. That surfaced 8 findings in edge and scheduler, now skipped with reasons in the code: Lambda@Edge can't use a VPC, DLQ or X-Ray; the scheduler's Lambda environment and schedule input hold no secrets.
 > - **Rulesets: not added, by the owner's choice** (2026-11-05). With one maintainer, `main` keeps its existing `MergeToMainBranch` ruleset (no deletion or force-push, PRs only), and the `Check` results and CodeQL alerts are read before merging rather than enforced. `docs/ci-cd.md` (`code-scanning`) describes the ruleset to add if more people join.
@@ -2619,7 +2607,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-16 — No job timeouts; queued runs silently cancelled 🟢 (new in v2)
 
-> 🔄 **Current code (2026-11-02):** ✅ Done. Every job in all 13 workflows sets `timeout-minutes` (the 8 `terraform-live-all` jobs that only call a reusable workflow can't, and get the called jobs' limits instead). The limits are well above a normal run: Terraform backend 60, edge 90, frontend and scheduler 30; deploys, promotes and restarts 30–45, so a 15-minute rollout wait still fits; Android 60 and iOS 90; validate jobs 5. `docs/infra-operations.md` ("If a Terraform job timed out or was cancelled") covers recovery (re-plan, `force-unlock`, import on "already exists") and the one-pending-run-per-group behaviour. A fail-fast check for an already queued run wasn't added.
+> 🔄 **Current code (2026-11-02):** ✅ Done. Every job in all 14 workflows sets `timeout-minutes` (rechecked 2026-11-06) (the 8 `terraform-live-all` jobs that only call a reusable workflow can't, and get the called jobs' limits instead). The limits are well above a normal run: Terraform backend 60, edge 90, frontend and scheduler 30; deploys, promotes and restarts 30–45, so a 15-minute rollout wait still fits; Android 60 and iOS 90; validate jobs 5. `docs/infra-operations.md` ("If a Terraform job timed out or was cancelled") covers recovery (re-plan, `force-unlock`, import on "already exists") and the one-pending-run-per-group behaviour. A fail-fast check for an already queued run wasn't added.
 
 **Where:** no job in the 12 workflows other than `check.yml` sets `timeout-minutes` (the default is 6 hours). All 10 `check.yml` jobs already set it. All backend/Terraform groups use `cancel-in-progress: false`.
 
@@ -2693,8 +2681,8 @@ The "Where" column is from 2026-10-18; the status column gives the current locat
 |---|-------|------|-----|------|
 | L1 | all `provider.tf` | `~> 6.28`, no committed lock file | Commit `.terraform.lock.hcl`; `init -lockfile=readonly` (TF-01) | ✅ Lock files committed; workflows use `-lockfile=readonly` |
 | L2 | `default_tags` | Only Project/Environment/ManagedBy | Add `Owner`, `CostCenter`, `Repo`, `DataClassification` | ✅ Done: `Repo` (from the workflows' `github.repository`) and `DataClassification` per stack (backend confidential, edge and scheduler internal, frontend public). `Owner`/`CostCenter` left out: one owner, no cost centres |
-| L3 | `infra-live-edge/terraform/response_headers.tf:175` | CORS allow-methods omits PUT. The backend has no PUT routes, and CloudFront `allowed_methods` can't drop PUT (it accepts only {GET,HEAD}, {GET,HEAD,OPTIONS} or all 7) | Leave as-is with a comment, or add PUT to CORS for symmetry | ⬜ Open (`response_headers.tf:167`) |
-| L4 | `response_headers.tf:88-89` | CSP `img-src https:` and `style-src 'unsafe-inline'` | `img-src 'self' data: blob:`, with APP-08. `blob:` is needed for upload previews (`frontend/src/hooks/useNinetyDayPlan.ts:334`, `URL.createObjectURL`); add the uploads CDN host only if it differs from the SPA host. Keep `style-src 'unsafe-inline'`: the CSP is a static CloudFront policy over S3, so nonces aren't possible, and framer-motion needs inline styles | ⬜ Open (`response_headers.tf:89`) |
+| L3 | `infra-live-edge/terraform/response_headers.tf:175` | CORS allow-methods omits PUT. The backend has no PUT routes, and CloudFront `allowed_methods` can't drop PUT (it accepts only {GET,HEAD}, {GET,HEAD,OPTIONS} or all 7) | Leave as-is with a comment, or add PUT to CORS for symmetry | ✅ Done: PUT added to the API's CORS methods (`response_headers.tf:176`), since onboarding's answers and grow's growth areas are PUT routes. It mattered little (the web app calls `/api/*` on its own origin, so no preflight), but the list now matches the routes |
+| L4 | `response_headers.tf:88-89` | CSP `img-src https:` and `style-src 'unsafe-inline'` | `img-src 'self' data: blob:`, with APP-08. `blob:` is needed for upload previews (`frontend/src/hooks/useNinetyDayPlan.ts:334`, `URL.createObjectURL`); add the uploads CDN host only if it differs from the SPA host. Keep `style-src 'unsafe-inline'`: the CSP is a static CloudFront policy over S3, so nonces aren't possible, and framer-motion needs inline styles | ✅ Done with APP-08: `img-src 'self' data: blob:` plus the uploads buckets (`response_headers.tf:95`); `style-src 'unsafe-inline'` kept, as the fix says |
 | L5 | `response_headers.tf:79,214,252` | HSTS `preload` on a subdomain does nothing | Remove it, or preload the apex deliberately | ✅ Done: `preload = false` on all three policies; checkov's CKV_AWS_259 skipped with the reason |
 | L6 | `infra-live-backend/terraform/variables.tf:194` | `jwt_key_id` description says "CloudFront Function" | Say "Lambda@Edge" | ✅ Done (`variables.tf:225`) |
 | L7 | `jwt-validator-lambda.js.tpl:151,155,322` | 503 body leaks the location/region name | Generic message; log details | ✅ Done: the 503 body is a generic `Service Unavailable`; the location or region goes to the function's log (test checks the body) |
@@ -2717,7 +2705,15 @@ The "Where" column is from 2026-10-18; the status column gives the current locat
 
 ## Suggested implementation order
 
-> 🔄 **2026-11-01:** the table is from v5. Since then these are **done**: EDGE-04, EDGE-05, APP-02, APP-09, APP-10, NET-01, TF-06, SEC-10, DB-04, JOB-01, JOB-06, JOB-07, AUTH-03, PRIV-01, PRIV-02, PRIV-04 and CI-06. AUTH-06 is moot. Many others are partly done; see the [Finding tracker](#finding-tracker). Skip what's done and do only the "open" part of a partial item. JOB-07, APP-05 and APP-11 were written about the old monolith; APP-05 now means `backend/common/limiter.py`. The dependencies "EDGE-04 backend `aud` → issuing `aud`" and "APP-02 → key rotation" are met, and DB-01's "runbook Step 0" no longer applies (DB-01 note).
+> 🔄 **2026-11-06:** the table is the v5 plan, kept as written. Almost all of it is now done; what's left, by phase:
+> - **0:** provisioning the Atlas M10 clusters with backups, PITR and termination protection, and a timed restore (DB-01; owner steps, `docs/infra-operations.md` "Atlas clusters"). DEC-01 and DEC-02 are decided and done in code.
+> - **1:** SEC-04, CI-01 and MOB-01 (deferred); the stg checks for EDGE-02, EDGE-03, APP-01 and CI-11; CI-10's IAM restriction (outside the repo).
+> - **2:** CI-02 and CI-13's two-job split (deferred). CI-03, CI-09 and the rest are done.
+> - **3:** SEC-03's remaining fixes, SEC-08, SEC-09 and WAF-01 #2–4 (deferred); PRIV-03's owner steps (agreements, privacy policy, transfer basis).
+> - **4:** CI-05 (deferred); the stg checks for DB-03, DB-05 and SCH-01; OBS-01's CloudFront logs and canary.
+> - **5:** TF-02 (deferred); the TF-03 and TF-04 load tests.
+> - **6:** L10, L11, L17 and L19; L12 on hold for stg.
+> - **7:** unchanged: the Global Cluster and what waits for it.
 
 | Phase | Findings | Why |
 |-------|----------|-----|

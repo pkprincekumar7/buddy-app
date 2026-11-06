@@ -170,8 +170,10 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
       items = ["https://${local.fqdn}"]
     }
 
+    # Every method the API's public routes use: PUT is onboarding's answers and grow's
+    # growth areas (production-readiness review, L3).
     access_control_allow_methods {
-      items = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+      items = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     }
 
     access_control_allow_headers {
