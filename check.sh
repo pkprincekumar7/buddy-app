@@ -181,9 +181,9 @@ run "build" \
     bash -c "cd '$FRONTEND' && npm run build"
 
 bundle_size_check() {
-  local bundle
-  bundle=$(ls "$FRONTEND/dist/assets/index-"*.js 2>/dev/null | head -1)
-  if [ -z "$bundle" ]; then echo "No bundle found in dist/assets/"; return 1; fi
+  local bundles=("$FRONTEND"/dist/assets/index-*.js) bundle
+  bundle="${bundles[0]}"
+  if [ ! -f "$bundle" ]; then echo "No bundle found in dist/assets/"; return 1; fi
   local size limit=1468006  # 1.4 MB = 1.4 * 1024 * 1024 — same as check.yml
   size=$(wc -c < "$bundle")
   echo "Bundle: $(basename "$bundle") — ${size} bytes (limit ${limit})"
@@ -266,14 +266,10 @@ run "scheduler dispatcher tests (infra-live-scheduler)" \
 # must match services.tf (they're the help text people pick names from).
 run "service lists match services.tf (scripts)" \
     bash "$ROOT/scripts/check-service-lists.sh"
+# Every tracked shell script, this one included, as CI checks them: a new one needs no list.
 if command -v shellcheck >/dev/null 2>&1; then
-  run "shellcheck (scripts/ecs-services.sh)" \
-      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh" \
-        "$ROOT/scripts/fill-service-secrets.sh" "$ROOT/scripts/fill-service-secrets.test.sh" \
-        "$ROOT/scripts/service-token-keys.sh" "$ROOT/scripts/service-token-keys.test.sh" "$ROOT/scripts/install-cosign.sh" \
-        "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh" \
-        "$ROOT/scripts/frontend-publish.sh" "$ROOT/scripts/frontend-publish.test.sh" "$ROOT/scripts/frontend-release.test.sh" \
-        "$ROOT/scripts/workflow-inputs.sh" "$ROOT/scripts/workflow-inputs.test.sh"
+  run "shellcheck (every shell script)" \
+      bash -c "cd '$ROOT' && git ls-files -z '*.sh' | xargs -0 shellcheck -x"
 fi
 
 # shared/routing.json → generated backend/common/regions_data.py, backend/auth/countries_data.py
@@ -411,9 +407,9 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       bash -c "'$TRIVY' fs --format cyclonedx --output '$ROOT/sbom-frontend.cyclonedx.json' '$FRONTEND/' \
         && echo 'Frontend SBOM → sbom-frontend.cyclonedx.json'"
 
-  # --ignorefile: image-size (CVE-2025-71329, CVE-2025-71330) has no upstream fix yet;
-  # see frontend-app/.trivyignore for the rationale (same exception as the yarn audit
-  # IGNORED_IDS list above).
+  # --ignorefile: dev-tooling CVEs with no fix or no forceable one (brace-expansion,
+  # braces, node-forge, zod via @expo/cli), none in the APK or IPA; frontend-app/.trivyignore
+  # has the rationale, and the yarn audit IGNORED_IDS list above the same exceptions.
   run "trivy (frontend-app CVE scan)" \
       bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln \
         --ignorefile '$FRONTEND_APP/.trivyignore' '$FRONTEND_APP/'"
@@ -447,7 +443,7 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
     scan_service_image() {
       local svc="$1" image="superpower-$1:check-scan"
       echo "Building the $svc image for scan..."
-      docker build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan" \
+      "$DOCKER" build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan" \
         -t "$image" -f "$BACKEND/Dockerfile" "$ROOT" || return 1
       local status=0
       "$TRIVY" image --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --ignore-unfixed "$image" \
@@ -457,7 +453,7 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       if [ -n "$DOCKLE" ]; then
         "$DOCKLE" -af settings.py --ignore DKL-DI-0005 "$image" || status=1
       fi
-      docker rmi "$image" >/dev/null 2>&1 || true
+      "$DOCKER" rmi "$image" >/dev/null 2>&1 || true
       return "$status"
     }
     for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
@@ -474,7 +470,6 @@ echo -e "\n${BOLD}════ DAST & API SPEC ════${RESET}"
 # spectral is a local devDependency in frontend/ — available after npm install (bootstrap),
 # no global install required.
 SPECTRAL="$FRONTEND/node_modules/.bin/spectral"
-NUCLEI=""
 
 # Each HTTP service's committed spec (backend/openapi/<service>.json) is tracked in git. CI
 # regenerates it and fails if the committed copy differs; this fails the same way when your

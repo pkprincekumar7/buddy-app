@@ -3,8 +3,10 @@ name: Check
 on:
   push:
     branches: ["main"]
+  # Pull requests into develop too: feature work merges there before main, so it's
+  # checked before it lands rather than only when develop goes to main.
   pull_request:
-    branches: ["main"]
+    branches: ["main", "develop"]
   # Weekly, so new CVEs (Trivy, pip-audit, npm/yarn audit, retire.js) and CodeQL queries
   # are checked against main even in a week with no push (production-readiness review,
   # CI-17 b).
@@ -298,8 +300,9 @@ jobs:
 
       - name: Bundle size budget (main JS ≤ 1.4 MB)
         run: |
-          BUNDLE=$(ls dist/assets/index-*.js 2>/dev/null | head -1)
-          if [ -z "$BUNDLE" ]; then echo "No bundle found"; exit 1; fi
+          BUNDLES=(dist/assets/index-*.js)
+          BUNDLE="${BUNDLES[0]}"
+          if [ ! -f "$BUNDLE" ]; then echo "No bundle found"; exit 1; fi
           SIZE=$(wc -c < "$BUNDLE")
           LIMIT=1468006
           echo "Bundle: $BUNDLE — ${SIZE} bytes (limit ${LIMIT})"
@@ -417,8 +420,9 @@ jobs:
       - name: Service lists match services.tf
         run: bash scripts/check-service-lists.sh
 
-      - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh scripts/fill-service-secrets.sh scripts/fill-service-secrets.test.sh scripts/service-token-keys.sh scripts/service-token-keys.test.sh scripts/install-cosign.sh scripts/frontend-publish.sh scripts/frontend-publish.test.sh scripts/frontend-release.test.sh scripts/workflow-inputs.sh scripts/workflow-inputs.test.sh
+      # Every tracked shell script, check.sh included, so a new one needs no list here.
+      - name: ShellCheck (every shell script)
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck -x
 
   terraform-lint:
     name: Terraform Lint

@@ -133,7 +133,7 @@ brew install shellcheck   # optional
 | spa-rewrite unit tests | Node's built-in test runner | `infra-live-edge/functions/spa-rewrite.test.js` |
 | `ecs-services.sh` / `fill-service-secrets.sh` tests | bash, fake `aws` CLI | The deploy / restart / promote helpers and terraform-live-backend's first-apply secret fill |
 | service lists match services.tf | `scripts/check-service-lists.sh` | The workflows' `service` input help text matches `services.tf` |
-| shellcheck (optional) | shellcheck | `scripts/*.sh` used by the workflows and the backend scripts |
+| shellcheck (optional) | shellcheck | Every tracked shell script (`git ls-files '*.sh'`), `check.sh` included |
 | routing data in sync | `scripts/sync-routing.mjs --check` | The generated copies of `shared/routing.json` (`backend/common/regions_data.py`, `backend/auth/countries_data.py`, the frontends' `countries.ts` / `locationHint.ts`) |
 | gateway config in sync | `scripts/sync-gateway.mjs --check` | `local/gateway/nginx.conf` matches `shared/service-routes.json` |
 | `bandit` | bandit 1.9.4 | `backend/tools/`, `backend/common/` and each service — Python SAST: hard-coded secrets, injection, insecure calls (medium+ severity) |
