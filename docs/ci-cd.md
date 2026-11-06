@@ -284,15 +284,19 @@ They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Optional — set only during a rotation.** While set, every ALB accepts it as well as `ORIGIN_VERIFY_SECRET`, and CloudFront sends it instead. See [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret). |
 | `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
 
-### Secrets — mobile build (`build-ios-ipa.yml`)
+### Mobile build (`build-ios-ipa.yml`)
 
-| Secret | Value |
+The two IDs are environment **variables**: like `GOOGLE_CLIENT_ID`, neither is a credential (the
+client ID is compiled into the app, and the Team ID appears in every app the team signs). Only
+the signing material is secret.
+
+| Name (kind) | Value |
 |---|---|
-| `IOS_CLIENT_ID` | OAuth 2.0 iOS client ID for Google Sign-In in the Expo app |
-| `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded `.p12` code-signing certificate |
-| `IOS_CERTIFICATE_PASSWORD` | Password for the `.p12` certificate |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded mobile provisioning profile |
-| `IOS_APPLE_TEAM_ID` | Apple Developer Team ID used for code signing |
+| `IOS_CLIENT_ID` (variable) | OAuth 2.0 iOS client ID for Google Sign-In in the Expo app |
+| `IOS_APPLE_TEAM_ID` (variable) | Apple Developer Team ID used for code signing |
+| `IOS_CERTIFICATE_P12_BASE64` (secret) | Base64-encoded `.p12` code-signing certificate |
+| `IOS_CERTIFICATE_PASSWORD` (secret) | Password for the `.p12` certificate |
+| `IOS_PROVISIONING_PROFILE_BASE64` (secret) | Base64-encoded mobile provisioning profile |
 
 `build-android-apk.yml` needs no Android-specific values beyond ones already listed above (`SUBDOMAIN`, `DOMAIN_NAME`, `GOOGLE_CLIENT_ID`, `ROLE_ARN`, `ASSETS_BUCKET_NAME` — all variables).
 

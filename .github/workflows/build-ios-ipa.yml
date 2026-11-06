@@ -47,26 +47,26 @@ jobs:
           SUBDOMAIN:                       ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME:                     ${{ vars.DOMAIN_NAME }}
           GOOGLE_CLIENT_ID:                ${{ vars.GOOGLE_CLIENT_ID }}
-          IOS_CLIENT_ID:                   ${{ secrets.IOS_CLIENT_ID }}
+          IOS_CLIENT_ID:                   ${{ vars.IOS_CLIENT_ID }}
           ROLE_ARN:                        ${{ vars.ROLE_ARN }}
           ASSETS_BUCKET_NAME:             ${{ vars.ASSETS_BUCKET_NAME }}
           IOS_CERTIFICATE_P12_BASE64:      ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
           IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_APPLE_TEAM_ID:               ${{ secrets.IOS_APPLE_TEAM_ID }}
+          IOS_APPLE_TEAM_ID:               ${{ vars.IOS_APPLE_TEAM_ID }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$SUBDOMAIN"                       ]] && missing+=("SUBDOMAIN (variable)")
           [[ -z "$DOMAIN_NAME"                     ]] && missing+=("DOMAIN_NAME (variable)")
           [[ -z "$GOOGLE_CLIENT_ID"                ]] && missing+=("GOOGLE_CLIENT_ID (variable)")
-          [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID")
+          [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID (variable)")
           [[ -z "$ROLE_ARN"                        ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME (variable)")
           [[ -z "$IOS_CERTIFICATE_P12_BASE64"      ]] && missing+=("IOS_CERTIFICATE_P12_BASE64")
           [[ -z "$IOS_CERTIFICATE_PASSWORD"        ]] && missing+=("IOS_CERTIFICATE_PASSWORD")
           [[ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]] && missing+=("IOS_PROVISIONING_PROFILE_BASE64")
-          [[ -z "$IOS_APPLE_TEAM_ID"               ]] && missing+=("IOS_APPLE_TEAM_ID")
+          [[ -z "$IOS_APPLE_TEAM_ID"               ]] && missing+=("IOS_APPLE_TEAM_ID (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
@@ -119,7 +119,7 @@ jobs:
         working-directory: frontend-app
         env:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          IOS_CLIENT_ID:    ${{ secrets.IOS_CLIENT_ID }}
+          IOS_CLIENT_ID:    ${{ vars.IOS_CLIENT_ID }}
         run: |
           {
             echo "API_URL=https://${FQDN}"
@@ -254,7 +254,7 @@ jobs:
       - name: Build archive
         working-directory: frontend-app/ios
         env:
-          IOS_APPLE_TEAM_ID: ${{ secrets.IOS_APPLE_TEAM_ID }}
+          IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
         run: |
           xcodebuild archive \
             -workspace Superpower.xcworkspace \
@@ -270,7 +270,7 @@ jobs:
 
       - name: Export Ad Hoc IPA
         env:
-          IOS_APPLE_TEAM_ID: ${{ secrets.IOS_APPLE_TEAM_ID }}
+          IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
         run: |
           # Write ExportOptions.plist using grouped echo — heredoc delimiters must be
           # at column 0 in shell, but YAML literal blocks require indentation >= the

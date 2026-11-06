@@ -771,7 +771,7 @@ The `build-ios-ipa.yml` workflow creates an Ad Hoc `.ipa` and requires both a **
 4. Pay the $99 / year fee
 5. Wait for approval (usually instant for Individual; 2–5 days for Organization)
 
-> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the value you add as `IOS_APPLE_TEAM_ID` in GitHub.
+> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the value you add as the `IOS_APPLE_TEAM_ID` variable in GitHub.
 
 #### Testing on a real device without the paid program
 
@@ -788,23 +788,23 @@ This is fine for development testing on your own device. CI builds and distribut
 
 ---
 
-### iOS-Specific Secrets
+### iOS-Specific Settings
 
-iOS builds require four extra secrets on top of the shared set. The steps below show how to generate each one.
+iOS builds need two extra **variables** and three extra **secrets** in each GitHub environment, on top of the shared set. The two IDs aren't credentials (the client ID ships inside the app; the Team ID shows in every signed app), so they're variables, like `GOOGLE_CLIENT_ID`. The steps below show how to get each one.
 
-| Secret                            | Description                                                              |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `IOS_CLIENT_ID`                   | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
-| `IOS_CERTIFICATE_P12_BASE64`      | Base64-encoded Apple Distribution certificate (`.p12`)                   |
-| `IOS_CERTIFICATE_PASSWORD`        | Password chosen when exporting the `.p12`                                |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`)          |
-| `IOS_APPLE_TEAM_ID`               | 10-character Apple Developer Team ID                                     |
+| Name                              | Kind     | Description                                                              |
+| --------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `IOS_CLIENT_ID`                   | variable | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
+| `IOS_APPLE_TEAM_ID`               | variable | 10-character Apple Developer Team ID                                     |
+| `IOS_CERTIFICATE_P12_BASE64`      | secret   | Base64-encoded Apple Distribution certificate (`.p12`)                   |
+| `IOS_CERTIFICATE_PASSWORD`        | secret   | Password chosen when exporting the `.p12`                                |
+| `IOS_PROVISIONING_PROFILE_BASE64` | secret   | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`)          |
 
 #### Step 1 — Find your Apple Team ID
 
 1. Go to [developer.apple.com](https://developer.apple.com) → **Account**
 2. Under **Membership Details**, copy the **Team ID** (10 characters, e.g. `ABCD1234EF`)
-3. Add as `IOS_APPLE_TEAM_ID` in GitHub
+3. Add as the `IOS_APPLE_TEAM_ID` **variable** in each GitHub environment
 
 #### Step 2 — Create and export a Distribution certificate
 
@@ -955,9 +955,9 @@ The role needs at minimum:
 }
 ```
 
-**4 — Add the Role ARN as a secret**
+**4 — Add the Role ARN as a variable**
 
-Copy the Role ARN (format: `arn:aws:iam::123456789012:role/role-name`) and add it as `ROLE_ARN` in each GitHub environment.
+Copy the Role ARN (format: `arn:aws:iam::123456789012:role/role-name`) and add it as the `ROLE_ARN` **variable** in each GitHub environment (the workflows read `vars.ROLE_ARN`).
 
 ---
 
