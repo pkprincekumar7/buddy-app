@@ -32,6 +32,10 @@ ASSETS_REGION = "us-east-1"
 _S3_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "virtual"})
 # A local endpoint (Moto) has no per-bucket hostnames: path style, as common.uploads does.
 _LOCAL_S3_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+# CloudFront gives up on the origin after 60 s (origin_read_timeout, infra-live-edge
+# cloudfront.tf): one attempt, bounded below that, so a slow transcription is shared's 502,
+# not CloudFront's 504 with the call still running. The client's default is 600 s, twice.
+TRANSCRIPTION_TIMEOUT_SECONDS = 50.0
 
 
 class SharedSettings(ServiceSettings):
@@ -66,7 +70,11 @@ class Runtime:
         if settings.openai_api_key:
             from openai import AsyncOpenAI
 
-            openai = AsyncOpenAI(api_key=settings.openai_api_key)
+            openai = AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
+                max_retries=0,
+            )
         s3 = None
         if settings.assets_bucket_name:
             s3 = boto3.client(

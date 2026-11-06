@@ -27,7 +27,7 @@ from shared_testkit import (
 
 from common.routers import assert_every_route_has_a_policy
 from shared.app import main
-from shared.app.runtime import Runtime
+from shared.app.runtime import TRANSCRIPTION_TIMEOUT_SECONDS, Runtime
 
 SPEECH = "/api/v1/speech/transcriptions"
 APK = "/api/v1/downloads/apk"
@@ -276,6 +276,10 @@ def test_from_env_needs_no_database(fake_aws_credentials, monkeypatch, tmp_path)
         )
     )
     assert full.openai is not None and full.s3.meta.endpoint_url == "http://localhost:5050"
+    # One attempt that ends before CloudFront's 60 s origin timeout.
+    assert (
+        full.openai.max_retries == 0 and full.openai.timeout == TRANSCRIPTION_TIMEOUT_SECONDS < 60
+    )
     # Moto has no per-bucket hostnames (found by the Gate 5 walk): the bucket goes in the path.
     local_url = full.s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": "k"})
     assert local_url.startswith(f"http://localhost:5050/{BUCKET}/k?")

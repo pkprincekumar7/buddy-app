@@ -105,10 +105,11 @@ resource "aws_cloudfront_distribution" "frontend" {
       https_port             = 443
       origin_protocol_policy = "https-only"
       origin_ssl_protocols   = ["TLSv1.2"]
-      # Must be >= LLM_TIMEOUT_SECONDS (default 60). CloudFront's default of 30 s
-      # causes 504s on slow LLM responses before the backend can reply, which
-      # triggers the rule-based fallback and, if the effect was already cancelled,
-      # skips the personality PATCH entirely.
+      # The longest an API request waits: generation runs as jobs (no request waits on
+      # an LLM), so it's speech-to-text, which shared bounds below this
+      # (TRANSCRIPTION_TIMEOUT_SECONDS, backend/shared/app/runtime.py) to answer 502
+      # itself rather than CloudFront's 504. 60 s is CloudFront's maximum without a
+      # quota increase; CloudFront's default of 30 s would be too short.
       origin_read_timeout = 60
     }
   }

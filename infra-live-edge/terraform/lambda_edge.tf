@@ -39,7 +39,7 @@ data "archive_file" "jwt_validator_lambda" {
         regional_alb_fqdns = local.regional_alb_fqdns
         location_to_region = local.location_to_region
         # Must equal infra-live-backend's JWT_ISSUER / JWT_AUDIENCE (ecs.tf):
-        # same expressions, both stacks get app_name from the APP_NAME secret.
+        # same expressions, both stacks get app_name from the APP_NAME variable.
         jwt_issuer   = "${var.app_name}-${var.environment}"
         jwt_audience = "${var.app_name}-api"
       }

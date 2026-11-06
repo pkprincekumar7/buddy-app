@@ -190,7 +190,7 @@ variable "waf_log_retention_days" {
 }
 
 variable "global_logging_bucket_name" {
-  description = "Pre-existing S3 bucket in us-east-1 for CloudTrail and WAF logs. Set from GLOBAL_LOGGING_BUCKET_NAME GitHub secret. Must be non-empty when enable_cloudtrail = true or enable_waf_logging = true."
+  description = "Pre-existing S3 bucket in us-east-1 for CloudTrail and WAF logs. Set from the GLOBAL_LOGGING_BUCKET_NAME GitHub environment variable. Must be non-empty when enable_cloudtrail = true or enable_waf_logging = true."
   type        = string
   default     = ""
 
