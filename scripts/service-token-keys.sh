@@ -112,7 +112,7 @@ ensure_service_token_keys() {
       echo "$service: created $kid."
     fi
     while IFS= read -r old; do
-      [ -n "$old" ] && [ "$old" != "$kid" ] || continue
+      if [ -z "$old" ] || [ "$old" = "$kid" ]; then continue; fi
       aws ssm delete-parameters --region "$region" \
         --names "$prefix/$old/private" "$prefix/$old/public" >/dev/null || return 1
       echo "$service: deleted the rotated-out $old."

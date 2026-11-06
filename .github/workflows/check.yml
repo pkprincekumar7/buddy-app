@@ -45,10 +45,13 @@ jobs:
           cache-dependency-path: |
             backend/requirements-dev.txt
             backend/requirements-lint.txt
+            backend/requirements-test.txt
 
-      # The services' runtime packages (their union) and the lint tools.
+      # The services' runtime packages (their union), the lint tools and the test tools: mypy
+      # checks the tests too, and without pytest it can't see that pytest.skip() never
+      # returns, so a skipped test's `str | None` stays unnarrowed (as check.sh's venv has them).
       - name: Install dependencies + dev tools
-        run: pip install -r requirements-dev.txt -r requirements-lint.txt
+        run: pip install -r requirements-dev.txt -r requirements-lint.txt -r requirements-test.txt
 
       - name: ruff check
         run: ruff check .
