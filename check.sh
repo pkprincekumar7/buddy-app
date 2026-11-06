@@ -540,6 +540,15 @@ if require_tool terraform TERRAFORM "brew install terraform"; then
     run "terraform test (${name%/})" \
         bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' test"
   done
+  # Every stack with each environment's own tfvars (tests/envs), so a tfvars change that
+  # breaks one environment fails here, not at its next apply.
+  for d in "$ROOT"/infra-live-*/terraform/; do
+    name="${d#"$ROOT/"}"
+    for env in dev sbx stg prod; do
+      run "terraform test (${name%/}, $env)" \
+          bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' test -test-directory=tests/envs -filter=tests/envs/$env.tftest.hcl -var-file=tfvars/$env.tfvars"
+    done
+  done
 fi
 
 if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then

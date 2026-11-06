@@ -50,6 +50,16 @@ cd modules/network && terraform init && terraform test
 cd infra-live-backend/terraform && terraform init -backend=false && terraform test
 ```
 
+Each stack (`infra-live-*/terraform`) also has `tests/envs/<env>.tftest.hcl`: the stack with
+that environment's own tfvars and the other inputs as its workflow passes them, so a tfvars
+change that breaks one environment fails before it's applied. They need the tfvars file, so
+they run one environment at a time:
+
+```bash
+cd infra-live-edge/terraform && terraform init -backend=false
+terraform test -test-directory=tests/envs -filter=tests/envs/sbx.tftest.hcl -var-file=tfvars/sbx.tfvars
+```
+
 CI (`check.yml` → Terraform Lint) and `./check.sh` run all of them, plus `tflint`, checkov and
 `trivy config` on `modules/`.
 

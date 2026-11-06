@@ -501,6 +501,18 @@ jobs:
             (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform test)
           done
 
+      # Every stack with each environment's own tfvars (tests/envs), so a tfvars change
+      # that breaks one environment fails here, not at its next apply.
+      - name: Terraform test per environment (infra-live-*)
+        run: |
+          for d in infra-live-*/terraform/; do
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null)
+            for env in dev sbx stg prod; do
+              echo "── terraform test $d ($env)"
+              (cd "$d" && terraform test -test-directory=tests/envs -filter="tests/envs/$env.tftest.hcl" -var-file="tfvars/$env.tfvars")
+            done
+          done
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest

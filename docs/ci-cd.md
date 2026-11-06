@@ -82,7 +82,7 @@ The install step runs `pip install -r requirements-dev.txt -r requirements-lint.
 | `tflint (infra-live-frontend)` | tflint 0.62.1 + AWS ruleset | Same for frontend infra (S3 bucket policy) |
 | `tflint (infra-live-scheduler)` | tflint 0.62.1 + AWS ruleset | Same for scheduler infra (EventBridge Scheduler) |
 | `tflint (modules)` | tflint 0.62.1 + AWS ruleset | Each shared module under `modules/` on its own |
-| `terraform test` | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, against a mock AWS provider (no credentials, nothing created) |
+| `terraform test` | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, and all four stacks once per environment with its own tfvars (`tests/envs`), against mock providers (no credentials, nothing created) |
 
 ### `lambda-edge-test` (Node.js 22)
 
