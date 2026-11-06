@@ -36,7 +36,7 @@ HOST=https://<SUBDOMAIN>-stg.<DOMAIN_NAME>
 ### GitHub Environment `stg`
 - [ ] Variables and secrets from [environments.md](environments.md) section 6: `ATLAS_PROJECT_ID` (stg's Atlas project ID), `ROLE_ARN`, `APP_NAME`, `STATE_BUCKET`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, `JWT_PUBLIC_KEYS` (and `JWT_KEY_ID` if not `key-v1`), the three `*_MODEL`s, `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`; the three region maps `ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES`, `REGIONAL_LOGGING_BUCKET_NAMES`; `OPS_EMAIL` (alarms are on in stg).
 - [ ] Secrets: `JWT_PRIVATE_KEY`, `ORIGIN_VERIFY_SECRET` (`openssl rand -hex 32`; not `ORIGIN_VERIFY_SECRET_NEXT`), `MONGODB_URIS` (the private-endpoint strings), `EMAIL_HMAC_PEPPER` (back it up), at least one LLM key, and `MONGODB_ATLAS_PUBLIC_KEY` / `MONGODB_ATLAS_PRIVATE_KEY` (the API key above).
-- [ ] Only if the nightly schedule will be used: `GIT_ACTIONS_PAT`.
+- [ ] Only if the nightly schedule will be used: `GIT_ACTIONS_PAT`, a **fine-grained** token for this repository only with **Actions: Read and write** ([environments.md](environments.md) section 6). Note its expiry date.
 
 ### Outside AWS
 - [ ] Google Cloud OAuth client: add `$HOST` to Authorized JavaScript origins.

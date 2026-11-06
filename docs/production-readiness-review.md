@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-05):** of the 86 tracked findings, 56 are done, 17 partly done, 10 open and 3 moot; DR-01, CI-01, CI-02, CI-05, SEC-03, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-06):** of the 86 tracked findings, 56 are done, 18 partly done, 9 open and 3 moot; DR-01, CI-01, CI-02, CI-05, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred, and SEC-03 is partly done with the rest deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -142,7 +142,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); the scheduler PAT is still in state (with SEC-03, deferred) |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ✅ Done in code — `Authorization`/`Cookie` redacted, BLOCK/COUNT only, WAF logs expire after 90 days (`waf_log_retention_days`); seeing `REDACTED` needs a prod apply |
-| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open · ⏸ Deferred |
+| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | 🟡 Fine-grained token (this repo, Actions read and write) documented; the server-built payload and trust conditions ⏸ deferred |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | ✅ Done — reads fail closed, only `REPLACE_ME` keys are filled; the Redis parts are moot (IAM auth) |
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ✅ Done — secrets on the Terraform plan/apply steps only, `terraform_wrapper: false` |
@@ -496,7 +496,7 @@ custom_error_response {
 
 ### SEC-03 — Scheduler: broad classic PAT and raw-event dispatch 🟠
 
-> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-02): to do later, not before the next releases. ⬜ Open. `infra-live-scheduler/lambda/dispatcher.py:25` still forwards `json.dumps(event)`, and `scheduler.tf:27` has no `Source*` condition.
+> 🔄 **Current code (2026-11-06):** 🟡 Partial; the rest still ⏸ deferred (owner's decision, 2026-11-02). **Fix 1, the token, is decided:** `GIT_ACTIONS_PAT` is a fine-grained token for this repository only, with Actions: Read and write and nothing else, which covers both the run listing and the dispatch. The docs and code comments now say so (`docs/environments.md`, `docs/ci-cd.md`, `docs/stg-first-deploy.md`, `terraform-live-scheduler.yml`, `infra-live-scheduler/terraform/secrets.tf` and `variables.tf`). **The owner created it on 2026-11-06** and saved it as the `GIT_ACTIONS_PAT` environment secret; each environment's Secrets Manager copy picks it up on its next `terraform-live-scheduler` apply. **Still open, deferred:** fix 2 (`dispatcher.py` still forwards the raw invoke event as the payload), fix 3 (no `aws:SourceAccount`/`aws:SourceArn` on the scheduler's role trust) and fix 4 (the IAM audit). The scheduler can never run prod (`infra-live-scheduler/terraform/variables.tf`), so a forged event can't touch prod's infrastructure.
 
 **Where:** `infra-live-scheduler/terraform/secrets.tf` (PAT), `infra-live-scheduler/lambda/dispatcher.py:26`, `infra-live-scheduler/terraform/scheduler.tf:23-30` (trust policy).
 

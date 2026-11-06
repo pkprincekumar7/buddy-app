@@ -282,7 +282,7 @@ They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS
 | `GEMINI_API_KEY` | Google Gemini key (see `OPENAI_API_KEY`) |
 | `ORIGIN_VERIFY_SECRET` | Shared secret CloudFront attaches as the `X-Origin-Verify` header on every request to the backend ALB; the ALB listener rules reject anything without a matching header, so a request that reaches the ALB via CloudFront's shared IP range but bypassed this app's own distribution (and therefore its Lambda@Edge JWT check) gets a fixed 403. **Must be identical** between `terraform-live-backend` and `terraform-live-edge` — both read it from this same secret. |
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Optional — set only during a rotation.** While set, every ALB accepts it as well as `ORIGIN_VERIFY_SECRET`, and CloudFront sends it instead. See [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret). |
-| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
+| `GIT_ACTIONS_PAT` | A **fine-grained** GitHub token for the scheduler's Lambda dispatcher, which lists `terraform-live-all`'s recent runs and starts one. Repository access: only this repository; permission: **Actions: Read and write**, nothing else (Metadata: Read is added automatically). Don't use a classic token: its `repo` + `workflow` scopes reach every repository the account can (SEC-03). It expires (up to a year): renew it, update the secret, and run `terraform-live-scheduler` (apply). Used by `terraform-live-scheduler.yml`. |
 
 ### Mobile build (`build-ios-ipa.yml`)
 

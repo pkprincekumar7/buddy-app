@@ -52,7 +52,7 @@ variable "github_workflow_file" {
 }
 
 variable "github_pat" {
-  description = "GitHub PAT with repo + workflow scopes, sourced from GitHub Actions environment secret GIT_ACTIONS_PAT"
+  description = "Fine-grained GitHub token for this repository only, Actions: Read and write (SEC-03), sourced from the GitHub Actions environment secret GIT_ACTIONS_PAT"
   type        = string
   sensitive   = true
 }

@@ -12,9 +12,12 @@
 # stored in Secrets Manager on every apply. GitHub environment secret is the
 # source of truth — no manual AWS CLI updates needed.
 #
-# Required PAT permissions:
-#   Classic token : repo + workflow scopes
-#   Fine-grained  : Actions — Read and Write
+# The PAT: a fine-grained token, repository access "Only select repositories" →
+# this repo, permission Actions: Read and write (Metadata: Read is added), nothing
+# else. That covers both calls the dispatcher makes: listing terraform-live-all's
+# recent runs and starting one. Not a classic token: its repo + workflow scopes
+# reach every repository the account can (production-readiness review, SEC-03).
+# It expires (up to a year): renew it, update the secret, and apply this workflow.
 # ---------------------------------------------------------------------------
 
 name: Terraform Live — Scheduler

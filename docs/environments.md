@@ -267,7 +267,7 @@ Under **Settings → Environments → `<env>` → Variables** (not Secrets): thr
 | `GLOBAL_LOGGING_BUCKET_NAME` (variable) | Always for `prod`; for others when edge `enable_cloudtrail` or `enable_waf_logging` is `true` |
 | `ATLAS_PROJECT_ID` (variable), `MONGODB_ATLAS_PUBLIC_KEY` and `MONGODB_ATLAS_PRIVATE_KEY` (secrets) | stg and prod (required): the Atlas project and a project-scoped API key, for the PrivateLink endpoint Terraform makes (DEC-02). Not set in dev and sbx |
 | `OPS_EMAIL` (variable) | When backend `enable_ops_email = true` or edge `enable_alarms = true` (both on in stg and prod), or scheduler `enable_alarms = true` (stg). Use a team address, since variables show in logs. |
-| `GIT_ACTIONS_PAT` (secret) | When using the scheduler (`terraform-live-scheduler.yml`) — GitHub PAT with `repo` + `workflow` scopes |
+| `GIT_ACTIONS_PAT` (secret) | When using the scheduler (`terraform-live-scheduler.yml`): a **fine-grained** GitHub token, this repository only, **Actions: Read and write** and nothing else (SEC-03). Settings → Developer settings → Personal access tokens → Fine-grained tokens. It expires: renew it and re-apply the scheduler |
 | `IOS_CLIENT_ID` (variable: a public OAuth client ID); `IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64` (secrets). `IOS_APPLE_TEAM_ID` (variable) is optional: the build reads the Team ID from the provisioning profile, and checks it against this when set | Only for building iOS IPAs (`build-ios-ipa.yml`) |
 
 ---
