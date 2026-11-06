@@ -11,10 +11,10 @@ each user's data is stored in their own region. For *why* the design looks like 
 
 | | Today | Target |
 |---|---|---|
-| Cluster | One Atlas **M0** (free) replica set in **ap-south-1** | Atlas **Global Cluster**, M30+, MongoDB **8.0** |
-| Used by | Backends in ap-south-1, eu-west-1 and us-east-1 (same `MONGODB_URI`) | Same — one connection string; mongos routes by `location` |
-| Data residency | Not enforced — everything is stored in ap-south-1 | Each document stored only in its location's zone |
-| App readiness | Every user-owned document has `location`; every index on a to-be-sharded collection leads with it (except the single-field `jobs` TTL); login avoids scatter-gather | Needs the code changes in Step 0 |
+| Cluster | stg and prod: one Atlas **M10** each in **ap-south-1**, over PrivateLink (DB-01, DEC-02). dev and sbx: an **M0** (free) each in ap-south-1. Every environment has its own Atlas project and cluster | Atlas **Global Cluster**, M30+, MongoDB **8.0** |
+| Used by | stg and prod: every service in ap-south-1 only (`served_from`, DEC-01). dev and sbx: every service in ap-south-1, eu-west-1 and us-east-1. One database per service (`auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release`), each with its own `MONGODB_URI` | Every region; one cluster; mongos routes by `location` |
+| Data residency | Not enforced — everything is stored in ap-south-1 (India); see [docs/data-residency.md](docs/data-residency.md) | Each document stored only in its location's zone |
+| App readiness | Every user-owned document has `location`; every unique index on a to-be-sharded collection is `{location, _id}`; login avoids scatter-gather | Ready: see Step 0 |
 
 > **Relation to the infra plan.** [`docs/infra-architecture-multi-region.md`](docs/infra-architecture-multi-region.md)
 > Change 10d is the Terraform version of this runbook and sets stricter targets: an **M50** tier,
@@ -25,12 +25,13 @@ each user's data is stored in their own region. For *why* the design looks like 
 ```
 Target layout
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ Atlas Global Cluster (one connection string)                              │
+│ Atlas Global Cluster — one database per service                           │
 │                                                                           │
-│  email_index, allowed_emails ── UNSHARDED (global lookups, primary shard) │
+│  auth: email_index, allowed_emails, deletions, admin_count, worker_state  │
+│        ── UNSHARDED (global lookups, primary shard)                       │
 │                                                                           │
-│  users · sessions · children · observations · ninety_day_plans            │
-│  growth_areas · jobs ── ZONE-SHARDED, shard key leads with `location`     │
+│  every other collection of every service database                         │
+│        ── ZONE-SHARDED on { location: 1, _id: 1 }                         │
 │                                                                           │
 │  Zone APAC     (ap-south-1 shards)  ◄── location in, apac, me             │
 │  Zone EU       (eu-west-1 shards)   ◄── location eu                       │
@@ -44,32 +45,21 @@ the regional workers scope their jobs by (see [`shared/README.md`](shared/README
 
 ---
 
-## Step 0 — Code changes that must ship before sharding
+## Step 0 — Code readiness
 
-| # | Change | Why |
-|---|---|---|
-| 1 | `users`: make `(location, email)` **non-unique** in [`database.py`](backend/app/database.py) | On a sharded collection a unique index must start with the **full** shard key (`location, _id`). Email uniqueness is already guaranteed globally by `email_index` |
-| 2 | `growth_areas`: make `(location, _id)` **non-unique** | `growth_areas` is sharded on `{location, user_id}` so its existing unique `(location, user_id, child_id, area_id)` stays valid; a unique `(location, _id)` would not |
-| 3 | Add `location` to the worker's `jobs` updates by `job_id` and `children` updates by `_id` ([`worker.py`](backend/worker.py)) | Otherwise every such update fans out to all zones. The job document already carries `location` |
-| 4 | Scope admin `list_users` ([`routers/admin.py`](backend/app/routers/admin.py)) to a chosen `location` | Unfiltered, it is a cross-zone scatter-gather |
-| 5 | Optional: resolve the `TODO(M10+)` transaction markers (account deletion, job enqueue) | Transactions become available on M10+; keep `email_index` outside them |
+No code changes are needed before sharding. Each service's collections and indexes are created
+by its own code (`ensure_*` in `backend/<service>/app/store.py`, plus the shared helpers in
+`backend/common/models.py`, `backend/common/events/store.py` and
+`backend/common/upload_tracking.py`), and they were designed for the Global Cluster
+(docs/auth-users-split.md, 14):
 
-`jobs` is sharded on `{location, job_id}`: its unique `(location, job_id, user_id)` index already
-starts with that key, so no index change is needed there.
+- every zone-sharded collection has a unique `{location: 1, _id: 1}` index, the shard key;
+- no other unique index exists on them — email uniqueness is enforced by the unsharded
+  `auth.email_index`, and "one per child" through `_id` (the child id, or `{child_id}:{area_id}`);
+- writes filter by `location` as well as `_id` or `user_id`, so they target one zone.
 
-**Drop the two old unique indexes before deploying items 1–2**, in every database that already has
-them (the current M0 included):
-
-```javascript
-db.users.dropIndex("location_1_email_1")
-db.growth_areas.dropIndex("location_1__id_1")
-```
-
-`init_indexes()` never drops an index, and MongoDB refuses to create an index under an existing
-name with different options. If the old unique index is still there, the new code's non-unique
-request fails with an index-options conflict, and because `init_indexes()` runs unguarded in the
-API's startup, **the API won't start**. Email uniqueness stays guaranteed by `email_index` in the
-meantime. New, empty databases need nothing — the app creates the non-unique versions itself.
+Two things remain an operator's job: run MongoDB **8.0** (Step 2), and scope admin account
+listing by location if that scatter matters (`GLOBAL_ROUTING_MONGO.md`, section 10).
 
 ---
 
@@ -85,7 +75,7 @@ meantime. New, empty databases need nothing — the app creates the non-unique v
 
 1. **Build a Database → Advanced Configuration → Global Cluster.**
    - Tier **M30 or higher** (Global Clusters are not available on M0/M2/M5 or below M30).
-   - MongoDB version **8.0** (the worker's claim query needs 7.1+ on a sharded cluster).
+   - MongoDB version **8.0** (the job workers' claim query needs 7.1+ on a sharded cluster).
 2. **Sharding mode: self-managed sharding** (custom zone ranges). Atlas's default *Atlas-managed*
    Global Writes expect ISO country codes in the location field; ours holds location *groups*
    (`eu`, `apac`, …), so the ranges are defined explicitly (Step 4). Confirm the option names
@@ -109,14 +99,16 @@ stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are a
 
 ---
 
-## Step 3 — Database user
+## Step 3 — Database users
 
-1. **Database Access → Add New Database User**, password authentication, e.g. `superpowerapp`.
-2. Role: **readWrite** on the application database. Its name is `MONGODB_DB_NAME`: `superpower_app` by
-   default locally, but deployed environments set it from the Terraform variable
-   `mongodb_db_name` (e.g. `superpower-<env>`) — use that name everywhere below, or Step 4 shards
-   the wrong database. Use a separate admin user for the sharding commands in Step 4.
-3. Store the password in Secrets Manager only.
+1. **Database Access → Add New Database User**, password authentication — **one per service with
+   a database** (auth, users, children, onboarding, discover, grow, transform, release; shared has
+   none), so a service can't read another's data.
+2. Role: **readWrite** on that service's database only. The database is named after the service:
+   `MONGODB_DB_NAME` is the service name both in deployed environments
+   ([`infra-live-backend/terraform/services.tf`](infra-live-backend/terraform/services.tf)) and in
+   `docker-compose.yml`. Use a separate admin user for the sharding commands in Step 4.
+3. Store each password in that service's Secrets Manager secret only (Step 6).
 
 ---
 
@@ -124,19 +116,24 @@ stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are a
 
 Do this on the **empty** cluster, before loading any data.
 
-1. **Create the app's indexes first.** Start one API task against the new cluster (with the Step 0
-   code), or otherwise run `init_indexes()`, *before* `zone-setup.js`. `shardCollection` reuses an
-   existing index on the shard key; if none exists it creates a **non-unique**
-   `location_1__id_1`, and the app's later request for a **unique** index under that same name
-   (on `users`, `sessions`, `children`, `observations`, `ninety_day_plans`) fails with an
-   index-options conflict — the API won't start. Verify this order once on a scratch cluster.
+1. **Create the services' indexes first.** Start each service (or its worker) once against the new
+   cluster: both run `runtime.prepare()` at startup, which creates the collections and indexes,
+   *before* `zone-setup.js`. `shardCollection` reuses an existing index on the shard key; if none
+   exists it creates a **non-unique** `location_1__id_1`, and the service's later request for a
+   **unique** index under that same name fails with an index-options conflict — the service won't
+   start. Verify this order once on a scratch cluster.
 
-2. Generate the commands from the code (prints `sh.updateZoneKeyRange` for every
-   collection × location — 7 × 6 = 42 ranges — then `sh.shardCollection` for each collection):
+2. Generate the commands from the code. For each service database it prints
+   `sh.updateZoneKeyRange` for every sharded collection × location (6 locations), then
+   `sh.shardCollection` for each sharded collection; with no arguments it covers every service
+   with a database:
 
    ```bash
-   python backend/tools/atlas_zone_ranges.py <MONGODB_DB_NAME> > zone-setup.js
+   python backend/tools/atlas_zone_ranges.py > zone-setup.js            # every service
+   python backend/tools/atlas_zone_ranges.py auth users > zone-setup.js  # only these
    ```
+
+   An unknown service, or one without a database (`shared`), exits with status 2.
 
 3. Review it, then run it with the admin user:
 
@@ -147,20 +144,19 @@ Do this on the **empty** cluster, before loading any data.
    Zone ranges are defined first so each empty collection is pre-split straight onto its zones'
    shards.
 
-4. Resulting shard keys:
-
-   | Collection | Shard key |
-   |---|---|
-   | `users`, `sessions`, `children`, `observations`, `ninety_day_plans` | `{ location: 1, _id: 1 }` |
-   | `growth_areas` | `{ location: 1, user_id: 1 }` |
-   | `jobs` | `{ location: 1, job_id: 1 }` |
-   | `email_index`, `allowed_emails` | **not sharded** |
+4. Resulting shard keys: every collection in the script's `SHARDED` table is sharded on
+   `{ location: 1, _id: 1 }`. Only auth's `email_index`, `allowed_emails`, `deletions`,
+   `admin_count` and `worker_state` (`UNSHARDED`) are **not sharded**; the script lists them in a
+   comment and leaves them alone.
 
 5. Verify with `sh.status()` and, after data is loaded, `db.<coll>.getShardDistribution()`.
 
-The script's collection list is checked against [`backend/app/models.py`](backend/app/models.py)
-by [`backend/tests/test_atlas_zone_ranges.py`](backend/tests/test_atlas_zone_ranges.py): adding a
-collection fails the test until it is explicitly placed as zone-sharded or unsharded.
+The script's collection tables are checked against the code by
+[`backend/tools/tests/test_atlas_zone_ranges.py`](backend/tools/tests/test_atlas_zone_ranges.py)
+(`cd backend && .venv/bin/pytest tools/tests/test_atlas_zone_ranges.py`): every service with a
+database must be in the table, each service's list must match exactly the collections its code
+creates, and every location of every collection must be assigned to its zone. Adding a collection
+fails the test until it is explicitly placed as zone-sharded or unsharded.
 
 ---
 
@@ -178,68 +174,43 @@ The backends reach Atlas from three regions. Either:
     --query 'NatGateways[].NatGatewayAddresses[].PublicIp' --output text
   ```
 
-  Run for every deployed region. A missing IP shows up as that region's **API tasks failing to
-  start** — startup index creation (`init_indexes()`) times out after ~30 s of server selection —
-  and its worker logging connection errors on its first claim.
+  Run for every deployed region. A missing IP shows up as that region's **service tasks and
+  workers failing to start** — startup collection and index creation (`runtime.prepare()`) times
+  out after ~30 s of server selection.
 
 - **PrivateLink** per region — planned, see `docs/infra-architecture-multi-region.md` Change 10d.
 
 ---
 
-## Step 6 — Connection string
+## Step 6 — Connection strings
 
-1. **Connect → Drivers → Python**, copy the `mongodb+srv://` URI.
-2. Put it in the `MONGODB_URI` key of each region's `<APP_NAME>/<env>/backend-secrets` secret
-   (`APP_NAME` is the GitHub secret, e.g. `superpower`)
-   (same value in all three regions — the API and worker both read it). Rotating it later:
+1. **Connect → Drivers → Python**, copy the `mongodb+srv://` URI; build one per service with that
+   service's database user (Step 3).
+2. Put each in the `MONGODB_URI` key of that service's `<APP_NAME>/<env>/<service>-secrets`
+   secret in each region (`APP_NAME` is the GitHub secret, e.g. `superpower`; same value in all
+   three regions — a service and its worker share the secret). Rotating it later:
    `put-secret-value` replaces the whole JSON, so include every key (see
    [`infra-live-backend/terraform/secrets.tf`](infra-live-backend/terraform/secrets.tf)).
-3. Redeploy the backend in each region so tasks pick it up.
+3. Redeploy the services in each region so tasks pick it up.
 
 ---
 
-## Step 7 — Indexes (created by the application)
+## Step 7 — Indexes (created by the services)
 
-`init_indexes()` in [`backend/app/database.py`](backend/app/database.py) runs on every API
-startup (not the worker) and is idempotent. It creates indexes; it never drops them. Current set:
+Each service creates its own collections and indexes in `runtime.prepare()`, run at startup by
+both its HTTP app and its worker; it is idempotent, and it creates indexes but never drops them.
+The code is the reference — each service's `app/store.py` and the shared helpers named in
+Step 0 — and docs/auth-users-split.md, 14 lists the set. In short:
 
-| Collection | Index | Notes |
-|---|---|---|
-| `email_index` | `{ user_id: 1 }` | Reverse lookup |
-| `users` | `{ location: 1, _id: 1 }` unique | Shard key index |
-| `users` | `{ location: 1, email: 1 }` unique | **Make non-unique before sharding** (Step 0) |
-| `users` | `{ location: 1, role: 1 }` | |
-| `sessions` | `{ location: 1, _id: 1 }` unique | Shard key index |
-| `sessions` | `{ location: 1, expires_at: 1 }` | Expiry cleanup (no TTL — TTL can't be compound) |
-| `sessions` | `{ location: 1, user_id: 1 }` | Logout-all / deletion |
-| `observations` | `{ location: 1, _id: 1 }` unique | `_id` = child id |
-| `ninety_day_plans` | `{ location: 1, _id: 1 }` unique | `_id` = child id |
-| `growth_areas` | `{ location: 1, _id: 1 }` unique | **Make non-unique before sharding** (Step 0) |
-| `growth_areas` | `{ location: 1, user_id: 1, child_id: 1, area_id: 1 }` unique | One record per user/child/area |
-| `children` | `{ location: 1, _id: 1 }` unique | Shard key index |
-| `children` | `{ location: 1, user_id: 1, created_at: -1 }` partial `is_deleted: false` | Default list order |
-| `children` | `{ location: 1, user_id: 1, name: 1 }` partial `is_deleted: false` | Name sort |
-| `children` | `{ location: 1, deleted_at: 1 }` partial `is_deleted: true` | Soft-delete purge (no purge job exists yet) |
-| `jobs` | `{ location: 1, status: 1, retry_after: 1, created_at: 1 }` | Worker claim |
-| `jobs` | `{ location: 1, job_id: 1, user_id: 1 }` unique | Client polling; valid under shard key `{location, job_id}` |
-| `jobs` | `{ location: 1, user_id: 1, child_id: 1, type: 1, status: 1 }` | In-flight cap check |
-| `jobs` | `{ location: 1, status: 1, claimed_at: 1 }` | Stale-claim recovery |
-| `jobs` | `{ location: 1, status: 1, domain_write_attempt: 1 }` partial `status: result_ready` | Domain-write retry |
-| `jobs` | `{ completed_at: 1 }` TTL 24 h, partial `status ∈ {completed, failed}` | TTL must be single-field, so no `location` |
+| Collections | Indexes |
+|---|---|
+| Every zone-sharded collection | `{ location: 1, _id: 1 }` unique (shard key index), plus `{ location: 1, user_id: 1 }` (user deletion) and other location-led indexes |
+| `jobs` (discover, grow, transform, release) | Location-led indexes for the claim, in-flight check and deletion; TTL 7 days on `completed_at` |
+| `outbox` | `{ region: 1, published_at: 1, created_at: 1 }` (relay polling, own region); TTL after `published_at` |
+| `auth.sessions` | TTL on `expires_at` (expired sessions go by themselves) |
+| auth's unsharded collections | Keyed by `_id`; `email_index` also `{ user_id: 1 }` |
 
-**Superseded indexes to drop by hand** on any database created before the location-first `jobs`
-indexes (only after the new code runs in every region — an old worker without them would scan
-the collection):
-
-```javascript
-db.jobs.dropIndex("status_1_retry_after_1_created_at_1")
-db.jobs.dropIndex("status_1_claimed_at_1")
-db.jobs.dropIndex("status_1_domain_write_attempt_1")
-db.jobs.dropIndex("job_id_1_user_id_1")   // unique and not prefixed by the shard key — blocks sharding
-```
-
-Plus the two unique indexes Step 0 replaces (`users.location_1_email_1`,
-`growth_areas.location_1__id_1`) — those must go **before** the Step 0 code is deployed; see Step 0.
+TTL indexes are single-field, so they don't lead with `location` (see Key design decisions).
 
 ---
 
@@ -249,15 +220,14 @@ Plus the two unique indexes Step 0 replaces (`users.location_1_email_1`,
    source tier, into the already-sharded target.
 2. Otherwise `mongodump` from M0 and `mongorestore` into the Global Cluster **after** Step 4, so
    documents land directly in their zones. Restore with **`--noIndexRestore`** — the dump carries
-   the old index definitions (including the unique ones Step 0/7 removes), and the app has
+   the source's index definitions, and the services have
    already created the right ones (Step 4.1). Restore **only the collections listed in
-   [`backend/app/models.py`](backend/app/models.py)**: an older database can still hold
-   collections the code no longer uses (`goals`, `goal_months`, `goal_insights`,
-   `recommendations`, `missions`, `onboarding`), and those would land unsharded.
+   [`backend/tools/atlas_zone_ranges.py`](backend/tools/atlas_zone_ranges.py)** (`SHARDED` and
+   `UNSHARDED`), each into its service's database: anything else would land unsharded.
 3. Verify counts per collection and per `location`, then switch `MONGODB_URI` (Step 6).
 
 Documents keep their `location`; nothing is recomputed. Correcting legacy accounts (e.g. users
-saved as `"us"` from a then-unmapped country — their real `country_code` is on the user document)
+saved as `"us"` from a then-unmapped country — their real `country_code` is on the `auth.auth` document)
 is a separate, deliberate migration: changing `location` moves every one of that user's documents
 to another zone.
 
@@ -265,23 +235,20 @@ to another zone.
 
 ## Step 9 — Local development
 
-Any single MongoDB works — M0 or a local container; zones don't apply:
+Any single MongoDB **replica set** works (the services use transactions and change streams, which
+a standalone server lacks); zones don't apply. The compose stack's `mongo` service is a
+single-node replica set, and every service in compose connects to it with its own database
+(`MONGODB_DB_NAME` = the service):
 
-```bash
-docker run -d --name mongo-dev -p 27017:27017 mongo:8
+```
+# inside compose (set by docker-compose.yml):
+MONGODB_URI=mongodb://mongo:27017/?directConnection=true
+# from the host (tests: MONGODB_TEST_URI):
+mongodb://localhost:27017/?directConnection=true
 ```
 
-```
-# .env — Docker Desktop (backend in Compose, Mongo on the host):
-MONGODB_URI=mongodb://host.docker.internal:27017
-# backend run directly on the host:
-MONGODB_URI=mongodb://localhost:27017
-```
-
-`localhost` inside a container is the container itself — use `host.docker.internal`, or attach
-Mongo to the `superpower_net` network and use its service name. The local worker processes every
-location (it is only region-scoped when `WORKER_SCOPE_TO_REGION=true`, which only ECS sets), even
-though `.env.example` sets `AWS_REGION` for S3.
+Local workers process every location: region scoping is off when `APP_ENV=local`, which compose
+sets.
 
 ---
 
@@ -293,7 +260,8 @@ run `node scripts/sync-routing.mjs`, commit the regenerated files, deploy backen
 together, and apply the edge Terraform (it reads the JSON directly). Atlas-specific extras:
 
 - **New location** on an existing region: once on the Global Cluster, add its zone ranges — the
-  new location's lines from `python backend/tools/atlas_zone_ranges.py <db>`.
+  new location's lines from `python backend/tools/atlas_zone_ranges.py [service ...]`, for every
+  service database.
 - **New AWS region:** add it under `regions` with its `atlas_zone`; deploy the backend there; add
   it to the edge's `backend_regions` (keep `ap-south-1` first — the bootstrap region for login);
   add the zone in Atlas; allow its NAT IP (Step 5).
@@ -302,16 +270,15 @@ together, and apply the edge Terraform (it reads the JSON directly). Atlas-speci
 
 ## Step 11 — Production checklist
 
-- [ ] Old unique `users.location_1_email_1` / `growth_areas.location_1__id_1` dropped, then Step 0 code changes deployed in every region
 - [ ] Global Cluster: M30+, MongoDB 8.0, zones `APAC` / `EU` / `AMERICAS` in the right regions
-- [ ] App indexes created on the empty cluster first, then `zone-setup.js` (generated from the deployed code) run; `sh.status()` shows 42 ranges
-- [ ] `email_index` and `allowed_emails` **not** sharded
-- [ ] App user has `readWrite` on the app database only
+- [ ] Each service started once on the empty cluster (its indexes created), then `zone-setup.js` (generated from the deployed code) run; `sh.status()` shows 6 ranges per sharded collection
+- [ ] auth's `email_index`, `allowed_emails`, `deletions`, `admin_count`, `worker_state` **not** sharded
+- [ ] One database user per service, `readWrite` on its own database only
 - [ ] Network access: every NAT gateway IP in every region (9 for prod) or PrivateLink; no `0.0.0.0/0`
-- [ ] `MONGODB_URI` in each region's Secrets Manager secret; backends redeployed
+- [ ] Each service's `MONGODB_URI` in its Secrets Manager secret in each region; services redeployed
 - [ ] Backups enabled, each zone's snapshots stored in its own region
 - [ ] Atlas alerts: CPU, replication lag, connections, balancer/chunk-migration errors
-- [ ] Superseded `jobs` indexes dropped, incl. `job_id_1_user_id_1` (Step 7); data restored with `--noIndexRestore`
+- [ ] Data restored with `--noIndexRestore`, only the collections in the zone tool's tables
 - [ ] Edge `backend_regions` = `["ap-south-1","eu-west-1","us-east-1"]`
 
 ---
@@ -321,18 +288,21 @@ together, and apply the edge Terraform (it reads the JSON directly). Atlas-speci
 ### `email_index` stays unsharded
 
 Email is global — one address can't exist in two zones. An unsharded collection is a single
-authoritative uniqueness guard (its `_id` is the email) and the login router: one small lookup
-returns `{user_id, location}`, after which every query is shard-key targeted. It holds only email,
-user id and location.
+authoritative uniqueness guard (its `_id` is the email's HMAC key, docs/auth-users-split.md, 6)
+and the login router: one small lookup returns `{user_id, location}`, after which every query is
+shard-key targeted. It holds no email in plaintext — only the key, user id, location and status;
+the one plaintext copy is in `auth.auth`, in the user's own zone.
 
-### No transactions today; `email_index` outside them later
+### Transactions stay in one zone; `email_index` stays outside them
 
-M0 has no transactions, so registration reserves the email in `email_index` first, inserts the
-user second, and deletes the reservation if the insert fails; a leftover reservation without a
-user is reclaimed on the next attempt. Account deletion deletes user data first and the
-`email_index` entry last (best effort, same reclaim). After the upgrade, transactions can cover a
-single user's documents (one location → one zone) but never `email_index` — it lives on the
-primary shard, which would make the transaction cross-shard.
+The services use transactions (for example account-deletion start, logout-all, job creation),
+each within one user's documents in one service's database (one location → one zone). Nothing
+unsharded joins them — `email_index` lives on the primary shard, which would make the
+transaction cross-shard. So registration is a saga instead: it reserves the email in
+`email_index` first, inserts `auth.auth` second, activates the reservation last, and undoes the
+earlier steps if a later one fails; a stale reservation is taken over by the next attempt
+(`backend/auth/app/registration.py`). Account deletion deletes the credentials and the
+`email_index` entry last, once every service has confirmed (`backend/auth/app/deletion.py`).
 
 ### Login always runs in the bootstrap region
 
@@ -348,5 +318,6 @@ where it was lawfully collected.
 
 ### TTL indexes can't include `location`
 
-MongoDB TTL indexes must be single-field. `jobs` uses a single-field `completed_at` TTL (each shard
-expires its own documents); `sessions` has no TTL and is cleaned hourly by the API instead.
+MongoDB TTL indexes must be single-field, so they don't lead with `location`; on a sharded
+cluster each shard expires its own documents. `jobs` uses `completed_at` (7 days), `auth.sessions`
+`expires_at`, and the outbox, tombstones, guards and audit their own timestamps.

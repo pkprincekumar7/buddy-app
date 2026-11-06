@@ -47,24 +47,6 @@ export function Dialog({
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function DialogTrigger({
-  children,
-}: {
-  children: React.ReactElement<{ onPress?: () => void }>;
-}) {
-  const { setOpen } = React.useContext(Ctx);
-  return React.cloneElement(children, { onPress: () => setOpen(true) });
-}
-
-export function DialogClose({
-  children,
-}: {
-  children: React.ReactElement<{ onPress?: () => void }>;
-}) {
-  const { setOpen } = React.useContext(Ctx);
-  return React.cloneElement(children, { onPress: () => setOpen(false) });
-}
-
 interface DialogContentProps extends ViewProps {
   className?: string;
   /** Hide the top-right X (web always renders it). */

@@ -1,6 +1,6 @@
 # Superpower
 
-A child development app for parents. Stack: **React 19 + TypeScript (Vite)** web app, a **React Native** phone app (`frontend-app/`, a port of the web app), **FastAPI** with a background job worker, **MongoDB** (Motor async driver), **Redis** (rate limiting), optional LLM providers (**OpenAI**, **Anthropic**, **Gemini**) and **OpenAI Whisper** for audio transcription. Deployed to AWS (multi-region ECS behind CloudFront) with Terraform. Run everything locally with **Docker Compose** or the backend/frontend dev servers.
+A child development app for parents. Stack: **React 19 + TypeScript (Vite)** web app, a **React Native** phone app (`frontend-app/`, a port of the web app), a **FastAPI** backend split into services (auth, users, children, onboarding, discover, grow, transform, release and shared, each with its own worker and, except shared, its own **MongoDB** database; PyMongo async driver), events over SNS/SQS, **Valkey** (rate limits, the authorization cache), optional LLM providers (**OpenAI**, **Anthropic**, **Gemini**) and **OpenAI Whisper** for audio transcription. Deployed to AWS (multi-region ECS behind CloudFront) with Terraform. Run everything locally with **Docker Compose** (`docker compose up -d --build`, API through the gateway on port 8088); the frontends' dev servers run against it.
 
 Web frontend: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **TanStack React Query v5**, **Framer Motion v11**, **React Router v8**, **next-themes**, **Sonner**. Phone app: **React Native 0.85** + **NativeWind v4**, **React Navigation 7**, **Reanimated 4** (see [frontend-app/README.md](frontend-app/README.md)).
 
@@ -15,6 +15,8 @@ Web frontend: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **TanSt
 | Frontend pages and routing | [docs/frontend.md](docs/frontend.md) |
 | GitHub Actions workflows, AWS OIDC, secrets | [docs/ci-cd.md](docs/ci-cd.md) |
 | Adding an environment (dev/qa/stg/perf/prod…) across AWS accounts and regions | [docs/environments.md](docs/environments.md) |
+| First stg apply and deploy, and the checks that need a running environment | [docs/stg-first-deploy.md](docs/stg-first-deploy.md) |
+| Where personal data is stored and which processors receive it (residency matrix) | [docs/data-residency.md](docs/data-residency.md) |
 | Running tests and coverage | [docs/tests.md](docs/tests.md) |
 | Infrastructure architecture (multi-region backend, edge routing, deployment sequence) | [docs/infra-architecture-multi-region.md](docs/infra-architecture-multi-region.md) |
 | Per-service AWS cost breakdown and hourly rates | [docs/aws-cost-estimate.md](docs/aws-cost-estimate.md) |
@@ -24,6 +26,6 @@ Web frontend: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **TanSt
 
 ## Product notes
 
-- **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-5.4-mini`, `claude-sonnet-4-6`, `gemini-3-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Without any key, `POST /api/v1/llm/invoke` returns `503`. Audio transcription still requires `OPENAI_API_KEY` (OpenAI Whisper).
-- **Rate limiting**: `POST /api/v1/auth/register` and Google auth are capped at 5 requests/minute per IP; login at 10/minute. LLM calls are also rate-limited per-user (sliding window, default 200 calls/hour) via Redis — set `REDIS_URL` to a Redis instance; without it the rate limiter falls back to an in-process counter that breaks under multiple containers.
+- **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-5.4-mini`, `claude-sonnet-4-6`, `gemini-3-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Only the discover, grow, transform and release workers generate; without any key each generation job fails at once with a clear error. Speech-to-text (shared's `POST /api/v1/speech/transcriptions`) requires `OPENAI_API_KEY` (OpenAI Whisper) and answers `503` without it.
+- **Rate limiting**: `POST /api/v1/auth/register` and Google auth are capped at 5 requests/minute per IP; login at 10/minute. LLM calls are also rate-limited per user across every circle (sliding window, default 200 calls/hour, `LLM_HOURLY_LIMIT`) in Valkey (`REDIS_URL`); while Valkey is unreachable the limits are counted per task, which doesn't hold across several containers.
 - **Session management**: the access token has a 30-minute lifetime; the refresh token lasts 24 hours. `AuthContext` schedules a proactive silent refresh 60 seconds before the access token would expire. If the silent refresh returns 401/403 (refresh token expired or revoked), the app dispatches a `superpower:auth-expired` custom event and the user is logged out. Network hiccups retry after 30 seconds.

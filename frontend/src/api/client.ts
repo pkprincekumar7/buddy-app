@@ -1,20 +1,4 @@
 import { ApiError } from './errors';
-import { locationHint } from '@/lib/locationHint';
-import type {
-  UserRecord,
-  ChildRecord,
-  PreferencesRecord,
-  ObservationsRecord,
-  NinetyDayPlanRecord,
-  CompletedGrowthAreasRecord,
-  EnqueueJobPayload,
-  EnqueueJobResponse,
-  JobStatusRecord,
-  AllowedEmailRecord,
-  AllowedEmailsPage,
-  AdminUserRecord,
-  AdminUsersPage,
-} from '@/types/api';
 
 function joinApi(path: string): string {
   const base = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -23,9 +7,9 @@ function joinApi(path: string): string {
 }
 
 let refreshPromise: Promise<void> | null = null;
-let _redirectingToLogin = false;
 
-function ensureRefreshed(): Promise<void> {
+/** One refresh at a time, shared by every caller (and by api/services.ts). */
+export function ensureRefreshed(): Promise<void> {
   refreshPromise ??= refreshTokenPair().finally(() => {
     refreshPromise = null;
   });
@@ -35,8 +19,8 @@ function ensureRefreshed(): Promise<void> {
 type RequestBody = Record<string, unknown> | FormData | undefined;
 
 // A failed refresh is normally a plain expired session (401, generic message).
-// A locked account fails with 403 and a specific reason (see backend's
-// refresh_tokens) — resolved once here so every caller that reacts to a failed
+// A locked account fails with 403 and a specific reason (see auth's
+// _refuse_refresh) — resolved once here so every caller that reacts to a failed
 // refresh (the request() retry below, and AuthContext's silent-refresh timer)
 // surfaces the same status/message instead of each re-deriving it.
 export function resolveAuthExpiry(err: unknown): { status: 401 | 403; message: string } {
@@ -127,291 +111,22 @@ async function request(
 }
 
 async function refreshTokenPair(): Promise<void> {
-  await request('/auth/refresh', { method: 'POST' }, true);
+  try {
+    await request('/auth/refresh', { method: 'POST' }, true);
+  } catch (err) {
+    // 409 refresh_superseded: another tab refreshed this session first, and its new
+    // cookies are already in the browser, so this tab carries on with them.
+    if (err instanceof ApiError && err.status === 409) return;
+    throw err;
+  }
 }
 
 export const api = {
   auth: {
-    async isAuthenticated(): Promise<boolean> {
-      try {
-        await request('/auth/me');
-        return true;
-      } catch {
-        return false;
-      }
-    },
-
-    async me(): Promise<UserRecord> {
-      return request('/auth/me') as Promise<UserRecord>;
-    },
-
-    async logout(): Promise<void> {
-      try {
-        await request('/auth/logout', { method: 'POST' }, true);
-      } catch {
-        /* cookie cleared best-effort; proceed regardless */
-      }
-    },
-
-    async redirectToLogin(): Promise<void> {
-      if (_redirectingToLogin) return;
-      _redirectingToLogin = true;
-      await api.auth.logout();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/Login';
-      }
-    },
-
-    async register(
-      email: string,
-      password: string,
-      full_name: string,
-      country_code: string,
-    ): Promise<void> {
-      // X-Client-Location is a best-effort routing hint only — see
-      // @/lib/locationHint and the Lambda@Edge that reads it. The account's
-      // real `location` field is always computed server-side from
-      // country_code below, regardless of which region processes this call.
-      const hint = locationHint(country_code);
-      await request('/auth/register', {
-        method: 'POST',
-        body: { email, password, full_name: full_name || 'Parent', country_code },
-        headers: hint ? { 'X-Client-Location': hint } : undefined,
-      });
-    },
-
-    async login(email: string, password: string): Promise<void> {
-      await request('/auth/login', {
-        method: 'POST',
-        body: { email, password },
-      });
-    },
-
-    async google(id_token: string, country_code?: string): Promise<void> {
-      await request('/auth/google', {
-        method: 'POST',
-        body: country_code ? { id_token, country_code } : { id_token },
-      });
-    },
-
-    async deleteAccount(confirmEmail: string): Promise<void> {
-      await request('/user/me', {
-        method: 'DELETE',
-        body: { confirm_email: confirmEmail },
-      });
-    },
-
+    // The sign-in calls moved to api/account.ts (build plan 7.2); the refresh stays here,
+    // shared by request() and the generated clients.
     async silentRefresh(): Promise<void> {
-      return refreshTokenPair();
-    },
-  },
-
-  integrations: {
-    Core: {
-      InvokeLLM: ({
-        prompt,
-        response_json_schema,
-      }: {
-        prompt: string;
-        response_json_schema?: Record<string, unknown>;
-      }): Promise<unknown> =>
-        request('/llm/invoke', { method: 'POST', body: { prompt, response_json_schema } }),
-    },
-  },
-
-  audio: {
-    transcribe(blob: Blob, filename = 'recording.webm'): Promise<unknown> {
-      const form = new FormData();
-      form.append('audio', blob, filename);
-      return request('/audio/transcribe', { method: 'POST', body: form });
-    },
-  },
-
-  preferences: {
-    get: (): Promise<PreferencesRecord> =>
-      request('/user/preferences') as Promise<PreferencesRecord>,
-    patch: (body: Record<string, unknown>): Promise<PreferencesRecord> =>
-      request('/user/preferences', { method: 'PATCH', body }) as Promise<PreferencesRecord>,
-  },
-
-  completedGrowthAreas: {
-    list: (childId: string): Promise<CompletedGrowthAreasRecord> =>
-      request(
-        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
-      ) as Promise<CompletedGrowthAreasRecord>,
-    append: (childId: string, body: Record<string, unknown>): Promise<void> =>
-      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
-        method: 'POST',
-        body,
-      }) as Promise<void>,
-    clear: (childId: string): Promise<void> =>
-      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
-        method: 'DELETE',
-      }) as Promise<void>,
-  },
-
-  observations: {
-    get: (childId: string): Promise<ObservationsRecord> =>
-      request(
-        `/user/observations?child_id=${encodeURIComponent(childId)}`,
-      ) as Promise<ObservationsRecord>,
-    patch: (childId: string, body: Record<string, unknown>): Promise<ObservationsRecord> =>
-      request(`/user/observations?child_id=${encodeURIComponent(childId)}`, {
-        method: 'PATCH',
-        body,
-      }) as Promise<ObservationsRecord>,
-  },
-
-  ninetyDayPlan: {
-    get: (childId: string): Promise<NinetyDayPlanRecord> =>
-      request(
-        `/user/ninety-day-plan?child_id=${encodeURIComponent(childId)}`,
-      ) as Promise<NinetyDayPlanRecord>,
-    patch: (childId: string, body: Record<string, unknown>): Promise<NinetyDayPlanRecord> =>
-      request(`/user/ninety-day-plan?child_id=${encodeURIComponent(childId)}`, {
-        method: 'PATCH',
-        body,
-      }) as Promise<NinetyDayPlanRecord>,
-    /** Uploads a photo directly to S3 for the given field, returning the public URL to persist. */
-    uploadPhoto: async (
-      childId: string,
-      fieldKey: string,
-      photo: File,
-    ): Promise<{ photo_url: string }> => {
-      const contentType = photo.type || 'image/jpeg';
-      const { upload_url, photo_url } = (await request(
-        `/user/ninety-day-plan/photo-presign?child_id=${encodeURIComponent(childId)}`,
-        { method: 'POST', body: { field_key: fieldKey, content_type: contentType } },
-      )) as { upload_url: string; photo_url: string };
-      // Upload directly to S3 — must include the same Content-Type the presigned
-      // URL was signed with, or S3 will reject the request (signature mismatch).
-      const s3Res = await fetch(upload_url, {
-        method: 'PUT',
-        body: photo,
-        headers: { 'Content-Type': contentType },
-      });
-      if (!s3Res.ok) {
-        throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`);
-      }
-      return { photo_url };
-    },
-  },
-
-  jobs: {
-    enqueue: (payload: EnqueueJobPayload): Promise<EnqueueJobResponse> =>
-      request('/jobs', {
-        method: 'POST',
-        body: payload as unknown as Record<string, unknown>,
-      }) as Promise<EnqueueJobResponse>,
-    poll: (jobId: string): Promise<JobStatusRecord> =>
-      request(`/jobs/${encodeURIComponent(jobId)}`) as Promise<JobStatusRecord>,
-  },
-
-  admin: {
-    listAllowedEmails(skip = 0, limit = 20): Promise<AllowedEmailsPage> {
-      return request(
-        `/admin/allowed-emails?skip=${skip}&limit=${limit}`,
-      ) as Promise<AllowedEmailsPage>;
-    },
-    getAllowedEmail(email: string): Promise<AllowedEmailRecord> {
-      return request(
-        `/admin/allowed-emails/${encodeURIComponent(email)}`,
-      ) as Promise<AllowedEmailRecord>;
-    },
-    addAllowedEmail(email: string): Promise<AllowedEmailRecord> {
-      return request('/admin/allowed-emails', {
-        method: 'POST',
-        body: { email },
-      }) as Promise<AllowedEmailRecord>;
-    },
-    removeAllowedEmail(email: string): Promise<void> {
-      return request(`/admin/allowed-emails/${encodeURIComponent(email)}`, {
-        method: 'DELETE',
-      }) as Promise<void>;
-    },
-    getUserByEmail(email: string): Promise<AdminUserRecord> {
-      return request(
-        `/admin/users/by-email/${encodeURIComponent(email)}`,
-      ) as Promise<AdminUserRecord>;
-    },
-    listUsers(skip = 0, limit = 20): Promise<AdminUsersPage> {
-      return request(`/admin/users?skip=${skip}&limit=${limit}`) as Promise<AdminUsersPage>;
-    },
-    lockUser(userId: string, location: string): Promise<AdminUserRecord> {
-      return request(
-        `/admin/users/${encodeURIComponent(userId)}/lock?location=${encodeURIComponent(location)}`,
-        { method: 'PATCH' },
-      ) as Promise<AdminUserRecord>;
-    },
-    unlockUser(userId: string, location: string): Promise<AdminUserRecord> {
-      return request(
-        `/admin/users/${encodeURIComponent(userId)}/unlock?location=${encodeURIComponent(location)}`,
-        { method: 'PATCH' },
-      ) as Promise<AdminUserRecord>;
-    },
-  },
-
-  downloads: {
-    // Web app only — the React Native app (frontend-app/) has its own update flow.
-    // Returns a 5-minute pre-signed S3 URL pointing to the latest Android APK build.
-    getApkUrl: (): Promise<{ url: string; filename: string; expires_in: number }> =>
-      request('/downloads/apk') as Promise<{ url: string; filename: string; expires_in: number }>,
-  },
-
-  entities: {
-    Child: {
-      async list(sort = '-created_date', limit?: number): Promise<ChildRecord[]> {
-        const qs = new URLSearchParams();
-        if (sort) qs.set('sort', sort);
-        if (limit != null) qs.set('limit', String(limit));
-        const q = qs.toString();
-        return request(`/children${q ? `?${q}` : ''}`) as Promise<ChildRecord[]>;
-      },
-      get: (id: string): Promise<ChildRecord> =>
-        request(`/children/${encodeURIComponent(id)}`) as Promise<ChildRecord>,
-      create: (payload: Record<string, unknown>): Promise<ChildRecord> =>
-        request('/children', { method: 'POST', body: payload }) as Promise<ChildRecord>,
-      update: (id: string, patch: Record<string, unknown>): Promise<ChildRecord> =>
-        request(`/children/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: patch,
-        }) as Promise<ChildRecord>,
-      delete: (id: string): Promise<void> =>
-        request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
-      // One-way (false→true) Personality Journey progression flags, gated on
-      // the previous step in the chain already being true. PATCH /children/{id}
-      // silently ignores these fields — this is the only way to set them
-      // (see backend/app/routers/children.py).
-      markProgress: (
-        id: string,
-        flag:
-          | 'onboarding_profile_completed'
-          | 'discover_completed'
-          | 'transform_visited'
-          | 'release_visited'
-          | 'connect_visited',
-      ): Promise<ChildRecord> =>
-        request(`/children/${encodeURIComponent(id)}/progress/${flag}`, {
-          method: 'POST',
-        }) as Promise<ChildRecord>,
-      uploadAvatar: async (id: string, photo: File): Promise<{ avatar_url: string }> => {
-        const contentType = photo.type || 'image/jpeg';
-        const { upload_url, avatar_url } = (await request(
-          `/children/${encodeURIComponent(id)}/avatar/presign`,
-          { method: 'POST', body: { content_type: contentType } },
-        )) as { upload_url: string; avatar_url: string };
-        // Upload directly to S3 — must include the same Content-Type the presigned
-        // URL was signed with, or S3 will reject the request (signature mismatch).
-        const s3Res = await fetch(upload_url, {
-          method: 'PUT',
-          body: photo,
-          headers: { 'Content-Type': contentType },
-        });
-        if (!s3Res.ok) {
-          throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`);
-        }
-        return { avatar_url };
-      },
+      return ensureRefreshed(); // never alongside a request()-triggered refresh
     },
   },
 };

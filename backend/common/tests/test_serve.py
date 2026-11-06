@@ -1,0 +1,265 @@
+"""common.serve: a service's public and internal apps on their own ports, stopped together."""
+
+import asyncio
+import gc
+import os
+import signal
+import sys
+import types
+from typing import Any, cast
+
+import pytest
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+
+from common import serve as serve_mod
+from common.validation import validation_error_response
+
+
+def _fake_service(monkeypatch, name: str, **apps) -> None:
+    """Register `<name>.app.main` with the given attributes, without a real package."""
+    package, app_pkg, main = (
+        types.ModuleType(n) for n in (name, f"{name}.app", f"{name}.app.main")
+    )
+    for attr, value in apps.items():
+        setattr(main, attr, value)
+    monkeypatch.setitem(sys.modules, name, package)
+    monkeypatch.setitem(sys.modules, f"{name}.app", app_pkg)
+    monkeypatch.setitem(sys.modules, f"{name}.app.main", main)
+
+
+async def _asgi(scope, receive, send):  # pragma: no cover - never called, only passed around
+    pass
+
+
+async def _internal(scope, receive, send):  # pragma: no cover - never called, only passed around
+    pass
+
+
+def test_build_servers_puts_each_app_on_its_port(monkeypatch):
+    monkeypatch.setenv("PUBLIC_ORIGINS", "https://app.example.com")
+    _fake_service(monkeypatch, "svc_demo", app=_asgi, internal_app=_internal)
+    public, internal = serve_mod.build_servers("svc_demo")
+    # Each app behind the request-id middleware, so every request (and log line) has one,
+    # then the body cap: 1 MiB unless the service sets MAX_BODY_BYTES.
+    wrapped = [server.config.app for server in (public, internal)]
+    assert all(isinstance(app, serve_mod.RequestIdMiddleware) for app in wrapped)
+    capped = [cast(Any, app).app for app in wrapped]
+    assert all(isinstance(app, serve_mod.BodyLimitMiddleware) for app in capped)
+    # The public app alone also refuses cross-site cookie writes (AUTH-05).
+    checked, plain = (app.app for app in capped)
+    assert isinstance(checked, serve_mod.OriginCheckMiddleware)
+    assert (checked.app, checked.allowed) == (_asgi, frozenset({"https://app.example.com"}))
+    assert plain is _internal
+    assert {app.max_bytes for app in capped} == {serve_mod.DEFAULT_MAX_BODY_BYTES}
+    _fake_service(monkeypatch, "svc_big", app=_asgi, internal_app=_internal, MAX_BODY_BYTES=5)
+    big = serve_mod.build_servers("svc_big")
+    assert {cast(Any, s.config.app).app.max_bytes for s in big} == {5}
+    assert (public.config.port, internal.config.port) == (
+        serve_mod.PUBLIC_PORT,
+        serve_mod.INTERNAL_PORT,
+    )
+    assert public.config.host == internal.config.host == "0.0.0.0"  # nosec B104
+    assert not public.config.server_header
+    # TF-03: idle connections outlive the ALB's (60 s), and a stop finishes inside ECS's 30 s.
+    for server in (public, internal):
+        assert server.config.timeout_keep_alive == serve_mod.DEFAULT_KEEP_ALIVE_SECONDS == 65
+        assert server.config.timeout_graceful_shutdown == serve_mod.GRACEFUL_SHUTDOWN_SECONDS
+    assert serve_mod.GRACEFUL_SHUTDOWN_SECONDS < 30
+    tuned = serve_mod.build_servers("svc_demo", environ={"HTTP_KEEP_ALIVE_SECONDS": "125"})
+    assert {s.config.timeout_keep_alive for s in tuned} == {125}  # from Terraform
+
+
+def test_build_servers_redacts_every_fastapi_apps_422s(monkeypatch):
+    public, internal = FastAPI(), FastAPI()
+    _fake_service(monkeypatch, "svc_api", app=public, internal_app=internal)
+    serve_mod.build_servers("svc_api")
+    for app in (public, internal):
+        assert app.exception_handlers[RequestValidationError] is validation_error_response
+
+
+@pytest.mark.parametrize("missing", ["app", "internal_app"])
+def test_build_servers_needs_both_apps(monkeypatch, missing):
+    apps = {"app": _asgi, "internal_app": _internal}
+    del apps[missing]
+    _fake_service(monkeypatch, "svc_half", **apps)
+    with pytest.raises(ValueError, match=missing):
+        serve_mod.build_servers("svc_half")
+
+
+@pytest.mark.parametrize("name", ["", "Hello", "1svc", "svc.app", "../svc", "a" * 32])
+def test_build_servers_rejects_bad_names(name):
+    with pytest.raises(ValueError, match="invalid service name"):
+        serve_mod.build_servers(name)
+
+
+def test_servers_leave_signals_alone():
+    (server,) = [serve_mod._Server(serve_mod.uvicorn.Config(_asgi))]
+    before = signal.getsignal(signal.SIGTERM)
+    with server.capture_signals():
+        assert signal.getsignal(signal.SIGTERM) is before
+
+
+class _FakeServer:
+    """Runs until told to exit, like uvicorn.Server, or fails at once."""
+
+    def __init__(self, fail: BaseException | None = None, finish: bool = False):
+        self.should_exit = False
+        self.fail = fail
+        self.finish = finish
+        self.stopped = False
+
+    async def serve(self):
+        if self.fail:
+            raise self.fail
+        while not (self.should_exit or self.finish):
+            await asyncio.sleep(0.01)
+        self.stopped = True
+
+
+def test_a_signal_stops_every_server():
+    servers = [_FakeServer(), _FakeServer()]
+
+    async def run():
+        task = asyncio.create_task(serve_mod.serve(servers))
+        await asyncio.sleep(0.05)
+        os.kill(os.getpid(), signal.SIGTERM)
+        await asyncio.wait_for(task, 2)
+
+    asyncio.run(run())
+    assert all(s.stopped for s in servers)
+
+
+def test_one_server_stopping_stops_the_rest():
+    servers = [_FakeServer(finish=True), _FakeServer()]
+    asyncio.run(asyncio.wait_for(serve_mod.serve(servers), 2))
+    assert all(s.stopped for s in servers)
+
+
+def test_a_failing_server_stops_the_rest_and_raises():
+    healthy = _FakeServer()
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(
+            asyncio.wait_for(serve_mod.serve([_FakeServer(fail=RuntimeError("boom")), healthy]), 2)
+        )
+    assert healthy.stopped
+
+
+def test_a_server_that_cannot_bind_exits_the_process():
+    # uvicorn calls sys.exit(1) when its port is taken. asyncio raises it straight out of
+    # the loop, so the failed task's exception is never retrieved; the quiet handler keeps
+    # asyncio from logging that when the task is collected.
+    loop = asyncio.new_event_loop()
+    loop.set_exception_handler(lambda _loop, _context: None)
+    try:
+        with pytest.raises(SystemExit):
+            loop.run_until_complete(
+                asyncio.wait_for(
+                    serve_mod.serve([_FakeServer(fail=SystemExit(1)), _FakeServer()]), 2
+                )
+            )
+    finally:
+        # What asyncio.run does on the way out: cancel the server that never got to run.
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
+        gc.collect()
+
+
+def test_signal_handlers_are_removed_afterwards():
+    async def run():
+        await serve_mod.serve([_FakeServer(finish=True)])
+        return asyncio.get_running_loop().remove_signal_handler(signal.SIGTERM)
+
+    assert asyncio.run(run()) is False  # nothing left to remove
+
+
+def test_main_needs_one_service_name(capsys):
+    assert serve_mod.main([]) == 2
+    assert serve_mod.main(["a", "b"]) == 2
+    assert "usage" in capsys.readouterr().err
+
+
+def test_main_serves_the_named_service(monkeypatch):
+    seen = {}
+
+    def fake_build(service, environ=None):
+        seen["service"] = service
+        return ["servers"]
+
+    async def fake_serve(servers):
+        seen["servers"] = servers
+
+    def fake_observe(service, apps):
+        seen["observed"] = (service, apps)
+
+    _fake_service(monkeypatch, "svc_main", app=_asgi, internal_app=_internal)
+    monkeypatch.setattr(serve_mod, "build_servers", fake_build)
+    monkeypatch.setattr(serve_mod, "serve", fake_serve)
+    monkeypatch.setattr(serve_mod, "setup_observability", fake_observe)
+    assert serve_mod.main(["svc_main"], environ={}) == 0
+    assert seen == {
+        "service": "svc_main",
+        "servers": ["servers"],
+        "observed": ("svc_main", (_asgi, _internal)),  # logs and traces for both apps
+    }
+
+
+def test_main_fails_when_an_app_does_not_start(monkeypatch, capsys):
+    # uvicorn returns normally after a failed startup, with `started` still False.
+    servers = [types.SimpleNamespace(started=True), types.SimpleNamespace(started=False)]
+
+    async def fake_serve(servers):
+        pass
+
+    _fake_service(monkeypatch, "svc_down", app=_asgi, internal_app=_internal)
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service, environ: servers)
+    monkeypatch.setattr(serve_mod, "serve", fake_serve)
+    monkeypatch.setattr(serve_mod, "setup_observability", lambda service, apps: None)
+    assert serve_mod.main(["svc_down"], environ={}) == 1
+    assert "svc_down: startup failed" in capsys.readouterr().err
+
+
+HTTP_ENV = {"APP_ENV": "prod", "BEHIND_PROXY": "true", "MONGODB_URI": "mongodb+srv://x/"}
+
+
+@pytest.mark.parametrize(
+    ("env", "problem"),
+    [
+        ({"BEHIND_PROXY": "false"}, "BEHIND_PROXY isn't true"),
+        ({"BEHIND_PROXY": ""}, "BEHIND_PROXY isn't true"),
+        ({"MONGODB_URI": " "}, "MONGODB_URI is unset"),
+    ],
+)
+def test_main_refuses_an_unsafe_http_runtime_in_stg_and_prod(monkeypatch, capsys, env, problem):
+    _fake_service(monkeypatch, "svc_unsafe", app=_asgi, internal_app=_internal)
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service: pytest.fail("served"))
+    for app_env in ("stg", "prod"):
+        assert serve_mod.main(["svc_unsafe"], environ={**HTTP_ENV, **env, "APP_ENV": app_env}) == 1
+        err = capsys.readouterr().err
+        assert f"unsafe settings for APP_ENV={app_env}" in err and problem in err
+
+
+def test_a_service_without_a_database_needs_its_own_variable_instead(monkeypatch, capsys):
+    # shared has no database: JWT_PUBLIC_KEYS is what configures it (its CONFIGURED_BY).
+    _fake_service(
+        monkeypatch, "svc_nodb", app=_asgi, internal_app=_internal, CONFIGURED_BY="JWT_PUBLIC_KEYS"
+    )
+    _fake_service(monkeypatch, "svc_db", app=_asgi, internal_app=_internal)
+    assert serve_mod.configured_by("svc_nodb") == "JWT_PUBLIC_KEYS"
+    assert serve_mod.configured_by("svc_db") == "MONGODB_URI"
+    no_db = {"APP_ENV": "prod", "BEHIND_PROXY": "true", "JWT_PUBLIC_KEYS": '{"k": "pem"}'}
+    assert serve_mod.unsafe_http_environment(no_db, "JWT_PUBLIC_KEYS") == []
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service: pytest.fail("served"))
+    assert serve_mod.main(["svc_nodb"], environ={**no_db, "JWT_PUBLIC_KEYS": ""}) == 1
+    assert "JWT_PUBLIC_KEYS is unset" in capsys.readouterr().err
+
+
+def test_only_stg_and_prod_need_the_http_settings():
+    assert serve_mod.unsafe_http_environment(HTTP_ENV) == []
+    assert serve_mod.unsafe_http_environment({**HTTP_ENV, "BEHIND_PROXY": "1"}) == []
+    for app_env in ("local", "dev", "sbx"):
+        assert serve_mod.unsafe_http_environment({"APP_ENV": app_env}) == []
+    assert serve_mod.unsafe_http_environment({}) == []

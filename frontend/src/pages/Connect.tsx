@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { children } from '@/api/children';
+import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
 import Spinner from '@/components/shared/Spinner';
 
@@ -54,18 +55,20 @@ export default function Connect() {
     let cancelled = false;
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        // Opening Connect records the visit (build plan 7.7): the last circle, done.
+        // Refused while Release isn't done, so it also gates the page.
+        const [child] = await Promise.all([children.get(childId), children.visitConnect(childId)]);
         if (cancelled) return;
-        if (!child) {
+        setChildName(child.name);
+        setChildAge(child.age === null ? '' : String(child.age));
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'circle_locked') {
+          void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+        } else if (err instanceof ApiError && err.code === 'child_not_found') {
           void navigate('/Home', { replace: true });
-          return;
-        }
-        setChildName(child.name ?? '');
-        setChildAge(child.age != null ? String(child.age) : '');
-        // Mark Connect as visited — this advances which circle the
-        // DimensionCircles hub points to next (there is none left after this).
-        if (!child.connect_visited) {
-          api.entities.Child.markProgress(childId, 'connect_visited').catch(console.error);
+        } else {
+          console.warn('[Connect] Load failed:', err);
         }
       } finally {
         if (!cancelled) setIsLoading(false);

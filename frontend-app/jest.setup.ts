@@ -3,14 +3,23 @@ import '@testing-library/jest-native/extend-expect';
 // Gesture handler must be set up before tests that use react-navigation
 import 'react-native-gesture-handler/jestSetup';
 
-// Silence non-critical RN warnings in tests
+// Silence non-critical RN warnings in tests. Everything else goes to the real warn,
+// kept before the spy replaces it (calling console.warn here would call the spy).
+const realWarn = console.warn.bind(console);
 jest
   .spyOn(console, 'warn')
   .mockImplementation((msg: string, ...rest: unknown[]) => {
     if (typeof msg === 'string' && msg.includes('VirtualizedLists')) return;
     if (typeof msg === 'string' && msg.includes('NativeWind')) return;
+    // @react-navigation/stack loads InteractionManager when it can't read the RN version,
+    // which the Jest preset doesn't set; on RN 0.82+ devices it never loads it.
+    if (
+      typeof msg === 'string' &&
+      msg.includes('InteractionManager has been deprecated')
+    )
+      return;
 
-    console.warn(msg, ...rest);
+    realWarn(msg, ...rest);
   });
 
 // Mock react-native-config so env vars resolve to empty strings in tests

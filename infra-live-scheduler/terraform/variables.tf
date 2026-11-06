@@ -14,8 +14,18 @@ variable "target_aws_regions" {
   type        = list(string)
 
   validation {
-    condition     = length(var.target_aws_regions) > 0 && alltrue([for r in var.target_aws_regions : contains(["ap-south-1", "us-east-1", "eu-west-1"], r)])
-    error_message = "target_aws_regions must be a non-empty list of valid regions: ap-south-1, us-east-1, eu-west-1."
+    condition     = length(var.target_aws_regions) > 0 && alltrue([for r in var.target_aws_regions : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
+    error_message = "target_aws_regions must be a non-empty list of shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
+  }
+
+  # An environment in routing.json's served_from has that one backend region (DEC-01), as
+  # infra-live-backend and infra-live-edge require: caught here, not at the scheduled run.
+  validation {
+    condition = (
+      lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, null) == null
+      || (length(var.target_aws_regions) == 1 && var.target_aws_regions[0] == lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, ""))
+    )
+    error_message = "${var.environment} is served from one region only (shared/routing.json served_from, DEC-01): target_aws_regions must be just that region."
   }
 }
 
@@ -52,7 +62,7 @@ variable "github_workflow_file" {
 }
 
 variable "github_pat" {
-  description = "GitHub PAT with repo + workflow scopes, sourced from GitHub Actions environment secret GIT_ACTIONS_PAT"
+  description = "Fine-grained GitHub token for this repository only, Actions: Read and write (SEC-03), sourced from the GitHub Actions environment secret GIT_ACTIONS_PAT"
   type        = string
   sensitive   = true
 }
@@ -85,4 +95,27 @@ variable "stop_schedule_expression" {
 variable "schedule_timezone" {
   description = "IANA timezone for EventBridge schedule expressions (e.g. Asia/Kolkata, America/New_York)"
   type        = string
+}
+
+variable "enable_alarms" {
+  description = "Email OPS_EMAIL when the GitHub dispatcher fails: an alarm on its Errors and a failure destination with the failed event (SCH-01). true on stg (prod can't be scheduled)."
+  type        = bool
+  default     = false
+}
+
+variable "ops_email" {
+  description = "Operator email for the scheduler's alert topic (the OPS_EMAIL GitHub environment variable). Must be set when enable_alarms = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_alarms || length(var.ops_email) > 0
+    error_message = "ops_email must be set when enable_alarms = true (the OPS_EMAIL GitHub environment variable)."
+  }
+}
+
+variable "repository" {
+  description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
+  type        = string
+  default     = ""
 }

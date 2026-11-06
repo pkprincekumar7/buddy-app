@@ -65,6 +65,7 @@ resource "aws_scheduler_schedule_group" "main" {
 # actively destroying regions the moment a second one was added.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "start" {
+  #checkov:skip=CKV_AWS_297:The schedule's input is the workflow's dispatch inputs (action, environment, regions), no secrets; AWS-owned encryption is enough
   name       = "${var.app_name}-${var.environment}-start"
   group_name = aws_scheduler_schedule_group.main.name
   state      = var.schedule_enabled ? "ENABLED" : "DISABLED"
@@ -106,6 +107,7 @@ resource "aws_scheduler_schedule" "start" {
 # Exactly ONE schedule — same reasoning as the start schedule above.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "stop" {
+  #checkov:skip=CKV_AWS_297:The schedule's input is the workflow's dispatch inputs (action, environment, regions), no secrets; AWS-owned encryption is enough
   # Never created for prod — even a DISABLED schedule there could be switched
   # on in the console (bypassing schedule_enabled's validation) and destroy
   # prod overnight.

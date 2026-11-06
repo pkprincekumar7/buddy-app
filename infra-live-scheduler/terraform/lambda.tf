@@ -34,12 +34,13 @@ resource "aws_iam_role_policy" "lambda_exec" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
+        # The log group is Terraform's (below), so the function only writes to it.
         Sid      = "Logs"
         Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.app_name}-${var.environment}-github-dispatcher:*"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "${aws_cloudwatch_log_group.dispatcher.arn}:*"
       },
       {
         Sid      = "ReadPat"
@@ -47,7 +48,13 @@ resource "aws_iam_role_policy" "lambda_exec" {
         Action   = "secretsmanager:GetSecretValue"
         Resource = aws_secretsmanager_secret.github_pat.arn
       }
-    ]
+      ], var.enable_alarms ? [{
+        # The on_failure destination (below) publishes as the function's role.
+        Sid      = "PublishFailures"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.scheduler_alerts[0].arn
+    }] : [])
   })
 }
 
@@ -63,12 +70,25 @@ data "archive_file" "dispatcher" {
 # ---------------------------------------------------------------------------
 # Lambda function
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Log group — managed here so it has a retention. Not Lambda's default
+# /aws/lambda/<function> name: Lambda creates that group itself on its first
+# run, so an environment that has already run would refuse to create it again.
+# ---------------------------------------------------------------------------
+resource "aws_cloudwatch_log_group" "dispatcher" {
+  #checkov:skip=CKV_AWS_158:AWS-managed encryption is sufficient for two dispatch lines a day; a CMK adds cost without meaningful uplift
+  #checkov:skip=CKV_AWS_338:30 days covers any failed dispatch's investigation; the lines carry no data worth a year
+  name              = "/${var.app_name}/${var.environment}/scheduler/github-dispatcher"
+  retention_in_days = 30
+}
+
 resource "aws_lambda_function" "dispatcher" {
-  #checkov:skip=CKV_AWS_116:Scheduler retry_policy handles retries — DLQ not required
+  #checkov:skip=CKV_AWS_116:Failed invocations aren't retried (aws_lambda_function_event_invoke_config below); they go to the logs and, where enable_alarms, to an on_failure destination (alarms.tf), not a DLQ to replay
   #checkov:skip=CKV_AWS_117:Function only calls GitHub public API and Secrets Manager — VPC not required
   #checkov:skip=CKV_AWS_50:X-Ray tracing not required for this simple dispatcher
   #checkov:skip=CKV_AWS_272:Code signing not required for internal infrastructure Lambda
   #checkov:skip=CKV_AWS_115:Reserved concurrency not required — invoked at most twice daily
+  #checkov:skip=CKV_AWS_173:The environment holds only the PAT secret's ARN and the repo/workflow names, no secret values; AWS-managed encryption is enough
 
   function_name    = "${var.app_name}-${var.environment}-github-dispatcher"
   role             = aws_iam_role.lambda_exec.arn
@@ -78,12 +98,42 @@ resource "aws_lambda_function" "dispatcher" {
   source_code_hash = data.archive_file.dispatcher.output_base64sha256
   timeout          = 30
 
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.dispatcher.name
+  }
+
   environment {
     variables = {
       GITHUB_PAT_SECRET_ARN = aws_secretsmanager_secret.github_pat.arn
       GITHUB_REPO_OWNER     = var.github_repo_owner
       GITHUB_REPO_NAME      = var.github_repo_name
       GITHUB_WORKFLOW_FILE  = var.github_workflow_file
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# No async retries (production-readiness review, SCH-01). EventBridge Scheduler
+# invokes the function asynchronously, and Lambda would otherwise run a failed
+# invocation twice more. A dispatch that GitHub accepted but whose answer was
+# lost (a timeout, a dropped connection) would then start the same apply or
+# destroy again. A failure stays a failure: it's in the log, and the next run of
+# the schedule tries afresh. The schedules' own retry_policy (scheduler.tf) only
+# covers delivering the event to Lambda, which can't double a dispatch.
+# ---------------------------------------------------------------------------
+resource "aws_lambda_function_event_invoke_config" "dispatcher" {
+  function_name                = aws_lambda_function.dispatcher.function_name
+  maximum_retry_attempts       = 0
+  maximum_event_age_in_seconds = 300
+
+  # The failed invocation (the schedule's event and the error) to OPS_EMAIL (alarms.tf).
+  dynamic "destination_config" {
+    for_each = var.enable_alarms ? [1] : []
+    content {
+      on_failure {
+        destination = aws_sns_topic.scheduler_alerts[0].arn
+      }
     }
   }
 }

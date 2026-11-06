@@ -12,10 +12,13 @@
 #                + accounts.google.com          inline styles added by framer-motion
 #                                               and shadcn components at runtime;
 #                                               GSI button injects its own inline styles.
-#   img-src     'self' + data: + https:         — bundled SVG/PNG assets; base64 data URIs;
-#                                               all HTTPS image sources including S3-backed
-#                                               activity-game images (served via CloudFront
-#                                               /app-assets/*) and Google profile photos.
+#   img-src     'self' + data: + blob:         — bundled and /app-assets/* images (self);
+#                + the uploads buckets           generated avatars and FileReader previews
+#                                               (data:); a picked photo's preview (blob:);
+#                                               child photos, as presigned S3 URLs on each
+#                                               region's uploads bucket. No other HTTPS host,
+#                                               so a stored or injected URL elsewhere (a
+#                                               tracking pixel) isn't loaded (APP-08).
 #   font-src    'self' + data:                 — self-hosted fonts; base64-encoded fonts
 #                                               bundled by Vite.
 #   connect-src 'self' + accounts.google.com  — all /api/* calls proxied via CloudFront
@@ -39,9 +42,10 @@
 locals {
   # One entry per active region's uploads bucket, on its regional endpoint —
   # the only form the backend's S3 client presigns (SigV4 + regional endpoint,
-  # backend/app/services/s3_uploads.py). The presigned PUT goes straight from
-  # the browser to S3, bypassing CloudFront, so every active region must be
-  # allow-listed here or the browser blocks the upload. Built from the bucket
+  # backend/common/uploads.py). The presigned form upload (POST) and the
+  # presigned photo URLs go straight between the browser and S3, bypassing
+  # CloudFront, so every active region must be allow-listed here (connect-src
+  # for the upload, img-src for showing the photo) or the browser blocks it. Built from the bucket
   # names alone: no per-region provider or lookup needed (TF-01), so a new
   # region is just another key in var.uploads_bucket_names.
   uploads_connect_src_origins = [
@@ -51,6 +55,7 @@ locals {
 }
 
 resource "aws_cloudfront_response_headers_policy" "frontend_security" {
+  #checkov:skip=CKV_AWS_259:HSTS is enforced (2 years, includeSubDomains); only `preload` is off, because preload lists take an apex domain and this is a subdomain (L5)
   name    = "${var.app_name}-frontend-security-${var.environment}"
   comment = "Security headers + CSP for the ${var.app_name} React SPA (${var.environment})"
 
@@ -72,11 +77,12 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
       override        = true
     }
 
-    # Enforce HTTPS for 2 years; opt in to browser preload lists.
+    # Enforce HTTPS for 2 years. No `preload`: browsers' preload lists take only an apex
+    # domain, so on this subdomain it did nothing (production-readiness review, L5).
     strict_transport_security {
       access_control_max_age_sec = 63072000
       include_subdomains         = true
-      preload                    = true
+      preload                    = false
       override                   = true
     }
 
@@ -86,7 +92,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
         "default-src 'self'",
         "script-src 'self' https://accounts.google.com",
         "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-        "img-src 'self' data: https:",
+        "img-src 'self' data: blob: ${join(" ", local.uploads_connect_src_origins)}",
         "font-src 'self' data:",
         "connect-src 'self' https://accounts.google.com ${join(" ", local.uploads_connect_src_origins)}",
         "frame-src https://accounts.google.com",
@@ -131,14 +137,9 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 # Response headers policy for FastAPI API responses (/api/*)
 #
 # Sets the standard security headers that belong on every HTTPS response, and
-# (via cors_config below) is now the authoritative source for CORS headers
-# too. origin_override = true means CloudFront's values win regardless of
-# what FastAPI's own CORSMiddleware sends — the app-level middleware still
-# exists (see backend/app/main.py) purely for direct/local access that never
-# goes through CloudFront; for anything CloudFront-fronted, this policy is
-# the single source of truth, avoiding the duplicate/conflicting
-# Access-Control-* headers that would result if both layers were equally
-# authoritative on the same response.
+# (via cors_config below) is the only source of CORS headers: the services
+# send none (locally the apps call the API on their own origin, through a
+# proxy). origin_override = true keeps it that way if one ever does.
 #
 # override = true on every security header too: CloudFront enforces the
 # correct value regardless of what the origin returns, making this policy
@@ -146,13 +147,11 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 # responses.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "api_security" {
+  #checkov:skip=CKV_AWS_259:HSTS is enforced (2 years, includeSubDomains); only `preload` is off, because preload lists take an apex domain and this is a subdomain (L5)
   name    = "${var.app_name}-api-security-${var.environment}"
   comment = "Security headers for FastAPI /api/* responses (${var.environment})"
 
-  # Mirrors backend/app/main.py's CORSMiddleware config (methods, headers,
-  # credentials) so the two don't drift into different behavior —
-  # origin_override = true means this is what actually reaches the browser
-  # for CloudFront-fronted traffic regardless.
+  # The methods, headers and credentials the apps' API calls use.
   #
   # The allowed origin is local.fqdn (same "https://{fqdn}" value this module
   # already computes and outputs — see outputs.tf) — NOT a separate
@@ -171,8 +170,10 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
       items = ["https://${local.fqdn}"]
     }
 
+    # Every method the API's public routes use: PUT is onboarding's answers and grow's
+    # growth areas (production-readiness review, L3).
     access_control_allow_methods {
-      items = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+      items = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     }
 
     access_control_allow_headers {
@@ -211,7 +212,7 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
     strict_transport_security {
       access_control_max_age_sec = 63072000
       include_subdomains         = true
-      preload                    = true
+      preload                    = false
       override                   = true
     }
 
@@ -236,6 +237,7 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
 # so there is no security benefit in setting them on image/binary assets.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "assets" {
+  #checkov:skip=CKV_AWS_259:HSTS is enforced (2 years, includeSubDomains); only `preload` is off, because preload lists take an apex domain and this is a subdomain (L5)
   name    = "${var.app_name}-assets-${var.environment}"
   comment = "Security headers for static asset responses (/app-assets/*) (${var.environment})"
 
@@ -249,7 +251,7 @@ resource "aws_cloudfront_response_headers_policy" "assets" {
     strict_transport_security {
       access_control_max_age_sec = 63072000
       include_subdomains         = true
-      preload                    = true
+      preload                    = false
       override                   = true
     }
   }

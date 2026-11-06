@@ -1,6 +1,7 @@
 # environment and backend_regions are supplied via workflow inputs (TF_VAR_*)
 # app_name, domain_name, subdomain, hosted_zone_id, acm_certificate_arn_us_east_1,
-# spa_bucket_name, assets_bucket_name are supplied via GitHub Environment Secrets (TF_VAR_*)
+# spa_bucket_name, assets_bucket_name are supplied via GitHub environment variables
+# (TF_VAR_*; acm_certificate_arn_us_east_1 is ACM_CERTIFICATE_ARNS's us-east-1 entry)
 # Note: this module has no aws_region variable — all resources are fixed to us-east-1.
 
 cloudfront_price_class = "PriceClass_100"
@@ -12,3 +13,6 @@ enable_cloudtrail = false
 # WAF — disabled on sbx to avoid ~$10/mo (WebACL + 5 rules) + per-request charges
 enable_waf         = false
 enable_waf_logging = false
+
+# Edge alarms (OBS-01): off here, as the backend's are.
+enable_alarms = false

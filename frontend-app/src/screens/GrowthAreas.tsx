@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import Animated, {
@@ -13,25 +19,22 @@ import { useNavigate, useParams } from '@/lib/router';
 import { toast } from '@/lib/toast';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
-import { useJob } from '@/hooks/useJob';
 import { useGrowthAreaQuestions } from '@/hooks/useGrowthAreaQuestions';
 import { useAuth } from '@/lib/AuthContext';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
-import { api } from '@/api/client';
+import { children } from '@/api/children';
+import { ApiError } from '@/api/errors';
 import {
-  // Not what a parent answers any more — kept as the accurate record of the
-  // wording used by areas answered before questions were generated.
-  AREA_QUESTIONS,
-  GROWTH_AREAS,
-  fillTemplate,
-  normalizeRecommendations,
-  pickedOptions,
-  resolveRounds,
-  topArchetype,
-} from '@/lib/growthAreaData';
+  areaSave,
+  grow,
+  GROW_ERRORS,
+  runGrowGeneration,
+  type GrowthAreaDoc,
+} from '@/api/grow';
+import { isAbort } from '@/api/polling';
+import { httpErrorMessage } from '@/lib/apiError';
+import { GROWTH_AREAS, normalizeRecommendations } from '@/lib/growthAreaData';
 import type { GrowthArea, GrowthRecommendation } from '@/lib/growthAreaData';
-import type { CompletedArea, StoredRecommendation } from '@/types/api';
-import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import PageLoader from '@/components/shared/PageLoader';
 import Starfield from '@/components/shared/Starfield';
 import PageBackRow from '@/components/layout/PageBackRow';
@@ -113,29 +116,15 @@ export default function GrowthAreas() {
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(
-    null,
-  );
   const [childName, setChildName] = useState('');
-  const [childAge, setChildAge] = useState('');
   const [childGender, setChildGender] = useState('');
-  const [completedAreaIds, setCompletedAreaIds] = useState<
-    Set<string | undefined>
-  >(new Set());
-  const [savedAnswers, setSavedAnswers] = useState<
-    Record<string, Record<string, unknown>>
-  >({});
-  // Lets a finished area open straight into its result (constellation +
-  // recommendations) instead of forcing a full redo just to look at it again.
-  // Sourced from `child_activity.selections` — a durable field the backend
-  // never clears — unlike `child_activity_selections`, which it unsets on
-  // every completion.
-  const [completedResults, setCompletedResults] = useState<
-    Record<string, { picks: string[]; recommendations: GrowthRecommendation[] }>
-  >({});
   const [hydrated, setHydrated] = useState(false);
-  /** The raw growth_areas documents, which also carry the generated question sets. */
-  const [areaDocs, setAreaDocs] = useState<CompletedArea[]>([]);
+  /**
+   * The child's areas as grow stores them (build plan 7.6), which also carry the
+   * generated question sets. Each save's answer replaces its entry, so everything
+   * below derived from these stays current.
+   */
+  const [areaDocs, setAreaDocs] = useState<GrowthAreaDoc[]>([]);
   const [activeArea, setActiveArea] = useState<GrowthArea | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [recsStatus, setRecsStatus] = useState<
@@ -145,98 +134,53 @@ export default function GrowthAreas() {
     GrowthRecommendation[]
   >([]);
   const [showSplash, startTimer] = useStageSplash(0);
-  // Which area the in-flight/last recommendations job belongs to — anchored
-  // here so the job survives the parent closing the sheet.
+  // Which area the in-flight/last recommendations generation belongs to — the
+  // sheet only ever shows results for the area it's currently open on, but the
+  // generation itself is anchored here so it survives the parent closing the sheet.
   const recsAreaRef = useRef<GrowthArea | null>(null);
-  // Mirrors the answers just persisted for the area a recs job is running for,
-  // so finalizeRecommendations can re-include them in the completing write.
-  const recsAnswersRef = useRef<Record<string, unknown>>({});
-  // The exact picks the CURRENT `recommendations` state was generated for, so a
-  // same-session identical replay reuses them instead of re-billing the LLM.
+  // The answers and picks the CURRENT `recommendations` were generated for. Lets a
+  // same-session replay (Play Again → identical six choices) reuse what's already
+  // showing instead of generating again for no-op input.
+  const recsAnswersRef = useRef<Record<string, string>>({});
   const recsPicksRef = useRef<string[] | null>(null);
+  // Stops polling when the page goes away.
+  const abortRef = useRef<AbortController>(new AbortController());
+  useEffect(() => () => abortRef.current.abort(), []);
 
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     let cancelled = false;
 
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        // The child's own fields from children, the areas from grow.
+        const [child, areas] = await Promise.all([
+          children.get(childId),
+          grow.list(childId),
+        ]);
         if (cancelled) return;
-        if (!child) {
-          navigate('/Home', { replace: true });
-          return;
-        }
-        if (
-          !child.personality?.view_model?.type &&
-          !child.personality?.view_model?.profile?.name
-        ) {
-          navigate(`/PersonalityType/${childId}`, { replace: true });
-          return;
-        }
-        setChildData(child);
-        setChildName(child.name ?? '');
-        setChildAge(child.age != null ? String(child.age) : '');
-        setChildGender(typeof child.gender === 'string' ? child.gender : '');
-
-        const areas = await api.completedGrowthAreas.list(childId);
-        if (cancelled) return;
-        const allDocs = areas.areas ?? [];
-        // Held as-is for useGrowthAreaQuestions, which reads each area's stored
-        // question sets off these same documents.
-        setAreaDocs(allDocs);
-        const done = new Set(
-          allDocs
-            .filter(
-              a =>
-                a.status === 'completed' ||
-                !a.status ||
-                (Array.isArray(a.ai_three_month_recommendations) &&
-                  a.ai_three_month_recommendations.length > 0),
-            )
-            .map(a => a.area_id),
-        );
-        setCompletedAreaIds(done);
-
-        // Prefill a redo of an area the parent already answered.
-        const byArea: Record<string, Record<string, unknown>> = {};
-        for (const doc of allDocs) {
-          const prev = doc.interactive_answers ?? doc.answers;
-          if (doc.area_id && prev && typeof prev === 'object')
-            byArea[doc.area_id] = prev;
-        }
-        setSavedAnswers(byArea);
-
-        const results: Record<
-          string,
-          { picks: string[]; recommendations: GrowthRecommendation[] }
-        > = {};
-        for (const doc of allDocs) {
-          if (!doc.area_id || doc.status !== 'completed') continue;
-          const recs = normalizeRecommendations(
-            doc.ai_three_month_recommendations,
-          );
-          const picks = (
-            doc.child_activity as { selections?: unknown } | undefined
-          )?.selections;
-          if (
-            recs.length > 0 &&
-            Array.isArray(picks) &&
-            picks.every((p): p is string => typeof p === 'string')
-          ) {
-            results[doc.area_id] = { picks, recommendations: recs };
-          }
-        }
-        setCompletedResults(results);
+        setChildName(child.name);
+        setChildGender(child.gender ?? '');
+        setAreaDocs(areas);
       } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'circle_locked') {
+          // Discover isn't done yet: back to the journey.
+          void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+          return;
+        }
+        if (err instanceof ApiError && err.code === 'child_not_found') {
+          void navigate('/Home', { replace: true });
+          return;
+        }
         console.warn('[GrowthAreas] Load failed:', err);
       } finally {
         if (!cancelled) setHydrated(true);
@@ -248,51 +192,81 @@ export default function GrowthAreas() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
-  // Ambient track is shared across the whole journey — keep it silent while the
-  // splash video plays its own audio.
+  // Ambient track is shared across the whole journey (see AmbientAudioContext) —
+  // keep it silent while the splash video plays its own audio, same as before.
   useEffect(() => {
     setAmbientSuppressed(showSplash || !hydrated);
     return () => setAmbientSuppressed(false);
   }, [showSplash, hydrated, setAmbientSuppressed]);
 
+  const docOf = useCallback(
+    (areaId: string) => areaDocs.find(doc => doc.area_id === areaId),
+    [areaDocs],
+  );
+  const keep = useCallback((saved: GrowthAreaDoc) => {
+    setAreaDocs(prev =>
+      prev.some(doc => doc.area_id === saved.area_id)
+        ? prev.map(doc => (doc.area_id === saved.area_id ? saved : doc))
+        : [...prev, saved],
+    );
+  }, []);
+
+  const completedAreaIds = useMemo(
+    () =>
+      new Set(
+        areaDocs
+          .filter(doc => doc.status === 'completed')
+          .map(doc => doc.area_id),
+      ),
+    [areaDocs],
+  );
+  // Prefill a redo of an area the parent already answered. The reflection sheet
+  // filters these down to the current question ids itself.
+  const savedAnswers = useMemo(
+    () => Object.fromEntries(areaDocs.map(doc => [doc.area_id, doc.answers])),
+    [areaDocs],
+  );
+  // Lets a finished area open straight into its result (constellation +
+  // recommendations) instead of forcing a full redo just to look at it again.
+  const completedResults = useMemo(() => {
+    const results: Record<
+      string,
+      { picks: string[]; recommendations: GrowthRecommendation[] }
+    > = {};
+    for (const doc of areaDocs) {
+      if (doc.status !== 'completed') continue;
+      const recs = normalizeRecommendations(doc.ai_three_month_recommendations);
+      const picks = (doc.child_activity as { selections?: unknown } | null)
+        ?.selections;
+      if (
+        recs.length > 0 &&
+        Array.isArray(picks) &&
+        picks.every(p => typeof p === 'string')
+      ) {
+        results[doc.area_id] = { picks, recommendations: recs };
+      }
+    }
+    return results;
+  }, [areaDocs]);
+
   /**
-   * Both question sets, generated per child per area and cached on the child
-   * document. Anchored on the page so a job survives the sheet closing.
+   * Both question sets, generated per child per area by grow and stored on the
+   * area's document. Anchored on the page rather than in the sheet so a generation
+   * survives the parent closing the sheet mid-way.
    */
   const generated = useGrowthAreaQuestions({
     childId,
-    child: childData,
     areas: areaDocs,
     area: activeArea,
     enabled: hydrated,
   });
-  const { ensureParent, ensureChild, questionsFor, roundsFor } = generated;
+  const { ensureParent, ensureChild } = generated;
 
-  /** The reflections an area's saved answers belong to (generated, else the hardcoded record). */
-  const askedQuestions = useCallback(
-    (areaId: string) => questionsFor(areaId) ?? AREA_QUESTIONS[areaId] ?? [],
-    [questionsFor],
-  );
-
-  /** An area's answers as question/answer pairs, for prompt context. */
-  const qaPairsFor = useCallback(
-    (areaId: string, answers: Record<string, unknown>) =>
-      askedQuestions(areaId).flatMap(q => {
-        const raw = answers[q.id];
-        const answer = typeof raw === 'string' ? raw.trim() : '';
-        return answer
-          ? [
-              {
-                question: fillTemplate(q.question, childName, childGender),
-                answer,
-              },
-            ]
-          : [];
-      }),
-    [askedQuestions, childName, childGender],
-  );
-
-  /** The one and only write for the reflection step, on Finish at question five. */
+  /**
+   * The one and only write for the reflection step, on Finish at question five.
+   * Returns whether it landed so the sheet can hold position on failure rather
+   * than handing a device to the child with the parent's answers lost.
+   */
   const handleSaveAnswers = useCallback(
     async (
       area: GrowthArea,
@@ -301,238 +275,164 @@ export default function GrowthAreas() {
       if (!childId) return false;
       setIsSaving(true);
       try {
-        await api.completedGrowthAreas.append(childId, {
-          area_id: area.id,
-          area_name: area.name,
-          answers,
-          status: 'in_progress',
-          step: 'activity_summary',
-          interactive_answers: answers,
-        });
-        setSavedAnswers(prev => ({ ...prev, [area.id]: answers }));
-        // Stage two starts here: the child's choices are built from the answers
-        // just written, and the wait runs underneath the handoff beat.
-        ensureChild(area, qaPairsFor(area.id, answers));
+        keep(
+          await grow.save(
+            childId,
+            area.id,
+            areaSave(docOf(area.id), area.name, {
+              answers,
+              step: 'activity_summary',
+            }),
+          ),
+        );
+        // Stage two starts here, not on the click that opened this area: grow builds
+        // the child's choices from the answers just saved, and the wait then runs
+        // underneath the handoff beat the parent is about to read.
+        ensureChild(area);
         return true;
       } catch (err) {
         console.error('[GrowthAreas] Saving reflection failed:', err);
-        toast.error('Could not save your answers. Please try again.');
+        toast.error(
+          httpErrorMessage(err as Error, {
+            codeMessages: GROW_ERRORS,
+            fallback: 'Could not save your answers. Please try again.',
+          }),
+        );
         return false;
       } finally {
         setIsSaving(false);
       }
     },
-    [childId, ensureChild, qaPairsFor],
+    [childId, docOf, keep, ensureChild],
   );
 
   /**
-   * Runs once the recs job reports 'completed'. Reads the worker's staged
-   * output and, in the same request, both promotes it to the canonical field
-   * and marks the area complete.
+   * Generates the area's recommendations from what's saved on it, shows them, then
+   * completes the area. Grow publishes the first completion, which unlocks Transform.
    */
-  const finalizeRecommendations = useCallback(async () => {
-    const area = recsAreaRef.current;
-    if (!childId || !area) return;
-    try {
-      const completedData = await api.completedGrowthAreas.list(childId);
-      const areaDoc = (completedData.areas ?? []).find(
-        a => a.area_id === area.id,
-      );
-      const pendingRaw = areaDoc?.pending_recommendations as
-        | Record<string, unknown>
-        | undefined;
-      const pending: StoredRecommendation[] | undefined = Array.isArray(
-        pendingRaw,
-      )
-        ? (pendingRaw as StoredRecommendation[])
-        : Array.isArray(pendingRaw?.recommendations)
-        ? (pendingRaw.recommendations as StoredRecommendation[])
-        : undefined;
-
-      if (pending && pending.length > 0) {
-        setRecommendations(normalizeRecommendations(pending));
-        setRecsStatus('ready');
-        // The backend unsets interactive_answers on status:'completed' — writing
-        // the same values under `answers` keeps them attached to the finished area.
-        await api.completedGrowthAreas.append(childId, {
-          area_id: area.id,
-          area_name: area.name,
-          answers: recsAnswersRef.current,
-          status: 'completed',
-          step: 'activity_summary',
-          ai_three_month_recommendations: pending,
-        });
-        setCompletedAreaIds(prev => new Set(prev).add(area.id));
-        // grow_completed is derived server-side from this same growth_areas write.
-        const picks = recsPicksRef.current;
-        if (picks) {
-          setCompletedResults(prev => ({
-            ...prev,
-            [area.id]: {
-              picks,
-              recommendations: normalizeRecommendations(pending),
-            },
-          }));
+  const generateRecommendations = useCallback(
+    async (area: GrowthArea) => {
+      if (!childId) return;
+      try {
+        const outcome = await runGrowGeneration(
+          childId,
+          area.id,
+          'recommendations',
+          {
+            signal: abortRef.current.signal,
+          },
+        );
+        if (recsAreaRef.current?.id !== area.id) return; // the parent moved on
+        const doc =
+          outcome === 'completed'
+            ? (await grow.list(childId)).find(a => a.area_id === area.id)
+            : undefined;
+        const recs = normalizeRecommendations(
+          doc?.ai_three_month_recommendations,
+        );
+        if (!doc || recs.length === 0) {
+          setRecsStatus('error');
+          return;
         }
-      } else {
-        setRecsStatus('error');
+        setRecommendations(recs);
+        setRecsStatus('ready');
+        keep(
+          await grow.save(
+            childId,
+            area.id,
+            areaSave(doc, area.name, { status: 'completed' }),
+          ),
+        );
+      } catch (err) {
+        if (isAbort(err)) return;
+        console.error('[GrowthAreas] Recommendations failed:', err);
+        setRecsStatus(status => (status === 'ready' ? status : 'error'));
+        toast.error(
+          httpErrorMessage(err as Error, {
+            codeMessages: GROW_ERRORS,
+            fallback: 'Recommendations could not be saved. Please try again.',
+          }),
+        );
       }
-    } catch (err) {
-      console.error('[GrowthAreas] Failed to finalize recommendations:', err);
-      setRecsStatus('error');
-      toast.error('Recommendations could not be saved. Please try again.');
-    }
-  }, [childId]);
-
-  const job = useJob({
-    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
-    jobType: 'generate_recommendations',
-    onCompleted: finalizeRecommendations,
-  });
-  const { enqueue: jobEnqueue } = job;
+    },
+    [childId, keep],
+  );
 
   /**
    * The one and only write for the child's rounds, after round six — followed
-   * immediately by kicking off recommendation generation.
+   * immediately by generating the recommendations. The sheet moves to its result
+   * phase optimistically (the archetype is derived client-side, no network
+   * needed); recsStatus/recommendations stream back down as the generation runs.
    */
   const handleCompleteRounds = useCallback(
     async (area: GrowthArea, pickedIds: string[]) => {
       if (!childId) return;
 
-      // A same-session replay with identical parent answers AND identical picks
-      // already has valid recommendations in state — reuse them.
+      // A same-session replay with the exact same parent answers AND the exact
+      // same six picks (e.g. Play Again, then choosing identically) already has
+      // valid recommendations sitting in state — reuse them instead of
+      // generating again for input that hasn't changed.
       const currentAnswers = savedAnswers[area.id] ?? {};
       const answersUnchanged =
         JSON.stringify(recsAnswersRef.current) ===
         JSON.stringify(currentAnswers);
-      const prevPicks = recsPicksRef.current;
       const isIdenticalReplay =
         recsAreaRef.current?.id === area.id &&
         recsStatus === 'ready' &&
         answersUnchanged &&
-        prevPicks !== null &&
-        prevPicks.length === pickedIds.length &&
-        prevPicks.every((id, i) => id === pickedIds[i]);
+        recsPicksRef.current !== null &&
+        recsPicksRef.current.length === pickedIds.length &&
+        recsPicksRef.current.every((id, i) => id === pickedIds[i]);
       if (isIdenticalReplay) return;
 
       recsAreaRef.current = area;
-      recsAnswersRef.current = savedAnswers[area.id] ?? {};
+      recsAnswersRef.current = currentAnswers;
       recsPicksRef.current = pickedIds;
       setRecsStatus('loading');
       setRecommendations([]);
       setIsSaving(true);
       try {
-        await api.completedGrowthAreas.append(childId, {
-          area_id: area.id,
-          area_name: area.name,
-          answers: savedAnswers[area.id] ?? {},
-          status: 'in_progress',
-          step: 'activity_summary',
-          // Transient — the backend unsets this on completion.
-          child_activity_selections: pickedIds,
-          // Durable — lets a finished area be reopened straight into its result.
-          child_activity: { selections: pickedIds },
-        });
-
-        // The questions this child was actually asked, not a template.
-        const answers = savedAnswers[area.id] ?? {};
-        const qaContext = askedQuestions(area.id)
-          .filter(q => answers[q.id])
-          .map(
-            q =>
-              `Q: ${fillTemplate(q.question, childName, childGender)}\n` +
-              `   (${fillTemplate(q.hint, childName, childGender)})\n` +
-              `A: ${String(answers[q.id])}`,
-          )
-          .join('\n\n');
-        const rounds = resolveRounds(area.id, roundsFor(area.id), pickedIds);
-        const archetype = topArchetype(area.id, rounds, pickedIds)?.archetype;
-
-        await jobEnqueue({
-          type: 'generate_recommendations',
-          child_id: childId,
-          payload: {
-            prompt: buildGrowthAreaRecommendationsPrompt({
-              childName: childName || 'the child',
-              childAge: childAge || null,
-              childGender: childGender || null,
-              areaName: area.name,
-              qaContext,
-              childChoices: pickedOptions(rounds, pickedIds).map(o => o.text),
-              childArchetype: archetype
-                ? {
-                    title: archetype.title,
-                    line: fillTemplate(archetype.line, childName, childGender),
-                  }
-                : null,
-            }),
-            response_json_schema: {
-              type: 'object',
-              properties: {
-                recommendations: {
-                  type: 'array',
-                  minItems: 5,
-                  maxItems: 5,
-                  items: {
-                    type: 'object',
-                    properties: {
-                      title: {
-                        type: 'string',
-                        maxLength: 70,
-                        description:
-                          'At most 10 words. A short label for the action, not a sentence.',
-                      },
-                      detail: {
-                        type: 'string',
-                        maxLength: 190,
-                        description:
-                          'At most 25 words. One instruction: the action plus its frequency.',
-                      },
-                    },
-                    required: ['title', 'detail'],
-                  },
-                },
+        // The picks are what grow grounds the recommendations in, next to the answers.
+        const stored = docOf(area.id);
+        keep(
+          await grow.save(
+            childId,
+            area.id,
+            areaSave(stored, area.name, {
+              step: 'activity_summary',
+              child_activity: {
+                ...stored?.child_activity,
+                selections: pickedIds,
               },
-            },
-          },
-          write_back: {
-            collection: 'growth_areas',
-            filter: { area_id: area.id },
-            field: 'pending_recommendations',
-          },
-        });
+            }),
+          ),
+        );
       } catch (err) {
         console.error('[GrowthAreas] Saving child rounds failed:', err);
         setRecsStatus('error');
-        toast.error('Could not save the answers. Please try again.');
+        toast.error(
+          httpErrorMessage(err as Error, {
+            codeMessages: GROW_ERRORS,
+            fallback: 'Could not save the answers. Please try again.',
+          }),
+        );
+        return;
       } finally {
         setIsSaving(false);
       }
+      void generateRecommendations(area);
     },
-    [
-      childId,
-      savedAnswers,
-      childName,
-      childAge,
-      childGender,
-      jobEnqueue,
-      recsStatus,
-      askedQuestions,
-      roundsFor,
-    ],
+    [childId, savedAnswers, recsStatus, docOf, keep, generateRecommendations],
   );
 
-  // job.isComplete fires before finalizeRecommendations' async write lands,
-  // which would otherwise flash "generating" → "no recs yet" for a moment.
-  const isGeneratingRecs =
-    job.isLoading || (job.isComplete && recsStatus !== 'ready');
-  const recsPhase: 'idle' | 'loading' | 'ready' | 'error' = isGeneratingRecs
-    ? 'loading'
-    : job.isFailed
-    ? 'error'
-    : recsStatus;
+  const recsPhase = recsStatus;
 
-  /** A finished area with a durable picks record opens straight into its result. */
+  /**
+   * A finished area with a durable picks record opens straight into its
+   * result — no reason to make a parent redo five questions and a child redo
+   * six rounds just to see what's already there. Play Again (inside the
+   * result view) remains the way to redo the child's rounds on purpose.
+   */
   const handleAreaClick = useCallback(
     (area: GrowthArea) => {
       const cached = completedResults[area.id];
@@ -543,7 +443,9 @@ export default function GrowthAreas() {
         setRecsStatus('ready');
         setRecommendations(cached.recommendations);
       } else {
-        // Stage one. Skipped for a finished area, which never shows a question.
+        // Stage one. Skipped for a finished area, which opens straight into its
+        // result and never shows a question — generating a set it would not
+        // display would only spend a parent's quota to fill a cache.
         ensureParent(area);
       }
       setActiveArea(area);
@@ -551,12 +453,14 @@ export default function GrowthAreas() {
     [completedResults, savedAnswers, ensureParent],
   );
 
-  /** Play Again on an area finished before its rounds were ever generated. */
+  /**
+   * Play Again on an area finished before its rounds were ever generated: the
+   * result renders from the hardcoded set, but replaying deserves rounds of this
+   * child's own, and the answers to ground them in are already saved.
+   */
   const handleReplayRounds = useCallback(
-    (area: GrowthArea) => {
-      ensureChild(area, qaPairsFor(area.id, savedAnswers[area.id] ?? {}));
-    },
-    [ensureChild, qaPairsFor, savedAnswers],
+    (area: GrowthArea) => ensureChild(area),
+    [ensureChild],
   );
 
   // web: motion.div initial opacity 0 → animate opacity (showSplash ? 0 : 1), 0.8s easeOut.

@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera, Check, Upload } from 'lucide-react-native';
 import { Button } from '@/components/ui/button';
 import Spinner from '@/components/shared/Spinner';
+import { AVATAR_LIMITS, avatarProblem } from '@/api/children';
 import { cn } from '@/lib/utils';
 import { color, css, glow, hsl, rgb } from '@/theme';
 import { ALL_AVATARS, BOY_AVATARS, GIRL_AVATARS } from './avatars';
@@ -165,7 +166,12 @@ export default function ChildProfileStep({
   const applyPickedAsset = (result: ImagePicker.ImagePickerResult) => {
     const asset = result.canceled ? undefined : result.assets[0];
     if (!asset) return;
-    setPhotoFile({ uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' });
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+    // Children refuses anything else when the photo is saved (build plan 7.4).
+    const problem = avatarProblem(mimeType, asset.fileSize ?? 0);
+    setErrors(current => ({ ...current, avatarId: problem ?? undefined }));
+    if (problem) return;
+    setPhotoFile({ uri: asset.uri, mimeType });
     setPhotoPreview(asset.uri);
     // Clear emoji avatar selection when a photo is chosen
     setForm(f => ({ ...f, avatarId: '' }));
@@ -225,8 +231,8 @@ export default function ChildProfileStep({
     if (!form.name.trim()) e.name = 'Name is required';
     const ageNum = Number(form.age);
     if (!form.age.trim()) e.age = 'Age is required';
-    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 30)
-      e.age = 'Age must be between 8 and 30';
+    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 25)
+      e.age = 'Age must be between 8 and 25';
     if (!form.gender) e.gender = 'Please select a gender';
     if (!form.avatarId && !photoFile && !initialData?.avatarUrl)
       e.avatarId = 'Please upload a photo or pick an avatar';
@@ -330,6 +336,9 @@ export default function ChildProfileStep({
               Upload photo
             </Text>
           </Button>
+          <Text className="text-[11px] text-muted-foreground">
+            {AVATAR_LIMITS}
+          </Text>
         </View>
 
         {/* Avatar picker */}

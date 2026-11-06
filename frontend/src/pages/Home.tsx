@@ -2,7 +2,8 @@ import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
-import { api } from '@/api/client';
+import { children as childrenApi } from '@/api/children';
+import { services, unwrap } from '@/api/services';
 import { useQuery } from '@tanstack/react-query';
 import ChildCard from '@/components/shared/ChildCard';
 import PageLoader from '@/components/shared/PageLoader';
@@ -87,7 +88,9 @@ export default function Home() {
   const handleDownloadApk = async () => {
     setApkDownloading(true);
     try {
-      const { url } = await api.downloads.getApkUrl();
+      // The shared service's generated client (build plan 7.1): a 5-minute link to the
+      // newest APK. The web app only; the mobile app has its own update flow.
+      const { url } = await unwrap(services.shared.GET('/api/v1/downloads/apk'));
       // Trigger the download via a temporary anchor so the browser initiates
       // the download without opening a new tab. The filename is controlled by
       // the Content-Disposition header embedded in the pre-signed S3 URL —
@@ -106,7 +109,7 @@ export default function Home() {
 
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
-    queryFn: () => api.entities.Child.list('-created_date'),
+    queryFn: () => childrenApi.list(),
   });
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 

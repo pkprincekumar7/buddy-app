@@ -1,206 +1,197 @@
 # backend — Coding Standards
 
-FastAPI + MongoDB (Motor) + Redis backend. These are the standards to follow when writing or
-editing code in this directory. They were distilled from an explicit best-practices review of
-this codebase; see `.claude/skills/standards-review/SKILL.md` for the on-demand audit that
-checks a file against this same list.
+FastAPI services on MongoDB (PyMongo's async client) and Valkey, talking through events (SNS +
+SQS, Moto locally) and signed internal calls. These are the standards to follow when writing or
+editing code in this directory; see `.claude/skills/standards-review/SKILL.md` for the
+on-demand audit that checks a file against this same list. The design behind them is
+`docs/auth-users-split.md` (section numbers below refer to it).
 
-## Dependency injection
+## Layout
 
-- Declare dependencies with `Annotated[Type, Depends(...)]` (module-level type aliases in
-  `app/deps.py`, e.g. `CurrentParent`, `Db`, `SettingsDep`), not the classic
-  `param: Type = Depends(...)` default-argument style.
-- When every route in a router needs the same dependency (most commonly auth), declare it once
-  at the router level — `APIRouter(dependencies=[Depends(get_current_parent)])` — instead of
-  repeating it on every endpoint's own dependency list.
-- **Exception:** if the router's routes also need a per-route `rate_limit(...)` dependency (see
-  "Rate limiting" below) to run *before* the database-backed half of auth, don't put
-  `get_current_parent`/`get_current_admin` at the router level — router-level dependencies always
-  resolve before any route-level one, regardless of declaration order, so a DB-backed auth
-  dependency placed there defeats the point of a rate check that's supposed to run first. Instead
-  put the DB-free `app.deps.get_token_claims` at the router level (safe by default, no query to
-  protect against), and either rely on the route's own `user: CurrentParent`/`CurrentAdmin`
-  function parameter (it resolves after that route's `dependencies=[...]` list either way), or, if
-  the route doesn't otherwise use that parameter, re-add `Depends(get_current_admin)`/
-  `Depends(get_current_parent)` explicitly in the route's own `dependencies=[...]`, after
-  `rate_limit(...)`. See `app/routers/admin.py`/`children.py`/`llm.py` for both shapes of this.
-- Don't duplicate cross-cutting logic (e.g. extracting/validating a token) across multiple
-  endpoints or dependencies — factor it into one shared helper or dependency and reuse it.
+- One package per service: `auth`, `users`, `children`, `onboarding`, `discover`, `grow`,
+  `transform`, `release`, `shared` (`connect` is planned, not built). `tools/services.py` finds
+  them from the tree (`--json`, `--paths PREFIX`, `--check`), so CI, `check.sh` and the import
+  contracts keep no list: a new service is picked up by adding its directory.
+- Each service is `backend/<svc>/` with:
+  - `app/main.py` — two ASGI apps: `app` (public routes, behind the ALB) and `internal_app`
+    (`/internal/*`, reached only through Cloud Map). `python -m common.serve <svc>` serves them
+    on 8000 and 8001 in one process (13.2), so an internal route can't be reached on the public
+    port;
+  - `app/runtime.py` — the service's settings (a `common.settings_base.ServiceSettings`
+    subclass) and a `Runtime` dataclass holding its clients (Mongo, Valkey, AWS, the internal
+    client, the authorizer, rate limits);
+  - `app/store.py` — its collections: names, `$jsonSchema` validators, indexes, and the
+    `ensure_*` functions that create them;
+  - `worker.py` — `python -m <svc>.worker`: the outbox relay, the event consumer and any
+    periodic jobs (every service but `shared`);
+  - `requirements.txt` — its own pins, with exactly one `buddy-common[extras]==X.Y.Z` line;
+  - `tests/`.
+- `common/` is the shared package (`buddy-common`), installed into each image as a wheel built
+  from this tree (`backend/Dockerfile`, `scripts/install-backend-service.sh`), never from PyPI.
+  See `common/README.md` for what belongs there.
+- `backend/Dockerfile` builds every service's image: `--build-arg SERVICE=<svc>` is required. A
+  worker runs its service's image.
+- `backend/openapi/<svc>.json` is each HTTP service's committed spec
+  (`python tools/export-openapi.py --service <svc> > openapi/<svc>.json`); CI fails when it's
+  stale, and the apps' TypeScript clients are generated from it
+  (`node scripts/sync-api-clients.mjs`).
+- The dev venv (`requirements-dev.txt`, the union of every service's pins, plus
+  `requirements-test.txt`/`-lint.txt`/`-security.txt`) is for tests and tools; the services run
+  in Docker Compose locally (`docs/getting-started.md`).
 
-## Settings & resource lifecycle
+## Boundaries
 
-- Load `Settings` through a cached dependency (`@lru_cache`-wrapped `get_settings()`), never
-  re-instantiated or re-parsed per request.
-- Any long-lived client created at startup (LLM provider SDK clients, DB pools, etc.) must be
-  closed in the `lifespan` shutdown phase — don't let connections leak past process exit.
+- **`common` never imports a service; services never import each other.** Enforced by
+  import-linter, with contracts generated from the tree (`python tools/import_contracts.py`).
+  Anything one service needs from another goes through an event or an internal call.
+- **`common` holds only code that must behave the same in every service** (token and authz
+  checks, the permission table, the event envelope and outbox, internal calls, telemetry,
+  logging). Code used by one service lives in that service; code used by a few is an extra
+  (`[generation]`, `[uploads]`).
+- **`common` changes are backward-compatible.** `__version__` in `common/__init__.py` follows
+  semantic versioning and each service pins the version it was built against. A breaking change
+  is a new function next to the old one until every service has moved.
+- **Each service owns its own database** (named after it; `shared` has none). Never read
+  another service's collections: a service keeps its own copy of what it needs (`child_access`
+  and the `*_inputs` collections in `common/models.py`), fed by events, or asks the owner through
+  an internal call.
 
-## API contracts
+## Dependency injection & settings
 
-- Every endpoint should declare `response_model=...` so FastAPI validates/filters the response
-  shape and the generated OpenAPI docs are accurate.
-- Auth-protected routes should use FastAPI's security utilities (`APIKeyCookie`, `HTTPBearer`,
-  etc.) so the requirement is visible in the OpenAPI schema, not only enforced by a dependency
-  that Swagger/OpenAPI can't see.
-- **When the same resource is exposed through more than one endpoint (e.g. a list endpoint with
-  a field projection alongside a get-by-id endpoint returning the full document), the projection
-  must include every field *any* consumer of the list endpoint actually relies on** — not just
-  the fields its original caller needed. A frontend page reusing the list endpoint as a
-  lightweight stand-in for a full fetch is a real, recurring pattern here (see
-  `app/routers/children.py`'s `_LIST_PROJECTION` and its comment) — a field silently missing
-  from the projection fails with no error anywhere, just quietly-blank data downstream.
+- Declare dependencies with `Annotated[Type, Depends(...)]` module-level aliases (e.g.
+  `Ready = Annotated[Runtime, Depends(runtime_ready)]`,
+  `SignedIn = Annotated[Caller, Depends(signed_in())]`), not the default-argument style.
+- Settings come from the environment through the service's `ServiceSettings` subclass, parsed
+  once when the `Runtime` is built (`Runtime.from_env`), never per request.
+- In stg and prod, unsafe settings stop the service at startup (`UnsafeSettingsError`). A
+  setting that mustn't reach real users gets a check in the subclass's `unsafe_settings`
+  (extend `super().unsafe_settings()`), not a warning.
+- The `Runtime` is built in `lifespan` only when `MONGODB_URI` is set; without it the service
+  serves `/health` and every other route answers 503, so the image still starts unconfigured.
+  Both apps share one `Runtime` per process and the last one to stop closes it (`aclose`): any
+  long-lived client you add must be closed there.
 
-## Structure
+## Access policy (deny by default, 11.2)
 
-- Once a router/module file grows large and starts covering multiple unrelated concerns, split
-  it by concern into separate files (mirrors the `auth.py` / `admin.py` split already done here).
+- Routes are registered on a `common.routers.PolicyRouter`, which refuses at import time a
+  route without an access policy: `public()`, `signed_in()`, `require("<permission>")` or
+  `require_self_or("<permission>")`. Each service's tests also run
+  `assert_every_route_has_a_policy(app)`, which catches routes added straight onto the app.
+- Routes never name a role: they ask for a permission, and `common/permissions.py` says which
+  roles hold it. A privileged access or a denial is written to the audit trail by the
+  permission check (`common/audit.py`); only field names are recorded, never values.
+- Internal routes accept only the callers they list with `allow_callers(...)`, verified from
+  the caller's service token (`common/internal_client.py`).
+- A parent's queries filter by their own `{location, user_id}`, so someone else's data is
+  simply not found (404, not 403).
 
-## Tests
+## API contracts & errors
 
-- Flag missing test coverage on critical paths (auth, payment/limits, data-integrity logic) as a
-  real finding even when it isn't actioned immediately — don't silently skip mentioning it.
-- `pytest`, `pytest-cov` and `httpx` are declared in `requirements-test.txt` (no pytest-asyncio:
-  tests run async code with `asyncio.run(...)`, so the plugin isn't needed); tests live in
-  `backend/tests/`, one file per module (`test_<module>.py`; schemas as `test_schemas_<name>.py`).
-  Modules with a test file are at 100% line + branch coverage (except one branch in `main.py`'s
-  session-cleanup loop that real Motor can't reach) — keep them there, with assertions on
-  behaviour (stored documents, responses, logs), not just executed lines.
-- Drive routes through `httpx.AsyncClient` (or FastAPI's `TestClient`) against the app instance
-  rather than calling router functions directly, and override dependencies with
-  `app.dependency_overrides[...]` (e.g. swap `get_db` for an in-memory fake, `get_settings` for a
-  `settings.model_copy(update=...)`) instead of monkeypatching internals — this is the idiomatic
-  FastAPI testing pattern and plays correctly with the `Annotated[Type, Depends(...)]` style
-  already used throughout `app/deps.py`. Reset `limiter`/`user_limiter` between tests.
-- Fake only at the external boundary, and keep the real library in the loop where possible:
-  provider SDK clients in `llm_service`, a real boto3 client with botocore's `Stubber`, real
-  signed Google ID tokens with only the cert download patched.
-- Don't `importlib.reload` a module that defines an exception class other code catches (e.g.
-  `llm_service.LLMConfigError`) — it mints a new class and breaks every `except` elsewhere; load a
-  fresh copy with `importlib.util.spec_from_file_location` instead (see `test_llm_service.py`).
-- Mutation testing is manual-only (`docs/mutation-testing.md`). Never run `mutmut run` or
-  `tools/mutate_handlers.py` with a module/`--all` — they take hours, and both refuse to
-  start under Claude Code. Only `python tools/mutate_handlers.py --check` (seconds) is
-  allowed: run it after editing a route handler or `main.py`, and update any mutant in
-  `tools/handler_mutants/` whose source text changed; add mutants for new decisions,
-  filters or limits.
-- Real-Mongo/Redis integration tests (`test_mongo_integration.py`, the live-Redis tests) are marked
-  `@pytest.mark.live_service` and run only when `MONGODB_TEST_URI`/`REDIS_URL` are set — CI sets
-  both, plus `REQUIRE_LIVE_SERVICES=1`, which turns a skipped `live_service` test into a failure
-  (`tests/conftest.py`). Mark any new real-service test the same way. Never point
-  `MONGODB_TEST_URI` at a real cluster: each test creates and drops a throwaway `superpower_test_*`
-  database.
+- Every endpoint declares its response model (`response_model=...` or a typed return) so the
+  response is filtered and the committed spec is accurate.
+- Errors are `HTTPException(status_code, detail={"code": "<snake_case>", "msg": "..."})`,
+  through the service's `error(...)`/`_error(...)` helper. The apps read `detail.code`
+  (`ApiError.code`), so a code is part of the contract: don't rename one casually.
+- Request models reject unknown fields (`ConfigDict(extra="forbid")`) and bound every string,
+  list and number (`Field(max_length=..., ge=..., le=...)`).
+- Request bodies are capped before the app reads them (`common/body_limit.py`, 1 MiB unless the
+  service's `app.main` sets `MAX_BODY_BYTES`).
+- A 422 never repeats what was sent: `common.serve` replaces FastAPI's validation handler with
+  `common/validation.py`, which keeps each error's `type`, `loc` and `msg` and drops `input`
+  and `ctx` (passwords and children's details would otherwise come back in the body).
+- **When the same resource is exposed through more than one endpoint (e.g. a list with a
+  projection alongside a get-by-id), the projection must include every field any consumer of
+  the list relies on** — a field missing from a projection fails with no error anywhere, just
+  quietly blank data downstream.
 
-## Error handling
+## Events (section 7)
 
-- A global exception handler stack already exists in `app/main.py`: `RequestValidationError` →
-  422 `{"detail": jsonable_encoder(exc.errors())}` (encoded, as FastAPI's own handler does — a
-  custom `field_validator`'s error carries the raw exception in `ctx.error`), `HTTPException` →
-  default Starlette handling, catch-all `Exception` → logged via `log.exception` and a generic
-  500 `{"detail": "Internal server error"}`.
-  Every endpoint gets this consistent response shape for free — don't build a parallel
-  error-formatting path in a router.
-- Prefer a dedicated exception class over threading error state through return values when the
-  error needs to cross a module boundary that doesn't import FastAPI — e.g. `LLMConfigError` in
-  `app/services/llm_service.py` is deliberately *not* an `HTTPException` subclass so `worker.py`
-  can catch it too without an HTTP dependency. Convert to `HTTPException` only at the router
-  boundary.
-- The three-layer catch pattern in `app/routers/llm.py` (catch the specific domain error → catch
-  known transient errors like `json.JSONDecodeError`/`ValueError` → re-raise `HTTPException`
-  unchanged → broad `except Exception` fallback to a generic 502) is duplicated near-verbatim in
-  `jobs.py` and `audio.py`. If a fourth router needs the same shape, factor it into a shared
-  decorator/helper instead of copy-pasting again.
+- Every write another service copies publishes its event **in the same transaction**, through
+  the outbox (`common.events.add_to_outbox`); the worker's relay publishes it to the service's
+  own SNS topic. Never publish straight to SNS from a route.
+- Who produces and consumes each event is `common/events/catalogue.json`; each payload has a
+  schema in `common/events/schemas/<event>.vN.json`. A new event or subscriber starts there;
+  `scripts/local-aws-setup.py` and the topology (`common/events/topology.py`) follow from it.
+- Every handler must be safe to run twice and in any order (7.4): use the version-checked
+  upsert or a one-way flag (`common/events/store.py`), or `dedupe=True` (the inbox) when it
+  can't be. Check tombstones so a late event can't recreate a deleted child or user.
+- A service that holds user data takes part in account deletion (`common/deletion.py`): it
+  deletes on `user.deletion_requested`, writes a `user:` tombstone and confirms with
+  `user.data_deleted`.
 
 ## MongoDB & indexes
 
-- Documents use plain string `_id`s generated with `str(uuid.uuid4())` at the application layer
-  (see `app/routers/auth.py`, `children.py`, `jobs.py`, `users.py`). Never introduce a
-  `PyObjectId`/`ObjectId`-based id type — there is no `ObjectId` usage anywhere in this codebase
-  and it should stay that way for consistency.
-- All index creation lives in `init_indexes()` in `app/database.py`, called once from `lifespan`.
-  Add new indexes there, not ad hoc in a router or migration script, so the full set stays
-  discoverable in one place. Follow the existing precedent of commenting *why* an index is shaped
-  the way it is (e.g. the `location`-leading compound index needed for Atlas Global Cluster
-  sharding, or a TTL index scoped with `partialFilterExpression` to terminal-state jobs only).
-- There is no MongoDB-side schema validation (`$jsonSchema`) — Pydantic models are the only schema
-  check, and only at the API boundary. Code that writes raw dicts directly (e.g. `worker.py`)
-  bypasses that check entirely. If you add a new raw-dict write path, either validate it through a
-  Pydantic model before writing or add a defensive read-side check like the
-  `try/except (ValidationError, KeyError, TypeError)` pattern in `app/routers/users.py`.
+- Documents use plain string `_id`s from `str(uuid.uuid4())`. Never introduce an `ObjectId`.
+- Each collection is created by an `ensure_*` function in `app/store.py` (shared shapes in
+  `common/models.py` and `common/events/store.py`), called from `Runtime.prepare()` on startup:
+  its `$jsonSchema` validator (`ensure_validated_collection`) and all its indexes live there, not
+  ad hoc in a route. Comment *why* an index is shaped the way it is.
+- `prepare()` passes those functions to `common.index_builds.prepare_database`. It creates the
+  collections and validators at once, and builds the indexes in the background, once per release
+  (`GIT_SHA`; DB-03). Locally and in tests there's no release, so they're built at once.
+  Create indexes only with `create_index` on a collection the `ensure_*` function was given
+  (that's what is recorded), never in a route or with `create_indexes` directly.
+- Sharded collections carry `location` and lead their indexes with the zone-sharding key
+  `{location: 1, _id: 1}`; `tools/atlas_zone_ranges.py` prints the zone commands per service
+  database. Scoping fields (`user_id`, `location`) are set server-side, never taken from the
+  client, and don't change after create.
+- Build `$set`/`$unset` payloads only from a Pydantic model's own declared fields
+  (`model_dump(exclude_unset=True)`); never merge a client dict into a Mongo operator payload or
+  filter.
 
-## Rate limiting (Redis)
+## Rate limits (Valkey)
 
-- The per-route `slowapi` limiters (`limiter`/`user_limiter` in `app/limiter.py`) are Redis-backed
-  (`storage_uri=settings.redis_url`) with `in_memory_fallback_enabled=True`, so they hold correctly
-  across replicas/pods when Redis is reachable, and degrade to a per-process in-memory limiter
-  (not a crash) if Redis is unset (local dev) or goes down live. Don't assume either state without
-  checking — `grep -n "storage_uri=settings" app/limiter.py` (two matches) confirms the Redis
-  wiring is present, and `_hit()`'s docstring explains the fallback-latching behavior.
-- For any route with a database-backed auth dependency (`CurrentUser`/`CurrentParent`/
-  `CurrentAdmin`), use the `rate_limit(limit_value)` dependency from `app/limiter.py` — declared in
-  that route's own `dependencies=[...]`, not the older `@limiter.limit(...)`/`@user_limiter.limit(...)`
-  decorator. The decorator's check runs *after* FastAPI resolves every other dependency on that
-  route (including the auth DB lookup), so an over-limit request still pays for a full database
-  round-trip before being rejected. `rate_limit(...)` resolves before that lookup instead — see
-  "Dependency injection" below for how the router/route wiring has to be arranged for that ordering
-  to actually hold, and `app/routers/children.py`/`admin.py` for worked examples. The decorator is
-  still the right tool for a route with no database-backed auth dependency to protect (see
-  `register`/`login`/`google_auth`/`refresh_tokens`/`logout` in `app/routers/auth.py`) — both
-  mechanisms are intentionally in use, not a half-finished migration.
-- `rate_limit()`/`_hit()` reach into slowapi's private (`_`-prefixed) attributes
-  (`_storage_dead`, `_limiter`, `_fallback_limiter`, `_in_memory_fallback_enabled`,
-  `_swallow_errors`, `_key_func`, `_key_prefix`) to implement dependency-based checking with
-  fallback — slowapi 0.1.9 has no public API for this. `slowapi` is exactly pinned in
-  `requirements.txt`, but its `limits` dependency is not pinned anywhere. If either is ever upgraded, re-verify those attributes still exist with the same meaning
-  before trusting the fallback path.
-- When adding a new Redis-backed rate limit or lock, follow the existing key-naming convention
-  (`f"llm_rate:{user_id}"`, `"session_cleanup:lock"`) — scoped, colon-separated, prefixed by
-  purpose — and set a TTL matching the window/lock lifetime explicitly rather than relying on
-  default persistence.
+- Per-route limits are dependencies built on `common.limiter.RateLimits` (`per_ip(...)` for
+  public routes, `per_user(...)` for signed-in ones), declared in the route's
+  `dependencies=[...]` so an over-limit request is refused before the route's own database
+  work. Buckets are per route template, method and identity.
+- While Valkey is unreachable (or `REDIS_URL` is unset) the limits are counted per task and
+  Valkey is retried after 30 s; the authz check falls back to asking auth, with a short local
+  cache, and fails closed (503) if auth can't answer either.
+- The per-user hourly LLM limit is shared by every circle (`common/generation/llm_limit.py`).
+- New Valkey keys follow the existing convention — scoped, colon-separated, prefixed by
+  purpose — with an explicit TTL.
 
 ## Async correctness
 
-- Any blocking call inside an `async def` route/dependency must be offloaded — this codebase
-  already does it consistently for bcrypt (`app/auth_utils.py`), the Gemini SDK's sync
-  `generate_content` call (`app/services/llm_service.py`), boto3 S3 calls (`downloads.py`,
-  `children.py`), CloudWatch (`worker.py`), and sync `redis-py` calls in the session-cleanup task
-  (`app/main.py`). Keep following this pattern for any new blocking SDK/client call.
-- Standardize on `asyncio.to_thread(...)` for these offloads. `run_in_executor(None, ...)` is used
-  in a couple of places (`children.py`, `main.py`) for the identical purpose — functionally
-  equivalent, but pick one idiom going forward rather than adding a third variant.
+- Every blocking call inside `async def` is offloaded with `asyncio.to_thread(...)`: bcrypt
+  (`auth/app/tokens.py`), boto3 calls (`common/uploads.py`, `common/events/`,
+  `common/metrics.py`), the Gemini SDK (`common/generation/llm.py`). Keep that one idiom for any
+  new blocking SDK call.
 
 ## Logging & observability
 
-- Every module logs via `log = logging.getLogger(__name__)` — never `print()`. Keep using this
-  pattern for new modules.
-- `app/main.py` never calls `logging.basicConfig`/`dictConfig`, unlike `worker.py` which does.
-  Since the API is started via plain `uvicorn app.main:app` with no `--log-config`, `log.info`/
-  `log.debug` calls in the API server may be silently dropped in production depending on uvicorn's
-  root-logger interaction. If you rely on a new log line for debugging or ops, verify it actually
-  emits under the real startup command — don't assume parity with `worker.py`'s logging.
-- The `X-Request-Id` header (generated/validated in `app/main.py`) is echoed back in responses but
-  never bound into the logging context — no log line currently contains it. Don't assume request
-  IDs are searchable in logs; if you need log-to-request correlation, bind the id via
-  `contextvars`/a logging filter (e.g. `asgi-correlation-id`) rather than relying on the existing
-  header alone.
-- Log lines are currently plain text, not structured. Since the backend runs on ECS/CloudWatch
-  (see root `CLAUDE.md`'s infra layout), prefer structured (JSON) log output — e.g. via
-  `structlog` or a `logging.Formatter` emitting JSON — over adding more plain-text `log.info(...)`
-  calls, so fields (request id, user id, status code) are queryable in CloudWatch Logs Insights
-  instead of needing regex extraction from a text blob.
+- Log via `logging.getLogger(__name__)`, never `print()`. `common.serve` and each worker call
+  `common.telemetry.setup_observability`, which sets up JSON logs (`common/logging.py`) with
+  `service`, `trace_id`/`span_id` and `request_id` on every line, and OpenTelemetry tracing.
+- Log ids, never people: personal keys in `extra={...}` are dropped and emails in messages are
+  masked, but don't rely on that — never log names, emails, prompts or LLM answers.
+- Put queryable facts in `extra={...}` fields rather than in the message text.
+- Every request gets one access line from `RequestIdMiddleware` (`common.access`: method,
+  path, route, status, `latency_ms`, a hash of the user, `request_id`); don't add your own.
+  The request id follows the work: internal calls send it, a job a request starts keeps it
+  (`start_job`, made current again by `claim_next`), and an event carries it as an attribute
+  (`Event.new`, made current by the consumer). For an audit record, use
+  `common.logging.current_request_id`, not the incoming header.
 
-## Input validation / Mongo query safety
+## Tests
 
-- Never build a Mongo update/filter dict from a raw client-supplied `dict[str, Any]` without
-  validation. The one place this pattern is genuinely needed — `WriteBackConfig.filter` in
-  `app/schemas/jobs.py` — has a recursive validator rejecting any `$`-prefixed key, plus caps on
-  key count and nesting depth (`_FILTER_MAX_KEYS`, `_FILTER_MAX_DEPTH`), a writable-collection
-  allow-list, a field-name allow-list per job type, and a safe dot-path regex for field names. Use
-  this as the template for any future endpoint that lets a client influence a Mongo query shape
-  rather than a fixed field value.
-- For fixed-shape updates, keep building `$set`/`$unset` payloads only from a Pydantic model's own
-  declared fields (`patch.model_dump(exclude_unset=True)` as in `app/routers/children.py`) — never
-  merge a client dict directly into a Mongo operator payload.
-- Server-controlled fields that scope a write (e.g. `user_id`, `location`) should be overwritten
-  server-side after merging client input, and re-validated at the point of execution if that
-  execution happens in a different process (see `app/routers/jobs.py` setting them post-merge, and
-  `worker.py` re-checking their presence before the actual update) — don't trust a single
-  validation layer for the highest-risk input surface.
+- Each service's tests are in `<svc>/tests/` and run on their own:
+  `pytest <svc>/tests --cov=<svc> --cov-branch --cov-fail-under=99`; `common` and `tools` run
+  together with a 99% gate on `common`. Keep coverage there, with assertions on behaviour
+  (stored documents, events in the outbox, responses, audit events), not just executed lines.
+  Flag missing coverage on critical paths (auth, limits, deletion, data integrity) as a finding.
+- Test helpers live in `<svc>/tests/<svc>_testkit.py` (exposed by `conftest.py`) and test modules
+  are named after the service or its parts, so modules from different services never clash in
+  one run.
+- Drive routes through `httpx.AsyncClient(transport=httpx.ASGITransport(app=...))` against
+  `main.app` and `main.internal_app`, with a test `Runtime` attached by `main.configure(...)`,
+  rather than calling route functions directly. Fake only at the external boundary: Moto's
+  `mock_aws` for AWS, keys generated per run for tokens, fakes of other services' internal APIs,
+  a fake LLM provider.
+- Tests needing real MongoDB/Valkey are marked `@pytest.mark.live_service` and run against
+  `MONGODB_TEST_URI` (never `MONGODB_URI`) and `REDIS_URL`; they skip without them, and
+  `REQUIRE_LIVE_SERVICES=1` (CI) turns a skip into a failure. Never point `MONGODB_TEST_URI` at
+  a real cluster: tests create and drop throwaway databases.
+- Don't `importlib.reload` a module that defines an exception class other code catches: it mints
+  a new class and breaks every `except` elsewhere.

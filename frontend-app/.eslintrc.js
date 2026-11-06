@@ -1,7 +1,7 @@
 module.exports = {
   root: true,
   extends: '@react-native',
-  ignorePatterns: ['src/theme/tokens.generated.js'],
+  ignorePatterns: ['src/theme/tokens.generated.js', 'src/api/generated/'],
   rules: {
     '@typescript-eslint/no-unused-vars': [
       'error',

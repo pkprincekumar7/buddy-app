@@ -1,40 +1,83 @@
 # Tests
 
 There are three separate test suites in this repo — backend (pytest), the Lambda@Edge
-JWT validator (Node's built-in test runner), and the mobile app (Jest). The web frontend
-(`frontend/`) has none at all. Only two of the three existing suites actually run in CI.
+functions (Node's built-in test runner), and the mobile app (Jest). The web frontend
+(`frontend/`) has none at all. All three run in CI and in `check.sh`.
 
 ## Backend (pytest)
 
-Install test dependencies (once, after creating the venv):
+The backend is `common` (the shared package) plus one package per service (auth, users,
+children, onboarding, discover, grow, transform, release, shared; `python
+backend/tools/services.py` lists them). `common`'s and the tools' tests run together; each
+service's tests run on their own, with their own coverage gate.
+
+Install the dev venv (once): `requirements-dev.txt` is the union of every service's pins
+(`tools/tests/test_dev_requirements.py` keeps it exact):
 
 ```bash
-cd backend && pip install -r requirements.txt -r requirements-test.txt
+cd backend && python3.13 -m venv .venv && \
+  .venv/bin/pip install -r requirements-dev.txt -r requirements-test.txt
 ```
 
-Run the suite:
+Run `common`'s and the tools' tests, then one service's:
 
 ```bash
-cd backend && . .venv/bin/activate && \
-  MONGODB_URI=mongodb://localhost:27017 JWT_PRIVATE_KEY=<RSA private key PEM> REDIS_URL=redis://localhost:6379 APP_ENV=dev \
-  pytest --cov=app --cov-report=term-missing --cov-fail-under=0 -q
+cd backend && .venv/bin/pytest common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
+cd backend && .venv/bin/pytest children/tests --cov=children --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
 ```
 
-Requires a running MongoDB instance (port 27017) and Redis instance (port 6379). There is no `backend/tests/` directory yet — pytest exits with code 5 ("no tests collected"), which is treated as a pass in CI until a baseline suite is written.
+To install one service alone, the way its image does (`buddy-common` from a wheel built from
+this tree, then its own `requirements.txt`), use a fresh venv and run
+`bash scripts/install-backend-service.sh <service> backend/requirements-test.txt`.
+
+### Live tests (MongoDB, Valkey)
+
+Tests marked `live_service` need a real MongoDB replica set and Valkey. They run against
+`MONGODB_TEST_URI` (never `MONGODB_URI`) and `REDIS_URL`, and skip without them. Point them at
+the compose services — never a real cluster; each test uses throwaway databases:
+
+```bash
+docker compose up -d mongo valkey
+cd backend && MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" \
+  REDIS_URL=redis://localhost:6379 .venv/bin/pytest common/tests tools/tests -q
+```
+
+`REQUIRE_LIVE_SERVICES=1` turns a skipped `live_service` test into a failure, so a run can't
+pass without exercising the real servers.
 
 ### Coverage
 
-Coverage is reported on every run but not yet gated. Raise `--cov-fail-under` in the `pytest` command in [`check.yml`](../.github/workflows/check.yml) (and locally) incrementally as the test suite grows. There is no `pytest.ini` — all settings are passed on the command line.
+Gated at 99% line + branch coverage: `common` in the `common/tests tools/tests` run, and each
+service in its own run. The pytest settings (test paths, `pythonpath`, the `live_service`
+marker, warning filters) are in `backend/pyproject.toml`.
 
 ### CI
 
-Tests run in the `backend-test` job in [`check.yml`](../.github/workflows/check.yml) after `backend-lint` passes. The job spins up real MongoDB 7 and Redis 7 containers as services — no mocking. Exit code 5 (no tests collected) is explicitly caught and treated as a pass.
+In [`check.yml`](../.github/workflows/check.yml), after `backend-lint` passes:
+- `backend-test` runs `common`'s and the tools' tests with the dev venv;
+- `backend-service` is a matrix with one job per service (found by `tools/services.py
+  --json`): it installs the service alone with `scripts/install-backend-service.sh`, then runs
+  mypy, its tests with the 99% gate, and checks `backend/openapi/<service>.json` is up to date;
+- `backend-services` is the one stable check name over the matrix.
+
+Each job starts real MongoDB 8.0 (a single-node replica set, started by
+`scripts/ci-start-mongo.sh` because service containers can't pass `--replSet`) and Valkey 8.0
+— no mocking. Locally, `docker compose up -d mongo valkey` gives the same, and Moto for SNS,
+SQS and S3 runs from the venv (docs/getting-started.md); `scripts/check-local-stack.py` checks
+all three.
+
+### End to end (the local stack)
+
+`scripts/e2e/full-journey.py`, `account-deletion.py` and `convergence.py` run against the
+running compose stack through the gateway (`journey.py` is the journey they share, and runs
+on its own too). They make real LLM calls with the keys in `.env`. `RUN_E2E=1 ./check.sh`
+runs the three after the other checks; see [getting-started.md](getting-started.md).
 
 ---
 
 ## Lambda@Edge JWT validator (Node test runner)
 
-A real, currently-passing suite of 14 test cases in
+A suite in
 [`infra-live-edge/functions/jwt-validator-lambda.test.js`](../infra-live-edge/functions/jwt-validator-lambda.test.js),
 covering the RS256 JWT validation and location-based backend-region routing logic — bypass
 paths, session-hint routing for refresh/logout/register, expired/forged tokens, the mobile
@@ -49,39 +92,36 @@ Run locally (needs `terraform` on `PATH` and Node 22+):
 node --test infra-live-edge/functions/jwt-validator-lambda.test.js
 ```
 
+[`spa-rewrite.test.js`](../infra-live-edge/functions/spa-rewrite.test.js) covers the
+CloudFront Function's SPA fallback (plain Node, no Terraform):
+
+```bash
+node --test infra-live-edge/functions/spa-rewrite.test.js
+```
+
 ### CI
 
 Runs in the `lambda-edge-test` job ("Lambda@Edge Unit Tests") in
 [`check.yml`](../.github/workflows/check.yml) — sets up Node 22 and Terraform, then runs the
-command above. This job has no `needs:` dependency on the lint jobs, so it runs in parallel
+commands above. This job has no `needs:` dependency on the lint jobs, so it runs in parallel
 with them.
 
 ---
 
 ## Mobile app (`frontend-app`) — Jest
 
-7 test files exist under `frontend-app/__tests__/` and `frontend-app/src/__tests__/`
-(`App.test.tsx`, `onboardingHelpers.test.ts`, `notifications.test.ts`,
-`insightsUtils.test.ts`, `personalityLogic.test.ts`, `Button.test.tsx`, `Input.test.tsx`),
-run via `yarn test` (Jest 29 + `react-test-renderer` as dev dependencies):
+15 test files under `frontend-app/__tests__/` (`App.test.tsx`) and `frontend-app/src/__tests__/`,
+run with Jest 29 + `react-test-renderer` (`jest.config.js` maps `.css` imports to a stub, so
+components that pull in NativeWind's `global.css` load):
 
 ```bash
 cd frontend-app && yarn test
 ```
 
-> **Currently broken, not just unrun in CI — verified by actually running it.** 3 of the 7
-> suites fail before a single test in them executes: `Button.test.tsx`, `Input.test.tsx`,
-> and `App.test.tsx` all transitively import `global.css` (App.tsx's NativeWind/Tailwind
-> entry point), and `jest.config.js` has no CSS handling at all — no `moduleNameMapper`
-> entry for `.css`, so Jest's JS transformer chokes on the raw `@tailwind base;` syntax
-> with "Jest encountered an unexpected token". The 4 remaining suites (the `lib/` ones —
-> pure logic, no component imports) genuinely pass: **45/45 individual assertions green**.
-> Net result: `yarn test` exits 1 (`Test Suites: 3 failed, 4 passed, 7 total`), and on top
-> of that this suite doesn't run in CI at all — checked every workflow; `check.yml`'s only
-> reference to `jest` is a comment explaining why it's excluded from a dependency
-> vulnerability scan. Treat both as real, flaggable gaps: a broken suite with no CI signal
-> is worse than an empty one, since it looks like coverage exists until someone actually
-> runs it.
+### CI
+
+Runs as `yarn test --ci` in the `frontend-app-lint` job ("Frontend App Lint") in
+[`check.yml`](../.github/workflows/check.yml), and in `check.sh`.
 
 ---
 

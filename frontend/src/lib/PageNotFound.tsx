@@ -1,12 +1,11 @@
 import { useLocation, useNavigate } from 'react-router';
-import { api } from '@/api/client';
+import { account, type Me } from '@/api/account';
 import { useQuery } from '@tanstack/react-query';
-import type { UserRecord } from '@/types/api';
 
 const USER_ROLES = { ADMIN: 'admin' };
 
 interface AuthData {
-  user: UserRecord | null;
+  user: Me | null;
   isAuthenticated: boolean;
 }
 
@@ -19,7 +18,7 @@ export default function PageNotFound() {
     queryKey: ['user'],
     queryFn: async () => {
       try {
-        const user = await api.auth.me();
+        const user = await account.me();
         return { user, isAuthenticated: true };
       } catch {
         return { user: null, isAuthenticated: false };

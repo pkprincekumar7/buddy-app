@@ -6,14 +6,6 @@ import Speech from '@mhpdev/react-native-speech';
  * platform voice, tuned to the same energetic, natural delivery.
  */
 
-/** No-op on native — iOS Safari's gesture unlock has no RN equivalent. */
-export function unlockIOSSpeechSynthesis(): void {}
-
-/** No-op on native — per-voice selection isn't exposed; see speakText(). */
-export function pickPreferredVoice(): null {
-  return null;
-}
-
 export interface SpeakOptions {
   rate?: number;
   pitch?: number;

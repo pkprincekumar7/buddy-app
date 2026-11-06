@@ -2,7 +2,7 @@
 
 **Status:** proposal, 2026-10-22. Decisions taken (section 17); nothing is implemented yet.
 **Greenfield:** no environment holds real data yet, so there is **no data migration**. Every database starts empty, and the services are built directly in their final shape (section 16).
-**Scope:** split the single backend into services that each own their code and their database. That covers authentication, the user profile, the child, each journey circle and a stateless platform service. Cross-service data moves by **events into local copies**. Everything is ready for an Atlas Global Cluster later.
+**Scope:** split the single backend into services that each own their code and their database. That covers authentication, the user profile, the child, each journey circle and a stateless shared service. Cross-service data moves by **events into local copies**. Everything is ready for an Atlas Global Cluster later.
 
 Related: [jwt-keys.md](jwt-keys.md), [infra-operations.md](infra-operations.md#adding-a-backend-service), [getting-started.md](getting-started.md), [production-readiness-review.md](production-readiness-review.md) (DB-01 database plan, DB-02 connection budget, EDGE-01 global login).
 
@@ -61,7 +61,7 @@ These dependencies are why cross-service data moves by events into **local copie
 | **transform** | The Transform circle's page: the Life Pathway (milestones per completed growth area) and the 90-day plan (main page, tracking, 3-month plan, event, photos) | `transform`, `transform-worker` |
 | **release** | Observations | `release`, `release-worker` |
 | **connect** | Connect circle (future). Its page has no data of its own yet, so until it does, children records the visit (13.4) and no connect service, database or queue exists. | `connect`, `connect-worker` (when built) |
-| **platform** | Stateless shared capabilities: speech-to-text (voice input is used by several circles) and app downloads. **No database.** | `platform` |
+| **shared** | Stateless shared capabilities: speech-to-text (voice input is used by several circles) and app downloads. **No database.** Named `platform` in earlier drafts; renamed because a `platform` package shadows Python's standard library. | `shared` |
 
 The `-worker` runtimes come from the same image as their service. They run AI generation, the outbox relay and event consumers, so slow LLM work never competes with page requests. Every service that owns data has one, because it must at least relay its own events and handle `user.deletion_requested`. Platform, which owns no data, doesn't.
 
@@ -79,7 +79,7 @@ flowchart LR
         grow["grow<br/>+ worker"]
         transform["transform<br/>+ worker"]
         release["release<br/>+ worker"]
-        platform["platform<br/>(speech, downloads; HTTP only)"]
+        shared["shared<br/>(speech, downloads; HTTP only)"]
     end
 
     alb -->|"/api/v1/auth/*"| auth
@@ -90,7 +90,7 @@ flowchart LR
     alb -->|"/children/*/growth-areas*"| grow
     alb -->|"/children/*/transform*"| transform
     alb -->|"/children/*/observations*"| release
-    alb -->|"/api/v1/speech/*, /downloads/*, /api/health"| platform
+    alb -->|"/api/v1/speech/*, /downloads/*, /api/health"| shared
 
     subgraph mongo["MongoDB Atlas (one database per service, one DB user each)"]
         authdb[("auth DB<br/>auth, sessions, email_index (HMAC),<br/>allowed_emails, deletions, audit, outbox")]
@@ -122,7 +122,7 @@ flowchart LR
     services -.->|"read-through, confirm-before-deny, registration saga, authz fill (direct to task IPs)"| cmap
 
     llm["LLM providers"]
-    services -->|"generating workers, platform speech-to-text"| llm
+    services -->|"generating workers, shared speech-to-text"| llm
 
     otel["otel-collector<br/>(shared, per region)"]
     services -.->|"OTLP traces"| otel
@@ -156,7 +156,7 @@ flowchart TB
             grow["grow"]
             transform["transform"]
             release["release"]
-            platform["platform<br/>speech, downloads, /api/health"]
+            shared["shared<br/>speech, downloads, /api/health"]
         end
 
         subgraph workers["Workers (same image as their service)"]
@@ -202,7 +202,7 @@ flowchart TB
     circlew -->|"11 version-checked update of the local copy"| dbs
 
     circlew -->|"generation jobs"| llm
-    platform -->|"speech-to-text"| llm
+    shared -->|"speech-to-text"| llm
 
     dbs -->|"auth change stream"| authw
     authw -->|"refresh authz entries"| redis
@@ -224,13 +224,13 @@ flowchart TB
 | 7–8 | The worker's relay sees this region's outbox rows and publishes each one to SNS. |
 | 9–10 | SNS copies the message into every queue whose filter matches. Each consuming service's worker long-polls its own queue (7.2). |
 | 11 | The consumer updates its local copy only if the event's version is newer, so a duplicate or late event changes nothing (7.4). Pages then read local data only. |
-| Side flows | Generating workers and platform call the LLM providers (8). `auth-worker` keeps the authz cache current from the auth change stream and collects `user.data_deleted` confirmations (10.3). Traces go through the collector to X-Ray; logs and the 16 alarm metrics go straight to CloudWatch (15.5). |
+| Side flows | Generating workers and shared call the LLM providers (8). `auth-worker` keeps the authz cache current from the auth change stream and collects `user.data_deleted` confirmations (10.3). Traces go through the collector to X-Ray; logs and the 16 alarm metrics go straight to CloudWatch (15.5). |
 
 ### Ownership rules
 
 - **A service never reads or writes another service's database.** For data it needs from elsewhere, it keeps a **local copy** fed by events. It calls another service's internal API only on a cache miss or a synchronous step of a saga.
 - **One Atlas database user per service**, with access to its own database only.
-- **One Secrets Manager secret and one ECS execution role per service** (section 15.1). Only auth can read the JWT private key and the HMAC pepper. Only generating workers and platform (speech-to-text) get LLM provider keys.
+- **One Secrets Manager secret and one ECS execution role per service** (section 15.1). Only auth can read the JWT private key and the HMAC pepper. Only generating workers and shared (speech-to-text) get LLM provider keys.
 - **Services import only `common`**, never each other. CI enforces this with `import-linter`.
 - **`common` is the protocol layer, not shared business logic.** Services stay isolated in data, runtime and access; `common` is a library built into each image, never something they share while running. It holds only code that **must behave identically in every service**, where copies would drift into security holes or broken events:
   - token and authz checks, and the permission table;
@@ -328,6 +328,8 @@ These collections appear in several databases with the same shape. `common` owns
 
 Written in the same transaction as the deletion. Before any upsert of a copy, a read-through write, or storing a generation job's result, the service checks for a tombstone of that child or user, and drops the write if there is one.
 
+**`guards`** (next to `tombstones`): one document per `child:<id>` / `user:<id>`, `{_id, location, touched_at}`, TTL 1 day after the last touch. MongoDB doesn't see a conflict between reading a tombstone that isn't there yet and writing it, so a copy write that checked "not deleted" could commit after the deletion and bring the copy back. Every write that checks tombstones (a copy, a job's start, a new child) and every tombstone write also write the key's guard in their transaction, so the two conflict and one runs again: it then sees the tombstone, or the deletion sees the copy.
+
 **`jobs`** (every generating service: discover, grow, transform, release; section 8):
 
 | Field | Type | Required | Notes |
@@ -341,6 +343,7 @@ Written in the same transaction as the deletion. Before any upsert of a copy, a 
 | `llm_attempt`, `max_llm_attempts` | int | ✅ | Retries with backoff, as today |
 | `retry_after` | date | — | |
 | `claimed_at` | date | — | Set when a worker takes the job |
+| `claim_id` | string | — | New on every claim. Ending or retrying a job matches it, so a worker whose job was retaken (stale after 10 minutes) changes nothing. A job retaken more often than `max_llm_attempts` allows is failed instead of run again; a job whose processing crashes is failed at once |
 | `error` | string | — | Short reason; never the prompt or user data |
 | `created_at`, `updated_at` | date | ✅ | |
 | `completed_at` | date | — | Set when the job ends as `completed` **or** `failed`; the TTL index deletes it 7 days later (section 14) |
@@ -739,7 +742,7 @@ Results the client used to "finalise" (for example `pending_personality_vm` → 
 
 **`/llm/invoke` is removed.** Nothing sends raw prompts to the backend.
 
-**LLM keys** are injected only into the workers of services that generate (discover, grow, transform and release; onboarding only collects answers), plus platform, whose speech-to-text uses OpenAI (`OPENAI_API_KEY`), as `/audio/transcribe` does today.
+**LLM keys** are injected only into the workers of services that generate (discover, grow, transform and release; onboarding only collects answers), plus shared, whose speech-to-text uses OpenAI (`OPENAI_API_KEY`), as `/audio/transcribe` does today.
 
 **Removing `/llm/invoke` breaks no live page.** Its only synchronous callers are `RecommendationsPhase.tsx` and `ChildActivityGame.tsx`, and neither is rendered: nothing imports `RecommendationsPhase`, and `ChildActivityGame` is used only by it. Delete both components along with the endpoint.
 
@@ -882,8 +885,8 @@ sequenceDiagram
 
 `DELETE /api/v1/children/{id}`:
 1. **Soft delete:** the children service sets `is_deleted` and publishes `child.changed` (with `is_deleted: true`). Each circle marks its `child_access` copy deleted, so the child disappears everywhere at once, but its data is kept for **30 days**, as today's soft delete promises.
-2. **Purge:** after 30 days, the `children-worker` purge job hard-deletes the child and its avatar, and publishes `child.deleted`.
-3. **Each circle then deletes** its data for that child, plus its S3 objects (plan photos), drops the child from its `child_access` copy and writes a tombstone. Pending or running generation jobs for that child are marked `failed` (`error: "deleted"`), and a job that finishes later finds the tombstone and stores nothing.
+2. **Purge:** after 30 days, the `children-worker` purge job hard-deletes the child, its avatar and its own outbox rows about the child, and publishes `child.deleted`.
+3. **Each circle then deletes** its data for that child, plus its S3 objects (plan photos) and its outbox rows about the child (`child.deleted` rows stay), drops the child from its `child_access` copy and writes a tombstone. Pending or running generation jobs for that child are marked `failed` (`error: "cancelled"`), and a job that finishes later finds the tombstone and stores nothing.
 
 There's no restore endpoint; within the 30 days, support can restore a child by clearing `is_deleted`. Account deletion (10.3) skips the 30 days and deletes everything at once.
 
@@ -897,7 +900,7 @@ There's no restore endpoint; within the 30 days, support can restore a child by 
    - **Then, outside the transaction**, it upserts `deletions {_id: user_id, expected: [users, children, onboarding, discover, grow, transform, release], confirmed: []}` (plus `connect` once it exists). `deletions` is unsharded, so including it would make a cross-region distributed transaction (section 14). The upsert is idempotent, and the `auth-worker` creates the row too if a crash skipped it, when the first `user.data_deleted` arrives.
    - It returns **202**.
    - The authz cache flips to `deleting`, so every service rejects the user from now on.
-2. **Each service deletes** everything it holds for that user, including local copies and S3 objects, cancels the user's pending generation jobs, and writes a `user:` tombstone. It then publishes `user.data_deleted` on its own topic, which tells auth which service confirmed (7.2). Deleting twice is a no-op, so this is idempotent.
+2. **Each service deletes** everything it holds for that user, including local copies, S3 objects and its own outbox rows about the user or their children (published rows keep their payloads for 7 days; `user.data_deleted` rows stay), cancels the user's pending generation jobs, and writes a `user:` tombstone. It then publishes `user.data_deleted` on its own topic, which tells auth which service confirmed (7.2). Deleting twice is a no-op, so this is idempotent.
 3. **`auth-worker`** records each confirmation in `deletions.confirmed`. When `confirmed ⊇ expected`, it deletes `email_index`, then `auth.auth`, then `authz:{id}`, then the `deletions` row.
 4. **Alert** on any deletion older than 24 h, which points to a stuck service. **Credentials are always deleted last**, so a stuck deletion can't be logged into, and can still be resumed.
 
@@ -1220,7 +1223,7 @@ Every read is in the service's own database, and none calls another service. Pag
 
 ---
 
-## 13. Routing, internal calls and the platform service
+## 13. Routing, internal calls and the shared service
 
 ### 13.1 ALB path rules
 
@@ -1237,21 +1240,23 @@ Circle endpoints sit under `/api/v1/children/{id}/…`, and ALB path patterns ac
 | 100 | children | `/api/v1/children`, `/api/v1/children/*` |
 | 110 | users | `/api/v1/users/*` |
 | 120 | auth | `/api/v1/auth/*` |
-| 130 | platform | `/api/v1/speech/*`, `/api/v1/downloads/*` |
-| 140 | platform | `/api/health` |
+| 130 | shared | `/api/v1/speech/*`, `/api/v1/downloads/*` |
+| 140 | shared | `/api/health` |
 | 50000 | — | fixed 404 (no catch-all service) |
 
 Notes:
 - **Generation and job status** for a circle sit under that circle's path (`/api/v1/children/{id}/personality/generation`, `…/generation/{job_id}`), so they route with it.
 - **Health:**
-  - **`/api/health`** (build metadata) moves to platform. Today it reaches the backend through the catch-all, and without a catch-all it would get the fixed 404. The edge keeps it in `PURE_BYPASS_PATHS`, unchanged.
+  - **`/api/health`** (build metadata) moves to shared. Today it reaches the backend through the catch-all, and without a catch-all it would get the fixed 404. The edge keeps it in `PURE_BYPASS_PATHS`, unchanged.
   - **`/health`** stays on every service, for its own target group's health check. The ALB calls it on the task directly, so it needs no listener rule.
 - **Edge:** the JWT validator needs no path changes. Login, Google sign-in, refresh, logout, register and `/api/health` keep their paths, and every other new path is ordinary authenticated `/api/*` traffic.
 - **Condition values:** every rule has at most 2 patterns + 2 origin-verify values, under AWS's limit of 5. There are 10 rules (11 once connect is built), far below the ALB's 100.
 - **Mid-path patterns:** `*` also matches `/`, so `/api/v1/children/*/onboarding*` would catch a growth-area path whose `area_id` starts with `onboarding`. Grow therefore refuses area ids that start with another circle's path word (the API reference has the list).
 - **`modules/alb`:** its validation requires exactly one catch-all target today. It needs:
   - **no catch-all target** allowed, with a fixed-response 404 at priority 50000 instead;
-  - nothing for `*` mid-path: ALB supports it, and the module's `path_patterns` already pass any string.
+  - nothing for `*` mid-path: ALB supports it, and the module's `path_patterns` already pass any string;
+  - several rules for one target (shared at 130 and 140): a `routes` input mirroring `shared/service-routes.json` (build plan 2.1);
+  - shorter target group names, `<app>-<service>-<env>-<hash>`: with `-tg-`, `onboarding` and `transform` are over AWS's 32 characters.
 - **Tests:** a test in each service checks its route paths against these patterns, as `test_main.py` does today.
 
 ### 13.2 Internal calls
@@ -1260,7 +1265,7 @@ Internal endpoints live under `/internal/*`, on a **separate port (8001)**. **Th
 
 - **Transport: ECS service discovery with Cloud Map DNS,** not an internal ALB and not ECS Service Connect.
   - **Namespace:** one private DNS namespace per environment per region, e.g. `{app}-{env}.internal`, attached to the VPC. Cloud Map creates it as a Route 53 private hosted zone.
-  - **Registration:** every service with internal endpoints has a `service_registries` block on its ECS service. ECS registers each task's private IP when it starts and removes it when it stops. Names look like `children.{app}-{env}.internal`, `auth.{app}-{env}.internal`. The shared `otel-collector` (15.5) is registered too, for OTLP on 4318. Workers and platform aren't: they serve no internal endpoints.
+  - **Registration:** every service with internal endpoints has a `service_registries` block on its ECS service. ECS registers each task's private IP when it starts and removes it when it stops. Names look like `children.{app}-{env}.internal`, `auth.{app}-{env}.internal`. The shared `otel-collector` (15.5) is registered too, for OTLP on 4318. Workers and shared aren't: they serve no internal endpoints.
   - **Records:** `A` records with a **10-second TTL**, answered as multivalue, so each lookup returns up to 8 healthy task IPs. Only tasks whose container health check passes are returned.
   - **Why not an internal ALB:** it costs about $17 a month per environment per region, and needs an internal mode in `modules/alb` (other subnets, security group sources, no origin-verify header, its own certificate). The internal call volume (cache misses and sagas) doesn't need a load balancer.
   - **Why not Service Connect:** it adds an Envoy proxy container to every task, and AWS recommends reserving about 256 CPU / 64 MiB for it. That doesn't fit the agreed 256 / 512 tasks in dev and sbx: they'd have to double in size (about +$160 a month per region). In prod it would reserve a quarter vCPU in every one of dozens of tasks.
@@ -1284,7 +1289,7 @@ Internal endpoints live under `/internal/*`, on a **separate port (8001)**. **Th
   - **Rotation:** add the new public key to the map, switch the service to the new private key, then remove the old public key. Same pattern as `JWT_PUBLIC_KEYS`.
 - **Tracing:** every internal call and every event carries the W3C `traceparent` header and `X-Request-Id`, so one user action can be followed across services (15.5).
 
-### 13.3 The platform service
+### 13.3 The shared service
 
 These capabilities are used by many circles and hold no data:
 - `POST /api/v1/speech/transcriptions`: today's `/api/v1/audio/transcribe`, used by the shared voice-input component.
@@ -1349,9 +1354,9 @@ Every endpoint in the plan, by service. Request, response and error details per 
 | release | POST | `/api/v1/children/{id}/observations/generation` ✳ | `POST /api/v1/jobs` |
 | release | GET | `/api/v1/children/{id}/observations/generation/{job_id}` ✳ | `GET /api/v1/jobs/{job_id}` |
 | children (connect, until it's built) | POST | `/api/v1/children/{id}/connect/visit` | `POST /children/{id}/progress/connect_visited` |
-| platform | POST | `/api/v1/speech/transcriptions` | `POST /api/v1/audio/transcribe` |
-| platform | GET | `/api/v1/downloads/apk` (signed in, parents only) | same |
-| platform | GET | `/api/health` | same |
+| shared | POST | `/api/v1/speech/transcriptions` | `POST /api/v1/audio/transcribe` |
+| shared | GET | `/api/v1/downloads/apk` (signed in, parents only) | same |
+| shared | GET | `/api/health` | same |
 
 **Removed:** `POST /api/v1/llm/invoke` and `GET /api/v1/llm/providers` (no replacement: prompts are built server-side). Also removed, with their replacements in the table above:
 - `POST /api/v1/jobs` and `GET /api/v1/jobs/{job_id}`: each circle's `…/generation`;
@@ -1409,7 +1414,7 @@ Each `…/status` returns `{completed}`; each read-through endpoint returns exac
 | circle documents (`conversations`, `personalities`, `growth_areas`, `plans`, `observations`) | `{location, _id}` unique, with `_id` = child id (`{child_id}:{area_id}` for `growth_areas`) · `{location, user_id}` (user deletion) · `growth_areas` also `{location, child_id}` |
 | every `child_access` / `*_inputs` copy | `{location, _id}` unique (`_id` = child id; `{child_id}:{area_id}` for `growth_inputs`) · `{location, user_id}` (user deletion) · `growth_inputs` also `{location, child_id}` |
 | every `jobs` | `{location, _id}` unique · `{location, child_id, type, status}` · `{location, status, retry_after}` (claim query and pending count, region-scoped) · `{location, user_id}` (user deletion) · TTL 7 days on `completed_at` |
-| every `outbox` | `{location, _id}` unique (sharded like the data it's written with) · `{region, published_at}` (relay polling fallback, own region only) · TTL 7 days after `published_at` |
+| every `outbox` | `{location, _id}` unique (sharded like the data it's written with) · `{region, published_at}` (relay polling fallback, own region only) · `{location, aggregate_id}` (account deletion, 10.3) · TTL 7 days after `published_at` |
 | every `tombstones` (4.1) | `{location, _id}` unique · TTL 30 days on `deleted_at` |
 | every `inbox` (opt-in, 7.3) | `_id` · TTL 15 days on `processed_at` |
 
@@ -1426,15 +1431,15 @@ Each `…/status` returns `{completed}`; each read-through endpoint returns exac
 | Resource | Per service |
 |---|---|
 | Atlas database user | Read/write on its own database only |
-| Secrets Manager secret | Its own `MONGODB_URI`, its service-token private key (13.2), plus only its own keys. The user JWT private key and the HMAC pepper are in auth's secret only. LLM keys: generating services and platform only. |
+| Secrets Manager secret | Its own `MONGODB_URI`, its service-token private key (13.2), plus only its own keys. The user JWT private key and the HMAC pepper are in auth's secret only. LLM keys: generating services and shared only. |
 | ECS execution role | Can read only that service's secret |
-| ECS task role | Only that service's AWS access. For example:<br>– children: `uploads/*/*/avatar/*` only;<br>– transform: `uploads/*/*/ninety-day-plan/*` only. The two sub-prefixes don't overlap, so neither service can touch the other's objects;<br>– platform: `s3:ListBucket` and `s3:GetObject` on `app-assets/applications/android/` in the assets bucket (us-east-1), for the APK link;<br>– publishers: `sns:Publish` on **their own topic only** (7.2);<br>– consumers: their own queue. |
+| ECS task role | Only that service's AWS access. For example:<br>– children: `uploads/*/*/avatar/*` only;<br>– transform: `uploads/*/*/ninety-day-plan/*` only. The two sub-prefixes don't overlap, so neither service can touch the other's objects;<br>– shared: `s3:ListBucket` and `s3:GetObject` on `app-assets/applications/android/` in the assets bucket (us-east-1), for the APK link;<br>– publishers: `sns:Publish` on **their own topic only** (7.2);<br>– consumers: their own queue. |
 | ECR repository | One image per service (`SERVICE` build argument); each ships only its own dependencies |
 | Redis RBAC user | One ElastiCache user per service (IAM auth), replacing today's shared AUTH token (9.3). Reads `authz:*`; auth also writes it. Rate-limit keys under the service's own prefix, plus the shared LLM-limit keys for generating services. |
 
 ### 15.2 `services.tf` and workflows
 
-- **Runtimes:** one entry per runtime (plus the shared `otel-collector`, 15.5): `auth`, `auth-worker`, `users`, `users-worker`, `children`, `children-worker`, `onboarding`, `onboarding-worker`, `discover`, `discover-worker`, `grow`, `grow-worker`, `transform`, `transform-worker`, `release`, `release-worker` and `platform` (plus `connect` and `connect-worker` later). The existing `admin`, `backend` and `worker` entries are removed.
+- **Runtimes:** one entry per runtime (plus the shared `otel-collector`, 15.5): `auth`, `auth-worker`, `users`, `users-worker`, `children`, `children-worker`, `onboarding`, `onboarding-worker`, `discover`, `discover-worker`, `grow`, `grow-worker`, `transform`, `transform-worker`, `release`, `release-worker` and `shared` (plus `connect` and `connect-worker` later). The existing `admin`, `backend` and `worker` entries are removed.
 - **Entry fields:** each entry gains `image_repository` and `secret_name`.
 - **Workflows:** restart and the roll-out step of deploy and promote already handle any number of services, in parallel. **Building and copying images doesn't** yet. Today there's one `backend` image and one ECR repository per environment and region, and deploy builds once.
   - **Deploy:** a build matrix over the selected services, each `docker build --build-arg SERVICE=<name>` into **that service's** ECR repository (`<app>/<env>/<service>`). Each roll-out then uses its own image.
@@ -1632,9 +1637,13 @@ buddy-app/
 │   │   ├── audit.py                            audit events written by the permission check (11.3)
 │   │   ├── routers.py                          deny-by-default router: refuses a route without a policy (11.2)
 │   │   ├── events/                             outbox, relay (own-region rows), SNS publisher, SQS consumer, opt-in inbox (7.3)
+│   │   │   ├── catalogue.json                  producer, consumers and schema of every event (7.6); also read by modules/events
+│   │   │   ├── topology.py                     topics, queues and filter policies derived from the catalogue (7.2); creates them in local Moto
+│   │   │   ├── testing.py                      contract and replay-twice harnesses (7.4, 7.8)
 │   │   │   └── schemas/                        versioned JSON Schemas, e.g. child.changed.v1.json (7.8)
 │   │   ├── generation/                         [extra: discover, grow, transform, release]  job model and queue, LLM client, per-user hourly LLM limit, prompt helper (8)
 │   │   ├── deletion.py                         PARTICIPANTS for the deletion saga (10.3)
+│   │   ├── models.py                           child_access, *_inputs and jobs: validators, section-14 indexes, copy builders from events, the unlock check (4.1, 12.4)
 │   │   ├── internal_client.py                  service tokens, Cloud Map DNS client: random IP, retry once, 30 s keep-alive (13.2)
 │   │   ├── telemetry.py                        OpenTelemetry setup, trace context in events (15.5)
 │   │   ├── metrics.py                          PutMetricData for the 16 alarm and scaling metrics (15.5)
@@ -1669,7 +1678,7 @@ buddy-app/
 │   │   └── app/  worker/  generation/  events.py  tests/  requirements.txt
 │   ├── release/                         [new]  observations; internal status
 │   │   └── app/  worker/  generation/  events.py  tests/  requirements.txt
-│   ├── platform/                        [new]  speech-to-text, APK link, /api/health; no database, no worker
+│   ├── shared/                        [new]  speech-to-text, APK link, /api/health; no database, no worker
 │   │   └── app/  tests/  requirements.txt
 │   │
 │   ├── app/                             [removed]  today's single FastAPI app; its code moves into common/ and the services above
@@ -1749,7 +1758,7 @@ buddy-app/
 | **3. children** | The child and progress; `child.changed` / `child.deleted`; soft delete and purge | Home lists children with progress, from one query |
 | **4. onboarding, discover** | Each with its database and events; discover with server-side generation. Discover consumes onboarding's events. | Completing the conversation makes Discover's personality appear without the browser building prompts |
 | **5. grow, transform, release** | Same pattern, with their local copies | Each page loads with one request; `/llm/invoke` is gone |
-| **6. platform** | Speech and downloads | Voice input works in every circle |
+| **6. shared** | Speech and downloads | Voice input works in every circle |
 | **7. Web and mobile clients** | `frontend` (web) and `frontend-app` (React Native) move to the new API, alongside steps 2–6 rather than after them:<br>– a generated client per service spec. Errors carry `detail.code` (`circle_locked`, `child_not_found`, `llm_limit`, …), so the clients match on codes, not message text;<br>– **register:** `full_name` → `first_name` (required), `middle_name`, `last_name`, and three optional address lines; **login:** handle `429 too_many_attempts`;<br>– **preferences:** `/user/preferences` → `/users/me/preferences`, with `tts_enabled` only;<br>– `DELETE /user/me` → `DELETE /auth/account`; the name from `/auth/me` (`full_name`) → `GET /users/me/profile`;<br>– admin screens (`AdminAllowedEmails.tsx`, `Admin.tsx`) → `/auth/accounts…` and `/auth/allowed-emails…`; finding an account or checking one email uses `POST …/search` with the email in the body (never in a URL), and removing an entry uses its `key`;<br>– **new on the admin screen:** a role control (parent / admin) per account → `PATCH /auth/accounts/{id}/role`, refusing the last admin; names in the account list come from one `GET /users/profiles?ids=…` per page of accounts, not one call per account (today `full_name` is on the account itself);<br>– **new profile screen** in account settings: edit first, middle and last name and the three address lines → `GET` / `PATCH /users/me/profile`. The header and welcome screens read the first name from the same profile, replacing `user.full_name` from `/auth/me`;<br>– **new in account settings:** a "Sign out of all devices" button → `POST /auth/logout-all`, then back to the sign-in screen;<br>– `/jobs` and `InvokeLLM` → per-circle `…/generation`; the clients send no prompts and do no write-back, so `useJob`'s enqueue payload and the `*Prompt.ts` builders go;<br>– **onboarding (conversational chat):** answers stay in the app during the chat, as today. At the end, one `PUT …/onboarding` with all seven replaces the single `Child.update` with the trait fields, `onboarding_phase` and `onboarding_completed`. `GET …/onboarding` tells the app whether the chat is already done;<br>– **discover (Personality Journey and Profile):** read `GET …/personality` and show its `status`. The apps **no longer start the personality job** after the chat (discover does it on `onboarding.conversation_completed`), no longer adapt the result (`adaptAiPersonalityToViewModel` goes), and no longer save it with `Child.update`. `POST …/personality/generation` is used only for the retry button after a failure, and when the page opens with `not_started`. When the parent passes the reveal splash, the app calls `POST …/personality/viewed` instead of `markProgress('discover_completed')`;<br>– **grow (Growth Areas):** `completedGrowthAreas.list` / `append` → `GET …/growth-areas` / `PUT …/growth-areas/{area_id}`. Questions, activity rounds and recommendations come from `POST …/{area_id}/generation` with a `kind`, with no `pending_recommendations` step to finalise. `completedGrowthAreas.clear` is deleted;<br>– **transform (Life Pathway and 90-day plan):** one `GET …/transform` replaces `ninetyDayPlan.get` plus the growth-areas list. Life Pathway milestones come from `POST …/transform/generation` with `kind: "life_pathway"` and an `area_id`; the plan and event tracker use `kind: "plan"` / `"event_tracker"`. `PATCH …/transform` and `…/transform/photos/presign` replace the `/user/ninety-day-plan` calls, sending photo **keys**. The page no longer marks `transform_visited`;<br>– **release (Observations):** `GET` / `PATCH …/observations` replace `/user/observations`. "Start tracking" sends only `watching` and `span`. Patterns come from `POST …/observations/generation`, with no client promote step;<br>– **connect:** the Connect page calls `POST …/connect/visit` (served by children for now) instead of `markProgress('connect_visited')`;<br>– `POST …/progress/{flag}` → `…/personality/viewed` for discover, nothing for grow, transform and release (the server derives completion), `…/connect/visit` for connect; `onboarding_completed` reads (e.g. `ChildCard`) → `progress.conversation`;<br>– **children and Home:** `PATCH /children/{id}` sends only profile fields (name, age, gender, school, avatar), with no onboarding, personality or progress fields. Home reads `progress.{profile, conversation, discover, grow, transform, release, connect}` instead of the old flag fields. Remove every `markProgress(...)` call;<br>– **generation, every circle:** poll `GET …/generation/{job_id}` on the circle's own path; handle `429 llm_limit` and `409 already_generated`;<br>– **transform photos:** `GET` returns `{key, url}` per photo; to add one, PATCH the existing keys plus the new one;<br>– `-created_date` sort → `-created_at`; `avatar_url` stays in responses, but after an upload the client PATCHes the `avatar_key` from avatar/presign instead of the URL;<br>– `/audio/transcribe` → `/speech/transcriptions`.<br>Delete the prompt builders (`*Prompt.ts`), `RecommendationsPhase.tsx`, `ChildActivityGame.tsx` and the `last_visited_path` writes. | Both clients pass their tests against the new services in dev, with no call to a removed path. **Fresh deployment:** nothing is running today, so there are no old app versions or users to keep working. The first public mobile build is the new one, published together with the backend; no compatibility with today's API is needed. |
 | **8. Deletion** | 10.2 and 10.3 end to end, with a deletion-age alert | Killing any service mid-deletion still converges after a restart (test it) |
 | **9. Global Cluster** (DB-01's later stage) | Shard per section 14 and map zones | Writes land in the user's zone; login is still two point reads |
@@ -1770,7 +1779,7 @@ buddy-app/
 | 7 | **Auth outage: fail closed** (503) | 9.3 |
 | 8 | **No admin service, no `/admin/` URLs.** Resource URLs plus permission checks through FastAPI dependencies, deny by default, with an audit trail. | 11 |
 | 9 | **Profiles:** one endpoint for owner and admin | 11.1 |
-| 10 | **Every circle is its own service and database:** onboarding, discover, grow, transform, release, connect, plus children (child + progress) and platform (stateless) | 2, 12 |
+| 10 | **Every circle is its own service and database:** onboarding, discover, grow, transform, release, connect, plus children (child + progress) and shared (stateless) | 2, 12 |
 | 11 | **Cross-service data by events into local copies:** SNS + SQS per region, outbox, handlers safe to run twice (inbox only where a side effect needs it), versions, read-through on a miss | 7 |
 | 12 | **Server-side AI generation per circle;** `/llm/invoke` removed | 8 |
 | 13 | **Per-service Atlas users, secrets, execution roles and images** | 15.1 |

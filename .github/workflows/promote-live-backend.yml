@@ -6,7 +6,7 @@ on:
     inputs:
       # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "Services to promote: all, or a comma-separated list of: auth, admin, backend, worker (e.g. backend,worker). Promoted in parallel."
+        description: "Services to promote: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, shared (e.g. users,users-worker). Promoted in parallel."
         required: true
         default: "all"
         type: string
@@ -30,23 +30,14 @@ on:
           - sbx
           - stg
           - prod
-      # workflow_dispatch has no native multi-select input, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
-      # region means hand-adding its combinations here too (2^n - 1 total).
-      # Each selected region runs as its own parallel matrix instance.
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       aws_regions:
-        description: "AWS region(s) — each runs as a separate parallel job"
+        description: "AWS region(s), comma-separated, e.g. ap-south-1 or ap-south-1,eu-west-1 (supported: shared/routing.json's regions)"
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
 
 permissions:
   id-token: write
@@ -54,8 +45,8 @@ permissions:
 
 # Locked per environment (not per service or region): one run at a time per
 # environment across deploy, promote and restart, which share this namespace.
-# Not per service: `service` is free text, so "all", "backend" and
-# "worker, backend" would be different locks over the same ECS services.
+# Not per service: `service` is free text, so "all", "users" and
+# "users-worker, users" would be different locks over the same ECS services.
 concurrency:
   group: deploy-live-backend-superpower-${{ inputs.target_env }}
   cancel-in-progress: false
@@ -71,11 +62,30 @@ jobs:
   validate:
     name: Validate Promotion
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # The checked regions as a JSON array: what every later job reads (TF-01).
+      regions: ${{ steps.regions.outputs.regions }}
     steps:
-      - name: Validate promotion direction
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check regions
+        id: regions
+        env:
+          REGIONS: ${{ inputs.aws_regions }}
         run: |
-          SOURCE="${{ inputs.source_env }}"
-          TARGET="${{ inputs.target_env }}"
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
+
+      - name: Validate promotion direction
+        env:
+          SOURCE_ENV: ${{ inputs.source_env }}
+          TARGET_ENV: ${{ inputs.target_env }}
+        run: |
+          SOURCE="${SOURCE_ENV}"
+          TARGET="${TARGET_ENV}"
 
           if [ "$SOURCE" = "$TARGET" ]; then
             echo "::error::Source and target environments must differ."
@@ -98,37 +108,40 @@ jobs:
   # -------------------------------------------------------------------------
   # export runs in the SOURCE environment (its own ROLE_ARN, so it works when
   # source and target are different AWS accounts — e.g. stg → prod). It reads
-  # the image(s) currently live in the source ECS services, pulls them from
-  # the source ECR, and hands them to the promote job as a short-lived
-  # artifact. The target never references the source's ECR: the source repo
-  # keeps only its last 30 images and may be destroyed nightly by the
-  # scheduler, which would leave the target unable to pull on scale-out.
+  # the image(s) currently live in the source ECS services and hands their tags
+  # and digests to the promote job as a small artifact; the promote job copies
+  # them into the target's own ECR (CI-09). The target never runs from the
+  # source's ECR: the source repo keeps only its last 30 images and may be
+  # destroyed nightly by the scheduler, which would leave the target unable to
+  # pull on scale-out.
   # -------------------------------------------------------------------------
   export:
     name: Export Source Image (${{ matrix.aws_region }})
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     environment: ${{ inputs.source_env }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Validate required secrets and variables
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          SOURCE_ENV: ${{ inputs.source_env }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.source_env }}' GitHub environment and re-run."
+            echo "Add them to the '${SOURCE_ENV}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -136,7 +149,7 @@ jobs:
       # ecs:DescribeServices/DescribeTaskDefinition and ECR pull on its own
       # resources — all of which the deploy workflow already uses.
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.1
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: promote-backend-export-${{ inputs.source_env }}
@@ -144,59 +157,97 @@ jobs:
 
       # -------------------------------------------------------------------------
       # Read the image each selected service is running RIGHT NOW in the
-      # source (its PRIMARY deployment's task definition) — promote exactly
-      # what is live, not a tag that was built but never reached steady state.
+      # source — promote exactly what is live, not a tag that was built but
+      # never reached steady state. A service still rolling out (or rolling
+      # back) stops the run: only one COMPLETED deployment counts (CI-14).
       # Services come from the source's ecs_services list (terraform-live-backend,
-      # services.tf). Helpers: scripts/ecs-services.sh.
+      # services.tf); the collector (a pinned image Terraform sets) isn't
+      # promoted. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
       - name: Read source images
         env:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.source_env }}/backend/${{ matrix.aws_region }}
           SELECTION: ${{ inputs.service }}
+          SOURCE_ENV: ${{ inputs.source_env }}
+          REGION: ${{ matrix.aws_region }}
         run: |
           source scripts/ecs-services.sh
 
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
           if [ -z "$CLUSTER" ]; then
-            echo "ERROR: Source ECS cluster not found in SSM for env=${{ inputs.source_env }}. Run terraform-live-backend workflow (apply) for that environment first."
+            echo "ERROR: Source ECS cluster not found in SSM for env=${SOURCE_ENV}. Run terraform-live-backend workflow (apply) for that environment first."
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$SELECTION")
+          SERVICES=$(image_runtimes "$SERVICES" "$SELECTION")
 
           mkdir -p promote
           IMAGES='[]'
           while IFS= read -r ENTRY; do
             NAME=$(jq -r .name <<<"$ENTRY")
             IMAGE=$(live_image "$CLUSTER" "$(jq -r .service <<<"$ENTRY")" "$(jq -r .container <<<"$ENTRY")")
+            # deploy-live-backend pins task definitions by digest (CI-03): its release tag,
+            # what the target is tagged with, comes from ECR.
             if [[ "$IMAGE" == *@* ]]; then
-              echo "ERROR: $NAME runs $IMAGE, pinned by digest; promote expects tag-based images (as deploy-live-backend pushes)."
+              PINNED_REPO="${IMAGE%@*}"
+              TAG=$(tag_for_digest "$REGION" "${PINNED_REPO#*/}" "${IMAGE##*@}") || exit 1
+              IMAGE="$PINNED_REPO:$TAG"
+            fi
+            # Only an image a scan passed (CI-03): deploy-live-backend marks each one
+            # it scanned <tag>-scanned, and each promote carries the marker along.
+            REPO_PATH="${IMAGE#*/}"
+            REPO_NAME="${REPO_PATH%:*}"
+            TAG="${IMAGE##*:}"
+            if ! is_scanned "$REGION" "$REPO_NAME" "$TAG"; then
+              echo "ERROR: $NAME runs $IMAGE, which has no scan marker ($TAG$SCANNED_SUFFIX) in ${SOURCE_ENV}. Only images deploy-live-backend scanned can be promoted: deploy ${SOURCE_ENV} again, then promote."
               exit 1
             fi
-            echo "Promoting $NAME: $IMAGE"
-            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" '. + [{name: $n, image: $i}]' <<<"$IMAGES")
+            DIGEST=$(image_digest "$REGION" "$REPO_NAME" "$TAG")
+            echo "Promoting $NAME: $IMAGE ($DIGEST, scanned)"
+            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" --arg d "$DIGEST" --arg s "$(jq -r .image_service <<<"$ENTRY")" '. + [{name: $n, image: $i, digest: $d, image_service: $s}]' <<<"$IMAGES")
           done < <(jq -c '.[]' <<<"$SERVICES")
           echo "$IMAGES" > promote/images.json
 
-      - name: Pull and save source images
-        run: |
-          mapfile -t IMAGES < <(jq -r '[.[].image] | unique | .[]' promote/images.json)
-          REGISTRY="${IMAGES[0]%%/*}"   # <account>.dkr.ecr.<region>.amazonaws.com
-          aws ecr get-login-password --region "${{ matrix.aws_region }}" \
-            | docker login --username AWS --password-stdin "$REGISTRY"
-          for REF in "${IMAGES[@]}"; do
-            docker pull "$REF"
-          done
-          docker save "${IMAGES[@]}" | gzip -1 > promote/images.tar.gz
-          cat promote/images.json
-
-      - name: Upload source images
-        uses: actions/upload-artifact@v7.0.1
+      # The image list (each image's tag and digest): what the promote job copies
+      # registry to registry, and what same_release compares (CI-09). No images move
+      # through artifacts.
+      - name: Upload the image list
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: promote-backend-${{ matrix.aws_region }}
-          path: promote/
+          name: promote-images-${{ matrix.aws_region }}
+          path: promote/images.json
           retention-days: 1
-          # A "Re-run all jobs" uploads under the same name in the same run.
           overwrite: true
+
+  # -------------------------------------------------------------------------
+  # Every source region must run the same release (the same tag for each
+  # service), or the target's regions would get different images (CI-14).
+  # Nothing is pushed or rolled out unless they match.
+  # -------------------------------------------------------------------------
+  same_release:
+    name: Check Source Regions Match
+    needs: [validate, export]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Each artifact lands in its own directory, images/promote-images-<region>/.
+      - name: Download the image lists
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: promote-images-*
+          path: images/
+
+      - name: Compare the regions
+        run: |
+          set -euo pipefail
+          source scripts/ecs-services.sh
+          LISTS=(images/*/images.json)
+          same_release "${LISTS[@]}"
+          echo "All ${#LISTS[@]} source region(s) run the same release:"
+          jq -r 'sort_by(.name)[] | "  \(.name): \(.image | sub("^.*:"; ""))"' "${LISTS[0]}"
 
   # -------------------------------------------------------------------------
   # promote runs in the TARGET environment once export succeeds: it pushes
@@ -205,54 +256,76 @@ jobs:
   # -------------------------------------------------------------------------
   promote:
     name: Promote Live Backend (${{ matrix.aws_region }})
-    needs: export
+    needs: [validate, export, same_release]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     # One parallel instance per selected region. fail-fast: false — an
     # in-flight rollout in one region must never be cancelled just
     # because another region's instance failed.
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     environment: ${{ inputs.target_env }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Validate required secrets and variables
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          TARGET_ENV: ${{ inputs.target_env }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.target_env }}' GitHub environment and re-run."
+            echo "Add them to the '${TARGET_ENV}' GitHub environment and re-run."
             exit 1
           fi
 
       # The target environment's deploy role — only target-environment
       # resources are touched from here on.
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.1
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: promote-backend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
           aws-region: ${{ matrix.aws_region }}
 
-      - name: Download source images
-        uses: actions/download-artifact@v8.0.2
+      - name: Download the image list
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: promote-backend-${{ matrix.aws_region }}
+          name: promote-images-${{ matrix.aws_region }}
           path: promote/
 
+      - name: Install cosign
+        run: bash scripts/install-cosign.sh
+
+      # crane copies an image registry to registry and keeps its digest (CI-09).
+      # Checked against the SHA-256 GitHub records for the release asset before it
+      # runs (CI-04). Bump the version and the digest together.
+      - name: Install crane
+        run: |
+          curl -sSfL https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz \
+            -o /tmp/go-containerregistry_Linux_x86_64.tar.gz
+          echo "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0  /tmp/go-containerregistry_Linux_x86_64.tar.gz" \
+            | sha256sum --check --strict
+          tar -xz -C /usr/local/bin crane < /tmp/go-containerregistry_Linux_x86_64.tar.gz
+          crane version
+
       # -------------------------------------------------------------------------
-      # Push each exported image into the target's own ECR under its source
-      # tag (IMMUTABLE tags: an existing tag is the identical image, so the push
-      # is skipped), then roll every service onto it at once (as in
+      # Copy each exported image, by digest, from the source's ECR into its
+      # service's repository in the target (a worker's is its service's) under its
+      # source tag: registry to registry, so the target digest is the source's, the
+      # one deploy-live-backend scanned (CI-09, CI-03). IMMUTABLE tags: an existing
+      # tag must already be that digest. The target's role reads the source
+      # registry: in one account through IAM, across accounts through the source
+      # repositories' pull grant (infra-live-backend ecr_pull_account_ids). Then
+      # roll every service onto it at once (as in
       # deploy-live-backend; a failure doesn't stop the others and fails the
       # step at the end, naming them). Only the image changes: env vars,
       # secrets refs, CPU/memory and logging come from the target's current
@@ -263,39 +336,42 @@ jobs:
       - name: Promote services
         env:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.target_env }}/backend/${{ matrix.aws_region }}
+          TARGET_ENV: ${{ inputs.target_env }}
+          REGION: ${{ matrix.aws_region }}
         run: |
           source scripts/ecs-services.sh
 
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
-          REPO=$(get_ssm "$SSM_BASE/ecr_repository_url")
-          if [ -z "$CLUSTER" ] || [ -z "$REPO" ]; then
-            echo "ERROR: Target ECS cluster or ECR repository not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: Target ECS cluster not found in SSM for env=${TARGET_ENV}. Run terraform-live-backend workflow (apply) for that environment first."
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$(jq -r '[.[].name] | join(",")' promote/images.json)")
 
-          gunzip -c promote/images.tar.gz | docker load
-          REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
-          REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
-          aws ecr get-login-password --region "${{ matrix.aws_region }}" \
-            | docker login --username AWS --password-stdin "$REGISTRY"
-
-          while IFS= read -r SRC; do
+          # One copy per (service, source image): a service and its worker usually
+          # run the same one. Each gets the scan marker in the target as well, so the
+          # next promote (stg → prod) accepts it (CI-03).
+          while IFS=$'\t' read -r IMAGE_SERVICE SRC SRC_DIGEST; do
+            REPO=$(repository_for "$SERVICES" "$IMAGE_SERVICE")
+            REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/<service>
             TAG="${SRC##*:}"
-            if aws ecr describe-images --region "${{ matrix.aws_region }}" --repository-name "$REPO_NAME" \
-                 --image-ids imageTag="$TAG" --output text &>/dev/null; then
-              echo "$REPO:$TAG already exists in target ECR — skipping push."
-            else
-              docker tag "$SRC" "$REPO:$TAG"
-              docker push "$REPO:$TAG"
-              echo "Pushed: $REPO:$TAG"
-            fi
-          done < <(jq -r '[.[].image] | unique | .[]' promote/images.json)
+            ecr_login "$REGION" "${SRC%%/*}" "${REPO%%/*}"
+            copy_image "$REGION" "${SRC%:*}@${SRC_DIGEST}" "$REPO" "$REPO_NAME" "$TAG"
+            # The signature and SBOM attestation travel with the image (CI-03).
+            copy_signatures "${SRC%:*}" "$REPO" "$SRC_DIGEST"
+            mark_scanned "$REGION" "$REPO_NAME" "$TAG"
+          done < <(jq -r 'map([.image_service, .image, .digest]) | unique | .[] | @tsv' promote/images.json)
 
-          # The target-ECR copy of the image exported for this service.
+          # The target-ECR copy of the image exported for this service: its
+          # own repository, the source's tag.
+          # Pinned by digest, and only once the signature deploy-live-backend made in the
+          # source checks out in the target (CI-03).
           target_image() {
-            local src
-            src=$(jq -r --arg n "$(jq -r .name <<<"$1")" '.[] | select(.name == $n) | .image' promote/images.json)
-            echo "$REPO:${src##*:}"
+            local digest repo
+            digest=$(jq -r --arg n "$(jq -r .name <<<"$1")" '.[] | select(.name == $n) | .digest' promote/images.json)
+            repo=$(jq -r '.ecr_repository_url' <<<"$1")
+            [ -n "$repo" ] && [ "$repo" != "null" ] || { echo "ERROR: no ECR repository for $(jq -r .name <<<"$1") in the target." >&2; return 1; }
+            verify_signature "$repo@$digest" || return 1
+            echo "$repo@$digest"
           }
           deploy_image "$CLUSTER" "$SERVICES" target_image

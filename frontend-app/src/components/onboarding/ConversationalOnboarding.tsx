@@ -1,3 +1,4 @@
+import { firstName, type Profile } from '@/api/account';
 import React, {
   useCallback,
   useEffect,
@@ -18,13 +19,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Sparkles } from 'lucide-react-native';
 import ChatInputBar from '@/components/shared/ChatInputBar';
 import { Button } from '@/components/ui/button';
-import { api } from '@/api/client';
+import { onboarding } from '@/api/onboarding';
 import { useTts } from '@/lib/TtsContext';
 import {
   CHATBOT_CAPTURED_FIELDS,
   questionnaireFieldHasValue,
   pickSavedQuestionnaireForChatbot,
-  normalizeOnboardingChildDataBlob,
 } from '@/lib/onboardingChildData';
 import { speakText, stopSpeech } from '@/lib/tts';
 import { gradient, hsl } from '@/theme';
@@ -51,7 +51,7 @@ import {
 } from './conversational/flow';
 
 interface ConversationalOnboardingProps {
-  user?: { full_name?: string; email?: string } | null;
+  user?: { profile?: Profile | null; email?: string } | null;
   activeChildId?: string;
   onComplete: (data: Record<string, unknown>) => void | Promise<void>;
   resumeHydrationReady?: boolean;
@@ -282,7 +282,7 @@ export default function ConversationalOnboarding({
     activeChildIdRef.current = activeChildId ?? undefined;
   }, [activeChildId]);
 
-  const parentName = user?.full_name?.split(' ')[0] ?? 'there';
+  const parentName = firstName(user) ?? 'there';
 
   const conversationFlow = useMemo<ConversationStep[]>(
     () => buildConversationFlow(parentName),
@@ -351,12 +351,9 @@ export default function ConversationalOnboarding({
 
     void (async () => {
       try {
-        const child = childId ? await api.entities.Child.get(childId) : null;
-        const slim = child
-          ? pickSavedQuestionnaireForChatbot(
-              normalizeOnboardingChildDataBlob(child) ?? {},
-            )
-          : {};
+        // The child's own fields, plus the answers once the chat was saved (build plan 7.5).
+        const saved = childId ? await onboarding.draft(childId) : {};
+        const slim = pickSavedQuestionnaireForChatbot(saved);
         if (cancelled) return;
 
         const flow = conversationFlowRef.current;

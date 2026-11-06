@@ -1,32 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
-import { useJob, jobProgressMessage } from '@/hooks/useJob';
+import { children, type Child } from '@/api/children';
+import { ApiError } from '@/api/errors';
+import { isAbort } from '@/api/polling';
+import { release, RELEASE_ERRORS, runObservationsGeneration } from '@/api/release';
+import { jobProgressMessage } from '@/lib/jobProgress';
+import { httpErrorMessage } from '@/lib/apiError';
 import Spinner from '@/components/shared/Spinner';
-import { NO_QUESTIONNAIRE, buildObservationsPrompt, questionnaireMarkdown } from '@/lib/prompts';
 import {
   OBSERVATION_ICONS,
-  SELECTABLE_ICON_KEYS,
   formatObservationSources,
   normalizeObservations,
-  observationsLlmSchema,
-  selectObservations,
   type ObservationItem,
-  type ObservationSourceKey,
 } from '@/lib/observationsData';
-import {
-  AREA_QUESTIONS,
-  areaById,
-  fillTemplate,
-  normalizeGeneratedQuestions,
-  normalizeGeneratedRounds,
-  resolveRounds,
-} from '@/lib/growthAreaData';
-import type { ChildRecord, CompletedArea, EnqueueJobPayload } from '@/types/api';
+import { fillTemplate } from '@/lib/growthAreaData';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 
 /**
  * Multiplies a design-time pixel value by `--obs-type-scale` — 1 on phones, 1.2
@@ -196,121 +188,6 @@ const NEXT_STEPS = [
   { title: 'Or simply keep watching', body: 'Many patterns settle on their own as children grow.' },
 ];
 
-/**
- * Flattens the parent's answered Grow reflections into prompt context. The
- * questions matter as much as the answers: "Yes, most days" is uninterpretable
- * without the question it answered, and the observation prompt is required to
- * quote the parent rather than paraphrase, so it needs both sides.
- *
- * Falls back to the hardcoded set for areas answered before generated questions
- * existed — the same resolution order GrowthAreas uses for `askedQuestions`.
- */
-function buildGrowthAreaContext(
-  areas: CompletedArea[],
-  childName: string,
-  childGender: string,
-): string {
-  const blocks: string[] = [];
-  for (const area of areas) {
-    const areaId = typeof area.area_id === 'string' ? area.area_id : '';
-    if (!areaId) continue;
-    const answers = area.answers ?? {};
-    if (Object.keys(answers).length === 0) continue;
-
-    const questions =
-      normalizeGeneratedQuestions(area.parent_questions, areaId) ?? AREA_QUESTIONS[areaId] ?? [];
-    const pairs = questions
-      .filter((q) => answers[q.id])
-      .map(
-        (q) =>
-          `Q: ${fillTemplate(q.question, childName, childGender)}\nA: ${String(answers[q.id])}`,
-      );
-    // An area whose stored answers key off a question set we no longer have is
-    // still the parent's own words — keep them, unlabelled, rather than dropping
-    // real evidence because the prompt for it is gone.
-    const orphaned =
-      pairs.length === 0
-        ? Object.values(answers)
-            .map((v) => String(v).trim())
-            .filter(Boolean)
-            .map((v) => `A: ${v}`)
-        : [];
-    const lines = [...pairs, ...orphaned];
-    if (lines.length === 0) continue;
-
-    const areaName =
-      (typeof area.area_name === 'string' && area.area_name ? area.area_name : null) ??
-      areaById(areaId)?.name ??
-      areaId;
-    blocks.push(`— ${areaName} —\n${lines.join('\n')}`);
-  }
-  return blocks.join('\n\n');
-}
-
-/**
- * The child's own contribution: their forced-choice picks from the Grow rounds.
- *
- * Recorded as "chose X over Y" because in a two-option round the rejected side
- * carries half the meaning — "chose building over storytelling" says something
- * "chose building" does not. The prompt is separately instructed never to render
- * these as the child's words, since the child tapped copy we wrote.
- *
- * Picks read from the durable `child_activity.selections` first; the backend
- * clears the transient `child_activity_selections` on completion, so the durable
- * copy is the one that survives for a finished area.
- */
-function buildChildActivityContext(
-  areas: CompletedArea[],
-  childName: string,
-  childGender: string,
-): { text: string; choiceLines: string[] } {
-  const blocks: string[] = [];
-  const allLines: string[] = [];
-  for (const area of areas) {
-    const areaId = typeof area.area_id === 'string' ? area.area_id : '';
-    if (!areaId) continue;
-
-    const durable = (area.child_activity as { selections?: unknown } | undefined)?.selections;
-    const picks = (
-      Array.isArray(durable) ? durable : (area.child_activity_selections ?? [])
-    ).filter((id): id is string => typeof id === 'string');
-    if (picks.length === 0) continue;
-
-    // resolveRounds picks whichever generation of ids the saved picks belong to,
-    // so areas played against the hardcoded rounds still resolve correctly.
-    const rounds = resolveRounds(
-      areaId,
-      normalizeGeneratedRounds(area.child_rounds, areaId),
-      picks,
-    );
-    const lines: string[] = [];
-    for (const round of rounds) {
-      const chose = picks.includes(round.a.id)
-        ? round.a
-        : picks.includes(round.b.id)
-          ? round.b
-          : null;
-      if (!chose) continue;
-      const over = chose.id === round.a.id ? round.b : round.a;
-      // Typographic quotes here so the string the provider echoes back already
-      // matches what tidyNote would normalise it to.
-      lines.push(
-        `Chose “${fillTemplate(chose.text, childName, childGender)}” over ` +
-          `“${fillTemplate(over.text, childName, childGender)}”`,
-      );
-    }
-    if (lines.length === 0) continue;
-    allLines.push(...lines);
-
-    const areaName =
-      (typeof area.area_name === 'string' && area.area_name ? area.area_name : null) ??
-      areaById(areaId)?.name ??
-      areaId;
-    blocks.push(`— ${areaName} —\n${lines.join('\n')}`);
-  }
-  return { text: blocks.join('\n\n'), choiceLines: allLines };
-}
-
 function CheckIcon({ opacity }: { opacity: number }) {
   return (
     <svg
@@ -426,125 +303,73 @@ export default function Observations() {
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
-  const [childData, setChildData] = useState<ChildRecord | null>(null);
+  const [childData, setChildData] = useState<Child | null>(null);
   const [observations, setObservations] = useState<ObservationItem[]>([]);
-  const [hasEvidence, setHasEvidence] = useState(false);
   const [tracked, setTracked] = useState<string[]>([]);
   const [span, setSpan] = useState(0);
   const [started, setStarted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  /**
-   * Generation failures that useJob cannot represent. Two of them exist and both
-   * used to strand the page on skeletons forever:
-   *   - enqueue throws (network): useJob sets status back to null, so isLoading,
-   *     isFailed and isComplete are ALL false and no branch renders an error.
-   *   - the job completes but every candidate fails validation: isComplete is
-   *     true with observations still empty, which is exactly the condition
-   *     isGenerating uses to keep showing skeletons.
-   */
+  // Release generates the patterns from its own copies of the onboarding answers and
+  // the growth areas, and validates them on the server (build plan 7.7).
+  const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  // Stops polling when the page goes away.
+  const abortRef = useUnmountSignal();
 
-  const childName = typeof childData?.name === 'string' ? childData.name : '';
-  const childAge = childData?.age != null ? String(childData.age) : '';
-  const childGender = typeof childData?.gender === 'string' ? childData.gender : '';
+  const childName = childData?.name ?? '';
+  const childAge = childData?.age == null ? '' : String(childData.age);
+  const childGender = childData?.gender ?? '';
 
-  /**
-   * The prompt inputs, held in a ref so enqueueing does not depend on render
-   * order. Everything here is the parent's own writing — there is no other
-   * source of observations today, which is why the page cannot yet claim any
-   * pattern recurred (see the source keys in `@/lib/observationsData`).
-   */
-  const evidenceRef = useRef<{
-    questionnaireMd: string;
-    growthAreaContext: string;
-    childActivityContext: string;
-    /** The exact choice lines in the prompt — the whitelist for child notes. */
-    childChoiceLines: string[];
-    /** Blocks the prompt will contain, in the order it presents them. */
-    availableSources: ObservationSourceKey[];
-  } | null>(null);
+  useEffect(() => {
+    if (!isGenerating) return;
+    const id = setInterval(() => setElapsedMs(Date.now() - startedAt), 1000);
+    return () => clearInterval(id);
+  }, [isGenerating, startedAt]);
 
-  const enqueueObservations = useCallback(
-    async (enqueue: (payload: EnqueueJobPayload) => Promise<void>) => {
-      const evidence = evidenceRef.current;
-      if (!childId || !evidence) return;
-      setGenError(null);
-      await enqueue({
-        type: 'generate_observations',
-        child_id: childId,
-        payload: {
-          prompt: buildObservationsPrompt({
-            childName: childName || 'the child',
-            childAge: childAge || null,
-            childGender: childGender || null,
-            questionnaireMd: evidence.questionnaireMd,
-            growthAreaContext: evidence.growthAreaContext,
-            childActivityContext: evidence.childActivityContext,
-            iconKeys: SELECTABLE_ICON_KEYS,
-          }),
-          response_json_schema: observationsLlmSchema(),
-        },
-        write_back: {
-          collection: 'observations',
-          filter: {},
-          field: 'pending_observations',
-        },
-      });
-    },
-    [childId, childName, childAge, childGender],
-  );
+  /** Shows a stored set: ticks only for ids still on screen, and the saved span. */
+  const show = useCallback((doc: { items: unknown; watching: string[]; span: string | null }) => {
+    const items = normalizeObservations(doc.items);
+    setObservations(items);
+    const valid = new Set(items.map((o) => o.id));
+    setTracked(doc.watching.filter((id) => valid.has(id)));
+    const storedSpan = SPANS.findIndex((s) => s.label === doc.span);
+    if (storedSpan >= 0) setSpan(storedSpan);
+  }, []);
 
   /**
-   * Promotes the worker's staged output to the canonical field once validated.
-   * The watch list is reset here on purpose: a tick the parent made against an
-   * older set of cards does not carry a defensible meaning against a new one.
+   * Generates the patterns (or joins the generation already running) and shows them.
+   * A new set clears what was watched: a tick against older cards means nothing.
    */
-  const finalizeObservations = useCallback(async () => {
+  const generate = useCallback(async () => {
     if (!childId) return;
+    setGenError(null);
+    setIsGenerating(true);
+    setStartedAt(Date.now());
+    setElapsedMs(0);
     try {
-      const record = await api.observations.get(childId);
-      const candidates = normalizeObservations(record?.pending_observations, {
-        allowedChoiceNotes: evidenceRef.current?.childChoiceLines ?? [],
+      const outcome = await runObservationsGeneration(childId, {
+        signal: abortRef.current.signal,
       });
-      if (candidates.length === 0) {
-        setGenError('Nothing in that set could be shown. Please try again.');
-        return;
-      }
-      const { items, unrepresentedSources, dropped } = selectObservations(
-        candidates,
-        evidenceRef.current?.availableSources ?? [],
-      );
-      // Neither of these is worth failing the page over, but both are worth
-      // knowing about: a silent cap reads as "covered everything" when it did not.
-      if (dropped > 0) {
-        console.info(
-          `[Observations] ${dropped} valid observation(s) cut by the ${items.length}-card display cap.`,
-        );
-      }
-      if (unrepresentedSources.length > 0) {
-        console.warn(
-          `[Observations] Provider returned no observation citing: ${unrepresentedSources.join(', ')}. ` +
-            'Selection can reorder candidates but cannot invent one.',
-        );
-      }
-      setObservations(items);
-      setTracked([]);
-      // Clearing `watching` is what resets the parent's ticks alongside a fresh
-      // set; the PATCH is field-wise now, so it has to be sent explicitly rather
-      // than falling out of rewriting the whole field.
-      await api.observations.patch(childId, { source: 'llm', items, watching: [] });
+      const doc = await release.get(childId);
+      if (outcome === 'completed' && doc.items.length > 0) show(doc);
+      else setGenError('Nothing in that set could be shown. Please try again.');
     } catch (err) {
-      console.error('[Observations] Failed to finalize observations:', err);
-      setGenError('Observations could not be saved. Please try again.');
+      if (isAbort(err)) return;
+      // Nothing to ground patterns in yet: the empty state says so.
+      if (err instanceof ApiError && err.code === 'needs_evidence') return;
+      console.error('[Observations] Generation failed:', err);
+      setGenError(
+        httpErrorMessage(err as Error, {
+          codeMessages: RELEASE_ERRORS,
+          fallback: 'Could not start generating observations. Please try again.',
+        }),
+      );
+    } finally {
+      setIsGenerating(false);
     }
-  }, [childId]);
-
-  const job = useJob({
-    activeJobs: childData?.active_jobs,
-    jobType: 'generate_observations',
-    onCompleted: finalizeObservations,
-  });
-  const { enqueue: jobEnqueue, retry: jobRetry } = job;
+  }, [abortRef, childId, show]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -559,59 +384,28 @@ export default function Observations() {
     let cancelled = false;
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        const [child, doc] = await Promise.all([children.get(childId), release.get(childId)]);
         if (cancelled) return;
-        if (!child) {
+        setChildData(child);
+        if (doc.items.length > 0) show(doc);
+        // None yet, or one still running (another device, a reload mid-run): start or
+        // join it. A failed one waits for the parent's "Try again".
+        if (doc.status === 'not_started' || doc.status === 'generating') void generate();
+        else if (doc.status === 'failed' && doc.items.length === 0)
+          setGenError('Something went wrong on our side. Your answers are safe.');
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'circle_locked') {
+          // Transform isn't done yet: back to the journey.
+          void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+          return;
+        }
+        if (err instanceof ApiError && err.code === 'child_not_found') {
           void navigate('/Home', { replace: true });
           return;
         }
-        setChildData(child);
-
-        // Neither of these is fatal: an observation set built on the
-        // questionnaire alone is still honest, it just cites fewer sources.
-        const [completed, stored] = await Promise.all([
-          api.completedGrowthAreas.list(childId).catch(() => null),
-          api.observations.get(childId).catch(() => null),
-        ]);
-        if (cancelled) return;
-
-        const name = typeof child.name === 'string' ? child.name : '';
-        const gender = typeof child.gender === 'string' ? child.gender : '';
-        const questionnaireRaw = questionnaireMarkdown(child);
-        const questionnaireMd = questionnaireRaw === NO_QUESTIONNAIRE ? '' : questionnaireRaw;
-        const areas = completed?.areas ?? [];
-        const growthAreaContext = buildGrowthAreaContext(areas, name, gender);
-        const childActivity = buildChildActivityContext(areas, name, gender);
-        const childActivityContext = childActivity.text;
-
-        // Order matters — selectObservations reserves slots in this order, and it
-        // must match the order buildObservationsPrompt emits the blocks.
-        const availableSources: ObservationSourceKey[] = [];
-        if (questionnaireMd) availableSources.push('onboarding');
-        if (growthAreaContext) availableSources.push('grow');
-        if (childActivityContext) availableSources.push('child');
-
-        evidenceRef.current = {
-          questionnaireMd,
-          growthAreaContext,
-          childActivityContext,
-          childChoiceLines: childActivity.choiceLines,
-          availableSources,
-        };
-        setHasEvidence(availableSources.length > 0);
-
-        const storedItems = normalizeObservations(stored?.items);
-        if (storedItems.length > 0) {
-          setObservations(storedItems);
-          // Ticks are filtered against the ids that survived validation, so a
-          // stale id in `watching` cannot select a card that is not on screen.
-          const valid = new Set(storedItems.map((o) => o.id));
-          setTracked(
-            (Array.isArray(stored?.watching) ? stored.watching : []).filter((id) => valid.has(id)),
-          );
-          const storedSpan = SPANS.findIndex((s) => s.label === stored?.span);
-          if (storedSpan >= 0) setSpan(storedSpan);
-        }
+        console.error('[Observations] Load failed:', err);
+        setGenError('We could not load this page. Please try again.');
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -619,32 +413,7 @@ export default function Observations() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
-
-  // Once this page's content has loaded for the child, mark Release as visited
-  // — this advances which circle the DimensionCircles hub points to next.
-  useEffect(() => {
-    if (!childId || !childData?.id || childData.release_visited) return;
-    api.entities.Child.markProgress(childId, 'release_visited').catch(console.error);
-  }, [childId, childData?.id, childData?.release_visited]);
-
-  // Kick off generation once, and only once there is something to ground it in.
-  // A job already in flight (from another device, or a reload mid-run) is picked
-  // up by useJob from active_jobs instead — enqueueing again would just burn a
-  // second slot on identical input.
-  const didEnqueueRef = useRef(false);
-  useEffect(() => {
-    if (isLoading || didEnqueueRef.current) return;
-    if (observations.length > 0 || !hasEvidence) return;
-    if (childData?.active_jobs?.generate_observations) return;
-    didEnqueueRef.current = true;
-    // useJob rethrows so callers can react; without this catch a failed enqueue is
-    // an unhandled rejection AND the page falls through to the "nothing to group"
-    // empty state, which is wrong — there is evidence, starting the job failed.
-    void enqueueObservations(jobEnqueue).catch(() => {
-      setGenError('Could not start generating observations. Please try again.');
-    });
-  }, [isLoading, observations.length, hasEvidence, childData, enqueueObservations, jobEnqueue]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, show, generate]);
 
   const toggleTracked = (id: string) => {
     setTracked((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
@@ -660,31 +429,25 @@ export default function Observations() {
     if (!childId || tracked.length === 0) return;
     setIsSaving(true);
     try {
-      // Only the three fields the parent actually changed. When this lived as one
-      // field on the child document the whole thing had to be rewritten, which
-      // meant carrying the generated items along on every tick.
-      await api.observations.patch(childId, {
-        watching: tracked,
-        span: activeSpan.label,
-        started_at: new Date().toISOString(),
-      });
+      // What's watched and for how long; release dates it, and the first one makes
+      // Release done (which unlocks Connect).
+      await release.watch(childId, tracked, activeSpan.label);
       setStarted(true);
     } catch (err) {
       console.error('[Observations] Failed to save watch list:', err);
-      toast.error('Could not save your watch list. Please try again.');
+      toast.error(
+        httpErrorMessage(err as Error, {
+          codeMessages: RELEASE_ERRORS,
+          fallback: 'Could not save your watch list. Please try again.',
+        }),
+      );
     } finally {
       setIsSaving(false);
     }
   }, [childId, tracked, activeSpan.label]);
 
-  // job.isComplete fires before finalizeObservations' write lands, which would
-  // otherwise flash the grid from skeletons to the empty state for a beat. The
-  // genError term is what lets that window close when finalize fails instead of
-  // holding the skeletons up indefinitely.
-  const generationFailed = job.isFailed || genError !== null;
-  const isGenerating =
-    !generationFailed && (job.isLoading || (job.isComplete && observations.length === 0));
-  const progressMessage = jobProgressMessage(job.elapsedMs, 'generate_observations');
+  const generationFailed = genError !== null;
+  const progressMessage = jobProgressMessage(elapsedMs, 'observations');
 
   const trackedLabel =
     observations.length === 0
@@ -881,17 +644,11 @@ export default function Observations() {
                   color: 'rgb(var(--constellation-slate-light-rgb))',
                 }}
               >
-                {genError ??
-                  job.error ??
-                  'Something went wrong on our side. Your answers are safe.'}
+                {genError ?? 'Something went wrong on our side. Your answers are safe.'}
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  void enqueueObservations(jobRetry).catch(() => {
-                    setGenError('Could not start generating observations. Please try again.');
-                  })
-                }
+                onClick={() => void generate()}
                 style={{
                   cursor: 'pointer',
                   marginTop: 18,

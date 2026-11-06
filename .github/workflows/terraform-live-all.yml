@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
 # Full-stack orchestrator — provisions or tears down all infra, then deploys.
 #
-# backend_regions (a JSON array, e.g. '["ap-south-1","eu-west-1"]') is the
-# FULL set of regions this run should apply — not "one more region to add".
+# backend_regions (comma-separated, e.g. ap-south-1,eu-west-1, or a JSON array
+# from a caller such as the scheduler) is the FULL set of regions this run should apply — not "one more region to add".
 # Step 1 and destroy step 3 fan out across every region in it as a GitHub
 # Actions matrix (one terraform-live-backend instance per region, run in
 # parallel); step 4 passes the whole list to deploy-live-backend, which
@@ -51,38 +51,23 @@ on:
           - sbx
           - stg
           - prod
-      # Same rationale as terraform-live-edge.yml's backend_regions: GitHub
-      # Actions workflow_dispatch has no native multi-select, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice — adding a 4th region means hand-adding its
-      # combinations here too (2^n - 1 total), in both this file and
-      # terraform-live-edge.yml.
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       backend_regions:
-        description: "Pick the FULL set of regions to apply (not just the new one). Run 'plan' first to check for unintended deletions before 'apply'."
+        description: "The FULL set of regions to apply, comma-separated (not just the new one), e.g. ap-south-1,eu-west-1. Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
       # Passed straight through to terraform-live-edge.yml — see its
       # bootstrap_region input. "auto" = first region in backend_regions.
       bootstrap_region:
         description: "Region that serves login/health. 'auto' = first of backend_regions; a named region must be in backend_regions."
         required: false
         default: "auto"
-        type: choice
-        options:
-          - auto
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+        type: string
       deploy:
-        description: "Run deploy-backend and deploy-frontend after apply (ignored for plan)"
+        description: "Run deploy-backend and deploy-frontend after apply (ignored for plan and for prod: promote from stg instead)"
         required: false
         default: "true"
         type: boolean
@@ -122,6 +107,27 @@ concurrency:
 
 jobs:
 
+  # The typed regions, checked against shared/routing.json and turned into the JSON
+  # array every step below reads (TF-01). No environment: nothing secret is loaded.
+  regions:
+    name: "0 · Check regions"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      regions: ${{ steps.check.outputs.regions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check regions
+        id: check
+        env:
+          REGIONS: ${{ inputs.backend_regions }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------------------
   # Step 1 — Backend infrastructure (one independent stack per region)
   # fail-fast: false — a Terraform apply/destroy already in progress for one
@@ -133,11 +139,12 @@ jobs:
   # ---------------------------------------------------------------------------
   tf-backend:
     name: "1 · Terraform Backend (${{ matrix.region }})"
+    needs: regions
     if: inputs.action == 'plan' || inputs.action == 'apply'
     strategy:
       fail-fast: false
       matrix:
-        region: ${{ fromJson(inputs.backend_regions) }}
+        region: ${{ fromJson(needs.regions.outputs.regions) }}
     uses: ./.github/workflows/terraform-live-backend.yml
     with:
       action:      ${{ inputs.action }}
@@ -154,13 +161,13 @@ jobs:
   # ---------------------------------------------------------------------------
   tf-edge:
     name: "2 · Terraform Edge"
-    needs: tf-backend
+    needs: [regions, tf-backend]
     if: inputs.action == 'plan' || inputs.action == 'apply'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
       action:           ${{ inputs.action }}
       environment:      ${{ inputs.environment }}
-      backend_regions:  ${{ inputs.backend_regions }}
+      backend_regions:  ${{ needs.regions.outputs.regions }}
       bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
     secrets: inherit
 
@@ -183,30 +190,50 @@ jobs:
   # Step 4 — Deploy backend (Docker build + ECS rolling update). A single call
   # covering every region: deploy-live-backend builds the image once, pushes
   # it to each region's ECR, then rolls ECS out per region in parallel
-  # (fail-fast: false inside it). Skipped when action=plan or deploy=false.
+  # (fail-fast: false inside it). Skipped when action=plan or deploy=false, and
+  # always for prod: prod gets only images promoted from stg (CI-03), so
+  # terraform-live-all is infrastructure-only there (see prod-deploy-skipped).
   # ---------------------------------------------------------------------------
   deploy-backend:
     name: "4 · Deploy Backend"
-    needs: tf-frontend
-    if: inputs.action == 'apply' && inputs.deploy
+    needs: [regions, tf-frontend]
+    if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-backend.yml
     with:
       environment: ${{ inputs.environment }}
-      aws_regions: ${{ inputs.backend_regions }}
+      aws_regions: ${{ needs.regions.outputs.regions }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 5 — Deploy frontend (React build + S3 sync + CloudFront invalidation)
-  # Skipped when action=plan or deploy=false (inherits skip from step 4).
+  # Skipped when action=plan or deploy=false, and for prod (as step 4).
   # ---------------------------------------------------------------------------
   deploy-frontend:
     name: "5 · Deploy Frontend"
     needs: deploy-backend
-    if: inputs.action == 'apply' && inputs.deploy
+    if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-frontend.yml
     with:
       environment: ${{ inputs.environment }}
     secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # For prod with deploy=true (e.g. a scheduled start): say in the run why
+  # nothing was deployed, and what to run next.
+  # ---------------------------------------------------------------------------
+  prod-deploy-skipped:
+    name: "4 · Deploy skipped (prod)"
+    needs: tf-frontend
+    if: inputs.action == 'apply' && inputs.deploy && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Explain the skipped deploy
+        run: |
+          msg="prod isn't deployed by terraform-live-all (production-readiness review, CI-03): the infrastructure is applied, but the services keep their current images. To ship a release, run promote-live-backend and promote-live-frontend from stg to prod."
+          echo "::notice title=Deploy skipped for prod::$msg"
+          echo "### Deploy skipped for prod" >> "$GITHUB_STEP_SUMMARY"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # Destroy step 1 — Frontend bucket policy (reverse order: remove OAC first)
@@ -226,13 +253,13 @@ jobs:
   # ---------------------------------------------------------------------------
   destroy-tf-edge:
     name: "D2 · Terraform Edge (destroy)"
-    needs: destroy-tf-frontend
+    needs: [regions, destroy-tf-frontend]
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
       action:           ${{ inputs.action }}
       environment:      ${{ inputs.environment }}
-      backend_regions:  ${{ inputs.backend_regions }}
+      backend_regions:  ${{ needs.regions.outputs.regions }}
       bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
     secrets: inherit
 
@@ -242,12 +269,12 @@ jobs:
   # ---------------------------------------------------------------------------
   destroy-tf-backend:
     name: "D3 · Terraform Backend (destroy) (${{ matrix.region }})"
-    needs: destroy-tf-edge
+    needs: [regions, destroy-tf-edge]
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     strategy:
       fail-fast: false
       matrix:
-        region: ${{ fromJson(inputs.backend_regions) }}
+        region: ${{ fromJson(needs.regions.outputs.regions) }}
     uses: ./.github/workflows/terraform-live-backend.yml
     with:
       action:      ${{ inputs.action }}

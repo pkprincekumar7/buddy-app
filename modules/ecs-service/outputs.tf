@@ -43,6 +43,21 @@ output "target_group_arn" {
   value       = try(one(aws_ecs_service.this.load_balancer).target_group_arn, null)
 }
 
+output "service_discovery_arn" {
+  description = "The Cloud Map service the tasks register in, or null without service_discovery."
+  value       = try(aws_service_discovery_service.this[0].arn, null)
+}
+
+output "service_discovery_name" {
+  description = "The DNS label callers resolve, \"<name>.<namespace>\", or null without service_discovery."
+  value       = try(aws_service_discovery_service.this[0].name, null)
+}
+
+output "internal_port" {
+  description = "The internal (Cloud Map) container port, or null."
+  value       = var.internal_port
+}
+
 output "scaling_policy_names" {
   description = "Autoscaling policy names, keyed as passed in (target-tracking and step policies together)."
   value = merge(

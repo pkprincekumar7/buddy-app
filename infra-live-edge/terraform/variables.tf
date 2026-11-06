@@ -43,8 +43,17 @@ variable "backend_regions" {
   }
 
   validation {
-    condition     = alltrue([for r in var.backend_regions : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
-    error_message = "backend_regions may only contain: ap-south-1, eu-west-1, us-east-1."
+    condition     = alltrue([for r in var.backend_regions : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
+    error_message = "backend_regions may only contain shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
+  }
+
+  # An environment in routing.json's served_from has that one backend region (DEC-01 A).
+  validation {
+    condition = (
+      lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, null) == null
+      || (length(var.backend_regions) == 1 && var.backend_regions[0] == lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, ""))
+    )
+    error_message = "${var.environment} is served from one region only (shared/routing.json served_from, DEC-01): backend_regions must be just that region."
   }
 }
 
@@ -137,7 +146,7 @@ variable "cloudfront_price_class" {
 # -- Security -----------------------------------------------------------------
 
 variable "enable_guardduty" {
-  description = "Enable GuardDuty in us-east-1. Skipped on dev/sbx to avoid ~$22/mo cost."
+  description = "Enable GuardDuty in us-east-1, created and destroyed with the environment (its own AWS account). Skipped on dev/sbx to avoid ~$22/mo cost. Environments sharing an account: only one may set it (docs/environments.md, 5)."
   type        = bool
   default     = true
 }
@@ -169,8 +178,19 @@ variable "enable_waf_logging" {
   }
 }
 
+variable "waf_log_retention_days" {
+  description = "Days WAF log objects (waf-logs/, waf-logs-errors/) stay in the global logging bucket before S3 deletes them (SEC-02)."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.waf_log_retention_days >= 1 && floor(var.waf_log_retention_days) == var.waf_log_retention_days
+    error_message = "waf_log_retention_days must be a whole number of days, 1 or more."
+  }
+}
+
 variable "global_logging_bucket_name" {
-  description = "Pre-existing S3 bucket in us-east-1 for CloudTrail and WAF logs. Set from GLOBAL_LOGGING_BUCKET_NAME GitHub secret. Must be non-empty when enable_cloudtrail = true or enable_waf_logging = true."
+  description = "Pre-existing S3 bucket in us-east-1 for CloudTrail and WAF logs. Set from the GLOBAL_LOGGING_BUCKET_NAME GitHub environment variable. Must be non-empty when enable_cloudtrail = true or enable_waf_logging = true."
   type        = string
   default     = ""
 
@@ -178,4 +198,29 @@ variable "global_logging_bucket_name" {
     condition     = (!var.enable_cloudtrail && !var.enable_waf_logging) || length(var.global_logging_bucket_name) > 0
     error_message = "global_logging_bucket_name must be set when enable_cloudtrail = true or enable_waf_logging = true."
   }
+}
+
+# -- Alarms (OBS-01) ----------------------------------------------------------
+
+variable "enable_alarms" {
+  description = "Create the edge alarms (CloudFront 5xx rate) and their SNS topic in us-east-1. true on stg and prod."
+  type        = bool
+  default     = false
+}
+
+variable "ops_email" {
+  description = "Operator email for the edge alarm topic (the backend stack's OPS_EMAIL). Must be set when enable_alarms = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_alarms || length(var.ops_email) > 0
+    error_message = "ops_email must be set when enable_alarms = true (the OPS_EMAIL GitHub environment variable)."
+  }
+}
+
+variable "repository" {
+  description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
+  type        = string
+  default     = ""
 }

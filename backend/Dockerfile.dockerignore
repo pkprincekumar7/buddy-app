@@ -1,0 +1,16 @@
+# Used by BuildKit for builds with -f backend/Dockerfile (the context is the repository
+# root, so backend/.dockerignore doesn't apply). Keeps local environments, caches, build
+# output and tests out of the context; none of them belong in an image.
+**/.env
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+**/build
+**/tests
+**/*.md
+.git

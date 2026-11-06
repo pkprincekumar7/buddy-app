@@ -6,9 +6,11 @@
 #
 # The list of ECS services comes from the SSM parameter terraform-live-backend
 # writes — /<app>/<env>/backend/<region>/ecs_services, a JSON array (in
-# deploy_order) of { name, service, family, container } (see
-# infra-live-backend/terraform/services.tf). So adding a service in Terraform
-# needs no workflow logic change: these helpers loop over whatever is listed.
+# deploy_order) of { name, service, family, container, image_service,
+# ecr_repository_url } (see infra-live-backend/terraform/services.tf): a worker's
+# image_service and repository are its service's, the collector's are empty. So
+# adding a service in Terraform needs no workflow logic change: these helpers
+# loop over whatever is listed.
 #
 # Needs: aws (credentials configured), jq. All SSM reads go to us-east-1 (the
 # control-plane region), whatever region the services run in.
@@ -22,7 +24,7 @@ get_ssm() {
 
 # resolve_services SSM_BASE SELECTION → JSON array of the selected services, in
 # deploy_order (services.tf) — the order they're listed in. SSM_BASE is /<app>/<env>/backend/<region>. SELECTION is "all"
-# or a comma-separated list of service names (e.g. "backend,worker"); unknown
+# or a comma-separated list of service names (e.g. "users,users-worker"); unknown
 # names are an error that lists the valid ones.
 resolve_services() {
   local base="$1" selection="${2:-all}" manifest
@@ -50,6 +52,225 @@ resolve_services() {
   jq -c --argjson w "$wanted" '[.[] | select(.name as $n | $w | index($n))]' <<<"$manifest"
 }
 
+# image_runtimes SERVICES_JSON [SELECTION] → the entries of SERVICES_JSON that run
+# one of the app's own images (image_service set): what deploy and promote can
+# roll out. The collector runs a public image Terraform pins
+# (otel_collector_image), so "all" leaves it out, and naming it is an error.
+image_runtimes() {
+  local services="$1" selection="${2:-all}" pinned runtimes
+  pinned=$(jq -r '[.[] | select((.image_service // "") == "") | .name] | join(", ")' <<<"$services")
+  if [ -n "$pinned" ] && [ "$selection" != "all" ]; then
+    echo "ERROR: $pinned runs an image Terraform pins (otel_collector_image), not one these workflows build. Change it in Terraform, apply, then run restart-live-backend." >&2
+    return 1
+  fi
+  runtimes=$(jq -c '[.[] | select((.image_service // "") != "")]' <<<"$services")
+  if [ "$(jq 'length' <<<"$runtimes")" -eq 0 ]; then
+    echo "ERROR: none of the selected services runs an image these workflows build." >&2
+    return 1
+  fi
+  printf '%s\n' "$runtimes"
+}
+
+# image_services SERVICES_JSON → JSON array of the distinct image_service values,
+# in order: the images to build (a worker shares its service's).
+image_services() {
+  jq -c '[.[].image_service | select(. != null and . != "")] | reduce .[] as $s ([]; if index($s) then . else . + [$s] end)' <<<"$1"
+}
+
+# repository_for SERVICES_JSON IMAGE_SERVICE → that service's ECR repository URL
+# from the manifest, or an error if no entry has it.
+repository_for() {
+  local repo
+  repo=$(jq -r --arg s "$2" '[.[] | select(.image_service == $s) | .ecr_repository_url][0] // ""' <<<"$1")
+  if [ -z "$repo" ]; then
+    echo "ERROR: no ECR repository for '$2' in the ecs_services list. Run the terraform-live-backend workflow (apply) for this environment and region first." >&2
+    return 1
+  fi
+  printf '%s\n' "$repo"
+}
+
+# -- the scanned marker (production-readiness review, CI-03) -------------------
+# deploy-live-backend scans each image it builds (Trivy, HIGH/CRITICAL) before
+# pushing it, then gives that same image a second tag, <tag>-scanned. Promote
+# moves an image only if its source has the marker on the same digest, and
+# copies the marker along, so prod only ever runs an image a scan passed.
+# Tags are IMMUTABLE and the "keep 30" lifecycle rule counts images, not tags.
+SCANNED_SUFFIX="-scanned"
+
+# image_digest REGION REPO_NAME TAG → the image's digest (sha256:…), or "" if
+# the tag isn't in the repository.
+image_digest() {
+  aws ecr describe-images --region "$1" --repository-name "$2" --image-ids imageTag="$3" \
+    --query 'imageDetails[0].imageDigest' --output text 2>/dev/null | grep '^sha256:' || true
+}
+
+# is_scanned REGION REPO_NAME TAG — true when TAG-scanned exists and is the
+# same image as TAG.
+is_scanned() {
+  local digest marker
+  digest=$(image_digest "$1" "$2" "$3")
+  marker=$(image_digest "$1" "$2" "$3$SCANNED_SUFFIX")
+  [ -n "$digest" ] && [ "$digest" = "$marker" ]
+}
+
+# mark_scanned REGION REPO_NAME TAG — add TAG-scanned to the image TAG names,
+# by copying its manifest (no push, so the digest is the same by construction).
+# The manifest goes through a file, byte for byte: $(…) would drop a trailing
+# newline and so change the digest.
+mark_scanned() {
+  local region="$1" repo="$2" tag="$3" image media file rc=0
+  is_scanned "$region" "$repo" "$tag" && return 0
+  image=$(aws ecr batch-get-image --region "$region" --repository-name "$repo" --image-ids imageTag="$tag" \
+    --query 'images[0].{manifest: imageManifest, media: imageManifestMediaType}' --output json) || return 1
+  if ! jq -e '.manifest | type == "string"' <<<"$image" >/dev/null; then
+    echo "ERROR: $repo:$tag isn't in ECR ($region), so it can't be marked scanned." >&2
+    return 1
+  fi
+  media=$(jq -r '.media // empty' <<<"$image")
+  file=$(mktemp)
+  jq -j '.manifest' <<<"$image" > "$file"
+  aws ecr put-image --region "$region" --repository-name "$repo" --image-tag "$tag$SCANNED_SUFFIX" \
+    --image-manifest "file://$file" ${media:+--image-manifest-media-type "$media"} >/dev/null || rc=1
+  rm -f "$file"
+  [ "$rc" -eq 0 ] && is_scanned "$region" "$repo" "$tag"
+}
+
+# -- promoting by digest (production-readiness review, CI-09) --------------------
+# promote-live-backend copies each image registry to registry with crane, so the
+# target runs the exact digest the source scanned; no image moves through artifacts.
+
+# ecr_login REGION HOST...: crane signed in to each ECR registry HOST with one ECR
+# token for the current role (valid for any registry the role may read or write). The
+# token goes through stdin only, never an argument or the log.
+ecr_login() {
+  local region="$1" password host
+  shift
+  password=$(aws ecr get-login-password --region "$region") || return 1
+  for host in $(printf '%s\n' "$@" | sort -u); do
+    crane auth login "$host" -u AWS --password-stdin <<<"$password" >/dev/null || return 1
+  done
+}
+
+# copy_image REGION SOURCE REPO REPO_NAME TAG: copies SOURCE (<repo>@sha256:...) to
+# REPO:TAG in the target, unless TAG is already that very image; fails if TAG holds
+# another one, or if the copy didn't keep the digest.
+copy_image() {
+  local region="$1" source="$2" repo="$3" repo_name="$4" tag="$5" want got
+  want="${source##*@}"
+  if [[ ! "$want" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "ERROR: $source isn't pinned to a digest." >&2
+    return 1
+  fi
+  got=$(image_digest "$region" "$repo_name" "$tag")
+  if [ -n "$got" ]; then
+    if [ "$got" != "$want" ]; then
+      echo "ERROR: $repo:$tag is already in the target as $got, not $want: another build of the same tag. Deploy a new release to the source, then promote that." >&2
+      return 1
+    fi
+    echo "$repo:$tag is already $want in the target."
+    return 0
+  fi
+  crane copy "$source" "$repo:$tag" || return 1
+  got=$(image_digest "$region" "$repo_name" "$tag")
+  if [ "$got" != "$want" ]; then
+    echo "ERROR: $repo:$tag was copied as ${got:-nothing}, not $want." >&2
+    return 1
+  fi
+  echo "Copied $source to $repo:$tag."
+}
+
+# -- signing (production-readiness review, CI-03) ---------------------------------
+# deploy-live-backend signs every image it pushes, keyless: cosign gets a short-lived
+# certificate for the workflow's GitHub OIDC identity, and the signature is stored next to
+# the image as `sha256-<hex>.sig` (and the SBOM attestation as `.att`), with a public
+# Rekor log entry. Every rollout first checks the signature came from this repository's
+# deploy-live-backend workflow; promote copies it along with the image. cosign reads the
+# registry login docker or crane wrote.
+
+COSIGN_OIDC_ISSUER="https://token.actions.githubusercontent.com"
+
+# signer_identity → the pattern a valid signature's certificate must match: this repo's
+# deploy-live-backend workflow, run from a branch or tag (a call from terraform-live-all
+# signs as that same workflow file).
+signer_identity() {
+  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is unset}"
+  printf '^https://github\\.com/%s/\\.github/workflows/deploy-live-backend\\.yml@refs/(heads|tags)/.+$\n' "${repo//./\\.}"
+}
+
+# verify_signature REF (<repo>@sha256:...): success if REF carries a valid signature from
+# signer_identity. QUIET=1 prints nothing; otherwise a failure says why.
+verify_signature() {
+  local ref="$1" out
+  if [[ ! "$ref" =~ @sha256:[0-9a-f]{64}$ ]]; then
+    echo "ERROR: $ref isn't pinned to a digest, so its signature can't be checked." >&2
+    return 1
+  fi
+  if out=$(cosign verify --certificate-identity-regexp "$(signer_identity)" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$ref" 2>&1); then
+    return 0
+  fi
+  [ -n "${QUIET:-}" ] || echo "ERROR: $ref has no valid signature from $(signer_identity): $(tail -n 1 <<<"$out")" >&2
+  return 1
+}
+
+# sign_image REF: signs REF unless it's already signed (a re-run: tags are immutable, so a
+# second .sig write would fail), then checks the signature.
+sign_image() {
+  local ref="$1"
+  if QUIET=1 verify_signature "$ref"; then
+    echo "$ref is already signed."
+    return 0
+  fi
+  cosign sign --yes "$ref" >/dev/null || return 1
+  verify_signature "$ref" && echo "Signed $ref."
+}
+
+# attest_sbom REF FILE: attaches FILE (a CycloneDX SBOM of REF) as a signed attestation,
+# unless REF already has one.
+attest_sbom() {
+  local ref="$1" file="$2"
+  if cosign verify-attestation --type cyclonedx --certificate-identity-regexp "$(signer_identity)" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$ref" >/dev/null 2>&1; then
+    echo "$ref already has its SBOM attestation."
+    return 0
+  fi
+  cosign attest --yes --type cyclonedx --predicate "$file" "$ref" >/dev/null || return 1
+  echo "Attested the SBOM of $ref."
+}
+
+# copy_signatures SOURCE_REPO TARGET_REPO DIGEST: copies DIGEST's signature and SBOM
+# attestation (`sha256-<hex>.sig`, `.att`) from SOURCE_REPO to TARGET_REPO, after the
+# image itself (copy_image). Missing in the source: an error for .sig, skipped for .att.
+copy_signatures() {
+  local source="$1" target="$2" digest="$3" kind tag
+  for kind in sig att; do
+    tag="sha256-${digest#sha256:}.$kind"
+    if ! crane digest "$source:$tag" >/dev/null 2>&1; then
+      [ "$kind" = att ] && continue
+      echo "ERROR: $source@$digest has no signature ($tag) to promote. Deploy it again with deploy-live-backend, then promote." >&2
+      return 1
+    fi
+    if crane digest "$target:$tag" >/dev/null 2>&1; then
+      continue
+    fi
+    crane copy "$source:$tag" "$target:$tag" || return 1
+  done
+}
+
+# tag_for_digest REGION REPO_NAME DIGEST → the release tag of DIGEST in REPO_NAME (not
+# its -scanned marker), for a task definition that runs <repo>@<digest>.
+tag_for_digest() {
+  local region="$1" repo="$2" digest="$3" tag
+  tag=$(aws ecr describe-images --region "$region" --repository-name "$repo" --image-ids imageDigest="$digest" \
+    --query 'imageDetails[0].imageTags' --output json 2>/dev/null \
+    | jq -r --arg s "$SCANNED_SUFFIX" '(. // [])[] | select(endswith($s) | not)' | head -n 1)
+  if [ -z "$tag" ]; then
+    echo "ERROR: $repo@$digest has no release tag in ECR ($region)." >&2
+    return 1
+  fi
+  printf '%s\n' "$tag"
+}
+
 # register_with_image FAMILY CONTAINER IMAGE → ARN of a new revision of FAMILY
 # that is the current one with CONTAINER's image swapped for IMAGE. Everything
 # else (env vars, secrets refs, CPU/memory, logging, sidecars) is kept exactly
@@ -70,15 +291,16 @@ register_with_image() {
 }
 
 # live_image CLUSTER SERVICE CONTAINER → the image CONTAINER runs in SERVICE's
-# PRIMARY (live) deployment — what's actually running, not a stored tag.
+# deployment — what's actually running, not a stored tag. Only a finished
+# rollout counts: the service must have one deployment, PRIMARY and COMPLETED.
+# PRIMARY alone means "newest", which mid-rollout may still fail and be rolled
+# back (production-readiness review, CI-14).
 live_image() {
-  local cluster="$1" service="$2" container="$3" td image
-  # Multiple PRIMARY deployments are near-impossible; take the first.
-  # shellcheck disable=SC2016  # backticks are JMESPath literals, not shell
-  td=$(aws ecs describe-services --cluster "$cluster" --services "$service" \
-    --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' --output text | head -n1)
-  if [ -z "$td" ] || [ "$td" = "None" ]; then
-    echo "ERROR: no live (PRIMARY) task definition for $service." >&2
+  local cluster="$1" service="$2" container="$3" info td image
+  info=$(aws ecs describe-services --cluster "$cluster" --services "$service" --query 'services[0]' --output json) || return 1
+  if ! td=$(jq -er '.deployments | select(length == 1) | .[0]
+      | select(.status == "PRIMARY" and .rolloutState == "COMPLETED") | .taskDefinition' <<<"$info" 2>/dev/null); then
+    echo "ERROR: $service isn't settled on one completed deployment (now: $(jq -r '[.deployments[]? | "\(.status)/\(.rolloutState)"] | join(", ") | if . == "" then "none" else . end' <<<"$info")). Promote it once its rollout has finished." >&2
     return 1
   fi
   image=$(aws ecs describe-task-definition --task-definition "$td" \
@@ -90,45 +312,86 @@ live_image() {
   printf '%s\n' "$image"
 }
 
-# wait_stable CLUSTER SERVICE [ATTEMPTS] [INTERVAL] — poll until the service
-# has one deployment with every desired task running, for up to
+# same_release IMAGES_JSON... — promote's per-region exports (each a file of
+# [{name, image, image_service}]) must list the same services at the same tags,
+# or the target's regions would get different releases (CI-14). Each file's
+# directory name labels it in the error (promote-images-<region>). The
+# registry part of an image differs per region (ECR is regional), so only the
+# tag is compared: deploy-live-backend pushes one build under one tag everywhere.
+same_release() {
+  local f
+  if jq -se 'map(map({name, tag: (.image | sub("^.*:"; ""))}) | sort_by(.name)) | unique | length == 1' "$@" >/dev/null; then
+    return 0
+  fi
+  echo "ERROR: the source regions don't run the same release, so promote would give the target's regions different images. Deploy one release to every region first:" >&2
+  for f in "$@"; do
+    echo "  $(basename "$(dirname "$f")"): $(jq -r 'sort_by(.name) | map("\(.name)=\(.image | sub("^.*:"; ""))") | join(", ")' "$f")" >&2
+  done
+  return 1
+}
+
+# wait_stable CLUSTER SERVICE DEPLOYMENT_ID [ATTEMPTS] [INTERVAL] — poll until
+# DEPLOYMENT_ID (the one update-service created) is the service's only
+# deployment, PRIMARY and COMPLETED, with every desired task running, for up to
 # ATTEMPTS × INTERVAL seconds (default 60 × 15 s = 15 minutes; `aws ecs wait
-# services-stable` has a hard 10-minute ceiling). Fails as soon as the ECS
-# circuit breaker reports the rollout FAILED (it has already rolled back).
+# services-stable` has a hard 10-minute ceiling).
+# It follows that deployment, not .deployments[0]: when the ECS circuit breaker
+# rolls back, it starts a new PRIMARY deployment of the old revision and moves the
+# failed one behind it, so "one deployment, all tasks running" would otherwise
+# report the old version as a success (production-readiness review, CI-11). So it
+# fails as soon as that deployment is FAILED, or is no longer listed.
 wait_stable() {
-  local cluster="$1" service="$2" attempts="${3:-60}" interval="${4:-15}" i info deployments running pending desired rollout
-  echo "Waiting for $service to reach steady state (up to $((attempts * interval / 60)) minutes)..."
+  local cluster="$1" service="$2" id="$3" attempts="${4:-60}" interval="${5:-15}"
+  local i info deployment deployments running pending desired rollout status
+  echo "Waiting for $service deployment $id to complete (up to $((attempts * interval / 60)) minutes)..."
   for ((i = 1; i <= attempts; i++)); do
     info=$(aws ecs describe-services --cluster "$cluster" --services "$service" --query 'services[0]' --output json) || return 1
     deployments=$(jq '.deployments | length' <<<"$info")
     running=$(jq '.runningCount' <<<"$info")
     pending=$(jq '.pendingCount' <<<"$info")
     desired=$(jq '.desiredCount' <<<"$info")
-    rollout=$(jq -r '.deployments[0].rolloutState' <<<"$info")
+    deployment=$(jq -c --arg id "$id" 'first(.deployments[] | select(.id == $id)) // empty' <<<"$info")
 
+    if [ -z "$deployment" ]; then
+      echo "ERROR: $service deployment $id is no longer listed: ECS replaced it (a rollback, or another deployment). The service isn't running this release." >&2
+      return 1
+    fi
+    rollout=$(jq -r '.rolloutState' <<<"$deployment")
+    status=$(jq -r '.status' <<<"$deployment")
     if [ "$rollout" = "FAILED" ]; then
       echo "ERROR: $service rollout FAILED — the ECS circuit breaker has rolled back. Check ECS events and CloudWatch logs." >&2
       return 1
     fi
-    if [ "$deployments" -eq 1 ] && [ "$running" -eq "$desired" ] && [ "$pending" -eq 0 ] && [ "$desired" -gt 0 ]; then
+    if [ "$status" = "PRIMARY" ] && [ "$rollout" = "COMPLETED" ] && [ "$deployments" -eq 1 ] \
+      && [ "$running" -eq "$desired" ] && [ "$pending" -eq 0 ] && [ "$desired" -gt 0 ]; then
       echo "$service is stable ($running/$desired tasks running)."
       return 0
     fi
-    echo "[$i/$attempts] $service — deployments: $deployments, running: $running, pending: $pending, desired: $desired, rollout: $rollout — retrying in ${interval}s..."
+    echo "[$i/$attempts] $service — deployment: $status/$rollout, deployments: $deployments, running: $running, pending: $pending, desired: $desired — retrying in ${interval}s..."
     sleep "$interval"
   done
-  echo "ERROR: $service did not stabilise in time (deployments: $deployments, running: $running, pending: $pending, desired: $desired)." >&2
+  echo "ERROR: $service did not stabilise in time (deployment: $status/$rollout, deployments: $deployments, running: $running, pending: $pending, desired: $desired)." >&2
   return 1
 }
 
-# roll_out CLUSTER SERVICE TASK_DEFINITION_ARN — point SERVICE at the new
-# revision and wait until it's stable.
+# roll_out CLUSTER SERVICE [TASK_DEFINITION_ARN] — point SERVICE at the new
+# revision (or, without one, replace its tasks on the current revision) and wait
+# until the deployment that starts is complete.
 roll_out() {
-  local cluster="$1" service="$2" td="$3"
-  aws ecs update-service --cluster "$cluster" --service "$service" --task-definition "$td" \
-    --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-    --output json | cat
-  wait_stable "$cluster" "$service"
+  local cluster="$1" service="$2" td="${3:-}" result id
+  local -a change=(--force-new-deployment)
+  [ -n "$td" ] && change=(--task-definition "$td")
+  # shellcheck disable=SC2016  # backticks are JMESPath literals, not shell
+  result=$(aws ecs update-service --cluster "$cluster" --service "$service" "${change[@]}" \
+    --query '{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount, deployment: service.deployments[?status==`PRIMARY`] | [0].id}' \
+    --output json) || return 1
+  printf '%s\n' "$result"
+  id=$(jq -r '.deployment // empty' <<<"$result")
+  if [ -z "$id" ]; then
+    echo "ERROR: update-service returned no PRIMARY deployment for $service." >&2
+    return 1
+  fi
+  wait_stable "$cluster" "$service" "$id"
 }
 
 # deploy_one CLUSTER SERVICE_ENTRY_JSON IMAGE_FOR — register one service's
@@ -182,6 +445,33 @@ deploy_image() {
   echo "Rolled out: ${succeeded[*]:-none}"
   if [ "${#failed[@]}" -gt 0 ]; then
     echo "ERROR: rollout failed for: ${failed[*]}. Those services are back on their previous image (ECS circuit breaker); the others run the new one. Fix and re-run with service=$(IFS=,; echo "${failed[*]}")." >&2
+    if [ "${#succeeded[@]}" -gt 0 ]; then
+      mixed_images_notice "$(IFS=,; echo "${succeeded[*]}")" "$(IFS=,; echo "${failed[*]}")"
+    fi
     return 1
   fi
+}
+
+# mixed_images_notice ROLLED_OUT FAILED (comma-separated names): when a rollout fails
+# part-way, the environment runs two releases at once. Nothing rolls the others back
+# (that could undo a good release); this makes the state impossible to miss instead: a
+# warning annotation and a section in the run summary, with the re-run that ends it
+# (production-readiness review, CI-12).
+mixed_images_notice() {
+  local moved="$1" left_behind="$2"
+  echo "::warning title=Mixed images::This environment now runs two releases: ${moved//,/, } on the new image, ${left_behind//,/, } still on the previous one. Re-run with service=${left_behind} once the failure is fixed."
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+  {
+    echo "### ⚠️ Mixed images"
+    echo
+    echo "The rollout stopped part-way, so this environment runs two releases until it's re-run."
+    echo "Every change must already work across versions (docs/infra-operations.md), but don't leave it this way."
+    echo
+    echo "| Service | Image |"
+    echo "|---|---|"
+    tr ',' '\n' <<<"$moved" | sed 's/.*/| & | new |/'
+    tr ',' '\n' <<<"$left_behind" | sed 's/.*/| & | previous (rolled back by ECS) |/'
+    echo
+    echo "Fix the failure, then re-run this workflow with \`service=${left_behind}\`."
+  } >> "$GITHUB_STEP_SUMMARY"
 }
