@@ -53,7 +53,6 @@ jobs:
           IOS_CERTIFICATE_P12_BASE64:      ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
           IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_APPLE_TEAM_ID:               ${{ vars.IOS_APPLE_TEAM_ID }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
@@ -66,7 +65,6 @@ jobs:
           [[ -z "$IOS_CERTIFICATE_P12_BASE64"      ]] && missing+=("IOS_CERTIFICATE_P12_BASE64")
           [[ -z "$IOS_CERTIFICATE_PASSWORD"        ]] && missing+=("IOS_CERTIFICATE_PASSWORD")
           [[ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]] && missing+=("IOS_PROVISIONING_PROFILE_BASE64")
-          [[ -z "$IOS_APPLE_TEAM_ID"               ]] && missing+=("IOS_APPLE_TEAM_ID (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
@@ -219,9 +217,12 @@ jobs:
           # Export path for subsequent steps
           echo "KEYCHAIN_PATH=${KEYCHAIN_PATH}" >> "$GITHUB_ENV"
 
+      # The Team ID signing needs comes from the profile itself, so the two can't disagree.
+      # IOS_APPLE_TEAM_ID is optional: when set, it must be the profile's team.
       - name: Install provisioning profile
         env:
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
         run: |
           PP_PATH="$RUNNER_TEMP/profile.mobileprovision"
           echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
@@ -231,12 +232,23 @@ jobs:
           # is unreliable on macOS GitHub runners.
           security cms -D -i "$PP_PATH" > "$RUNNER_TEMP/profile.plist"
           UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$RUNNER_TEMP/profile.plist")
+          if [[ ! "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "ERROR: the provisioning profile has no valid TeamIdentifier ('${TEAM_ID}')."
+            exit 1
+          fi
+          if [[ -n "$IOS_APPLE_TEAM_ID" && "$IOS_APPLE_TEAM_ID" != "$TEAM_ID" ]]; then
+            echo "ERROR: IOS_APPLE_TEAM_ID is ${IOS_APPLE_TEAM_ID}, but the provisioning profile belongs to team ${TEAM_ID}. Fix the variable (or delete it) or use that team's profile."
+            exit 1
+          fi
+          echo "Signing team: ${TEAM_ID} (from the provisioning profile)"
 
           PP_DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PP_DEST"
           cp "$PP_PATH" "$PP_DEST/${UUID}.mobileprovision"
           echo "Installed provisioning profile UUID: ${UUID}"
           echo "IOS_PROVISIONING_PROFILE_UUID=${UUID}" >> "$GITHUB_ENV"
+          echo "IOS_TEAM_ID=${TEAM_ID}" >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
       # Archive the app, then export it as an Ad Hoc .ipa.
@@ -253,8 +265,6 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Build archive
         working-directory: frontend-app/ios
-        env:
-          IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
         run: |
           xcodebuild archive \
             -workspace Superpower.xcworkspace \
@@ -262,15 +272,13 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/Superpower.xcarchive" \
-            DEVELOPMENT_TEAM="${IOS_APPLE_TEAM_ID}" \
+            DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="${IOS_PROVISIONING_PROFILE_UUID}" \
             COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Export Ad Hoc IPA
-        env:
-          IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
         run: |
           # Write ExportOptions.plist using grouped echo — heredoc delimiters must be
           # at column 0 in shell, but YAML literal blocks require indentation >= the
@@ -283,7 +291,7 @@ jobs:
             echo '  <key>method</key>'
             echo '  <string>ad-hoc</string>'
             echo '  <key>teamID</key>'
-            echo "  <string>${IOS_APPLE_TEAM_ID}</string>"
+            echo "  <string>${IOS_TEAM_ID}</string>"
             echo '  <key>signingStyle</key>'
             echo '  <string>manual</string>'
             echo '  <key>provisioningProfiles</key>'

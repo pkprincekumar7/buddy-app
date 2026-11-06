@@ -286,14 +286,16 @@ They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS
 
 ### Mobile build (`build-ios-ipa.yml`)
 
-The two IDs are environment **variables**: like `GOOGLE_CLIENT_ID`, neither is a credential (the
+The IDs are environment **variables**: like `GOOGLE_CLIENT_ID`, neither is a credential (the
 client ID is compiled into the app, and the Team ID appears in every app the team signs). Only
-the signing material is secret.
+the signing material is secret. The signing Team ID comes from the provisioning profile itself
+(its `TeamIdentifier`), so the two can't disagree; `IOS_APPLE_TEAM_ID` is optional, and when set
+the build fails unless it's the profile's team.
 
 | Name (kind) | Value |
 |---|---|
 | `IOS_CLIENT_ID` (variable) | OAuth 2.0 iOS client ID for Google Sign-In in the Expo app |
-| `IOS_APPLE_TEAM_ID` (variable) | Apple Developer Team ID used for code signing |
+| `IOS_APPLE_TEAM_ID` (variable, optional) | Apple Developer Team ID; only checked against the profile's team |
 | `IOS_CERTIFICATE_P12_BASE64` (secret) | Base64-encoded `.p12` code-signing certificate |
 | `IOS_CERTIFICATE_PASSWORD` (secret) | Password for the `.p12` certificate |
 | `IOS_PROVISIONING_PROFILE_BASE64` (secret) | Base64-encoded mobile provisioning profile |

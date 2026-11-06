@@ -771,7 +771,7 @@ The `build-ios-ipa.yml` workflow creates an Ad Hoc `.ipa` and requires both a **
 4. Pay the $99 / year fee
 5. Wait for approval (usually instant for Individual; 2–5 days for Organization)
 
-> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the value you add as the `IOS_APPLE_TEAM_ID` variable in GitHub.
+> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the team the provisioning profile belongs to; the build reads it from the profile (`IOS_APPLE_TEAM_ID` in GitHub is an optional check).
 
 #### Testing on a real device without the paid program
 
@@ -790,12 +790,12 @@ This is fine for development testing on your own device. CI builds and distribut
 
 ### iOS-Specific Settings
 
-iOS builds need two extra **variables** and three extra **secrets** in each GitHub environment, on top of the shared set. The two IDs aren't credentials (the client ID ships inside the app; the Team ID shows in every signed app), so they're variables, like `GOOGLE_CLIENT_ID`. The steps below show how to get each one.
+iOS builds need one extra **variable** and three extra **secrets** in each GitHub environment, on top of the shared set. The client ID isn't a credential (it ships inside the app), so it's a variable, like `GOOGLE_CLIENT_ID`. The signing Team ID is read from the provisioning profile, so `IOS_APPLE_TEAM_ID` is optional: set it only if you want the build to check the profile belongs to that team. The steps below show how to get each one.
 
 | Name                              | Kind     | Description                                                              |
 | --------------------------------- | -------- | ------------------------------------------------------------------------ |
 | `IOS_CLIENT_ID`                   | variable | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
-| `IOS_APPLE_TEAM_ID`               | variable | 10-character Apple Developer Team ID                                     |
+| `IOS_APPLE_TEAM_ID` (optional)    | variable | 10-character Apple Developer Team ID; checked against the profile's      |
 | `IOS_CERTIFICATE_P12_BASE64`      | secret   | Base64-encoded Apple Distribution certificate (`.p12`)                   |
 | `IOS_CERTIFICATE_PASSWORD`        | secret   | Password chosen when exporting the `.p12`                                |
 | `IOS_PROVISIONING_PROFILE_BASE64` | secret   | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`)          |
@@ -804,7 +804,7 @@ iOS builds need two extra **variables** and three extra **secrets** in each GitH
 
 1. Go to [developer.apple.com](https://developer.apple.com) → **Account**
 2. Under **Membership Details**, copy the **Team ID** (10 characters, e.g. `ABCD1234EF`)
-3. Add as the `IOS_APPLE_TEAM_ID` **variable** in each GitHub environment
+3. Optional: add it as the `IOS_APPLE_TEAM_ID` **variable** in each GitHub environment. The build reads the Team ID from the provisioning profile (Step 4); with this set, it also checks the profile is this team's
 
 #### Step 2 — Create and export a Distribution certificate
 
