@@ -324,7 +324,15 @@ def test_two_admins_demoting_each_other_at_once_leave_one(mongo_uri):
             )
 
         results = await asyncio.gather(demote(b, a), demote(a, b))
-        assert sorted(response.status_code for response in results) == [200, 409]
+        statuses = sorted(response.status_code for response in results)
+        # The loser is refused either way: by the counter (409 last_admin, both got past auth
+        # before either wrote), or, when the winner finished first, by its own revoked
+        # session (401: a role change ends the target's sessions, common.authz's check).
+        assert statuses in ([200, 401], [200, 409])
+        if statuses == [200, 409]:
+            assert {_code(response) for response in results if response.status_code == 409} == {
+                "last_admin"
+            }
         roles = [doc["role"] for doc in await r.db[AUTH].find({}).to_list(None)]
         assert roles.count("admin") == 1 and await _admins(r) == 1
 
