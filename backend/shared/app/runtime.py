@@ -84,12 +84,17 @@ class Runtime:
             )
         s3 = None
         if settings.assets_bucket_name:
+            # AWS_ENDPOINT_URL_S3, when set, wins (empty: AWS's own S3), as for the uploads.
+            endpoint = (
+                settings.aws_endpoint_url
+                if settings.aws_endpoint_url_s3 is None
+                else settings.aws_endpoint_url_s3 or None
+            )
             s3 = boto3.client(
                 "s3",
                 region_name=ASSETS_REGION,
-                endpoint_url=settings.aws_endpoint_url
-                or f"https://s3.{ASSETS_REGION}.amazonaws.com",
-                config=_LOCAL_S3_CONFIG if settings.aws_endpoint_url else _S3_CONFIG,
+                endpoint_url=endpoint or f"https://s3.{ASSETS_REGION}.amazonaws.com",
+                config=_LOCAL_S3_CONFIG if endpoint else _S3_CONFIG,
             )
         return cls(
             settings=settings,

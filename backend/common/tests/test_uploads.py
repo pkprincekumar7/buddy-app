@@ -25,6 +25,7 @@ from common.uploads import (
     Uploads,
     UploadsConfig,
     child_prefix,
+    s3_endpoint_url,
 )
 
 BUCKET = "buddy-test-uploads"
@@ -208,6 +209,25 @@ def test_config_from_env():
     assert caught.value.code == "uploads_not_configured"
     with pytest.raises(ValueError, match="TTL"):
         UploadsConfig.from_env({"UPLOADS_BUCKET_NAME": BUCKET, "UPLOADS_URL_TTL_SECONDS": "60"})
+
+
+def test_s3_alone_can_go_elsewhere_than_the_other_aws_calls():
+    moto = "http://host.docker.internal:5050"
+    # AWS_ENDPOINT_URL_S3, when set, is S3's endpoint; set but empty is AWS's own S3 (the
+    # local stack's real bucket, with SNS and SQS still on Moto).
+    assert s3_endpoint_url({"AWS_ENDPOINT_URL": moto, "AWS_ENDPOINT_URL_S3": ""}) is None
+    assert s3_endpoint_url({"AWS_ENDPOINT_URL_S3": "http://s3.local"}) == "http://s3.local"
+    assert s3_endpoint_url({"AWS_ENDPOINT_URL": moto}) == moto
+    assert s3_endpoint_url({}) is None
+    real = UploadsConfig.from_env(
+        {
+            "UPLOADS_BUCKET_NAME": BUCKET,
+            "AWS_ENDPOINT_URL": moto,
+            "AWS_ENDPOINT_URL_S3": "",
+            "AWS_PUBLIC_ENDPOINT_URL": "",
+        }
+    )
+    assert real.endpoint_url is None and real.public_endpoint_url is None
 
 
 @pytest.fixture

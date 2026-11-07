@@ -64,8 +64,10 @@ npm run lint        # eslint (lint:fix to auto-fix)
 npm run typecheck   # tsc --noEmit, app + node configs
 ```
 
-Full stack: `docker compose up -d --build` from the repo root (no profile; Moto runs on the host first,
-see `docs/getting-started.md`).
+Full stack, from the repo root (no profile; Moto runs on the host first), in one of two modes
+(`docs/getting-started.md`, "Manual and test modes"): `docker compose up -d --build` is the manual
+mode (`.env`'s Atlas URIs and real S3 bucket); `docker compose --env-file .env --env-file .env.test up -d --build` is
+the test mode (the `mongo` container and Moto), the only one the e2e scripts accept.
 
 Country/region routing data: edit only `shared/routing.json`, then run
 `node scripts/sync-routing.mjs` (regenerates `backend/common/regions_data.py`,

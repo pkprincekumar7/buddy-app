@@ -67,6 +67,15 @@ class UploadError(ValueError):
         self.code = code
 
 
+def s3_endpoint_url(environ: Mapping[str, str]) -> str | None:
+    """Where S3 calls go: AWS_ENDPOINT_URL_S3 when it's set (empty: AWS's own S3), else
+    AWS_ENDPOINT_URL, else AWS's. So the local stack can send S3 alone to a real bucket while
+    SNS and SQS stay on Moto (docker-compose.yml, `.env`)."""
+    if "AWS_ENDPOINT_URL_S3" in environ:
+        return environ["AWS_ENDPOINT_URL_S3"] or None
+    return environ.get("AWS_ENDPOINT_URL") or None
+
+
 @dataclass(frozen=True)
 class UploadsConfig:
     bucket: str
@@ -77,11 +86,12 @@ class UploadsConfig:
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> UploadsConfig:
-        """UPLOADS_BUCKET_NAME, AWS_REGION, AWS_ENDPOINT_URL, AWS_PUBLIC_ENDPOINT_URL, UPLOADS_URL_TTL_SECONDS."""
+        """UPLOADS_BUCKET_NAME, AWS_REGION, the S3 endpoint (s3_endpoint_url), AWS_PUBLIC_ENDPOINT_URL,
+        UPLOADS_URL_TTL_SECONDS."""
         bucket = environ.get("UPLOADS_BUCKET_NAME", "")
         if not bucket:
             raise UploadError("uploads_not_configured", "UPLOADS_BUCKET_NAME is not set")
-        endpoint = environ.get("AWS_ENDPOINT_URL") or None
+        endpoint = s3_endpoint_url(environ)
         ttl = int(environ.get("UPLOADS_URL_TTL_SECONDS", "3600"))
         if not 300 <= ttl <= 86400:
             raise ValueError("UPLOADS_URL_TTL_SECONDS must be between 300 and 86400")

@@ -567,9 +567,10 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
 fi
 
 # ── end to end on the local stack (build plan 6.1, 6.2) ───────────────────────
-# Off by default: they need the compose stack and Moto up (docs/getting-started.md),
-# make LLM calls with the keys in .env (about 20 a run), stop and start the stack's workers,
-# and take about 7-10 minutes.
+# Off by default: they need the compose stack in test mode and Moto up
+# (`docker compose --env-file .env --env-file .env.test up -d`; scripts/e2e refuses a stack on
+# Atlas or a real bucket, docs/getting-started.md), make LLM calls with the keys in .env
+# (about 20 a run), stop and start the stack's workers, and take about 7-10 minutes.
 # Gate 6 runs them:
 #   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 if [ "${RUN_E2E:-}" = "1" ]; then

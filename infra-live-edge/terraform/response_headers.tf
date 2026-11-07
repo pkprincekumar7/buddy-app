@@ -123,11 +123,11 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
   # geolocation=()      — not used; deny all.
   # payment=()          — not used; deny all.
   # usb=()              — not used; deny all.
-  # interest-cohort=()  — opt out of FLoC / Topics API (Google interest tracking).
+  # No interest-cohort: FLoC is gone and browsers warn "Unrecognized feature" for it.
   custom_headers_config {
     items {
       header   = "Permissions-Policy"
-      value    = "microphone=(self), camera=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+      value    = "microphone=(self), camera=(), geolocation=(), payment=(), usb=()"
       override = true
     }
   }

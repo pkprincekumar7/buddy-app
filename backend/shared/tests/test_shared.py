@@ -288,6 +288,16 @@ def test_from_env_needs_no_database(fake_aws_credentials, monkeypatch, tmp_path)
     unfilled = Runtime.from_env(_env(OPENAI_API_KEY="REPLACE_ME"))
     assert unfilled.openai is None
     asyncio.run(unfilled.aclose())
+    # AWS_ENDPOINT_URL_S3 set but empty: the APK link is AWS's S3, the rest still the emulator.
+    real_s3 = Runtime.from_env(
+        _env(
+            ASSETS_BUCKET_NAME=BUCKET,
+            AWS_ENDPOINT_URL="http://localhost:5050",
+            AWS_ENDPOINT_URL_S3="",
+        )
+    )
+    assert real_s3.s3.meta.endpoint_url == "https://s3.us-east-1.amazonaws.com"
+    asyncio.run(real_s3.aclose())
     aws = Runtime.from_env(_env(ASSETS_BUCKET_NAME=BUCKET))
     assert aws.s3.meta.endpoint_url == "https://s3.us-east-1.amazonaws.com"
     aws_url = aws.s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": "k"})

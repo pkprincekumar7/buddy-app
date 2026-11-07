@@ -88,6 +88,10 @@ class ServiceSettings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         default="INFO", validation_alias="LOG_LEVEL"
     )
+    # S3 alone somewhere else than AWS_ENDPOINT_URL (common.uploads.s3_endpoint_url): set but
+    # empty is AWS's own S3. Never set in AWS.
+    aws_endpoint_url_s3: str | None = Field(default=None, validation_alias="AWS_ENDPOINT_URL_S3")
+
     # Behind CloudFront and the ALB the client's address comes from a header (15.1).
     behind_proxy: bool = Field(default=False, validation_alias="BEHIND_PROXY")
 
@@ -125,6 +129,8 @@ class ServiceSettings(BaseSettings):
         # Every service has this field (Moto, locally); in AWS it must be the real endpoints.
         if getattr(self, "aws_endpoint_url", None):
             problems.append("AWS_ENDPOINT_URL is set: AWS calls would go to a local emulator")
+        if self.aws_endpoint_url_s3:
+            problems.append("AWS_ENDPOINT_URL_S3 is set: S3 calls would go to a local emulator")
         if not self.public_origins.strip():
             problems.append("PUBLIC_ORIGINS is unset: cross-site cookie writes wouldn't be refused")
         return problems

@@ -102,6 +102,7 @@ def test_stg_and_prod_start_with_safe_settings(monkeypatch, tmp_path, app_env):
         ({"REDIS_URL": "redis://valkey.example:6379"}, "REDIS_URL must use TLS"),
         ({"REDIS_USERNAME": "", "REDIS_REPLICATION_GROUP_ID": ""}, "REDIS_USERNAME is unset"),
         ({"PUBLIC_ORIGINS": " "}, "PUBLIC_ORIGINS is unset"),
+        ({"AWS_ENDPOINT_URL_S3": "http://moto:5000"}, "AWS_ENDPOINT_URL_S3 is set"),
     ],
 )
 def test_stg_and_prod_refuse_unsafe_settings(monkeypatch, tmp_path, env, message):

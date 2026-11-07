@@ -164,9 +164,9 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Docker Compose:**
 
-Ensure `ASSETS_BUCKET_NAME` is set to your local bucket name in the root `.env`, then:
+Ensure `ASSETS_BUCKET_NAME` is set to your local bucket name in the root `.env`, then start the stack. The frontend's `/app-assets/` proxy reads the real S3 bucket of that name, unsigned, in either mode ([Manual and test modes](getting-started.md#manual-and-test-modes)); only the APK link follows the mode (Moto in test mode, `.env.test`'s `ASSETS_BUCKET_NAME`). Manual mode:
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
 nginx proxies `/app-assets/*` requests directly to S3.
@@ -196,16 +196,16 @@ backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
 backend/.venv/bin/python scripts/local-aws-setup.py
 ```
 
-`scripts/local-aws-setup.py` creates the uploads bucket with a CORS rule for the local frontend origins, so the browser can PUT to a presigned URL. The relevant root `.env` keys (see `.env.example`):
+`scripts/local-aws-setup.py` creates the uploads bucket in Moto with a CORS rule for the local frontend origins, so the browser can post to a presigned URL. That's the test mode; in manual mode the photos go to a real bucket instead ([Manual and test modes](getting-started.md#manual-and-test-modes); its policy, CORS and setup are in [local/aws-manual](../local/aws-manual/README.md)). The keys involved (`.env.test` sets the Moto values):
 
 ```env
 UPLOADS_BUCKET_NAME=person-local-uploads-bucket-ap-south-1
 # UPLOADS_URL_TTL_SECONDS=3600
-# LOCAL_MOTO_URL=http://host.docker.internal:5050    # what the services call
-# LOCAL_MOTO_PUBLIC_URL=http://localhost:5050        # what presigned URLs point at
+LOCAL_S3_URL=http://host.docker.internal:5050    # what the services call for S3; empty: AWS's S3
+LOCAL_S3_PUBLIC_URL=http://localhost:5050        # what presigned URLs point at; empty: AWS's S3
 ```
 
-Compose passes `LOCAL_MOTO_URL` to the services as `AWS_ENDPOINT_URL` and `LOCAL_MOTO_PUBLIC_URL` as `AWS_PUBLIC_ENDPOINT_URL`, so the browser on the same machine can open the presigned URLs.
+Compose passes `LOCAL_S3_URL` to the services as `AWS_ENDPOINT_URL_S3` (S3 alone; `LOCAL_MOTO_URL`, as `AWS_ENDPOINT_URL`, is SNS, SQS and the rest) and `LOCAL_S3_PUBLIC_URL` as `AWS_PUBLIC_ENDPOINT_URL`, so the browser on the same machine can open the presigned URLs. Both empty, the services and the URLs use the regional S3 endpoint.
 
 In ECS (dev/stg/prod) no AWS keys are set — the ECS task role provides credentials. Those role credentials sign both the PUT (upload) and GET (view) URLs; the role has `s3:PutObject` and `s3:GetObject` on the uploads bucket.
 

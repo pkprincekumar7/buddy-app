@@ -6,7 +6,7 @@ React 19 + TypeScript + Vite frontend for the Superpower platform.
 
 - Node.js 22
 - npm 10+
-- The local stack running (`docker compose up -d --build` from the repo root, see [docs/getting-started.md](../docs/getting-started.md)): the API is served by the gateway on port 8088
+- The local stack running from the repo root, in manual mode (`docker compose up -d --build`: Atlas and a real bucket) or test mode (`docker compose --env-file .env --env-file .env.test up -d --build`: the `mongo` container and Moto), see [docs/getting-started.md](../docs/getting-started.md#manual-and-test-modes): the API is served by the gateway on port 8088
 
 ## Setup
 

@@ -104,7 +104,7 @@ stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are a
 1. **Database Access → Add New Database User**, password authentication — **one per service with
    a database** (auth, users, children, onboarding, discover, grow, transform, release; shared has
    none), so a service can't read another's data.
-2. Role: **readWrite** on that service's database only. The database is named after the service:
+2. Role: a custom role with **readWrite** and the **collMod** action on that service's database only (each service keeps its collections' `$jsonSchema` validators current with `collMod`, which `readWrite` lacks). The database is named after the service:
    `MONGODB_DB_NAME` is the service name both in deployed environments
    ([`infra-live-backend/terraform/services.tf`](infra-live-backend/terraform/services.tf)) and in
    `docker-compose.yml`. Use a separate admin user for the sharding commands in Step 4.
@@ -273,7 +273,7 @@ together, and apply the edge Terraform (it reads the JSON directly). Atlas-speci
 - [ ] Global Cluster: M30+, MongoDB 8.0, zones `APAC` / `EU` / `AMERICAS` in the right regions
 - [ ] Each service started once on the empty cluster (its indexes created), then `zone-setup.js` (generated from the deployed code) run; `sh.status()` shows 6 ranges per sharded collection
 - [ ] auth's `email_index`, `allowed_emails`, `deletions`, `admin_count`, `worker_state` **not** sharded
-- [ ] One database user per service, `readWrite` on its own database only
+- [ ] One database user per service, `readWrite` plus `collMod` on its own database only
 - [ ] Network access: every NAT gateway IP in every region (9 for prod) or PrivateLink; no `0.0.0.0/0`
 - [ ] Each service's `MONGODB_URI` in its Secrets Manager secret in each region; services redeployed
 - [ ] Backups enabled, each zone's snapshots stored in its own region

@@ -1,7 +1,10 @@
 """What the e2e scripts share: the local stack's addresses, HTTP checks, the compose
 containers, and the scan for anything left of an account or a child.
 
-The stack is `docker compose up` with Moto on the host (docs/getting-started.md).
+The stack is the test mode, `docker compose --env-file .env --env-file .env.test up -d`, with
+Moto on the host (docs/getting-started.md): the runs write and delete accounts, stop and
+start workers and read Mongo and Moto directly, so importing this refuses any other stack
+(require_test_mode).
 """
 
 from __future__ import annotations
@@ -128,9 +131,18 @@ def poll(
 # ── the compose stack ──────────────────────────────────────────────────────────
 
 
+# The test mode's env files, so a compose call here can't recreate a container in manual mode.
+ENV_FILES = [
+    arg
+    for name in (".env", ".env.test")
+    if (ROOT / name).exists()
+    for arg in ("--env-file", name)
+]
+
+
 def compose(*args: str) -> str:
     result = subprocess.run(
-        ["docker", "compose", *args],
+        ["docker", "compose", *ENV_FILES, *args],
         cwd=ROOT, capture_output=True, text=True, check=False,
     )  # fmt: skip
     if result.returncode != 0:
@@ -138,6 +150,37 @@ def compose(*args: str) -> str:
             f"docker compose {' '.join(args)}: {result.stderr.strip()[-500:]}"
         )
     return result.stdout
+
+
+def require_test_mode() -> None:
+    """Refuse a stack that isn't on the local stand-ins: every running service's MONGODB_URI
+    must be the `mongo` container, and its S3 endpoint Moto (docker-compose.yml's test values).
+    Run against Atlas or a real bucket, the e2e scripts would write, delete and scan there."""
+    ids = compose("ps", "-q").split()
+    if not ids:
+        raise WalkFailed("the compose stack isn't running")
+    inspected = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Name}} {{json .Config.Env}}", *ids],
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    wrong = []
+    for line in inspected.stdout.splitlines():
+        name, env_json = line.split(" ", 1)
+        env = dict(item.split("=", 1) for item in json.loads(env_json) if "=" in item)
+        uri = env.get("MONGODB_URI")
+        if uri is not None and not uri.startswith("mongodb://mongo:"):
+            wrong.append(f"{name.lstrip('/')}: MONGODB_URI isn't the mongo container")
+        if "AWS_ENDPOINT_URL_S3" in env and not env["AWS_ENDPOINT_URL_S3"]:
+            wrong.append(f"{name.lstrip('/')}: S3 is AWS, not Moto")
+    if wrong:
+        raise WalkFailed(
+            "the stack isn't in test mode ("
+            + "; ".join(sorted(set(wrong))[:4])
+            + "). Start it with: docker compose --env-file .env --env-file .env.test up -d"
+        )
+
+
+require_test_mode()
 
 
 def seed_email() -> str:

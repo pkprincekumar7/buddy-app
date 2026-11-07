@@ -2,6 +2,14 @@
 # shared, each with its worker) + static UI served by nginx (frontend image). MongoDB and Valkey
 # are the local stand-ins for Atlas and ElastiCache; automated tests use them too, never Atlas.
 #
+# Two modes, by env file (docs/getting-started.md, "Manual and test modes"):
+#   docker compose up -d                                       manual: .env's Atlas URIs and
+#                                                              real S3 bucket (events: Moto)
+#   docker compose --env-file .env --env-file .env.test up -d  test: the mongo container and
+#                                                              Moto for everything (e2e)
+# Every default below is the test value, so a variable .env leaves out falls back to local,
+# never to Atlas or AWS.
+#
 # SNS, SQS and S3 come from Moto. Run it from the backend venv (Docker Desktop's org policy
 # blocks the motoserver/moto image here):
 #   backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
@@ -21,19 +29,28 @@ x-service-env: &service-env
   APP_ENV: local
   APP_NAME: superpower
   AWS_REGION: ap-south-1
-  MONGODB_URI: mongodb://mongo:27017/?directConnection=true
   REDIS_URL: redis://valkey:6379
   JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
-  # Moto on the host (see the top of this file); the fake credentials are Moto's.
+  # Moto on the host (see the top of this file) for SNS, SQS and the rest.
   AWS_ENDPOINT_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}
-  AWS_ACCESS_KEY_ID: local
-  AWS_SECRET_ACCESS_KEY: local
+  # S3 alone (common.uploads.s3_endpoint_url): Moto by default; set empty in .env, AWS's S3.
+  # `-`, not `:-`, in these: an empty value is kept, not replaced by the default.
+  AWS_ENDPOINT_URL_S3: ${LOCAL_S3_URL-http://host.docker.internal:5050}
+  # Moto's fake credentials by default. Set both empty in .env and the services use
+  # LOCAL_AWS_PROFILE from LOCAL_AWS_DIR (your ~/.aws, mounted read-only below).
+  AWS_ACCESS_KEY_ID: ${LOCAL_AWS_ACCESS_KEY_ID-local}
+  AWS_SECRET_ACCESS_KEY: ${LOCAL_AWS_SECRET_ACCESS_KEY-local}
+  AWS_PROFILE: ${LOCAL_AWS_PROFILE:-default}
   LOG_LEVEL: INFO
 
 x-service: &service
   restart: unless-stopped
   volumes:
     - local_keys:/keys:ro
+    # The AWS profile's config: by default local/aws-test (an empty [default] profile, so
+    # AWS_PROFILE resolves); in manual mode your ~/.aws, whose credentials file holds the
+    # profile's access key. Read-only: nothing in a container writes to it.
+    - ${LOCAL_AWS_DIR:-./local/aws-test}:/home/appuser/.aws:ro
   extra_hosts:
     - "host.docker.internal:host-gateway"
   networks:
@@ -159,6 +176,10 @@ services:
       ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
       # /api/* goes to the gateway, which routes each path to its service as the ALB does.
       API_UPSTREAM: ${FRONTEND_API_UPSTREAM:-gateway:8080}
+      # The photo URLs the services presign point at Moto (AWS_PUBLIC_ENDPOINT_URL): the CSP
+      # lets the browser upload to and show them (frontend/nginx-start.sh). Empty with a real
+      # bucket: the CSP already allows the regional S3 hosts.
+      LOCAL_S3_ORIGIN: ${LOCAL_S3_PUBLIC_URL-http://localhost:5050}
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5173}:8080"
@@ -211,6 +232,7 @@ services:
       <<: *service-env
       SERVICE_NAME: auth
       MONGODB_DB_NAME: auth
+      MONGODB_URI: ${AUTH_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: auth-local
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
       EMAIL_HMAC_PEPPER: ${EMAIL_HMAC_PEPPER:-}
@@ -246,6 +268,7 @@ services:
       <<: *service-env
       SERVICE_NAME: users
       MONGODB_DB_NAME: users
+      MONGODB_URI: ${USERS_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: users-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-users-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-users-events
@@ -272,13 +295,15 @@ services:
       <<: *service-env
       SERVICE_NAME: children
       MONGODB_DB_NAME: children
+      MONGODB_URI: ${CHILDREN_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: children-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-children-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-children-events
       UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
       UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
-      # What presigned photo URLs point at: the host's Moto, which the browser can reach.
-      AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_MOTO_PUBLIC_URL:-http://localhost:5050}
+      # What presigned photo URLs point at: the host's Moto, which the browser can reach;
+      # set empty in .env (a real bucket), the regional S3 endpoint.
+      AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_S3_PUBLIC_URL-http://localhost:5050}
     <<: *service
 
   children-worker:
@@ -302,6 +327,7 @@ services:
       <<: *service-env
       SERVICE_NAME: onboarding
       MONGODB_DB_NAME: onboarding
+      MONGODB_URI: ${ONBOARDING_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: onboarding-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-onboarding-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-onboarding-events
@@ -329,6 +355,7 @@ services:
       <<: *service-env
       SERVICE_NAME: discover
       MONGODB_DB_NAME: discover
+      MONGODB_URI: ${DISCOVER_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: discover-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-discover-events
@@ -366,6 +393,7 @@ services:
       <<: *service-env
       SERVICE_NAME: grow
       MONGODB_DB_NAME: grow
+      MONGODB_URI: ${GROW_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: grow-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-grow-events
@@ -403,14 +431,16 @@ services:
       <<: *service-env
       SERVICE_NAME: transform
       MONGODB_DB_NAME: transform
+      MONGODB_URI: ${TRANSFORM_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: transform-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-transform-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-transform-events
       UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
       UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
-      # What presigned photo URLs point at: the host's Moto, which the browser can reach.
-      AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_MOTO_PUBLIC_URL:-http://localhost:5050}
+      # What presigned photo URLs point at: the host's Moto, which the browser can reach;
+      # set empty in .env (a real bucket), the regional S3 endpoint.
+      AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_S3_PUBLIC_URL-http://localhost:5050}
     <<: *service
 
   transform-worker:
@@ -444,6 +474,7 @@ services:
       <<: *service-env
       SERVICE_NAME: release
       MONGODB_DB_NAME: release
+      MONGODB_URI: ${RELEASE_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: release-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-release-events

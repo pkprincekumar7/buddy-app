@@ -43,7 +43,7 @@ The app is a phone-width port of the web app in `frontend/` — same pages, flow
   - [Shared Secrets](#shared-secrets-both-android-and-ios)
   - [Android-Specific Secrets](#android-specific-secrets)
   - [Apple Developer Account](#apple-developer-account)
-  - [iOS-Specific Secrets](#ios-specific-secrets)
+  - [iOS-Specific Settings](#ios-specific-settings)
   - [Running a Build](#running-a-build)
   - [Retrieving Build Artifacts](#retrieving-build-artifacts)
   - [AWS OIDC Setup](#aws-oidc-setup-one-time-per-aws-account)
@@ -95,7 +95,7 @@ IOS_CLIENT_ID=
 # CDN_BASE_URL: leave unset in dev (it falls back to the web Vite dev server on port 5173)
 ```
 
-> `8088` is the local gateway (`docker compose up -d --build` from the repo root), which routes each `/api/*` path to its service.
+> `8088` is the local gateway (`docker compose up -d --build` from the repo root, or `docker compose --env-file .env --env-file .env.test up -d --build` for the local stand-ins: see [Manual and test modes](../docs/getting-started.md#manual-and-test-modes)), which routes each `/api/*` path to its service.
 > **Android emulator:** `localhost` works after running `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8088 tcp:8088` once per emulator boot (see Daily Workflow below).
 > **iOS simulator:** `localhost:8088` works directly — no tunnel needed; the simulator shares the Mac's network stack.
 > **Physical device (Android or iOS):** Replace `localhost` with your Mac's LAN IP e.g. `http://192.168.1.10:8088` and rebuild.
@@ -259,7 +259,13 @@ Every time you come back to work, follow these steps in order:
 **Step 1 — Start the backend**
 
 ```bash
-docker compose up -d --build   # from the repo root; see docs/getting-started.md
+docker compose up -d --build   # from the repo root: manual mode (Atlas, real S3); see docs/getting-started.md
+```
+
+For the local stand-ins (the `mongo` container and Moto) instead:
+
+```bash
+docker compose --env-file .env --env-file .env.test up -d --build
 ```
 
 **Step 2 — Start the Android emulator**
@@ -567,7 +573,13 @@ xcrun simctl list devices available
 **Step 1 — Start the backend**
 
 ```bash
-docker compose up -d --build   # from the repo root; see docs/getting-started.md
+docker compose up -d --build   # from the repo root: manual mode (Atlas, real S3); see docs/getting-started.md
+```
+
+For the local stand-ins (the `mongo` container and Moto) instead:
+
+```bash
+docker compose --env-file .env --env-file .env.test up -d --build
 ```
 
 **Step 2 — Start Metro (Terminal 1)**
