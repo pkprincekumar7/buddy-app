@@ -20,9 +20,12 @@ these.
 | `uploads-bucket-policy-<region>.json` | Each uploads bucket's policy: plain HTTP refused, as Terraform does for the environments' buckets (TF-05). A bucket policy may only name its own bucket, so one file each |
 | `uploads-bucket-cors.json` | For each uploads bucket: lets the web app on `localhost:5173` post photos to it and show them |
 | `uploads-bucket-lifecycle.json` | For each uploads bucket: aborts unfinished multipart uploads after 7 days |
+| `assets-bucket-policy.json` | The assets bucket's policy: anyone may read `app-assets/*`, plain HTTP refused |
 
-The assets bucket keeps whatever policy it has: the web app's `/app-assets/` proxy reads it
-unsigned (docs/static-assets.md), and the APK link reads it with the IAM user's key.
+**The assets bucket is public for `app-assets/*` on purpose.** The web app's `/app-assets/`
+proxy (the frontend container's nginx, and Vite's dev server, which the phone app's
+`CDN_BASE_URL` points at by default) reads it unsigned, and it holds only the app's own images and videos, nothing about a user. The APK
+link reads it with the IAM user's key. The photos' buckets, by contrast, are private.
 
 These are personal buckets, not an environment's: Terraform owns those, and its next apply
 would replace this CORS and policy. Nothing here is a secret; the access key goes in
@@ -41,7 +44,17 @@ Not a work account: this is a personal key for a local stack.
      `uploads-bucket-cors.json` (the console takes the array itself, from `[`).
    - **Management → Create lifecycle rule:** `abort-incomplete-multipart`, all objects,
      *Delete incomplete multipart uploads* after 7 days (`uploads-bucket-lifecycle.json`).
-2. **The assets bucket:** leave its policy as it is (see above).
+2. **The assets bucket** (`person-local-assets-bucket`, us-east-1):
+   - **Bucket policy:** replace it with `assets-bucket-policy.json` (the public read of
+     `app-assets/*` it already has, plus `DenyInsecureTransport`).
+   - **Block public access:** leave *Block public access to buckets and objects granted
+     through new public bucket policies* and *… through any public bucket or access point
+     policies* **off**, and the two ACL settings on. With the policy ones on, S3 would block
+     the public read the proxies need.
+   - **Objects:** delete the macOS `.DS_Store` files (anyone can read them; they list folder
+     contents) and the empty `app-assets/` folder placeholder. Don't upload `.DS_Store` again:
+     `aws s3 sync --exclude '.DS_Store' --exclude '*/.DS_Store'`.
+   - No CORS or lifecycle rule: the browser reads it through the same-origin proxy.
 3. **IAM → Policies → Create policy → JSON:** paste `iam-policy.json`, name it
    `superpower-local-manual-s3`.
 4. **IAM → Users → Create user** `superpower-local-manual`, without console access; attach
@@ -79,3 +92,10 @@ Not a work account: this is a personal key for a local stack.
    Moto running for the events, and `docker compose up -d`.
 
 Rotate the key now and then (create the new one, update `credentials`, delete the old one).
+
+## Not needed
+
+`person-backend-local-app-bucket` (us-east-1), if you have it: nothing in the repo reads it.
+It's an older copy of the assets bucket (every one of its 116 objects is in
+`person-local-assets-bucket`, last changed in June), and anyone can read its `app-assets/*`.
+Empty it (S3 → the bucket → **Empty**), then **Delete** it.
