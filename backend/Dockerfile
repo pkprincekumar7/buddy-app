@@ -10,7 +10,8 @@
 # builds of a commit start from the same bytes and the image Trivy scanned is the one deployed.
 # Debian security fixes arrive as a new digest of the same tag, which Dependabot proposes
 # weekly (.github/dependabot.yml, docker); there's no `apt-get upgrade` here to make builds
-# differ. Bump the tag and digest together, both stages.
+# differ. Bump the tag and digest together, both stages. The one exception is a fix the
+# image doesn't have yet, pinned to its exact version (below) and removed once it does.
 
 # ---- select: pick out what the chosen service needs ----------------------------------------
 # Throwaway stage: the whole backend/ tree is copied here, but only /out reaches the image.
@@ -45,6 +46,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # ---- the image -----------------------------------------------------------------------------
 FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad
+
+# zlib1g from trixie-security (DSA-6613-1: CVE-2026-85091, CVE-2026-76844), which no
+# python:3.13-slim-trixie digest had yet. Pinned, so builds stay the same; once a base digest
+# ships this version or later, drop this step with that bump. Until then, if Debian
+# supersedes the version (its old one leaves the mirror), the build fails here: pin the new
+# one. Only the final stage: the select stage never reaches the image.
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends --only-upgrade \
+      zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
