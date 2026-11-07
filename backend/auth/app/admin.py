@@ -122,7 +122,10 @@ def _allowed(doc: Mapping[str, Any]) -> AllowedEmail:
     )
 
 
-AccountId = Annotated[str, Path(description="The account's user id")]
+# A user id is a uuid4 (registration). Anything else is refused (422) before it reaches the
+# database or a log line, so a crafted id can't forge one.
+UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+AccountId = Annotated[str, Path(pattern=UUID_PATTERN, description="The account's user id")]
 LocationQuery = Annotated[
     str, Query(pattern=LOCATION_PATTERN, description="The account's location, from the listing")
 ]

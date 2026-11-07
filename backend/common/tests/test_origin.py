@@ -67,7 +67,9 @@ def test_a_cross_site_post_with_the_refresh_cookie_is_refused():
     refused = client.post("/api/v1/auth/refresh", headers={"Origin": "https://evil.example.com"})
     assert refused.status_code == 403
     assert refused.json()["detail"]["code"] == "cross_site_request"
-    assert "https://evil.example.com" in refused.json()["detail"]["msg"]
+    assert (
+        refused.json()["detail"]["msg"] == "Refused: Origin https://evil.example.com isn't allowed."
+    )
     assert (
         client.delete("/api/v1/auth/refresh", headers={"Sec-Fetch-Site": "same-site"}).status_code
         == 403

@@ -1236,6 +1236,18 @@ jobs:
           name: sarif-reports
           path: sarif/
 
+      # A check skipped in the code with its reason (checkov's `#checkov:skip=`) is still in
+      # the SARIF, marked `suppressions`, and code scanning opens an alert for it anyway.
+      # Dropped here, so an alert is only a finding nobody has justified.
+      - name: Drop the suppressed results
+        if: hashFiles(format('sarif/{0}.sarif', matrix.tool)) != ''
+        env:
+          SARIF: sarif/${{ matrix.tool }}.sarif
+        run: |
+          jq '.runs |= map(.results |= map(select((.suppressions // []) | length == 0)))' \
+            "$SARIF" > "$SARIF.tmp"
+          mv "$SARIF.tmp" "$SARIF"
+
       - name: Upload ${{ matrix.tool }} results
         if: hashFiles(format('sarif/{0}.sarif', matrix.tool)) != ''
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

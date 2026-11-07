@@ -215,6 +215,10 @@ def test_lock_refusals(mongo_uri):
                 f"{API}/accounts/{user_id}/lock?location={location}", headers=boss["headers"]
             )
             assert (missing.status_code, _code(missing)) == (404, "account_not_found")
+        not_an_id = await r.http.post(
+            f"{API}/accounts/x%0Aforged/lock?location={LOCATION}", headers=boss["headers"]
+        )
+        assert not_an_id.status_code == 422
         no_location = await r.http.post(
             f"{API}/accounts/{jane['id']}/lock", headers=boss["headers"]
         )

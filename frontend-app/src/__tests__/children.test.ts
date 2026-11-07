@@ -106,7 +106,7 @@ describe('the children calls (build plan 7.4)', () => {
             avatar_key: key,
             avatar_url: 'https://s3.test/bucket/get-here',
           })
-        : url.startsWith('https://s3.test')
+        : url === 'https://s3.test/bucket'
         ? new Response(null, { status: 200 })
         : json(200, {
             ...CHILD,
