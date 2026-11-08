@@ -79,7 +79,7 @@ No manual setup required for backend, frontend, or frontend-app checks. On every
 
 The script looks for each tool in `backend/.venv/bin/` first, then falls back to `PATH`.
 
-The real Mongo/Valkey tests skip unless you point them at throwaway servers — never a real cluster — e.g. the compose services (`docker compose up -d mongo valkey`):
+The real Mongo/Valkey tests skip unless they have throwaway servers — never a real cluster — and without them the coverage gates fail. When `MONGODB_TEST_URI` or `REDIS_URL` is unset and its compose container (`mongo`, `valkey`) is running (`docker compose up -d mongo valkey`), `check.sh` uses that container, on the port compose published (`MONGO_PORT` / `VALKEY_PORT` in `.env`); if either is still missing, it says the live tests will skip. To use other servers, set both:
 
 ```bash
 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh

@@ -211,10 +211,32 @@ run "jest (frontend-app)" \
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 # common's and the tools' tests, then each service's. Same commands and coverage gates as CI.
-# The real Mongo/Redis integration tests skip unless you point them at throwaway servers —
-# never a real cluster — e.g. the docker-compose services (docker compose up -d mongo valkey):
-#   MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
+# The real Mongo/Redis integration tests skip unless pointed at throwaway servers — never a
+# real cluster — and without them the coverage gates fail. Each one unset defaults to its
+# docker-compose container when it's running (docker compose up -d mongo valkey), on the port
+# compose published (MONGO_PORT / VALKEY_PORT in .env); set MONGODB_TEST_URI / REDIS_URL
+# yourself to use others.
 echo -e "\n${BOLD}════ TESTS ════${RESET}"
+
+# compose_port SERVICE PORT → the host port compose published it on, or nothing if it isn't
+# running.
+compose_port() {
+  local published
+  published="$(docker compose -f "$ROOT/docker-compose.yml" port "$1" "$2" 2>/dev/null | head -1)"
+  [ -n "$published" ] && echo "${published##*:}"
+}
+
+if [ -z "${MONGODB_TEST_URI:-}" ] && port="$(compose_port mongo 27017)"; then
+  export MONGODB_TEST_URI="mongodb://localhost:${port}/?directConnection=true"
+  echo -e "${CYAN}Live Mongo tests: the compose mongo container (port ${port}).${RESET}"
+fi
+if [ -z "${REDIS_URL:-}" ] && port="$(compose_port valkey 6379)"; then
+  export REDIS_URL="redis://localhost:${port}"
+  echo -e "${CYAN}Live Valkey tests: the compose valkey container (port ${port}).${RESET}"
+fi
+if [ -z "${MONGODB_TEST_URI:-}" ] || [ -z "${REDIS_URL:-}" ]; then
+  echo -e "${RED}Live tests will skip and the coverage gates fail: start the compose mongo and valkey (docker compose up -d mongo valkey), or set MONGODB_TEST_URI and REDIS_URL.${RESET}"
+fi
 
 run "pytest + coverage (common, tools)" \
     bash -c "cd '$BACKEND' && '$PYTEST' common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
