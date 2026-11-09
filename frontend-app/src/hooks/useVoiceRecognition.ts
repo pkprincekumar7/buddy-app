@@ -34,6 +34,11 @@ export function useVoiceRecognition({
   const [localRecording, setLocalRecording] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const isRecording = controlled ?? localRecording;
+  const mountedRef = useRef(true);
+  // From start() until the native 'start' (or 'error'/'end') event: a session is
+  // being opened, so toggle() treats it as recording and a fast double tap stops
+  // it instead of calling start() twice.
+  const startingRef = useRef(false);
 
   const cb = useRef({ onTranscript, onPartialTranscript, setControlled });
   useEffect(() => {
@@ -47,9 +52,14 @@ export function useVoiceRecognition({
 
   const mine = () => activeOwner === id;
 
-  useSpeechRecognitionEvent('start', () => mine() && setRecording(true));
+  useSpeechRecognitionEvent('start', () => {
+    if (!mine()) return;
+    startingRef.current = false;
+    setRecording(true);
+  });
   useSpeechRecognitionEvent('end', () => {
     if (!mine()) return;
+    startingRef.current = false;
     activeOwner = null;
     setRecording(false);
   });
@@ -65,6 +75,7 @@ export function useVoiceRecognition({
   });
   useSpeechRecognitionEvent('error', event => {
     if (!mine()) return;
+    startingRef.current = false;
     activeOwner = null;
     setRecording(false);
     if (event.error === 'not-allowed') {
@@ -82,22 +93,32 @@ export function useVoiceRecognition({
     }
   });
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      startingRef.current = false;
       if (activeOwner === id) {
         ExpoSpeechRecognitionModule.abort();
         activeOwner = null;
       }
-    },
-    [id],
-  );
+    };
+  }, [id]);
 
   const start = useCallback(async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setIsPending(true);
     try {
       const { granted } =
         await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      // Unmounted, or stopped, while the permission prompt was up: don't open a session.
+      if (!mountedRef.current || !startingRef.current) {
+        startingRef.current = false;
+        return;
+      }
       if (!granted) {
+        startingRef.current = false;
         Alert.alert(
           'Microphone access',
           'Microphone access was denied. Please allow mic access in Settings and try again.',
@@ -112,22 +133,34 @@ export function useVoiceRecognition({
         interimResults: !!cb.current.onPartialTranscript,
       });
     } catch (err) {
+      startingRef.current = false;
+      if (activeOwner === id) activeOwner = null;
       console.warn('[useVoiceRecognition] start failed:', err);
       toast.error('Could not start voice input. Please try again.');
     } finally {
-      setIsPending(false);
+      if (mountedRef.current) setIsPending(false);
     }
   }, [id]);
 
   const stop = useCallback(() => {
-    if (activeOwner === id) ExpoSpeechRecognitionModule.stop();
+    const starting = startingRef.current;
+    startingRef.current = false;
+    if (activeOwner === id) {
+      // Not started yet: abort the half-open session rather than stop it.
+      if (starting) {
+        ExpoSpeechRecognitionModule.abort();
+        activeOwner = null;
+      } else {
+        ExpoSpeechRecognitionModule.stop();
+      }
+    }
     setRecording(false);
   }, [id, setRecording]);
 
   const toggle = useCallback(() => {
-    if (isPending) return;
-    if (isRecording) stop();
-    else void start();
+    // A session still opening counts as recording, so a fast second tap stops it.
+    if (startingRef.current || isRecording) stop();
+    else if (!isPending) void start();
   }, [isPending, isRecording, start, stop]);
 
   return { isRecording, isPending, start, stop, toggle };

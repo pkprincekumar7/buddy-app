@@ -103,7 +103,8 @@ android {
 
     // For debug builds, only compile native code for the active device architecture.
     // This reduces the debug APK from ~200 MB to ~60 MB, making emulator installs much faster.
-    // Release builds include all architectures for universal distribution.
+    // Release builds are arm64-v8a only too (one APK, no universal one): Play requires
+    // 64-bit, and build-android-apk.yml compiles only this architecture to match.
     splits {
         abi {
             enable true

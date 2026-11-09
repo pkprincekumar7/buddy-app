@@ -7,8 +7,9 @@ import { useAuth } from '@/lib/AuthContext';
 import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 import Spinner from '@/components/shared/Spinner';
+import { Button } from '@/components/ui/button';
 import PageScroll from '@/components/layout/PageScroll';
-import { css, rgb } from '@/theme';
+import { css, recipe, rgb } from '@/theme';
 
 import {
   caps,
@@ -86,6 +87,10 @@ export default function Connect() {
   const [isLoading, setIsLoading] = useState(true);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
+  // A load that failed for any reason other than a redirect: shows Try again,
+  // which re-runs the load (and the visit) via reloadKey.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -117,6 +122,7 @@ export default function Connect() {
           void navigate('/Home', { replace: true });
         } else {
           console.warn('[Connect] Load failed:', err);
+          setLoadFailed(true);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -125,7 +131,7 @@ export default function Connect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   const items = useMemo(
     () =>
@@ -300,6 +306,30 @@ export default function Connect() {
             borderTopColor: 'transparent',
           }}
         />
+      </View>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <View
+        className="flex-1 items-center justify-center gap-4 px-4"
+        style={{ backgroundColor: rgb('constellation-navy-deepest') }}
+      >
+        <Text className="text-center text-muted-foreground">
+          We could not load this page. Please try again.
+        </Text>
+        <Button
+          onPress={() => {
+            setLoadFailed(false);
+            setIsLoading(true);
+            setReloadKey(k => k + 1);
+          }}
+          className="rounded-2xl px-8 font-semibold text-primary-foreground"
+          style={recipe.btnPrimary}
+        >
+          Try again
+        </Button>
       </View>
     );
   }

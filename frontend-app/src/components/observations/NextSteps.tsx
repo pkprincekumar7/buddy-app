@@ -21,9 +21,9 @@ export default function NextSteps({
         What you can do with this
       </Text>
       <View style={{ gap: 14, marginTop: 16 }}>
-        {NEXT_STEPS.map(next => (
+        {NEXT_STEPS.map((next, i) => (
           <View
-            key={next.title}
+            key={`${i}-${next.title}`}
             style={{
               borderRadius: 16,
               paddingVertical: 19,

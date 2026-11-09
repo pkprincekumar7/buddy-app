@@ -1,5 +1,11 @@
 import { ApiError } from '@/api/errors';
-import { MAX_INTERVAL_MS, isRateLimited, runJob, slower } from '@/api/polling';
+import {
+  MAX_INTERVAL_MS,
+  isRateLimited,
+  pause,
+  runJob,
+  slower,
+} from '@/api/polling';
 
 // JOB-05: polls slow down, and a 429 waits and polls again instead of failing.
 
@@ -62,5 +68,25 @@ describe('isRateLimited', () => {
     expect(isRateLimited(new ApiError(429, 'x'))).toBe(true);
     expect(isRateLimited(new ApiError(503, 'x'))).toBe(false);
     expect(isRateLimited(new Error('429'))).toBe(false);
+  });
+});
+
+describe('pause', () => {
+  it('removes its abort listener once the wait ends', async () => {
+    const controller = new AbortController();
+    const add = jest.spyOn(controller.signal, 'addEventListener');
+    const remove = jest.spyOn(controller.signal, 'removeEventListener');
+    await pause(1, controller.signal);
+    await pause(1, controller.signal);
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(remove.mock.calls[0]![1]).toBe(add.mock.calls[0]![1]);
+  });
+
+  it('rejects with an AbortError when the signal aborts', async () => {
+    const controller = new AbortController();
+    const waiting = pause(10_000, controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

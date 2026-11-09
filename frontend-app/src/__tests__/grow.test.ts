@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import {
   areaSave,
   grow,
@@ -62,7 +62,7 @@ const job = (status: string) =>
   json(200, { job_id: 'j1', kind: 'child_rounds', status });
 
 beforeEach(async () => {
-  await AsyncStorage.setItem('superpower:access_token', 'parent-token');
+  await SecureStore.setItemAsync('superpower.access_token', 'parent-token');
 });
 
 describe('the growth-area saves (build plan 7.6)', () => {

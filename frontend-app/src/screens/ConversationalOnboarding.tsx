@@ -4,6 +4,8 @@ import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { useNavigate, useParams } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
 import { onboarding, answersFrom, ONBOARDING_ERRORS } from '@/api/onboarding';
+import { settlePersonality } from '@/api/discover';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import PageLoader from '@/components/shared/PageLoader';
 import PageBackRow from '@/components/layout/PageBackRow';
@@ -45,6 +47,12 @@ export default function ConversationalOnboarding() {
   const [saveError, setSaveError] = useState<string | null>(null);
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
   const bootKey = 0;
+  // One save at a time: a second tap (Try again, Continue) while one is in flight
+  // must not send the answers twice or navigate twice.
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  // Stops waiting for the personality (and navigating) if the parent leaves the screen.
+  const unmountSignal = useUnmountSignal();
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -77,7 +85,7 @@ export default function ConversationalOnboarding() {
 
   const save = useCallback(
     async (collected: Record<string, unknown>) => {
-      if (!childId) return;
+      if (!childId || savingRef.current) return;
       pendingRef.current = collected;
       setSaveError(null);
       const answers = answersFrom(collected);
@@ -87,24 +95,45 @@ export default function ConversationalOnboarding() {
         );
         return;
       }
+      savingRef.current = true;
+      setIsSaving(true);
       try {
-        await onboarding.save(childId, answers);
-      } catch (err) {
-        console.warn(
-          '[ConversationalOnboarding] Could not save the answers:',
-          err,
-        );
-        setSaveError(
-          httpErrorMessage(err as Error, {
-            codeMessages: ONBOARDING_ERRORS,
-            fallback: "We couldn't save your answers. Please try again.",
-          }),
-        );
-        return;
+        try {
+          await onboarding.save(childId, answers);
+        } catch (err) {
+          console.warn(
+            '[ConversationalOnboarding] Could not save the answers:',
+            err,
+          );
+          setSaveError(
+            httpErrorMessage(err as Error, {
+              codeMessages: ONBOARDING_ERRORS,
+              fallback: "We couldn't save your answers. Please try again.",
+            }),
+          );
+          return;
+        }
+        // Wait here, on the thank-you screen, for discover to finish the personality.
+        // Whatever happens (it failed, it's slow, the network dropped), go on to the
+        // hub: it shows a failure with Try again, and keeps waiting for a slow one.
+        const signal = unmountSignal.current.signal;
+        try {
+          await settlePersonality(childId, { signal, timeoutMs: 180_000 });
+        } catch (err) {
+          if (signal.aborted) return;
+          console.warn(
+            '[ConversationalOnboarding] Personality not ready yet:',
+            err,
+          );
+        }
+        if (signal.aborted) return;
+        void navigate(`/PersonalityJourney/${childId}`);
+      } finally {
+        savingRef.current = false;
+        setIsSaving(false);
       }
-      void navigate(`/PersonalityJourney/${childId}`);
     },
-    [childId, navigate],
+    [childId, navigate, unmountSignal],
   );
 
   const handleComplete = useCallback(
@@ -130,9 +159,7 @@ export default function ConversationalOnboarding() {
                 activeChildId={childId}
                 resumeHydrationReady={hydrated}
                 onComplete={handleComplete}
-                onContinueToPersonality={() => {
-                  void handleComplete({});
-                }}
+                onContinueToPersonality={() => handleComplete({})}
               />
             </View>
 
@@ -161,6 +188,7 @@ export default function ConversationalOnboarding() {
                   }
                   size="lg"
                   className="mt-4"
+                  disabled={isSaving}
                   accessibilityLabel="Try again"
                 >
                   Try again

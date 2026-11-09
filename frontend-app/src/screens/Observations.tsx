@@ -21,6 +21,7 @@ import { jobProgressMessage } from '@/lib/jobProgress';
 import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import { httpErrorMessage } from '@/lib/apiError';
 import Spinner from '@/components/shared/Spinner';
+import { Button } from '@/components/ui/button';
 import PageBackRow from '@/components/layout/PageBackRow';
 import PageScroll from '@/components/layout/PageScroll';
 import {
@@ -42,7 +43,7 @@ import WatchOverTime from '@/components/observations/WatchOverTime';
 import StartTrackingCard from '@/components/observations/StartTrackingCard';
 import NextSteps from '@/components/observations/NextSteps';
 import TrackingStartedModal from '@/components/observations/TrackingStartedModal';
-import { font, rgb } from '@/theme';
+import { font, recipe, rgb } from '@/theme';
 
 const SPINNER_RING = {
   borderColor: rgb('constellation-cyan-bright', 0.6),
@@ -67,6 +68,10 @@ export default function Observations() {
   // the growth areas, and validates them on the server (build plan 7.7).
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // A failed page load, apart from a failed generation: its Try again re-runs the
+  // GET only (which then starts or joins a generation itself if one is due).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   // Stops polling when the page goes away.
@@ -169,7 +174,7 @@ export default function Observations() {
           return;
         }
         console.error('[Observations] Load failed:', err);
-        setGenError('We could not load this page. Please try again.');
+        setLoadError('We could not load this page. Please try again.');
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -177,7 +182,21 @@ export default function Observations() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate, show, generate]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    childId,
+    navigate,
+    show,
+    generate,
+    reloadKey,
+  ]);
+
+  const reload = useCallback(() => {
+    setLoadError(null);
+    setIsLoading(true);
+    setReloadKey(k => k + 1);
+  }, []);
 
   const toggleTracked = (id: string) => {
     setTracked(prev =>
@@ -243,6 +262,24 @@ export default function Observations() {
         <PageBackRow />
         <View className="flex-1 items-center justify-center bg-constellation-navy-deepest">
           <Spinner style={SPINNER_RING} />
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View className="flex-1 bg-background">
+        <PageBackRow />
+        <View className="flex-1 items-center justify-center gap-4 bg-constellation-navy-deepest px-4">
+          <Text className="text-center text-muted-foreground">{loadError}</Text>
+          <Button
+            onPress={reload}
+            className="rounded-2xl px-8 font-semibold text-primary-foreground"
+            style={recipe.btnPrimary}
+          >
+            Try again
+          </Button>
         </View>
       </View>
     );

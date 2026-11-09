@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { children } from '@/api/children';
 import { release, runObservationsGeneration } from '@/api/release';
 import { runTransformGeneration, transform } from '@/api/transform';
@@ -45,7 +45,7 @@ const O = `/api/v1/children/${ID}/observations`;
 const job = (status: string) => json(200, { job_id: 'j1', status });
 
 beforeEach(async () => {
-  await AsyncStorage.setItem('superpower:access_token', 'parent-token');
+  await SecureStore.setItemAsync('superpower.access_token', 'parent-token');
 });
 
 describe('transform (build plan 7.7)', () => {

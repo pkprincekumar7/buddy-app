@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { isAbort } from '@/api/polling';
 import { ApiError } from '@/api/errors';
 import {
@@ -77,6 +78,7 @@ export function useLifePathwayArea({
   ages,
   enabled,
 }: UseLifePathwayAreaOptions): UseLifePathwayAreaResult {
+  const queryClient = useQueryClient();
   const [cache, setCache] = useState<Record<string, SlotContent>>({});
   const attemptedRef = useRef<Set<string>>(new Set());
   const inFlightRef = useRef<string | null>(null);
@@ -131,11 +133,17 @@ export function useLifePathwayArea({
     const finished = inFlightRef.current;
     settle();
     if (!finished || !childId) return;
+    // The page's own copy of the areas is now stale: without this, coming back
+    // within its staleTime seeds from the old (milestone-less) areas and starts a
+    // fresh life_pathway job, burning quota and overwriting these milestones.
+    void queryClient.invalidateQueries({
+      queryKey: ['lifePathwayData', childId],
+    });
+    let ms: SlotContent | null = null;
     try {
       const fresh = await transform.get(childId);
       const doc = fresh.areas.find(a => a.area_id === finished);
-      const ms = normalizeLifePathwayArea(doc?.life_pathway_milestones, ages);
-      if (ms) setCache(prev => ({ ...prev, [finished]: ms }));
+      ms = normalizeLifePathwayArea(doc?.life_pathway_milestones, ages);
     } catch (err) {
       // The content is on the document either way — the next page load picks it
       // up. Falling back to templated copy for now is the correct degradation.
@@ -144,7 +152,16 @@ export function useLifePathwayArea({
         err,
       );
     }
-  }, [childId, ages, settle]);
+    if (ms) {
+      const content = ms;
+      setCache(prev => ({ ...prev, [finished]: content }));
+    } else {
+      // Nothing usable came back: show the fallback copy rather than a spinner forever.
+      setFailed(prev =>
+        prev[finished] ? prev : { ...prev, [finished]: true },
+      );
+    }
+  }, [childId, ages, settle, queryClient]);
 
   const markFailed = useCallback(
     (areaId: string) => {
@@ -162,7 +179,8 @@ export function useLifePathwayArea({
     const areaId = area.id;
     if (cache[areaId]) return;
     // Serialised: whatever is selected when this frees up gets picked up, because
-    // the completion merge into `cache` re-runs this effect.
+    // settling a job (success or failure) clears `generatingId`, which re-runs this
+    // effect — even when nothing new lands in `cache`.
     if (inFlightRef.current) return;
     if (attemptedRef.current.has(areaId)) return;
 
@@ -191,7 +209,16 @@ export function useLifePathwayArea({
         markFailed(areaId);
       }
     })();
-  }, [abortRef, enabled, childId, area, cache, handleCompleted, markFailed]);
+  }, [
+    abortRef,
+    enabled,
+    childId,
+    area,
+    cache,
+    generatingId,
+    handleCompleted,
+    markFailed,
+  ]);
 
   const cached = area ? cache[area.id] ?? null : null;
   let status: AreaStatus;

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { discover, settlePersonality, viewModelOf } from '@/api/discover';
 import { answersFrom, onboarding } from '@/api/onboarding';
 
@@ -63,7 +63,7 @@ const VM = {
 };
 
 beforeEach(async () => {
-  await AsyncStorage.setItem('superpower:access_token', 'parent-token');
+  await SecureStore.setItemAsync('superpower.access_token', 'parent-token');
 });
 
 describe('the onboarding answers (build plan 7.5)', () => {

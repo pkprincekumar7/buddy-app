@@ -11,6 +11,7 @@ import {
   type TransformKind,
 } from '@/api/transform';
 import { httpErrorMessage } from '@/lib/apiError';
+import { avatarProblem } from '@/api/children';
 import { FB_TAGS, type FeedbackTag } from '@/lib/startJourneyPlans';
 import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 
@@ -35,6 +36,9 @@ interface PhotoItem {
   key?: string;
   url: string;
 }
+
+/** A picked photo the avatar type/size rules refuse, before anything is presigned. */
+class PhotoRejected extends Error {}
 
 type GenerationState = 'idle' | 'running' | 'failed';
 
@@ -94,6 +98,13 @@ function toPhotosPayload(
 export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   const [doc, setDoc] = useState<TransformDoc | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(true);
+  // The load failed: local state is empty, not the parent's, so nothing may be
+  // saved or generated from it — each PATCH field replaces the stored one, and an
+  // empty map sent from here would wipe what the parent already saved.
+  const [loadError, setLoadError] = useState<unknown>(null);
+  // Mirrors "a load succeeded for this child" for the callbacks, free of render timing.
+  const loadedRef = useRef(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [ask, setAsk] = useState('');
   const [monthIdx, setMonthIdx] = useState(0);
@@ -121,11 +132,14 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   useEffect(() => {
     if (!childId) return;
     let cancelled = false;
+    loadedRef.current = false;
     setLoadingDoc(true);
+    setLoadError(null);
     transform
       .get(childId)
       .then(fetched => {
         if (cancelled) return;
+        loadedRef.current = true;
         setDoc(fetched);
         setAsk(fetched.ask ?? '');
         setApplied(fetched.applied);
@@ -146,7 +160,9 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
           setResume(prev => [...prev, 'event_tracker']);
       })
       .catch(err => {
+        if (cancelled) return;
         console.warn('[useNinetyDayPlan] Could not load the saved plan:', err);
+        setLoadError(err ?? new Error('load failed'));
       })
       .finally(() => {
         if (!cancelled) setLoadingDoc(false);
@@ -154,7 +170,10 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
     return () => {
       cancelled = true;
     };
-  }, [childId]);
+  }, [childId, reloadKey]);
+
+  /** Loads the saved plan again, after a failed load. */
+  const reload = useCallback(() => setReloadKey(n => n + 1), []);
 
   // Debounced, best-effort persistence — merges every scheduled patch into one
   // pending buffer so a burst of quick taps/keystrokes becomes one write.
@@ -185,6 +204,8 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
 
   const schedulePatch = useCallback(
     (partial: PlanPatch) => {
+      // Never save over the stored document from state that wasn't loaded from it.
+      if (!loadedRef.current) return;
       pendingPatchRef.current = { ...pendingPatchRef.current, ...partial };
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
       patchTimerRef.current = setTimeout(
@@ -215,7 +236,7 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
    */
   const runGeneration = useCallback(
     async (kind: 'plan' | 'event_tracker') => {
-      if (!childId) return;
+      if (!childId || !loadedRef.current) return;
       const setState = kind === 'plan' ? setPlanState : setTrackerState;
       setState('running');
       try {
@@ -355,7 +376,8 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   const addPhotos = useCallback(
     // RN: `files` are expo-image-picker assets (local file URIs) instead of a web FileList.
     (key: string, files: PickedPhoto[] | null) => {
-      if (!files || files.length === 0 || !childId) return;
+      if (!files || files.length === 0 || !childId || !loadedRef.current)
+        return;
       const imageFiles = files.filter(f =>
         (f.mimeType ?? 'image/jpeg').startsWith('image/'),
       );
@@ -382,9 +404,18 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
 
         fetch(file.uri)
           .then(local => local.blob())
-          .then(photo =>
-            transform.uploadPhoto(childId, key, photo, contentType, file.uri),
-          )
+          .then(photo => {
+            // Same type and 5 MB limits as avatars, checked before presigning.
+            const problem = avatarProblem(contentType, photo.size);
+            if (problem) throw new PhotoRejected(problem);
+            return transform.uploadPhoto(
+              childId,
+              key,
+              photo,
+              contentType,
+              file.uri,
+            );
+          })
           .then(uploaded => {
             setPhotoFiles(prev => {
               const next = {
@@ -405,13 +436,15 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
             // rejects) needs a different message — "try again" is actively
             // wrong when retrying the same file will fail identically.
             toast.error(
-              httpErrorMessage(err as Error, {
-                codeMessages: TRANSFORM_ERRORS,
-                statusMessages: {
-                  415: 'That photo format isn’t supported. Try a JPEG, PNG, WEBP or GIF instead.',
-                },
-                fallback: 'Could not upload the photo. Please try again.',
-              }),
+              err instanceof PhotoRejected
+                ? err.message
+                : httpErrorMessage(err as Error, {
+                    codeMessages: TRANSFORM_ERRORS,
+                    statusMessages: {
+                      415: 'That photo format isn’t supported. Try a JPEG, PNG, WEBP or GIF instead.',
+                    },
+                    fallback: 'Could not upload the photo. Please try again.',
+                  }),
             );
             setPhotoFiles(prev => ({
               ...prev,
@@ -518,6 +551,10 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   return {
     doc,
     loadingDoc,
+    /** The saved plan couldn't be loaded; saving and generation are off until `reload` succeeds. */
+    loadError,
+    loadFailed: loadError !== null,
+    reload,
     hasPlan: !!doc?.plan,
     hasTrackSteps: !!doc?.track_steps,
     generatePlan,

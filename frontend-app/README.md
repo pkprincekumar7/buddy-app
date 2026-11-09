@@ -702,9 +702,9 @@ Two workflow files build and publish the mobile app to S3:
 | Workflow          | File                                      | Runner          | Output |
 | ----------------- | ----------------------------------------- | --------------- | ------ |
 | Build Android APK | `.github/workflows/build-android-apk.yml` | `ubuntu-latest` | `.apk` |
-| Build iOS IPA     | `.github/workflows/build-ios-ipa.yml`     | `macos-latest`  | `.ipa` |
+| Build iOS IPA     | `.github/workflows/build-ios-ipa.yml`     | `macos-15`      | `.ipa` |
 
-Both are triggered manually from **GitHub → Actions → select workflow → Run workflow**, and require choosing an environment (`dev`, `stg`, or `prod`). The built artifact is uploaded both as a **GitHub Actions artifact** (retained 14 days) and pushed to the **S3 backend bucket**.
+Both are triggered manually from **GitHub → Actions → select workflow → Run workflow**, and require choosing an environment (`dev`, `stg`, or `prod`). The built artifact is uploaded both as a **GitHub Actions artifact** (retained 14 days) and pushed to the **S3 backend bucket**. A `prod` run is refused unless it's started from the default branch (`main`), since the Android one replaces the APK parents download; CI status isn't checked. The release APK is arm64-v8a only (Play requires 64-bit).
 
 ---
 
@@ -1001,7 +1001,7 @@ Google Sign-In works on both Android and iOS via `@react-native-google-signin/go
 
 - The app is configured with a **Web OAuth Client ID** (`GOOGLE_CLIENT_ID` in `.env`), used by both platforms so the backend can verify the `idToken` server-side.
 - **Android** additionally requires an **Android OAuth Client ID** registered for each signing certificate's SHA-1 fingerprint. Google uses this to authorise the APK at runtime — you do not reference it in code.
-- **iOS** additionally requires an **iOS OAuth Client ID** (`IOS_CLIENT_ID` in `.env`) registered for the app's Bundle ID. This is passed as `iosClientId` in `GoogleSignin.configure()` at app startup — without it the app crashes immediately.
+- **iOS** additionally requires an **iOS OAuth Client ID** (`IOS_CLIENT_ID` in `.env`) registered for the app's Bundle ID. This is passed as `iosClientId` in `GoogleSignin.configure()` at app startup. There's no built-in fallback ID: without `IOS_CLIENT_ID`, `App.tsx` skips `configure()` on iOS (the Sign-In button is hidden there), so set it to use Google Sign-In on iOS.
 - On sign-in, the native sheet returns an `idToken` which is sent to the backend's `/auth/google` endpoint for verification.
 
 ---

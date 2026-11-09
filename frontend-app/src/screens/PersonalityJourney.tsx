@@ -234,15 +234,13 @@ export default function PersonalityJourney() {
               : 'Something went wrong. Please try again.'}
           </Text>
           <View className="flex-row gap-3">
-            {child && (
-              <Button
-                onPress={retry}
-                className="rounded-2xl px-8 font-semibold text-primary-foreground"
-                style={recipe.btnPrimary}
-              >
-                Try again
-              </Button>
-            )}
+            <Button
+              onPress={retry}
+              className="rounded-2xl px-8 font-semibold text-primary-foreground"
+              style={recipe.btnPrimary}
+            >
+              Try again
+            </Button>
             <Button
               variant="outline"
               onPress={() => void navigate('/Home')}
@@ -320,7 +318,7 @@ export default function PersonalityJourney() {
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
                   release: transformCompleted,
-                  connect: transformCompleted,
+                  connect: releaseCompleted,
                 }}
                 current={currentDimension}
                 viewport={viewport}

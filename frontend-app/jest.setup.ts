@@ -64,6 +64,29 @@ jest.mock('@react-native-async-storage/async-storage', () => {
       return Promise.resolve();
     }),
     getAllKeys: jest.fn(() => Promise.resolve(Object.keys(store))),
+    removeMany: jest.fn((keys: string[]) => {
+      keys.forEach(k => {
+        delete store[k];
+      });
+      return Promise.resolve();
+    }),
+  };
+});
+
+// Mock expo-secure-store (the token store): an in-memory Keychain/Keystore.
+jest.mock('expo-secure-store', () => {
+  const store: Record<string, string> = {};
+  return {
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
+    setItemAsync: jest.fn((key: string, value: string) => {
+      store[key] = value;
+      return Promise.resolve();
+    }),
+    getItemAsync: jest.fn((key: string) => Promise.resolve(store[key] ?? null)),
+    deleteItemAsync: jest.fn((key: string) => {
+      delete store[key];
+      return Promise.resolve();
+    }),
   };
 });
 

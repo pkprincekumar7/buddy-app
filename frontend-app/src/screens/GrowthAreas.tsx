@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
+import { Button } from '@/components/ui/button';
 import Animated, {
   Keyframe,
   useAnimatedStyle,
@@ -49,7 +50,7 @@ import {
   scalePath,
 } from '@/components/growth/shared';
 import { GROWTH_VIGNETTE } from '@/components/growth/palette';
-import { css, font, rgb } from '@/theme';
+import { css, font, recipe, rgb } from '@/theme';
 
 /**
  * RN port of the web Growth Map at its phone layout (useIsMobile → true): the
@@ -119,6 +120,9 @@ export default function GrowthAreas() {
   const [childName, setChildName] = useState('');
   const [childGender, setChildGender] = useState('');
   const [hydrated, setHydrated] = useState(false);
+  // A load that failed for any reason other than a redirect: shows Try again.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   /**
    * The child's areas as grow stores them (build plan 7.6), which also carry the
    * generated question sets. Each save's answer replaces its entry, so everything
@@ -182,6 +186,7 @@ export default function GrowthAreas() {
           return;
         }
         console.warn('[GrowthAreas] Load failed:', err);
+        setLoadFailed(true);
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -190,7 +195,7 @@ export default function GrowthAreas() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   // Ambient track is shared across the whole journey (see AmbientAudioContext) —
   // keep it silent while the splash video plays its own audio, same as before.
@@ -322,7 +327,9 @@ export default function GrowthAreas() {
             signal: abortRef.current.signal,
           },
         );
-        if (recsAreaRef.current?.id !== area.id) return; // the parent moved on
+        // The parent may have opened another area meanwhile: its sheet must not show
+        // this one's result, but this area still gets completed below.
+        const isCurrent = () => recsAreaRef.current?.id === area.id;
         const doc =
           outcome === 'completed'
             ? (await grow.list(childId)).find(a => a.area_id === area.id)
@@ -331,11 +338,13 @@ export default function GrowthAreas() {
           doc?.ai_three_month_recommendations,
         );
         if (!doc || recs.length === 0) {
-          setRecsStatus('error');
+          if (isCurrent()) setRecsStatus('error');
           return;
         }
-        setRecommendations(recs);
-        setRecsStatus('ready');
+        if (isCurrent()) {
+          setRecommendations(recs);
+          setRecsStatus('ready');
+        }
         keep(
           await grow.save(
             childId,
@@ -346,7 +355,8 @@ export default function GrowthAreas() {
       } catch (err) {
         if (isAbort(err)) return;
         console.error('[GrowthAreas] Recommendations failed:', err);
-        setRecsStatus(status => (status === 'ready' ? status : 'error'));
+        if (recsAreaRef.current?.id === area.id)
+          setRecsStatus(status => (status === 'ready' ? status : 'error'));
         toast.error(
           httpErrorMessage(err as Error, {
             codeMessages: GROW_ERRORS,
@@ -487,6 +497,29 @@ export default function GrowthAreas() {
           <>
             <PageBackRow />
             <PageLoader />
+          </>
+        ) : loadFailed ? (
+          <>
+            <PageBackRow />
+            <View
+              className="flex-1 items-center justify-center gap-4 px-4"
+              style={{ backgroundColor: rgb('constellation-navy-deep') }}
+            >
+              <Text className="text-center text-muted-foreground">
+                We could not load this page. Please try again.
+              </Text>
+              <Button
+                onPress={() => {
+                  setLoadFailed(false);
+                  setHydrated(false);
+                  setReloadKey(k => k + 1);
+                }}
+                className="rounded-2xl px-8 font-semibold text-primary-foreground"
+                style={recipe.btnPrimary}
+              >
+                Try again
+              </Button>
+            </View>
           </>
         ) : (
           <ScrollView

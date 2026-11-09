@@ -1746,13 +1746,13 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 > ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Release builds are still debug-signed (`frontend-app/android/app/build.gradle:125,130`, `versionCode 1` at `:91`), and the builds are still public (`build-android-apk.yml:194,199`, `build-ios-ipa.yml:291-292,361`, `cloudfront.tf:144`). The APK prefix is now `APK_PREFIX` in `backend/shared/app/main.py:52` (`APK_LATEST` at `:55`); `backend/app/routers/downloads.py` is gone.
+> 🔄 **Current code (2026-11-01):** ⬜ Open. Release builds are still debug-signed (`frontend-app/android/app/build.gradle:126,131`, `versionCode 1` at `:91`), and the builds are still public (`build-android-apk.yml:231,236`, `build-ios-ipa.yml:336-337,406`, `cloudfront.tf:144`). The APK prefix is now `APK_PREFIX` in `backend/shared/app/main.py:52` (`APK_LATEST` at `:55`); `backend/app/routers/downloads.py` is gone.
 
 **Where:**
-- `frontend-app/android/app/build.gradle:115-130`: `release` uses `signingConfigs.debug`, the committed `debug.keystore` with password `android`.
+- `frontend-app/android/app/build.gradle:116-131`: `release` uses `signingConfigs.debug`, the committed `debug.keystore` with password `android`.
 - `build.gradle:91`: `versionCode 1` is hard-coded.
-- `.github/workflows/build-android-apk.yml:185` and `build-ios-ipa.yml:349` copy the builds to `s3://<assets>/app-assets/applications/...`, which CloudFront serves **publicly** via `/app-assets/*` (`infra-live-edge/terraform/cloudfront.tf:137`).
-- iOS uses the `ad-hoc` export method (`build-ios-ipa.yml:281`), which is capped at 100 registered devices.
+- `.github/workflows/build-android-apk.yml:222` and `build-ios-ipa.yml:394` copy the builds to `s3://<assets>/app-assets/applications/...`, which CloudFront serves **publicly** via `/app-assets/*` (`infra-live-edge/terraform/cloudfront.tf:137`).
+- iOS uses the `ad-hoc` export method (`build-ios-ipa.yml:326`), which is capped at 100 registered devices.
 
 **Problems:**
 - Anyone can download the prod builds.
@@ -1764,7 +1764,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 1. **Android:** generate a real upload keystore and store it as base64 in GitHub secrets with its passwords. Write it to `$RUNNER_TEMP` and delete it after the build. Wire `signingConfigs.release` from env vars. Derive `versionCode` from `github.run_number` or a tag. Distribute via **Play Console** (internal testing → production), using Play App Signing. Build with `bundleRelease` (an **.aab**), since Play requires App Bundles for new apps.
 2. **iOS:** distribute via **TestFlight/App Store** (`app-store` export method + App Store Connect API key).
 3. Remove prod builds from the public `/app-assets/` path. If side-loading is needed for dev, use a private bucket with presigned URLs. Update `backend/app/routers/downloads.py:30` (`_ANDROID_APK_PREFIX`; v10: now `APK_PREFIX`, `backend/shared/app/main.py:52`) and SEC-10's prefix condition together.
-4. Delete the decoded p12/profile files in the iOS cleanup step (`build-ios-ipa.yml:309-315`, v10: the step at `:320`, only deletes the keychain). This is low risk on hosted runners, but tidy.
+4. Delete the decoded p12/profile files in the iOS cleanup step (`build-ios-ipa.yml:354-360`, v10: the step at `:365`, only deletes the keychain). This is low risk on hosted runners, but tidy.
 
 **Acceptance criteria:**
 - The release APK is signed with a non-debug key (`apksigner verify --print-certs`).
@@ -2282,7 +2282,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 > - **Scheduler:** there is no prod scheduler (SEC-03).
 > - **Not code changes:** `restart-live-backend` (same images) and `rollback-live-frontend` (an earlier prod release) stay as they are.
 >
-> Still open: the branch rule (fix 1, deferred), so a commit applied to stg from a feature branch could still follow to prod; and the mobile builds (`build-android-apk`, `build-ios-ipa`), which build prod from the dispatched ref (with MOB-01, deferred).
+> Still open: the branch rule (fix 1, deferred), so a commit applied to stg from a feature branch could still follow to prod; and the mobile builds (`build-android-apk`, `build-ios-ipa`): since 2026-11-09 their first `validate` job refuses prod unless the run is on the default branch, but a build doesn't need a stg build of the same commit first (the release signing is MOB-01, deferred).
 
 **Where:** Every `workflow_dispatch` deploy, Terraform, promote, restart and mobile workflow. No workflow checks the ref (the only `github.ref*` use is the concurrency key at `check.yml:11`).
 

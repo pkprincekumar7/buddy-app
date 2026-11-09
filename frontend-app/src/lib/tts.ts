@@ -19,21 +19,28 @@ export function speakText(
 ): void {
   void Speech.stop();
   Speech.configure({ language: 'en-US', rate, pitch });
-  void Speech.speak(text).then(id => {
-    if (!onDone) return;
-    // Like the web utterance's onend: fires when this utterance finishes or is cancelled.
-    const finish = Speech.onFinish(e => {
-      if (e.id === id) done();
-    });
-    const stopped = Speech.onStopped(e => {
-      if (e.id === id) done();
-    });
-    function done() {
-      finish.remove();
-      stopped.remove();
+  void Speech.speak(text).then(
+    id => {
+      if (!onDone) return;
+      // Like the web utterance's onend: fires when this utterance finishes or is cancelled.
+      const finish = Speech.onFinish(e => {
+        if (e.id === id) done();
+      });
+      const stopped = Speech.onStopped(e => {
+        if (e.id === id) done();
+      });
+      function done() {
+        finish.remove();
+        stopped.remove();
+        onDone?.();
+      }
+    },
+    err => {
+      // Never leave a caller waiting on onDone (e.g. a "speaking" state) forever.
+      console.warn('[tts] speak failed:', err);
       onDone?.();
-    }
-  });
+    },
+  );
 }
 
 /** web: window.speechSynthesis.cancel(). */

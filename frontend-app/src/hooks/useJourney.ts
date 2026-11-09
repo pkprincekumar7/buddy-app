@@ -28,6 +28,16 @@ export function useJourney(childId: string | undefined, enabled: boolean) {
   const [journey, setJourney] = useState<Journey>({ status: 'loading' });
   // Each retry runs the load again, starting a new generation after a failure.
   const [attempt, setAttempt] = useState(0);
+  // A different child starts from scratch: never show the previous child's
+  // personality, and never carry its retry count over (which would start a
+  // regeneration for this child unasked). Reset during render, so the load effect
+  // below already sees attempt 0.
+  const [loadedFor, setLoadedFor] = useState(childId);
+  if (loadedFor !== childId) {
+    setLoadedFor(childId);
+    setJourney({ status: 'loading' });
+    setAttempt(0);
+  }
 
   useEffect(() => {
     if (!enabled || !childId) return;

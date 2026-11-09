@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { admin, ADMIN_ERRORS, nameOf } from '@/api/admin';
 import { httpErrorMessage } from '@/lib/apiError';
 
@@ -45,7 +45,7 @@ const ACCOUNT = {
 };
 
 beforeEach(async () => {
-  await AsyncStorage.setItem('superpower:access_token', 'admin-token');
+  await SecureStore.setItemAsync('superpower.access_token', 'admin-token');
 });
 
 describe('the admin calls (build plan 7.3)', () => {

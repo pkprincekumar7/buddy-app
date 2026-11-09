@@ -55,7 +55,7 @@ interface ConversationalOnboardingProps {
   activeChildId?: string;
   onComplete: (data: Record<string, unknown>) => void | Promise<void>;
   resumeHydrationReady?: boolean;
-  onContinueToPersonality?: () => void;
+  onContinueToPersonality?: () => void | Promise<unknown>;
 }
 
 const IVY_MSG =
@@ -184,6 +184,8 @@ export default function ConversationalOnboarding({
   const [analyzingState, setAnalyzingState] =
     useState<AnalyzingState>(ANALYZING_INITIAL);
   const [allAnswered, setAllAnswered] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const continuingRef = useRef(false);
   const [phaseSplash, setPhaseSplash] = useState<PhaseSplash | null>(null);
   const [resumeSummary, setResumeSummary] = useState<SummaryItem[] | null>(
     null,
@@ -196,7 +198,6 @@ export default function ConversationalOnboarding({
   const inputRef = useRef<TextInput | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChildIdRef = useRef(activeChildId);
-  const botMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatSessionStartedRef = useRef(false);
   const allowEmptySessionRecoveryRef = useRef(false);
   const userTurnCountRef = useRef(0);
@@ -206,7 +207,17 @@ export default function ConversationalOnboarding({
     () => `${Date.now()}-${++msgIdCounterRef.current}`,
     [],
   );
-  const splashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Every timeout processResponse schedules (incl. the nested splash one) —
+  // all cleared on unmount so nothing fires after leaving the screen.
+  const pendingTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const schedule = useCallback((fn: () => void, ms: number) => {
+    const timers = pendingTimersRef.current;
+    const id = setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, ms);
+    timers.add(id);
+  }, []);
   // Stable refs for the resume effect — avoids re-triggering it when these change
   const conversationFlowRef = useRef<ConversationStep[]>([]);
   const addBotMessageRef = useRef<((text: string) => void) | null>(null);
@@ -291,7 +302,7 @@ export default function ConversationalOnboarding({
 
   // TTS
   const speak = useCallback((text: string) => {
-    if (!voiceEnabledRef.current) return;
+    if (speechDisposedRef.current || !voiceEnabledRef.current) return;
     const cleanText = text.replace(/[👋🎉💪😊🌟🚀]/g, '').replace(/\n/g, ' ');
     // Don't cancel while the Ivy intro is speaking — let it finish naturally.
     if (showIntroRef.current) {
@@ -304,7 +315,6 @@ export default function ConversationalOnboarding({
 
   const addBotMessage = useCallback(
     (text: string) => {
-      if (botMsgTimerRef.current !== null) clearTimeout(botMsgTimerRef.current);
       setMessages(prev => [
         ...prev,
         { id: newMsgId(), role: 'bot', content: text },
@@ -328,18 +338,13 @@ export default function ConversationalOnboarding({
     newMsgIdRef.current = newMsgId;
   });
 
-  useEffect(
-    () => () => {
-      if (botMsgTimerRef.current !== null) clearTimeout(botMsgTimerRef.current);
-    },
-    [],
-  );
-  useEffect(
-    () => () => {
-      if (splashTimerRef.current !== null) clearTimeout(splashTimerRef.current);
-    },
-    [],
-  );
+  useEffect(() => {
+    const timers = pendingTimersRef.current;
+    return () => {
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
+  }, []);
 
   // Resume hydration — deps are intentionally minimal to prevent race conditions.
   // conversationFlow, addBotMessage, newMsgId are read via stable refs so that a
@@ -502,7 +507,7 @@ export default function ConversationalOnboarding({
         const trimmed = response.trim();
         const ageMatch = trimmed.match(/^(\d+)\s*(years?|months?|y|m)?/i);
         if (!ageMatch) {
-          setTimeout(() => {
+          schedule(() => {
             addBotMessage(
               'Please enter age as a number in years (e.g., 10 or 10 years).',
             );
@@ -512,7 +517,7 @@ export default function ConversationalOnboarding({
         }
         const unit = ageMatch[2]?.toLowerCase();
         if (unit && !unit.startsWith('year')) {
-          setTimeout(() => {
+          schedule(() => {
             addBotMessage(
               'Age must be in years only (e.g., 10 or 10 years). Please re-enter.',
             );
@@ -522,7 +527,7 @@ export default function ConversationalOnboarding({
         }
         const ageNum = parseInt(ageMatch[1] ?? '', 10);
         if (ageNum < 8) {
-          setTimeout(() => {
+          schedule(() => {
             addBotMessage(
               'Age must be at least 8 years. Please enter a valid age.',
             );
@@ -535,7 +540,7 @@ export default function ConversationalOnboarding({
       if (step?.field === 'gender') {
         const lower = response.trim().toLowerCase();
         if (lower !== 'male' && lower !== 'female' && lower !== 'other') {
-          setTimeout(() => {
+          schedule(() => {
             addBotMessage('Please select Male, Female, or Other.');
             setWaitingForResponse(true);
           }, 400);
@@ -566,7 +571,7 @@ export default function ConversationalOnboarding({
           showingDots: true,
           dotCount: 0,
         });
-        setTimeout(() => {
+        schedule(() => {
           Promise.resolve(onComplete(finalData)).catch(() => {});
         }, 2000);
         return;
@@ -583,23 +588,23 @@ export default function ConversationalOnboarding({
               : 'your child';
           const resolvedTitle = splash.title.replace('{name}', childName);
           setPhaseSplash({ ...splash, title: resolvedTitle });
-          splashTimerRef.current = setTimeout(() => {
+          schedule(() => {
             setPhaseSplash(null);
             setCurrentStep(nextStep);
             const nextMessage = stepMessage(
               conversationFlow[nextStep],
               nextCollected,
             );
-            setTimeout(() => addBotMessage(nextMessage), 400);
+            schedule(() => addBotMessage(nextMessage), 400);
           }, 2400);
         } else {
           setCurrentStep(nextStep);
           const nextStepData = conversationFlow[nextStep];
           const nextMessage = stepMessage(nextStepData, nextCollected);
-          setTimeout(() => addBotMessage(nextMessage), 600);
+          schedule(() => addBotMessage(nextMessage), 600);
 
           if (nextStepData?.type === 'final') {
-            setTimeout(() => {
+            schedule(() => {
               void onComplete(nextCollected);
             }, 2000);
           }
@@ -613,6 +618,7 @@ export default function ConversationalOnboarding({
       addBotMessage,
       onComplete,
       newMsgId,
+      schedule,
     ],
   );
 
@@ -782,7 +788,39 @@ export default function ConversationalOnboarding({
                       >
                         <Button
                           className="h-12 rounded-full bg-info-strong px-8 text-white"
-                          onPress={() => onContinueToPersonality()}
+                          disabled={continuing}
+                          accessibilityState={{
+                            disabled: continuing,
+                            busy: continuing,
+                          }}
+                          onPress={() => {
+                            if (continuingRef.current) return;
+                            continuingRef.current = true;
+                            setContinuing(true);
+                            // The thank-you screen, as at the end of the chat, while the
+                            // answers save and the personality is made.
+                            setAnalyzingState(s => ({
+                              ...s,
+                              show: true,
+                              showingDots: true,
+                            }));
+                            const result = onContinueToPersonality();
+                            // A returned promise re-enables the button once it settles
+                            // (still mounted only when the save failed); a void
+                            // handler leaves it disabled (the screen takes over).
+                            if (result instanceof Promise) {
+                              const done = () => {
+                                continuingRef.current = false;
+                                setContinuing(false);
+                                setAnalyzingState(s => ({
+                                  ...s,
+                                  show: false,
+                                  showingDots: false,
+                                }));
+                              };
+                              void result.then(done, done);
+                            }
+                          }}
                           accessibilityLabel="Continue to personality analysis"
                         >
                           Continue to personality analysis

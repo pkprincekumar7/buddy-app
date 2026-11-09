@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { ApiError } from '@/api/errors';
 import { children, type Child } from '@/api/children';
 import {
   discover,
@@ -9,6 +10,13 @@ import {
 } from '@/api/discover';
 import { transform, type TransformArea } from '@/api/transform';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
+
+/** Load errors the screen answers with a redirect rather than an error state. */
+const REDIRECT_CODES = new Set(['circle_locked', 'child_not_found']);
+
+function isRedirectError(err: unknown): err is ApiError {
+  return err instanceof ApiError && REDIRECT_CODES.has(err.code ?? '');
+}
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
@@ -44,18 +52,21 @@ export function useLifePathwayData(childId: string | undefined) {
   // never land as the current child's data — the query for the old key is
   // simply abandoned, which is the same protection the hand-rolled `cancelled`
   // flag this replaced was providing.
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lifePathwayData', childId],
     queryFn: () => fetchLifePathwayData(childId!),
     enabled: !!childId,
+    // A locked circle or a missing child won't change on a second ask.
+    retry: (failureCount, err) => !isRedirectError(err) && failureCount < 1,
   });
 
   useEffect(() => {
-    if (isError) {
-      console.error('[useLifePathwayData] Failed to load');
-      toast.error('Failed to load your data. Please refresh and try again.');
+    // The redirect codes are answered by the screen, not with a toast.
+    if (isError && !isRedirectError(error)) {
+      console.error('[useLifePathwayData] Failed to load:', error);
+      toast.error('Failed to load your data. Please try again.');
     }
-  }, [isError]);
+  }, [isError, error]);
 
   return {
     childData: data?.childData ?? null,
@@ -63,5 +74,8 @@ export function useLifePathwayData(childId: string | undefined) {
     profile: data?.profile ?? null,
     isLoading,
     completedAreas: data?.completedAreas ?? [],
+    /** The load error, if the last load failed (an ApiError for API failures). */
+    error: isError ? error : null,
+    retry: refetch,
   };
 }

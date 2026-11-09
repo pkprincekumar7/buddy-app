@@ -27,8 +27,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Checks the inputs first, in a job with no `environment:`, so a refused run
+  # never loads any environment's variables or secrets (like the Terraform
+  # workflows' validate job; scripts/workflow-inputs.sh). prod is built only from
+  # the default branch: a prod build replaces latest.json, the APK that
+  # /api/v1/downloads/apk hands parents, so a feature branch must not reach it.
+  # It doesn't check that CI passed on the commit (kept simple; docs/ci-cd.md).
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT:    ${{ inputs.environment }}
+          REF:            ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          if [[ "$ENVIRONMENT" == "prod" && "$REF" != "refs/heads/${DEFAULT_BRANCH}" ]]; then
+            echo "::error::prod is built only from ${DEFAULT_BRANCH}, not ${REF}. Merge first, then run this from ${DEFAULT_BRANCH}."
+            exit 1
+          fi
+
   build:
     name: Build Android APK
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: ${{ inputs.environment }}
@@ -99,12 +130,14 @@ jobs:
           cache: "yarn"
           cache-dependency-path: frontend-app/yarn.lock
 
+      # postinstall.js patches files inside node_modules, so a change to it must
+      # miss the cache too: a hit skips yarn install, and with it the patch.
       - name: Cache node_modules
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         id: node-modules-cache
         with:
           path: frontend-app/node_modules
-          key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock') }}
+          key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock', 'frontend-app/scripts/postinstall.js') }}
 
       - name: Install JS dependencies
         working-directory: frontend-app
@@ -147,12 +180,16 @@ jobs:
       # a production keystore and add ANDROID_KEYSTORE_BASE64 /
       # ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
       # secrets to the GitHub environment.
+      #
+      # arm64-v8a only: the ABI split in app/build.gradle ships just that APK, so
+      # compiling armeabi-v7a too only doubled the native build time for a binary
+      # nobody got. Play requires 64-bit, and 32-bit-only phones aren't supported.
       # -------------------------------------------------------------------------
       - name: Build release APK
         working-directory: frontend-app/android
         env:
           GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g"
-        run: ./gradlew assembleRelease --no-daemon --build-cache --parallel -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+        run: ./gradlew assembleRelease --no-daemon --build-cache --parallel -PreactNativeArchitectures=arm64-v8a
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

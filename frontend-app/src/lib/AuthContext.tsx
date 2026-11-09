@@ -19,6 +19,7 @@ import {
 } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { account, type CurrentUser } from '@/api/account';
+import { queryClientInstance } from '@/lib/query-client';
 
 type UserData = CurrentUser;
 
@@ -52,6 +53,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // The account the query cache was filled for: keys like ['children'] aren't per-user,
+  // so the cache is cleared whenever that account changes or signs out.
+  const cachedUserIdRef = useRef<string | null>(null);
+
+  const clearUserCache = useCallback(() => {
+    cachedUserIdRef.current = null;
+    queryClientInstance.clear();
+  }, []);
 
   const checkAppState = useCallback(
     async (options: { withLoading?: boolean } = {}) => {
@@ -62,12 +71,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       try {
         const currentUser = await account.current();
+        if (
+          cachedUserIdRef.current !== null &&
+          cachedUserIdRef.current !== currentUser.id
+        ) {
+          queryClientInstance.clear();
+        }
+        cachedUserIdRef.current = currentUser.id;
         setUser(currentUser);
         setIsAuthenticated(true);
       } catch (error) {
         console.error('Auth check failed:', error);
         if (error instanceof ApiError && error.status === 401) {
           void account.logout();
+          clearUserCache();
           setUser(null);
           setIsAuthenticated(false);
           setAuthError(null);
@@ -85,7 +102,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     },
-    [],
+    [clearUserCache],
   );
 
   useEffect(() => {
@@ -105,13 +122,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         toast.error(message);
       }
       void account.logout();
+      clearUserCache();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
     };
     const sub = DeviceEventEmitter.addListener(AUTH_EXPIRED_EVENT, onExpired);
     return () => sub.remove();
-  }, []);
+  }, [clearUserCache]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -150,15 +168,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // `shouldRedirect` is kept for API parity with the web; the redirect to
   // Login happens implicitly when isAuthenticated flips to false.
-  const logout = useCallback(async (_shouldRedirect = true) => {
-    // The session ends on the server best-effort; the local sign-out happens either way.
-    await account.logout();
-    // Also drop the native Google session so the account picker shows next time.
-    await GoogleSignin.signOut().catch(() => {});
-    setUser(null);
-    setIsAuthenticated(false);
-    setAuthError(null);
-  }, []);
+  const logout = useCallback(
+    async (_shouldRedirect = true) => {
+      // The session ends on the server best-effort; the local sign-out happens either way.
+      await account.logout();
+      // Also drop the native Google session so the account picker shows next time.
+      await GoogleSignin.signOut().catch(() => {});
+      clearUserCache();
+      setUser(null);
+      setIsAuthenticated(false);
+      setAuthError(null);
+    },
+    [clearUserCache],
+  );
 
   const contextValue = useMemo(
     () => ({

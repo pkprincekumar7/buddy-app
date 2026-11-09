@@ -240,10 +240,29 @@ export default function ChildProfileStep({
     return Object.keys(e).length === 0;
   };
 
+  // Local in-flight guard: the parent's isLoading only arrives on its next
+  // render, so a fast double tap could otherwise create two children.
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const handleContinue = () => {
+    if (submittingRef.current || isLoading) return;
     if (!validate()) return;
-    void onContinue(form, photoFile ?? undefined);
+    submittingRef.current = true;
+    setSubmitting(true);
+    const release = () => {
+      submittingRef.current = false;
+      setSubmitting(false);
+    };
+    let result: void | Promise<void>;
+    try {
+      result = onContinue(form, photoFile ?? undefined);
+    } catch (err) {
+      release();
+      throw err;
+    }
+    Promise.resolve(result).then(release, release);
   };
+  const busy = !!isLoading || submitting;
 
   const setField = <K extends keyof ChildFormData>(
     key: K,
@@ -563,12 +582,12 @@ export default function ChildProfileStep({
           <Text className="text-xs text-muted-foreground/40">* Required</Text>
           <Button
             onPress={handleContinue}
-            disabled={isLoading}
-            accessibilityLabel={isLoading ? 'Saving' : 'Continue'}
+            disabled={busy}
+            accessibilityLabel={busy ? 'Saving' : 'Continue'}
             className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground"
             style={CTA_STYLE}
           >
-            {isLoading ? (
+            {busy ? (
               <View className="flex-row items-center gap-2">
                 <Spinner
                   durationSeconds={1}

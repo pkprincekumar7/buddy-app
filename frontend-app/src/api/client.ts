@@ -1,10 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { ApiError } from './errors';
 import { env } from '@/lib/env';
 import { DeviceEventEmitter } from 'react-native';
 
 // ---------------------------------------------------------------------------
-// Token store — AsyncStorage-backed manual cookie jar for React Native.
+// Token store — the iOS Keychain / Android Keystore (expo-secure-store), a manual
+// cookie jar for React Native. Not AsyncStorage: that is plain files, readable from a
+// rooted device or an unencrypted backup, and the refresh token is a long-lived login.
 //
 // The JS fetch polyfill in React Native has no cookie jar: Set-Cookie response
 // headers are silently discarded and credentials: 'include' is a no-op.
@@ -18,27 +21,52 @@ import { DeviceEventEmitter } from 'react-native';
 //      and storing the new token pair.
 // ---------------------------------------------------------------------------
 
-const ACCESS_KEY = 'superpower:access_token';
-const REFRESH_KEY = 'superpower:refresh_token';
+// SecureStore keys allow only letters, digits, ".", "-" and "_".
+export const ACCESS_KEY = 'superpower.access_token';
+export const REFRESH_KEY = 'superpower.refresh_token';
+
+// Only while the device is unlocked, and never restored onto another device from a backup.
+const SECURE: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
+// Builds before the move kept the tokens in AsyncStorage. They're deleted, not moved:
+// a plaintext copy must not stay behind, and signing in once more is the whole cost.
+const PLAINTEXT_KEYS = ['superpower:access_token', 'superpower:refresh_token'];
+let plaintextRemoved: Promise<void> | null = null;
+function removePlaintextTokens(): Promise<void> {
+  plaintextRemoved ??= AsyncStorage.removeMany(PLAINTEXT_KEYS).catch(
+    (err: unknown) => {
+      plaintextRemoved = null; // tried again on the next token read
+      console.warn(
+        '[tokenStore] Could not remove the old plaintext tokens:',
+        err,
+      );
+    },
+  );
+  return plaintextRemoved;
+}
 
 /** Also used by api/services.ts, the generated clients' fetch. */
 export const tokenStore = {
   async getAccess(): Promise<string | null> {
-    return AsyncStorage.getItem(ACCESS_KEY);
+    await removePlaintextTokens();
+    return SecureStore.getItemAsync(ACCESS_KEY, SECURE);
   },
   async getRefresh(): Promise<string | null> {
-    return AsyncStorage.getItem(REFRESH_KEY);
+    await removePlaintextTokens();
+    return SecureStore.getItemAsync(REFRESH_KEY, SECURE);
   },
   async set(access: string, refresh: string): Promise<void> {
     await Promise.all([
-      AsyncStorage.setItem(ACCESS_KEY, access),
-      AsyncStorage.setItem(REFRESH_KEY, refresh),
+      SecureStore.setItemAsync(ACCESS_KEY, access, SECURE),
+      SecureStore.setItemAsync(REFRESH_KEY, refresh, SECURE),
     ]);
   },
   async clear(): Promise<void> {
     await Promise.all([
-      AsyncStorage.removeItem(ACCESS_KEY),
-      AsyncStorage.removeItem(REFRESH_KEY),
+      SecureStore.deleteItemAsync(ACCESS_KEY, SECURE),
+      SecureStore.deleteItemAsync(REFRESH_KEY, SECURE),
     ]);
   },
 };
@@ -61,21 +89,31 @@ export function ensureRefreshed(): Promise<void> {
 
 // A failed refresh is normally a plain expired session (401, generic message).
 // A locked account fails with 403 and a specific reason (see auth's
-// _refuse_refresh) — resolved once here so every caller that reacts to a failed
-// refresh (serviceFetch's retry, and AuthContext's silent-refresh timer)
-// surfaces the same status/message instead of each re-deriving it.
+// _refuse_refresh and _rejected: {"code": "account_locked", "msg": ...}) — resolved
+// once here so every caller that reacts to a failed refresh (serviceFetch's retry,
+// and AuthContext's silent-refresh timer) surfaces the same status/message instead
+// of each re-deriving it.
 export function resolveAuthExpiry(err: unknown): {
   status: 401 | 403;
   message: string;
 } {
-  if (
-    err instanceof ApiError &&
-    err.status === 403 &&
-    typeof err.detail === 'string'
-  ) {
-    return { status: 403, message: err.detail };
+  if (err instanceof ApiError && err.status === 403) {
+    if (err.code === 'account_locked' && typeof err.detail !== 'string') {
+      const msg = err.detail.msg;
+      if (typeof msg === 'string') return { status: 403, message: msg };
+    }
+    if (typeof err.detail === 'string') {
+      return { status: 403, message: err.detail };
+    }
   }
   return { status: 401, message: 'Session expired' };
+}
+
+/** Only a refresh the auth service refused (401/403) ends the session: a network error,
+ *  a 5xx or a 429 from the refresh limit leaves the user signed in (as the silent-refresh
+ *  timer in AuthContext does). */
+export function isSessionEnded(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403);
 }
 
 /** Event name AuthContext listens on — RN's stand-in for the web's window CustomEvent. */
@@ -122,14 +160,24 @@ async function refreshTokenPair(): Promise<void> {
   }
 
   if (!res.ok) {
-    let detail: string = 'Refresh failed';
+    let detail: string | Record<string, unknown> = 'Refresh failed';
     try {
       const j = (await res.json()) as { detail?: unknown };
       if (typeof j.detail === 'string') detail = j.detail;
+      else if (
+        j.detail !== null &&
+        typeof j.detail === 'object' &&
+        !Array.isArray(j.detail)
+      ) {
+        // e.g. {"code": "account_locked", "msg": ...}: kept whole for resolveAuthExpiry.
+        detail = j.detail as Record<string, unknown>;
+      }
     } catch {
       /* non-JSON body */
     }
-    await tokenStore.clear();
+    // Only a refused refresh spends the pair: a 5xx, a 429 or a timeout keeps it, so the
+    // next attempt can still refresh.
+    if (res.status === 401 || res.status === 403) await tokenStore.clear();
     throw new ApiError(res.status, detail);
   }
   try {

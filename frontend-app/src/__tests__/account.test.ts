@@ -1,11 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { account, displayName, firstName } from '@/api/account';
 import { ApiError } from '@/api/errors';
 import { httpErrorMessage } from '@/lib/apiError';
 
 jest.mock('@/lib/env', () => ({ env: { API_URL: 'https://api.test' } }));
 
-const ACCESS = 'superpower:access_token';
+const ACCESS = 'superpower.access_token';
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -49,7 +49,7 @@ const PROFILE = {
 };
 
 beforeEach(async () => {
-  await AsyncStorage.setItem(ACCESS, 'access-1');
+  await SecureStore.setItemAsync(ACCESS, 'access-1');
 });
 
 describe('the account (build plan 7.2)', () => {
@@ -105,7 +105,7 @@ describe('the account (build plan 7.2)', () => {
       address_line_one: '1 High Street',
     });
     expect(sent).not.toHaveProperty('full_name');
-    expect(await AsyncStorage.getItem(ACCESS)).toBe('a-2');
+    expect(await SecureStore.getItemAsync(ACCESS)).toBe('a-2');
   });
 
   it('signs out (even if the server is unreachable) and forgets the tokens', async () => {
@@ -113,12 +113,12 @@ describe('the account (build plan 7.2)', () => {
       throw new TypeError('Network request failed');
     });
     await account.logout();
-    expect(await AsyncStorage.getItem(ACCESS)).toBeNull();
+    expect(await SecureStore.getItemAsync(ACCESS)).toBeNull();
   });
 
   it('signs out with the refresh token, so the server ends that session', async () => {
-    await AsyncStorage.setItem(ACCESS, 'access-1');
-    await AsyncStorage.setItem('superpower:refresh_token', 'refresh-1');
+    await SecureStore.setItemAsync(ACCESS, 'access-1');
+    await SecureStore.setItemAsync('superpower.refresh_token', 'refresh-1');
     let sent: string | null = null;
     globalThis.fetch = jest.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -130,7 +130,9 @@ describe('the account (build plan 7.2)', () => {
     ) as typeof fetch;
     await account.logout();
     expect(sent).toBe('Bearer refresh-1');
-    expect(await AsyncStorage.getItem('superpower:refresh_token')).toBeNull();
+    expect(
+      await SecureStore.getItemAsync('superpower.refresh_token'),
+    ).toBeNull();
   });
 
   it('signs out of every device with logout-all', async () => {

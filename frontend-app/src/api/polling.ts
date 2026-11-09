@@ -20,11 +20,16 @@ export function pause(ms: number, signal?: AbortSignal): Promise<void> {
       reject(aborted());
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
+    const onAbort = () => {
       clearTimeout(timer);
       reject(aborted());
-    });
+    };
+    // Removed once the wait ends, so a long-lived signal doesn't collect one per poll.
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 

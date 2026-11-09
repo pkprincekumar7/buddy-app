@@ -27,10 +27,44 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Checks the inputs first, in a job with no `environment:`, so a refused run
+  # never loads the signing secrets (like the Terraform workflows' validate job;
+  # scripts/workflow-inputs.sh). prod is built only from the default branch, as
+  # in build-android-apk.yml. It doesn't check that CI passed on the commit
+  # (kept simple; docs/ci-cd.md).
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT:    ${{ inputs.environment }}
+          REF:            ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          if [[ "$ENVIRONMENT" == "prod" && "$REF" != "refs/heads/${DEFAULT_BRANCH}" ]]; then
+            echo "::error::prod is built only from ${DEFAULT_BRANCH}, not ${REF}. Merge first, then run this from ${DEFAULT_BRANCH}."
+            exit 1
+          fi
+
   build:
     name: Build iOS IPA
+    needs: validate
     # iOS builds MUST run on macOS — xcodebuild and codesign are Apple-only tools.
-    runs-on: macos-latest
+    # A fixed image, not macos-latest: when GitHub moves macos-latest to a new
+    # macOS, its default Xcode changes too, and the build would change with it
+    # unannounced. The build uses the image's default Xcode (no xcode-select);
+    # the DerivedData cache key below includes both, so a new image starts clean.
+    runs-on: macos-15
     timeout-minutes: 90
     environment: ${{ inputs.environment }}
 
@@ -97,12 +131,14 @@ jobs:
           cache: "yarn"
           cache-dependency-path: frontend-app/yarn.lock
 
+      # postinstall.js patches files inside node_modules, so a change to it must
+      # miss the cache too: a hit skips yarn install, and with it the patch.
       - name: Cache node_modules
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         id: node-modules-cache
         with:
           path: frontend-app/node_modules
-          key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock') }}
+          key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock', 'frontend-app/scripts/postinstall.js') }}
 
       - name: Install JS dependencies
         working-directory: frontend-app
@@ -164,14 +200,23 @@ jobs:
       # -------------------------------------------------------------------------
       # Cache Xcode DerivedData — significantly speeds up incremental builds.
       # Key covers ios project files and node_modules (native module changes
-      # invalidate the build cache).
+      # invalidate the build cache). It also names the runner image and the Xcode
+      # build: DerivedData from another Xcode is at best unused, at worst a
+      # confusing build failure, so it's never restored across them.
       # -------------------------------------------------------------------------
+      - name: Read the runner image and Xcode version
+        id: toolchain
+        run: |
+          XCODE="$(xcodebuild -version | awk '/Build version/ {print $3}')"
+          echo "Runner image: ${ImageOS}, Xcode build ${XCODE}"
+          echo "key=${ImageOS}-xcode-${XCODE}" >> "$GITHUB_OUTPUT"
+
       - name: Cache Xcode DerivedData
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: xcode-derived-${{ runner.os }}-${{ hashFiles('frontend-app/ios/**/*.pbxproj', 'frontend-app/ios/Podfile.lock') }}
-          restore-keys: xcode-derived-${{ runner.os }}-
+          key: xcode-derived-${{ steps.toolchain.outputs.key }}-${{ hashFiles('frontend-app/ios/**/*.pbxproj', 'frontend-app/ios/Podfile.lock') }}
+          restore-keys: xcode-derived-${{ steps.toolchain.outputs.key }}-
 
       # -------------------------------------------------------------------------
       # Code-signing setup.

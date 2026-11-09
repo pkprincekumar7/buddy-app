@@ -15,6 +15,7 @@ import {
   captureTokens,
   dispatchAuthExpired,
   ensureRefreshed,
+  isSessionEnded,
   resolveAuthExpiry,
   tokenStore,
 } from './client';
@@ -75,6 +76,10 @@ export async function serviceFetch(input: Request): Promise<Response> {
   try {
     await ensureRefreshed();
   } catch (err) {
+    // A refresh that merely failed (offline, 5xx, 429) keeps the session: the caller gets
+    // that error, not the 401, so nothing treats it as signed out (AuthContext shows its
+    // retry screen instead of logging out, which would revoke the session).
+    if (!isSessionEnded(err)) throw err;
     const { status, message } = resolveAuthExpiry(err);
     dispatchAuthExpired(status, message);
     return response;

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import {
   AVATAR_MAX_BYTES,
   avatarProblem,
@@ -67,7 +67,7 @@ const CHILD = {
 };
 
 beforeEach(async () => {
-  await AsyncStorage.setItem('superpower:access_token', 'parent-token');
+  await SecureStore.setItemAsync('superpower.access_token', 'parent-token');
 });
 
 describe('the children calls (build plan 7.4)', () => {

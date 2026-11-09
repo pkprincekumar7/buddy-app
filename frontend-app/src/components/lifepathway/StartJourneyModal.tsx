@@ -204,7 +204,10 @@ export default function StartJourneyModal({
       didInitStepRef.current = false;
       return;
     }
-    if (progress.loadingDoc || didInitStepRef.current) return;
+    // Not while the saved plan failed to load either: a successful reload()
+    // flips loadFailed back and decides the step then.
+    if (progress.loadingDoc || progress.loadFailed || didInitStepRef.current)
+      return;
     didInitStepRef.current = true;
     if (busyTimer.current) clearTimeout(busyTimer.current);
     setBusy(false);
@@ -217,7 +220,7 @@ export default function StartJourneyModal({
     setCountry('IN');
     setZip('');
     setStep(progress.hasPlan ? 4 : 0);
-  }, [open, progress.loadingDoc, progress.hasPlan]);
+  }, [open, progress.loadingDoc, progress.loadFailed, progress.hasPlan]);
 
   useEffect(
     () => () => {
@@ -417,803 +420,854 @@ export default function StartJourneyModal({
                     </Text>
                   </View>
 
-                  <Animated.View key={step} entering={STEP_ENTER}>
-                    {step === 0 && (
-                      <View
-                        style={{ paddingHorizontal: 32, paddingVertical: 32 }}
-                      >
-                        <Text
-                          style={{
-                            ...orb(10.5, 700, GOLD, 0.2),
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          One question before we begin
-                        </Text>
-                        <Text
-                          accessibilityRole="header"
-                          style={{
-                            ...orb(23, 900, CYAN_PALE),
-                            marginTop: 12,
-                            lineHeight: 23 * 1.25,
-                          }}
-                        >
-                          {t('What does {name} say')}
-                          {'\n'}
-                          <Text style={{ color: GOLD }}>
-                            {t('{he} {is} interested in?')}
-                          </Text>
-                        </Text>
-                        <Text
-                          style={{
-                            ...rj(15, 600, BODY),
-                            marginTop: 12,
-                            lineHeight: 15 * 1.5,
-                          }}
-                        >
-                          {t(
-                            'In {his} words, not yours. Month one is built around what {he} already leans towards, so this is the one thing we need to know.',
-                          )}
-                        </Text>
+                  {progress.loadFailed && (
+                    <View
+                      accessibilityRole="alert"
+                      style={{
+                        marginHorizontal: 24,
+                        flexDirection: 'row',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        borderRadius: 16,
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        backgroundColor: rgb('constellation-cyan', 0.08),
+                        borderWidth: 1,
+                        borderColor: rgb('constellation-cyan', 0.24),
+                      }}
+                    >
+                      <Text style={{ color: BODY, flexShrink: 1 }}>
+                        We couldn't load your saved plan, so changes aren't
+                        being saved yet.
+                      </Text>
+                      <PrimaryButton
+                        label="Try again"
+                        onPress={() => progress.reload()}
+                      />
+                    </View>
+                  )}
 
-                        <View
-                          style={{
-                            marginTop: 24,
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            gap: 8,
-                          }}
-                        >
-                          {INTEREST_CHIPS.map(label => {
-                            const on = progress.ask.includes(label);
-                            return (
-                              <Pressable
-                                key={label}
-                                accessibilityRole="button"
-                                accessibilityLabel={label}
-                                accessibilityState={{ selected: on }}
-                                onPress={() => toggleInterestChip(label)}
-                                style={{
-                                  paddingVertical: 9,
-                                  paddingHorizontal: 16,
-                                  borderRadius: 999,
-                                  borderWidth: 1,
-                                  borderColor: on
-                                    ? rgb('constellation-gold', 0.6)
-                                    : rgb('constellation-cyan', 0.18),
-                                  backgroundColor: on
-                                    ? rgb('constellation-gold', 0.13)
-                                    : rgb('constellation-ink-navy', 0.7),
-                                }}
-                              >
-                                <Text
-                                  style={rj(
-                                    12.5,
-                                    700,
-                                    on ? GOLD_PALE : SLATE_LIGHT,
-                                  )}
-                                >
-                                  {label}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
-                        </View>
-
-                        <View
-                          style={{
-                            marginTop: 20,
-                            borderRadius: 16,
-                            backgroundColor: rgb(
-                              'constellation-navy-deepest',
-                              0.85,
-                            ),
-                            borderWidth: 1,
-                            borderColor: rgb('constellation-cyan', 0.24),
-                          }}
-                        >
-                          <TextInput
-                            accessibilityLabel={t(
-                              'What {he} is interested in, in {his} own words',
-                            )}
-                            value={progress.ask}
-                            onChangeText={progress.setAsk}
-                            multiline
-                            textAlignVertical="top"
-                            placeholder={t(
-                              '{He} says {he} likes taking things apart to see how they work — mostly old remotes and the phone charger.',
-                            )}
-                            placeholderTextColor={PLACEHOLDER}
-                            style={{
-                              width: '100%',
-                              minHeight: 4 * 16 * 1.5 + 32,
-                              paddingVertical: 16,
-                              paddingHorizontal: 18,
-                              backgroundColor: 'transparent',
-                              ...rj(16, 600, FROST),
-                              lineHeight: 16 * 1.5,
-                            }}
-                          />
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 12,
-                              paddingHorizontal: 18,
-                              paddingBottom: 14,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                ...rj(12.5, 600, SLATE_MUTE),
-                                flexShrink: 1,
-                              }}
-                            >
-                              {askHint}
-                            </Text>
-                            <Text
-                              style={rj(
-                                11.5,
-                                700,
-                                askOk ? SUCCESS : SLATE_DEEP,
-                              )}
-                            >
-                              {askCount}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View
-                          style={{
-                            marginTop: 24,
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            alignItems: 'center',
-                            gap: 16,
-                          }}
-                        >
-                          <PrimaryButton
-                            label="Continue"
-                            onPress={() => setStep(1)}
-                            disabled={!askOk}
-                            disabledOpacity={0.4}
-                          />
-                          <Text style={rj(12.5, 600, SLATE_MUTE)}>
-                            {t('You can change this later from {his} profile.')}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-
-                    {step === 1 && (
-                      <View>
+                  {/* No steps until the saved plan has loaded: nothing could be saved or generated. */}
+                  {!progress.loadFailed && (
+                    <Animated.View key={step} entering={STEP_ENTER}>
+                      {step === 0 && (
                         <View
                           style={{ paddingHorizontal: 32, paddingVertical: 32 }}
                         >
+                          <Text
+                            style={{
+                              ...orb(10.5, 700, GOLD, 0.2),
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            One question before we begin
+                          </Text>
                           <Text
                             accessibilityRole="header"
                             style={{
                               ...orb(23, 900, CYAN_PALE),
-                              lineHeight: 23 * 1.2,
+                              marginTop: 12,
+                              lineHeight: 23 * 1.25,
                             }}
                           >
-                            {t("{name}'s first month")}
+                            {t('What does {name} say')}
                             {'\n'}
-                            <Text style={{ color: GOLD }}>is on us.</Text>
+                            <Text style={{ color: GOLD }}>
+                              {t('{he} {is} interested in?')}
+                            </Text>
                           </Text>
-                          {!!askEcho && (
-                            <View
-                              style={{
-                                marginTop: 16,
-                                borderRadius: 12,
-                                paddingHorizontal: 16,
-                                paddingVertical: 12,
-                                backgroundColor: rgb(
-                                  'constellation-cyan',
-                                  0.07,
-                                ),
-                                borderLeftWidth: 2,
-                                borderLeftColor: rgb('constellation-cyan', 0.5),
-                              }}
-                            >
-                              <Text style={kicker(10, 0.18, BODY)}>
-                                {t('In {his} words')}
-                              </Text>
-                              <Text
-                                style={{
-                                  ...rj(14, 600, CAPTION),
-                                  marginTop: 7,
-                                  lineHeight: 14 * 1.45,
-                                }}
-                              >
-                                {askEcho}
-                              </Text>
-                            </View>
-                          )}
                           <Text
                             style={{
-                              ...rj(15, 600, SLATE_COOL),
+                              ...rj(15, 600, BODY),
                               marginTop: 12,
                               lineHeight: 15 * 1.5,
                             }}
                           >
-                            Nothing is charged today. Your subscription starts
-                            after 30 days and you can cancel before then in one
-                            tap.
+                            {t(
+                              'In {his} words, not yours. Month one is built around what {he} already leans towards, so this is the one thing we need to know.',
+                            )}
                           </Text>
-                          <View style={{ marginTop: 24, gap: 12 }}>
-                            {[
-                              t(
-                                'A monthly plan built from {name}’s profile, across all six growth areas.',
-                              ),
-                              'Weekly check-ins that take about two minutes.',
-                              t(
-                                "{name}'s finished work logged, so progress compounds over time.",
-                              ),
-                              'One child per subscription. Add a sibling any time for $5.',
-                            ].map(line => (
-                              <View
-                                key={line}
-                                style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'flex-start',
-                                  gap: 12,
-                                }}
-                              >
-                                <Glyph
-                                  d={CHECK_PATH}
-                                  size={15}
-                                  stroke={CYAN}
-                                  strokeWidth={2.6}
-                                  style={{ marginTop: 3, flexShrink: 0 }}
-                                />
-                                <Text
-                                  style={{
-                                    ...rj(14.5, 600, CAPTION),
-                                    flex: 1,
-                                    lineHeight: 14.5 * 1.45,
-                                  }}
-                                >
-                                  {line}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        </View>
 
-                        <SidePanel>
                           <View
                             style={{
-                              borderRadius: 16,
-                              padding: 20,
-                              experimental_backgroundImage: PRICE_CARD_BG,
-                              borderWidth: 1,
-                              borderColor: rgb('constellation-gold', 0.3),
+                              marginTop: 24,
+                              flexDirection: 'row',
+                              flexWrap: 'wrap',
+                              gap: 8,
                             }}
                           >
-                            <Text style={kicker(10.5, 0.2, GOLD)}>
-                              Superpower Pathway
-                            </Text>
+                            {INTEREST_CHIPS.map(label => {
+                              const on = progress.ask.includes(label);
+                              return (
+                                <Pressable
+                                  key={label}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={label}
+                                  accessibilityState={{ selected: on }}
+                                  onPress={() => toggleInterestChip(label)}
+                                  style={{
+                                    paddingVertical: 9,
+                                    paddingHorizontal: 16,
+                                    borderRadius: 999,
+                                    borderWidth: 1,
+                                    borderColor: on
+                                      ? rgb('constellation-gold', 0.6)
+                                      : rgb('constellation-cyan', 0.18),
+                                    backgroundColor: on
+                                      ? rgb('constellation-gold', 0.13)
+                                      : rgb('constellation-ink-navy', 0.7),
+                                  }}
+                                >
+                                  <Text
+                                    style={rj(
+                                      12.5,
+                                      700,
+                                      on ? GOLD_PALE : SLATE_LIGHT,
+                                    )}
+                                  >
+                                    {label}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+
+                          <View
+                            style={{
+                              marginTop: 20,
+                              borderRadius: 16,
+                              backgroundColor: rgb(
+                                'constellation-navy-deepest',
+                                0.85,
+                              ),
+                              borderWidth: 1,
+                              borderColor: rgb('constellation-cyan', 0.24),
+                            }}
+                          >
+                            <TextInput
+                              accessibilityLabel={t(
+                                'What {he} is interested in, in {his} own words',
+                              )}
+                              value={progress.ask}
+                              onChangeText={progress.setAsk}
+                              multiline
+                              textAlignVertical="top"
+                              placeholder={t(
+                                '{He} says {he} likes taking things apart to see how they work — mostly old remotes and the phone charger.',
+                              )}
+                              placeholderTextColor={PLACEHOLDER}
+                              style={{
+                                width: '100%',
+                                minHeight: 4 * 16 * 1.5 + 32,
+                                paddingVertical: 16,
+                                paddingHorizontal: 18,
+                                backgroundColor: 'transparent',
+                                ...rj(16, 600, FROST),
+                                lineHeight: 16 * 1.5,
+                              }}
+                            />
                             <View
                               style={{
-                                marginTop: 8,
                                 flexDirection: 'row',
-                                alignItems: 'baseline',
-                                gap: 8,
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 12,
+                                paddingHorizontal: 18,
+                                paddingBottom: 14,
                               }}
                             >
                               <Text
                                 style={{
-                                  ...orb(36, 900, CYAN_PALE),
-                                  lineHeight: 36 * 1.1,
+                                  ...rj(12.5, 600, SLATE_MUTE),
+                                  flexShrink: 1,
                                 }}
                               >
-                                $0
+                                {askHint}
                               </Text>
-                              <Text style={rj(14, 700, SLATE_PALE)}>
-                                for month one
+                              <Text
+                                style={rj(
+                                  11.5,
+                                  700,
+                                  askOk ? SUCCESS : SLATE_DEEP,
+                                )}
+                              >
+                                {askCount}
                               </Text>
                             </View>
-                            <Text
-                              style={{
-                                ...rj(14, 600, SLATE_COOL),
-                                marginTop: 8,
-                              }}
-                            >
-                              then $5 / month, per child
-                            </Text>
                           </View>
 
-                          <View style={{ marginTop: 20, gap: 12 }}>
-                            <SummaryRow label="Today" value="$0.00" />
-                            <SummaryRow
-                              label={`On ${renewLabel}`}
-                              value="$5.00"
-                            />
-                            <View
-                              style={{ height: 1, backgroundColor: DIVIDER }}
-                            />
-                            <TotalRow label="DUE NOW" value="$0.00" />
-                          </View>
-
-                          <PrimaryButton
-                            label="Continue"
-                            onPress={() => setStep(2)}
-                            fullWidth
-                            style={{ marginTop: 24 }}
-                          />
-                          <Text
-                            style={{
-                              ...rj(12.5, 600, SLATE_MUTE),
-                              marginTop: 12,
-                              textAlign: 'center',
-                            }}
-                          >
-                            We remind you two days before the first charge.
-                          </Text>
-                        </SidePanel>
-                      </View>
-                    )}
-
-                    {step === 2 && (
-                      <View>
-                        <View
-                          style={{ paddingHorizontal: 32, paddingVertical: 32 }}
-                        >
                           <View
                             style={{
+                              marginTop: 24,
                               flexDirection: 'row',
                               flexWrap: 'wrap',
                               alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 14,
+                              gap: 16,
+                            }}
+                          >
+                            <PrimaryButton
+                              label="Continue"
+                              onPress={() => setStep(1)}
+                              disabled={!askOk}
+                              disabledOpacity={0.4}
+                            />
+                            <Text style={rj(12.5, 600, SLATE_MUTE)}>
+                              {t(
+                                'You can change this later from {his} profile.',
+                              )}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {step === 1 && (
+                        <View>
+                          <View
+                            style={{
+                              paddingHorizontal: 32,
+                              paddingVertical: 32,
                             }}
                           >
                             <Text
                               accessibilityRole="header"
-                              style={orb(19, 900, CYAN_PALE)}
-                            >
-                              Pay with
-                            </Text>
-                            <View
                               style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
+                                ...orb(23, 900, CYAN_PALE),
+                                lineHeight: 23 * 1.2,
                               }}
                             >
-                              <LockGlyph size={11} stroke={SUCCESS} />
-                              <Text style={kicker(10.5, 0.14, SUCCESS)}>
-                                $0 today
-                              </Text>
+                              {t("{name}'s first month")}
+                              {'\n'}
+                              <Text style={{ color: GOLD }}>is on us.</Text>
+                            </Text>
+                            {!!askEcho && (
+                              <View
+                                style={{
+                                  marginTop: 16,
+                                  borderRadius: 12,
+                                  paddingHorizontal: 16,
+                                  paddingVertical: 12,
+                                  backgroundColor: rgb(
+                                    'constellation-cyan',
+                                    0.07,
+                                  ),
+                                  borderLeftWidth: 2,
+                                  borderLeftColor: rgb(
+                                    'constellation-cyan',
+                                    0.5,
+                                  ),
+                                }}
+                              >
+                                <Text style={kicker(10, 0.18, BODY)}>
+                                  {t('In {his} words')}
+                                </Text>
+                                <Text
+                                  style={{
+                                    ...rj(14, 600, CAPTION),
+                                    marginTop: 7,
+                                    lineHeight: 14 * 1.45,
+                                  }}
+                                >
+                                  {askEcho}
+                                </Text>
+                              </View>
+                            )}
+                            <Text
+                              style={{
+                                ...rj(15, 600, SLATE_COOL),
+                                marginTop: 12,
+                                lineHeight: 15 * 1.5,
+                              }}
+                            >
+                              Nothing is charged today. Your subscription starts
+                              after 30 days and you can cancel before then in
+                              one tap.
+                            </Text>
+                            <View style={{ marginTop: 24, gap: 12 }}>
+                              {[
+                                t(
+                                  'A monthly plan built from {name}’s profile, across all six growth areas.',
+                                ),
+                                'Weekly check-ins that take about two minutes.',
+                                t(
+                                  "{name}'s finished work logged, so progress compounds over time.",
+                                ),
+                                'One child per subscription. Add a sibling any time for $5.',
+                              ].map(line => (
+                                <View
+                                  key={line}
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'flex-start',
+                                    gap: 12,
+                                  }}
+                                >
+                                  <Glyph
+                                    d={CHECK_PATH}
+                                    size={15}
+                                    stroke={CYAN}
+                                    strokeWidth={2.6}
+                                    style={{ marginTop: 3, flexShrink: 0 }}
+                                  />
+                                  <Text
+                                    style={{
+                                      ...rj(14.5, 600, CAPTION),
+                                      flex: 1,
+                                      lineHeight: 14.5 * 1.45,
+                                    }}
+                                  >
+                                    {line}
+                                  </Text>
+                                </View>
+                              ))}
                             </View>
                           </View>
 
-                          <View
-                            style={{
-                              marginTop: 16,
-                              flexDirection: 'row',
-                              gap: 10,
-                            }}
-                          >
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Apple Pay"
-                              accessibilityState={{ disabled: busy }}
-                              disabled={busy}
-                              onPress={() => finishPayment('Apple Pay')}
-                              style={{
-                                flex: 1,
-                                height: 46,
-                                borderRadius: 10,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 6,
-                                backgroundColor: CYAN_PALE,
-                                opacity: busy ? 0.6 : 1,
-                              }}
-                            >
-                              <AppleGlyph size={15} fill={INK} />
-                              <Text style={rj(15, 700, INK)}>Pay</Text>
-                            </Pressable>
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Link"
-                              accessibilityState={{ disabled: busy }}
-                              disabled={busy}
-                              onPress={() => finishPayment('Link')}
-                              style={{
-                                flex: 1,
-                                height: 46,
-                                borderRadius: 10,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: SUCCESS,
-                                opacity: busy ? 0.6 : 1,
-                              }}
-                            >
-                              <Text style={rj(14, 800, INK)}>Link</Text>
-                            </Pressable>
-                          </View>
-
-                          <View
-                            style={{
-                              marginVertical: 16,
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 12,
-                            }}
-                          >
+                          <SidePanel>
                             <View
                               style={{
-                                flex: 1,
-                                height: 1,
-                                backgroundColor: DIVIDER,
+                                borderRadius: 16,
+                                padding: 20,
+                                experimental_backgroundImage: PRICE_CARD_BG,
+                                borderWidth: 1,
+                                borderColor: rgb('constellation-gold', 0.3),
                               }}
-                            />
-                            <Text style={kicker(10, 0.2, SLATE_MUTE)}>
-                              or pay with card
-                            </Text>
-                            <View
-                              style={{
-                                flex: 1,
-                                height: 1,
-                                backgroundColor: DIVIDER,
-                              }}
-                            />
-                          </View>
-
-                          <View style={{ gap: 14 }}>
-                            <TextField
-                              id="journey-pay-email"
-                              label="Email"
-                              type="email"
-                              value={email}
-                              onChange={setEmail}
-                              placeholder="priya@example.com"
-                            />
-
-                            <View>
-                              <Text style={FIELD_LABEL_STYLE}>
-                                Card information
+                            >
+                              <Text style={kicker(10.5, 0.2, GOLD)}>
+                                Superpower Pathway
                               </Text>
                               <View
                                 style={{
-                                  marginTop: 6,
-                                  overflow: 'hidden',
-                                  borderRadius: 10,
-                                  backgroundColor: rgb(
-                                    'constellation-navy-deepest',
-                                    0.85,
-                                  ),
-                                  borderWidth: 1,
-                                  borderColor: rgb('constellation-cyan', 0.2),
+                                  marginTop: 8,
+                                  flexDirection: 'row',
+                                  alignItems: 'baseline',
+                                  gap: 8,
                                 }}
                               >
-                                <View
+                                <Text
                                   style={{
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    paddingHorizontal: 14,
-                                    borderBottomWidth: 1,
-                                    borderBottomColor: DIVIDER,
+                                    ...orb(36, 900, CYAN_PALE),
+                                    lineHeight: 36 * 1.1,
                                   }}
                                 >
-                                  <TextInput
-                                    accessibilityLabel="Card number"
-                                    keyboardType="number-pad"
-                                    value={cardNumber}
-                                    onChangeText={v =>
-                                      setCardNumber(formatCardNumber(v))
-                                    }
-                                    placeholder="1234 1234 1234 1234"
-                                    placeholderTextColor={PLACEHOLDER}
-                                    style={{
-                                      ...CARD_ROW_INPUT,
-                                      paddingHorizontal: 0,
-                                    }}
-                                  />
-                                  <CardMarks />
-                                </View>
-                                <View style={{ flexDirection: 'row' }}>
-                                  <TextInput
-                                    accessibilityLabel="Expiry"
-                                    keyboardType="number-pad"
-                                    value={expiry}
-                                    onChangeText={v =>
-                                      setExpiry(formatExpiry(v))
-                                    }
-                                    placeholder="MM / YY"
-                                    placeholderTextColor={PLACEHOLDER}
-                                    style={{
-                                      ...CARD_ROW_INPUT,
-                                      borderRightWidth: 1,
-                                      borderRightColor: DIVIDER,
-                                    }}
-                                  />
-                                  <TextInput
-                                    accessibilityLabel="CVC"
-                                    keyboardType="number-pad"
-                                    value={cvc}
-                                    onChangeText={v =>
-                                      setCvc(v.replace(/\D/g, '').slice(0, 4))
-                                    }
-                                    placeholder="CVC"
-                                    placeholderTextColor={PLACEHOLDER}
-                                    style={CARD_ROW_INPUT}
-                                  />
-                                </View>
-                              </View>
-                            </View>
-
-                            <TextField
-                              id="journey-pay-name"
-                              label="Name on card"
-                              value={nameOnCard}
-                              onChange={setNameOnCard}
-                              placeholder="Priya Sharma"
-                            />
-
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                gap: 12,
-                                alignItems: 'flex-start',
-                              }}
-                            >
-                              <View style={{ flex: 1.1, minWidth: 0 }}>
-                                <SelectField
-                                  id="journey-pay-country"
-                                  label="Country"
-                                  value={country}
-                                  options={COUNTRIES}
-                                  onChange={setCountry}
-                                />
-                              </View>
-                              <View style={{ flex: 0.9, minWidth: 0 }}>
-                                <TextField
-                                  id="journey-pay-zip"
-                                  label="Postal code"
-                                  value={zip}
-                                  onChange={setZip}
-                                  placeholder="560001"
-                                />
-                              </View>
-                            </View>
-                          </View>
-                        </View>
-
-                        <SidePanel>
-                          <Text style={kicker(10.5, 0.2, SLATE_WARM)}>
-                            Subscribing to
-                          </Text>
-                          <Text
-                            style={{ ...orb(17, 900, CYAN_PALE), marginTop: 8 }}
-                          >
-                            Superpower Pathway
-                          </Text>
-                          <Text
-                            style={{
-                              ...rj(13.5, 600, SLATE_WARM),
-                              marginTop: 5,
-                            }}
-                          >
-                            {t('Monthly · one child · {name}')}
-                          </Text>
-
-                          <View style={{ marginTop: 20, gap: 10 }}>
-                            <SummaryRow
-                              label="Superpower Pathway"
-                              value="$5.00"
-                              valueStyle={rj(14, 600, CAPTION)}
-                            />
-                            <SummaryRow
-                              label="First month free"
-                              value="−$5.00"
-                              valueStyle={rj(14, 600, SUCCESS)}
-                            />
-                            <View
-                              style={{ height: 1, backgroundColor: DIVIDER }}
-                            />
-                            <TotalRow label="TOTAL DUE TODAY" value="$0.00" />
-                            <Text style={rj(13, 600, SLATE_MUTE)}>
-                              On {renewLabel} and monthly after, $5.00 will be
-                              charged to this card.
-                            </Text>
-                          </View>
-
-                          <PrimaryButton
-                            label={busy ? 'Confirming…' : 'Start free month'}
-                            onPress={() => finishPayment(null)}
-                            disabled={busy}
-                            disabledOpacity={0.7}
-                            fullWidth
-                            trailingChevron={!busy}
-                            chevronGap={4}
-                            style={{ marginTop: 24 }}
-                          />
-
-                          <Text
-                            style={{
-                              ...rj(12.5, 600, SLATE_MUTE),
-                              marginTop: 14,
-                              lineHeight: 12.5 * 1.5,
-                            }}
-                          >
-                            {`By subscribing you allow Superpower to charge this card for future payments in line with their terms. Cancel any time before ${renewLabel} and you pay nothing.`}
-                          </Text>
-
-                          <View
-                            style={{
-                              paddingTop: 20,
-                              flexDirection: 'row',
-                              flexWrap: 'wrap',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 12,
-                            }}
-                          >
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                              }}
-                            >
-                              <LockGlyph size={11} stroke={SLATE_MUTE} />
-                              <Text style={rj(12, 700, SLATE_MUTE)}>
-                                Powered by{' '}
-                                <Text style={{ color: SLATE_PALE }}>
-                                  Stripe
+                                  $0
                                 </Text>
+                                <Text style={rj(14, 700, SLATE_PALE)}>
+                                  for month one
+                                </Text>
+                              </View>
+                              <Text
+                                style={{
+                                  ...rj(14, 600, SLATE_COOL),
+                                  marginTop: 8,
+                                }}
+                              >
+                                then $5 / month, per child
                               </Text>
                             </View>
+
+                            <View style={{ marginTop: 20, gap: 12 }}>
+                              <SummaryRow label="Today" value="$0.00" />
+                              <SummaryRow
+                                label={`On ${renewLabel}`}
+                                value="$5.00"
+                              />
+                              <View
+                                style={{ height: 1, backgroundColor: DIVIDER }}
+                              />
+                              <TotalRow label="DUE NOW" value="$0.00" />
+                            </View>
+
+                            <PrimaryButton
+                              label="Continue"
+                              onPress={() => setStep(2)}
+                              fullWidth
+                              style={{ marginTop: 24 }}
+                            />
+                            <Text
+                              style={{
+                                ...rj(12.5, 600, SLATE_MUTE),
+                                marginTop: 12,
+                                textAlign: 'center',
+                              }}
+                            >
+                              We remind you two days before the first charge.
+                            </Text>
+                          </SidePanel>
+                        </View>
+                      )}
+
+                      {step === 2 && (
+                        <View>
+                          <View
+                            style={{
+                              paddingHorizontal: 32,
+                              paddingVertical: 32,
+                            }}
+                          >
                             <View
                               style={{
                                 flexDirection: 'row',
+                                flexWrap: 'wrap',
                                 alignItems: 'center',
-                                gap: 12,
+                                justifyContent: 'space-between',
+                                gap: 14,
+                              }}
+                            >
+                              <Text
+                                accessibilityRole="header"
+                                style={orb(19, 900, CYAN_PALE)}
+                              >
+                                Pay with
+                              </Text>
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <LockGlyph size={11} stroke={SUCCESS} />
+                                <Text style={kicker(10.5, 0.14, SUCCESS)}>
+                                  $0 today
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View
+                              style={{
+                                marginTop: 16,
+                                flexDirection: 'row',
+                                gap: 10,
                               }}
                             >
                               <Pressable
                                 accessibilityRole="button"
-                                accessibilityLabel="Back"
-                                hitSlop={8}
-                                onPress={() => setStep(1)}
+                                accessibilityLabel="Apple Pay"
+                                accessibilityState={{ disabled: busy }}
+                                disabled={busy}
+                                onPress={() => finishPayment('Apple Pay')}
+                                style={{
+                                  flex: 1,
+                                  height: 46,
+                                  borderRadius: 10,
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 6,
+                                  backgroundColor: CYAN_PALE,
+                                  opacity: busy ? 0.6 : 1,
+                                }}
                               >
-                                <Text style={rj(12, 600, CYAN)}>Back</Text>
+                                <AppleGlyph size={15} fill={INK} />
+                                <Text style={rj(15, 700, INK)}>Pay</Text>
                               </Pressable>
-                              <Text style={rj(12, 600, SLATE_MUTE)}>Terms</Text>
-                              <Text style={rj(12, 600, SLATE_MUTE)}>
-                                Privacy
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Link"
+                                accessibilityState={{ disabled: busy }}
+                                disabled={busy}
+                                onPress={() => finishPayment('Link')}
+                                style={{
+                                  flex: 1,
+                                  height: 46,
+                                  borderRadius: 10,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  backgroundColor: SUCCESS,
+                                  opacity: busy ? 0.6 : 1,
+                                }}
+                              >
+                                <Text style={rj(14, 800, INK)}>Link</Text>
+                              </Pressable>
+                            </View>
+
+                            <View
+                              style={{
+                                marginVertical: 16,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 12,
+                              }}
+                            >
+                              <View
+                                style={{
+                                  flex: 1,
+                                  height: 1,
+                                  backgroundColor: DIVIDER,
+                                }}
+                              />
+                              <Text style={kicker(10, 0.2, SLATE_MUTE)}>
+                                or pay with card
                               </Text>
+                              <View
+                                style={{
+                                  flex: 1,
+                                  height: 1,
+                                  backgroundColor: DIVIDER,
+                                }}
+                              />
+                            </View>
+
+                            <View style={{ gap: 14 }}>
+                              <TextField
+                                id="journey-pay-email"
+                                label="Email"
+                                type="email"
+                                value={email}
+                                onChange={setEmail}
+                                placeholder="priya@example.com"
+                              />
+
+                              <View>
+                                <Text style={FIELD_LABEL_STYLE}>
+                                  Card information
+                                </Text>
+                                <View
+                                  style={{
+                                    marginTop: 6,
+                                    overflow: 'hidden',
+                                    borderRadius: 10,
+                                    backgroundColor: rgb(
+                                      'constellation-navy-deepest',
+                                      0.85,
+                                    ),
+                                    borderWidth: 1,
+                                    borderColor: rgb('constellation-cyan', 0.2),
+                                  }}
+                                >
+                                  <View
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      paddingHorizontal: 14,
+                                      borderBottomWidth: 1,
+                                      borderBottomColor: DIVIDER,
+                                    }}
+                                  >
+                                    <TextInput
+                                      accessibilityLabel="Card number"
+                                      keyboardType="number-pad"
+                                      value={cardNumber}
+                                      onChangeText={v =>
+                                        setCardNumber(formatCardNumber(v))
+                                      }
+                                      placeholder="1234 1234 1234 1234"
+                                      placeholderTextColor={PLACEHOLDER}
+                                      style={{
+                                        ...CARD_ROW_INPUT,
+                                        paddingHorizontal: 0,
+                                      }}
+                                    />
+                                    <CardMarks />
+                                  </View>
+                                  <View style={{ flexDirection: 'row' }}>
+                                    <TextInput
+                                      accessibilityLabel="Expiry"
+                                      keyboardType="number-pad"
+                                      value={expiry}
+                                      onChangeText={v =>
+                                        setExpiry(formatExpiry(v))
+                                      }
+                                      placeholder="MM / YY"
+                                      placeholderTextColor={PLACEHOLDER}
+                                      style={{
+                                        ...CARD_ROW_INPUT,
+                                        borderRightWidth: 1,
+                                        borderRightColor: DIVIDER,
+                                      }}
+                                    />
+                                    <TextInput
+                                      accessibilityLabel="CVC"
+                                      keyboardType="number-pad"
+                                      value={cvc}
+                                      onChangeText={v =>
+                                        setCvc(v.replace(/\D/g, '').slice(0, 4))
+                                      }
+                                      placeholder="CVC"
+                                      placeholderTextColor={PLACEHOLDER}
+                                      style={CARD_ROW_INPUT}
+                                    />
+                                  </View>
+                                </View>
+                              </View>
+
+                              <TextField
+                                id="journey-pay-name"
+                                label="Name on card"
+                                value={nameOnCard}
+                                onChange={setNameOnCard}
+                                placeholder="Priya Sharma"
+                              />
+
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  gap: 12,
+                                  alignItems: 'flex-start',
+                                }}
+                              >
+                                <View style={{ flex: 1.1, minWidth: 0 }}>
+                                  <SelectField
+                                    id="journey-pay-country"
+                                    label="Country"
+                                    value={country}
+                                    options={COUNTRIES}
+                                    onChange={setCountry}
+                                  />
+                                </View>
+                                <View style={{ flex: 0.9, minWidth: 0 }}>
+                                  <TextField
+                                    id="journey-pay-zip"
+                                    label="Postal code"
+                                    value={zip}
+                                    onChange={setZip}
+                                    placeholder="560001"
+                                  />
+                                </View>
+                              </View>
                             </View>
                           </View>
-                        </SidePanel>
-                      </View>
-                    )}
 
-                    {step === 3 && (
-                      <View
-                        style={{
-                          paddingHorizontal: 36,
-                          paddingVertical: 44,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <View
-                          style={{
-                            width: 74,
-                            height: 74,
-                            borderRadius: 999,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            experimental_backgroundImage: GRAD_CYAN_GOLD_150,
-                          }}
-                        >
-                          <Glyph
-                            d={CHECK_PATH}
-                            size={32}
-                            stroke={INK}
-                            strokeWidth={3}
-                          />
-                        </View>
-                        <Text
-                          accessibilityRole="header"
-                          style={{
-                            ...orb(22, 900, CYAN_PALE),
-                            marginTop: 22,
-                            textAlign: 'center',
-                          }}
-                        >
-                          Day 1 starts tomorrow.
-                        </Text>
-                        <Text
-                          style={{
-                            ...rj(15, 600, BODY),
-                            marginTop: 12,
-                            maxWidth: 440,
-                            lineHeight: 15 * 1.5,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {t(
-                            "{name}'s free month is live. Month one's anchor moves are already in {his} plan.",
-                          )}
-                        </Text>
-                        <View
-                          style={{
-                            marginTop: 24,
-                            width: '100%',
-                            maxWidth: 420,
-                            gap: 10,
-                            borderRadius: 16,
-                            paddingHorizontal: 20,
-                            paddingVertical: 16,
-                            backgroundColor: rgb('constellation-ink-navy', 0.8),
-                            borderWidth: 1,
-                            borderColor: rgb('constellation-cyan', 0.16),
-                          }}
-                        >
-                          <SummaryRow label="Free until" value={renewLabel} />
-                          <SummaryRow label="Then" value="$5 / month" />
-                          <SummaryRow
-                            label="Paying with"
-                            value={paymentMethodLabel}
-                          />
-                        </View>
-                        <PrimaryButton
-                          label={t('Open {his} dashboard')}
-                          onPress={() => setStep(4)}
-                          disabled={!barComplete}
-                          disabledOpacity={0.4}
-                          trailingChevron
-                          chevronGap={8}
-                          style={{ marginTop: 28 }}
-                        />
+                          <SidePanel>
+                            <Text style={kicker(10.5, 0.2, SLATE_WARM)}>
+                              Subscribing to
+                            </Text>
+                            <Text
+                              style={{
+                                ...orb(17, 900, CYAN_PALE),
+                                marginTop: 8,
+                              }}
+                            >
+                              Superpower Pathway
+                            </Text>
+                            <Text
+                              style={{
+                                ...rj(13.5, 600, SLATE_WARM),
+                                marginTop: 5,
+                              }}
+                            >
+                              {t('Monthly · one child · {name}')}
+                            </Text>
 
+                            <View style={{ marginTop: 20, gap: 10 }}>
+                              <SummaryRow
+                                label="Superpower Pathway"
+                                value="$5.00"
+                                valueStyle={rj(14, 600, CAPTION)}
+                              />
+                              <SummaryRow
+                                label="First month free"
+                                value="−$5.00"
+                                valueStyle={rj(14, 600, SUCCESS)}
+                              />
+                              <View
+                                style={{ height: 1, backgroundColor: DIVIDER }}
+                              />
+                              <TotalRow label="TOTAL DUE TODAY" value="$0.00" />
+                              <Text style={rj(13, 600, SLATE_MUTE)}>
+                                On {renewLabel} and monthly after, $5.00 will be
+                                charged to this card.
+                              </Text>
+                            </View>
+
+                            <PrimaryButton
+                              label={busy ? 'Confirming…' : 'Start free month'}
+                              onPress={() => finishPayment(null)}
+                              disabled={busy}
+                              disabledOpacity={0.7}
+                              fullWidth
+                              trailingChevron={!busy}
+                              chevronGap={4}
+                              style={{ marginTop: 24 }}
+                            />
+
+                            <Text
+                              style={{
+                                ...rj(12.5, 600, SLATE_MUTE),
+                                marginTop: 14,
+                                lineHeight: 12.5 * 1.5,
+                              }}
+                            >
+                              {`By subscribing you allow Superpower to charge this card for future payments in line with their terms. Cancel any time before ${renewLabel} and you pay nothing.`}
+                            </Text>
+
+                            <View
+                              style={{
+                                paddingTop: 20,
+                                flexDirection: 'row',
+                                flexWrap: 'wrap',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 12,
+                              }}
+                            >
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <LockGlyph size={11} stroke={SLATE_MUTE} />
+                                <Text style={rj(12, 700, SLATE_MUTE)}>
+                                  Powered by{' '}
+                                  <Text style={{ color: SLATE_PALE }}>
+                                    Stripe
+                                  </Text>
+                                </Text>
+                              </View>
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 12,
+                                }}
+                              >
+                                <Pressable
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Back"
+                                  hitSlop={8}
+                                  onPress={() => setStep(1)}
+                                >
+                                  <Text style={rj(12, 600, CYAN)}>Back</Text>
+                                </Pressable>
+                                <Text style={rj(12, 600, SLATE_MUTE)}>
+                                  Terms
+                                </Text>
+                                <Text style={rj(12, 600, SLATE_MUTE)}>
+                                  Privacy
+                                </Text>
+                              </View>
+                            </View>
+                          </SidePanel>
+                        </View>
+                      )}
+
+                      {step === 3 && (
                         <View
                           style={{
-                            marginTop: 14,
-                            flexDirection: 'row',
+                            paddingHorizontal: 36,
+                            paddingVertical: 44,
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 10,
                           }}
                         >
-                          <LoadingBar complete={barComplete} />
-                          <Text style={rj(12, 600, SLATE_MUTE)}>
-                            {t('Building {his} dashboard…')}
+                          <View
+                            style={{
+                              width: 74,
+                              height: 74,
+                              borderRadius: 999,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              experimental_backgroundImage: GRAD_CYAN_GOLD_150,
+                            }}
+                          >
+                            <Glyph
+                              d={CHECK_PATH}
+                              size={32}
+                              stroke={INK}
+                              strokeWidth={3}
+                            />
+                          </View>
+                          <Text
+                            accessibilityRole="header"
+                            style={{
+                              ...orb(22, 900, CYAN_PALE),
+                              marginTop: 22,
+                              textAlign: 'center',
+                            }}
+                          >
+                            Day 1 starts tomorrow.
                           </Text>
+                          <Text
+                            style={{
+                              ...rj(15, 600, BODY),
+                              marginTop: 12,
+                              maxWidth: 440,
+                              lineHeight: 15 * 1.5,
+                              textAlign: 'center',
+                            }}
+                          >
+                            {t(
+                              "{name}'s free month is live. Month one's anchor moves are already in {his} plan.",
+                            )}
+                          </Text>
+                          <View
+                            style={{
+                              marginTop: 24,
+                              width: '100%',
+                              maxWidth: 420,
+                              gap: 10,
+                              borderRadius: 16,
+                              paddingHorizontal: 20,
+                              paddingVertical: 16,
+                              backgroundColor: rgb(
+                                'constellation-ink-navy',
+                                0.8,
+                              ),
+                              borderWidth: 1,
+                              borderColor: rgb('constellation-cyan', 0.16),
+                            }}
+                          >
+                            <SummaryRow label="Free until" value={renewLabel} />
+                            <SummaryRow label="Then" value="$5 / month" />
+                            <SummaryRow
+                              label="Paying with"
+                              value={paymentMethodLabel}
+                            />
+                          </View>
+                          <PrimaryButton
+                            label={t('Open {his} dashboard')}
+                            onPress={() => setStep(4)}
+                            disabled={!barComplete}
+                            disabledOpacity={0.4}
+                            trailingChevron
+                            chevronGap={8}
+                            style={{ marginTop: 28 }}
+                          />
+
+                          <View
+                            style={{
+                              marginTop: 14,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 10,
+                            }}
+                          >
+                            <LoadingBar complete={barComplete} />
+                            <Text style={rj(12, 600, SLATE_MUTE)}>
+                              {t('Building {his} dashboard…')}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
-                    )}
+                      )}
 
-                    {step === 4 && (
-                      <DashboardStep
-                        childName={childName}
-                        childGender={childGender}
-                        interest={interest}
-                        plan={plan}
-                        months={months}
-                        progress={progress}
-                        onTrack={() => setStep(5)}
-                        onDone={onClose}
-                      />
-                    )}
+                      {step === 4 && (
+                        <DashboardStep
+                          childName={childName}
+                          childGender={childGender}
+                          interest={interest}
+                          plan={plan}
+                          months={months}
+                          progress={progress}
+                          onTrack={() => setStep(5)}
+                          onDone={onClose}
+                        />
+                      )}
 
-                    {step === 5 && (
-                      <TrackStep
-                        childName={childName}
-                        childGender={childGender}
-                        progress={progress}
-                        steps={trackSteps}
-                        onBack={() => setStep(4)}
-                      />
-                    )}
-                  </Animated.View>
+                      {step === 5 && (
+                        <TrackStep
+                          childName={childName}
+                          childGender={childGender}
+                          progress={progress}
+                          steps={trackSteps}
+                          onBack={() => setStep(4)}
+                        />
+                      )}
+                    </Animated.View>
+                  )}
                 </ScrollView>
 
                 {/* Radix DialogContent's built-in close button. */}

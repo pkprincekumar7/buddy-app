@@ -1,11 +1,17 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import { DeviceEventEmitter } from 'react-native';
+import {
+  AUTH_EXPIRED_EVENT,
+  isSessionEnded,
+  resolveAuthExpiry,
+} from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { services, unwrap } from '@/api/services';
 
 jest.mock('@/lib/env', () => ({ env: { API_URL: 'https://api.test' } }));
 
-const ACCESS = 'superpower:access_token';
-const REFRESH = 'superpower:refresh_token';
+const ACCESS = 'superpower.access_token';
+const REFRESH = 'superpower.refresh_token';
 
 type Seen = { url: string; auth: string | null };
 
@@ -36,8 +42,8 @@ function network(...answers: ((seen: Seen) => Response)[]): Seen[] {
 }
 
 beforeEach(async () => {
-  await AsyncStorage.setItem(ACCESS, 'access-1');
-  await AsyncStorage.setItem(REFRESH, 'refresh-1');
+  await SecureStore.setItemAsync(ACCESS, 'access-1');
+  await SecureStore.setItemAsync(REFRESH, 'refresh-1');
 });
 
 describe('the generated service clients (build plan 7.1)', () => {
@@ -114,8 +120,8 @@ describe('the generated service clients (build plan 7.1)', () => {
         body: { email: 'a@b.c', password: 'y' },
       }),
     );
-    expect(await AsyncStorage.getItem(ACCESS)).toBe('access-9');
-    expect(await AsyncStorage.getItem(REFRESH)).toBe('refresh-9');
+    expect(await SecureStore.getItemAsync(ACCESS)).toBe('access-9');
+    expect(await SecureStore.getItemAsync(REFRESH)).toBe('refresh-9');
   });
 
   it('turn every error into an ApiError matched on detail.code', async () => {
@@ -158,5 +164,98 @@ describe('the generated service clients (build plan 7.1)', () => {
       e => e as ApiError,
     );
     expect(empty.status).toBe(502);
+  });
+});
+
+describe('a failed refresh', () => {
+  const prefs = () =>
+    unwrap(
+      services.users.GET('/api/v1/users/{user_id}/preferences', {
+        params: { path: { user_id: 'me' } },
+      }),
+    );
+
+  let expired: jest.Mock;
+  let sub: { remove(): void };
+  beforeEach(() => {
+    expired = jest.fn();
+    sub = DeviceEventEmitter.addListener(AUTH_EXPIRED_EVENT, expired);
+  });
+  afterEach(() => sub.remove());
+
+  it("that merely failed (503) keeps the tokens and doesn't end the session", async () => {
+    network(
+      () => json(401, { detail: 'Not authenticated' }),
+      () => json(503, { detail: 'Service unavailable' }),
+    );
+    await expect(prefs()).rejects.toMatchObject({ status: 503 });
+    expect(expired).not.toHaveBeenCalled();
+    expect(await SecureStore.getItemAsync(ACCESS)).toBe('access-1');
+    expect(await SecureStore.getItemAsync(REFRESH)).toBe('refresh-1');
+  });
+
+  it('that hit the network keeps the tokens too', async () => {
+    network(
+      () => json(401, { detail: 'Not authenticated' }),
+      () => {
+        throw new TypeError('Network request failed');
+      },
+    );
+    await expect(prefs()).rejects.toThrow('Network request failed');
+    expect(expired).not.toHaveBeenCalled();
+    expect(await SecureStore.getItemAsync(REFRESH)).toBe('refresh-1');
+  });
+
+  it('that was refused (401) clears the tokens and ends the session', async () => {
+    network(
+      () => json(401, { detail: 'Not authenticated' }),
+      () => json(401, { detail: 'Invalid refresh token' }),
+    );
+    await expect(prefs()).rejects.toMatchObject({ status: 401 });
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledWith(undefined);
+    expect(await SecureStore.getItemAsync(ACCESS)).toBeNull();
+    expect(await SecureStore.getItemAsync(REFRESH)).toBeNull();
+  });
+
+  it("for a locked account surfaces the backend's message", async () => {
+    network(
+      () => json(401, { detail: 'Not authenticated' }),
+      () =>
+        json(403, {
+          detail: { code: 'account_locked', msg: 'Your account is locked.' },
+        }),
+    );
+    await expect(prefs()).rejects.toMatchObject({ status: 401 });
+    expect(expired).toHaveBeenCalledWith({
+      message: 'Your account is locked.',
+    });
+    expect(await SecureStore.getItemAsync(REFRESH)).toBeNull();
+  });
+});
+
+describe('resolveAuthExpiry / isSessionEnded', () => {
+  it('read the account_locked msg, a string 403, or fall back', () => {
+    expect(
+      resolveAuthExpiry(
+        new ApiError(403, { code: 'account_locked', msg: 'Locked.' }),
+      ),
+    ).toEqual({ status: 403, message: 'Locked.' });
+    expect(resolveAuthExpiry(new ApiError(403, 'Nope.'))).toEqual({
+      status: 403,
+      message: 'Nope.',
+    });
+    expect(resolveAuthExpiry(new ApiError(401, 'x'))).toEqual({
+      status: 401,
+      message: 'Session expired',
+    });
+  });
+
+  it('end the session only for a 401/403 ApiError', () => {
+    expect(isSessionEnded(new ApiError(401, 'x'))).toBe(true);
+    expect(isSessionEnded(new ApiError(403, 'x'))).toBe(true);
+    expect(isSessionEnded(new ApiError(503, 'x'))).toBe(false);
+    expect(isSessionEnded(new ApiError(429, 'x'))).toBe(false);
+    expect(isSessionEnded(new TypeError('offline'))).toBe(false);
   });
 });
