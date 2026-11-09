@@ -1162,7 +1162,14 @@ export default function PersonalityJourney() {
 
   // The child and its personality (build plan 7.5): discover generates the personality on
   // its own once the chat is saved, so the hub only waits for it (or retries a failure).
-  const { journey, retry } = useJourney(childId, !isLoadingAuth && isAuthenticated);
+  const { journey, retry, refreshChild } = useJourney(childId, !isLoadingAuth && isAuthenticated);
+  // A circle's completion reaches the child's progress through an event, which can land
+  // just after the parent is back on the hub (e.g. Release, which unlocks Connect): read
+  // the progress once more a moment after the hub opens.
+  useEffect(() => {
+    const again = setTimeout(() => void refreshChild(), 2500);
+    return () => clearTimeout(again);
+  }, [refreshChild]);
   const child = 'child' in journey ? journey.child : null;
   const childName = child?.name ?? '';
   const isAnalyzing = journey.status === 'analyzing';

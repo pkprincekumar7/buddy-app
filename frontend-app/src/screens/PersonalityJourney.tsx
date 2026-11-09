@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -61,9 +61,27 @@ export default function PersonalityJourney() {
 
   // The child and its personality (build plan 7.5): discover generates the personality on
   // its own once the chat is saved, so the hub only waits for it (or retries a failure).
-  const { journey, retry } = useJourney(
+  const { journey, retry, refreshChild } = useJourney(
     childId,
     !isLoadingAuth && isAuthenticated,
+  );
+
+  // Coming back from a circle: the stack kept this screen mounted with the progress it
+  // loaded when it opened, so a circle just completed (e.g. Release, which unlocks
+  // Connect) wouldn't show. Re-read it on every return, and once more a moment later:
+  // a circle's completion reaches the child's progress through an event, which can land
+  // just after the parent is back.
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!focusedBefore.current) {
+        focusedBefore.current = true; // the first load is useJourney's own
+        return;
+      }
+      void refreshChild();
+      const again = setTimeout(() => void refreshChild(), 2500);
+      return () => clearTimeout(again);
+    }, [refreshChild]),
   );
   const child = 'child' in journey ? journey.child : null;
   const childName = child?.name ?? '';

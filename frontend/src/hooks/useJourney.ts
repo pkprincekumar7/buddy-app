@@ -83,5 +83,21 @@ export function useJourney(childId: string | undefined, enabled: boolean) {
     setAttempt((n) => n + 1);
   }, []);
 
-  return { journey, retry };
+  /** Re-reads the child (its circles' progress) without reloading the personality. A
+   *  failed read keeps what's shown. */
+  const refreshChild = useCallback(async () => {
+    if (!childId) return;
+    try {
+      const fresh = await children.get(childId);
+      setJourney((current) =>
+        'child' in current && current.child?.id === fresh.id
+          ? { ...current, child: fresh }
+          : current,
+      );
+    } catch (err) {
+      console.warn('[useJourney] Refresh failed:', err);
+    }
+  }, [childId]);
+
+  return { journey, retry, refreshChild };
 }
