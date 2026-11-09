@@ -1,6 +1,12 @@
 # API Overview
 
-Nine backend services under `backend/` serve the API. Public routes are under `/api/v1`, except shared's `/api/health`. The tables below give paths without the `/api/v1` prefix. Full reference: [auth-users-split-api.md](auth-users-split-api.md).
+Nine backend services under `backend/` serve the API. Public routes are under `/api/v1`, except shared's `/api/health`. The tables below give paths without the `/api/v1` prefix.
+
+| For | Read |
+|---|---|
+| Routes, limits and errors, current | This file |
+| Exact request and response shapes | The OpenAPI specs, `backend/openapi/<service>.json` (generated, checked in CI) |
+| Why each endpoint works the way it does | [auth-users-split-api.md](auth-users-split-api.md): the historical design record from the service split. Its "Today" notes describe the removed `backend/app/`. |
 
 ## How it fits together
 
@@ -14,6 +20,14 @@ Nine backend services under `backend/` serve the API. Public routes are under `/
 | **Auth** | auth issues RS256 tokens, and every other service verifies them with the public keys. A token comes from the `access_token` cookie or `Authorization: Bearer`. |
 | **Rate limits** | Per route, counted in Valkey (`backend/common/limiter.py`). The tables give each route's limit, per user unless marked per IP. |
 | **Health** | Every service serves `GET /health` on its public port (8000 in the container) for the load balancer. It isn't routed outside. |
+
+## Rules for every route
+
+| Rule | Detail |
+|---|---|
+| **Error shape** | FastAPI's `{"detail": …}`. Where the apps must tell errors apart, `detail` is `{"code": "…", "msg": "…"}`; the tables below give the `code`. |
+| **Body size** | A request body over 1 MiB is refused with `413 body_too_large` before it is read (shared's speech-to-text: 10.5 MiB). This applies whether `Content-Length` says so or a chunked body gets there. |
+| **Child id** | A child's `{id}` in any path is a uuid4; anything else is `422`. So it can't add a query or a segment to the internal calls it's passed on to. |
 
 ## Services at a glance
 
@@ -52,13 +66,22 @@ The same access rules hold in every circle:
 
 ## Generation jobs (discover, grow, transform, release)
 
+The client never sends a prompt: the server builds it from its own data and local copies.
+
 | Response | Meaning |
 |---|---|
 | `202 {job_id, status}` | Job started |
-| `200` | A job is already running, and it is returned |
-| `409 already_generated` | The result is made only once (discover, grow's question sets) |
+| `200` | A job of the same kind is already `pending` or `processing` for that child (and area), and it is returned instead of starting another |
+| `409 already_generated` | The result is made only once (discover, grow's question sets); checked again when the job is stored |
 | `429 llm_limit` | Past the hourly LLM limit |
 | `GET …/generation/{job_id}` | Polls the job (`kind`, `status`, `error`): 300/min, because it is polled while the job runs. Another child's job is `404 job_not_found`. |
+
+| Rule | Detail |
+|---|---|
+| **Start limits** | 10 starts a minute per user, plus an hourly LLM limit per user shared by every circle (`LLM_HOURLY_LIMIT`, default 200, counted in Valkey). A start that finds the job already running gives its slot back, so two clicks at once count once. |
+| **Job status** | `pending` → `processing` → `completed` or `failed`. When `completed`, the result is already stored, so the client reloads the circle's `GET`. |
+| **Failures** | The worker retries the LLM call with backoff. A job that still fails, crashed, or stalled on every attempt ends `failed` with a short `error`, and the client may start it again. |
+| **Long text** | A text longer than its schema allows is cut at a word with "…" rather than failing the job. |
 
 ---
 
