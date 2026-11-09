@@ -543,10 +543,10 @@ jobs:
           restore-keys: terraform-providers-${{ runner.os }}-
 
       # terraform test against a mock AWS provider: no credentials, nothing is
-      # created. Each module's own tests, plus the backend stack's wiring test.
-      - name: Terraform test (modules + infra-live-backend)
+      # created. Each module's own tests, plus each stack's own tests.
+      - name: Terraform test (modules + stacks)
         run: |
-          for d in modules/*/ infra-live-backend/terraform/; do
+          for d in modules/*/ infra-live-backend/terraform/ infra-live-edge/terraform/ infra-live-frontend/terraform/ infra-live-scheduler/terraform/; do
             echo "── terraform test $d"
             (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform test)
           done

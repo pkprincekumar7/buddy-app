@@ -735,3 +735,31 @@ run "signatures_have_their_own_lifecycle_rule" {
     error_message = "Untagged after 7 days, then the newest 60 sha256-* signature items, then the newest 30 releases."
   }
 }
+
+# The supporting resources a refactor could weaken without failing a plan.
+run "execution_roles_uploads_and_the_atlas_endpoint" {
+  command = apply
+
+  assert {
+    condition     = aws_iam_role.execution["auth"].assume_role_policy == jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ecs-tasks.amazonaws.com" } }] }) && aws_iam_role.execution["shared"].assume_role_policy == jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ecs-tasks.amazonaws.com" } }] }) && aws_iam_role.execution["discover-worker"].assume_role_policy == jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ecs-tasks.amazonaws.com" } }] })
+    error_message = "Each service's execution role can be assumed by ECS tasks only."
+  }
+  # Checked on a few runtimes by name: a for over this map makes terraform test panic
+  # while it prints a failure (a marked value), which would hide the message.
+  assert {
+    condition     = aws_iam_role_policy_attachment.execution_managed["auth"].policy_arn == "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" && aws_iam_role_policy_attachment.execution_managed["shared"].policy_arn == "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" && aws_iam_role_policy_attachment.execution_managed["discover-worker"].policy_arn == "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+    error_message = "Each execution role gets only AWS's task execution policy (image pull, logs)."
+  }
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.execution_managed) == length(aws_iam_role.execution)
+    error_message = "Every execution role has that policy attached."
+  }
+  assert {
+    condition     = one([for r in aws_s3_bucket_lifecycle_configuration.uploads.rule : r if r.id == "abort-incomplete-multipart"]).status == "Enabled" && one(one([for r in aws_s3_bucket_lifecycle_configuration.uploads.rule : r if r.id == "abort-incomplete-multipart"]).abort_incomplete_multipart_upload).days_after_initiation == 7
+    error_message = "Unfinished multipart uploads to the uploads bucket are removed after 7 days."
+  }
+  assert {
+    condition     = aws_vpc_endpoint.atlas[0].security_group_ids == toset([aws_security_group.atlas_endpoint[0].id]) && aws_security_group.atlas_endpoint[0].vpc_id == aws_vpc_endpoint.atlas[0].vpc_id
+    error_message = "The Atlas endpoint is guarded by its own security group only, which admits the service tasks (DEC-02)."
+  }
+}

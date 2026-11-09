@@ -196,6 +196,10 @@ run "topics_queues_and_subscriptions_from_the_catalogue" {
     condition     = output.prefix == "superpower-prod" && output.topic_arns["grow"] == aws_sns_topic.producer["grow"].arn && output.queue_urls["grow"] == aws_sqs_queue.consumer["grow"].id
     error_message = "The topic and queue each service is configured with."
   }
+  assert {
+    condition     = alltrue([for k, p in aws_sqs_queue_policy.consumer : p.queue_url == aws_sqs_queue.consumer[k].id && p.policy == data.aws_iam_policy_document.queue[k].json]) && length(aws_sqs_queue_policy.consumer) == length(aws_sqs_queue.consumer)
+    error_message = "Every consumer queue carries its own policy (only its subscribed topics may send)."
+  }
 }
 
 run "alarms_on_dlq_depth_and_message_age" {

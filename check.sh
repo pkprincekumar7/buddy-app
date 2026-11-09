@@ -552,7 +552,7 @@ if require_tool terraform TERRAFORM "brew install terraform"; then
         bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' validate -no-color"
   done
   # Mock AWS provider — no credentials, nothing created (TF-01).
-  for d in "$ROOT"/modules/*/ "$ROOT/infra-live-backend/terraform/"; do
+  for d in "$ROOT"/modules/*/ "$ROOT/infra-live-backend/terraform/" "$ROOT/infra-live-edge/terraform/" "$ROOT/infra-live-frontend/terraform/" "$ROOT/infra-live-scheduler/terraform/"; do
     name="${d#"$ROOT/"}"
     run "terraform test (${name%/})" \
         bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' test"
