@@ -94,12 +94,12 @@ accepts "a prod plan isn't checked" check_stg_first backend plan prod "$SHA"
 accepts "a prod destroy isn't checked" check_stg_first backend destroy prod "$SHA"
 accepts "a stg apply isn't checked" check_stg_first backend apply stg "$SHA"
 refuses "a prod apply with a bad SHA" check_stg_first backend apply prod "main"
-# shellcheck disable=SC2329 # a stand-in for gh, called by check_stg_first
+# shellcheck disable=SC2317,SC2329 # a stand-in for gh, called by check_stg_first (SC2317 on older shellcheck)
 gh() { [ "$2" = "repos/o/r/actions/runs?head_sha=${SHA}&status=success&per_page=100" ] && echo "$GH_RUNS"; }
 export GITHUB_REPOSITORY=o/r
 GH_RUNS="$(runs "[$STG_FULL]")" accepts "a prod apply stg applied first" check_stg_first backend apply prod "$SHA"
 GH_RUNS="$(runs '[]')" refuses "a prod apply stg never applied" check_stg_first backend apply prod "$SHA"
-# shellcheck disable=SC2329 # a stand-in for gh, called by check_stg_first
+# shellcheck disable=SC2317,SC2329 # a stand-in for gh, called by check_stg_first (SC2317 on older shellcheck)
 gh() { return 1; }
 refuses "a prod apply whose runs can't be listed" check_stg_first backend apply prod "$SHA"
 unset -f gh
