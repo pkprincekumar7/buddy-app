@@ -8,7 +8,7 @@
 import type { components } from './generated/transform';
 import { runJob, type PollOptions } from './polling';
 import { services, unwrap } from './services';
-import { localFile, postToS3 } from './uploads';
+import { postToS3 } from './uploads';
 
 type Schemas = components['schemas'];
 
@@ -62,7 +62,6 @@ export const transform = {
     fieldKey: string,
     photo: Blob,
     contentType: string,
-    fileUri?: string,
   ): Promise<PlanPhoto> {
     const { upload_url, upload_fields, photo_key, photo_url } = await unwrap(
       services.transform.POST(
@@ -73,12 +72,7 @@ export const transform = {
         },
       ),
     );
-    // The picked file by its URI on a device (`photo` as a Blob otherwise).
-    await postToS3(
-      upload_url,
-      upload_fields,
-      fileUri ? localFile(fileUri, contentType) : photo,
-    );
+    await postToS3(upload_url, upload_fields, photo, contentType);
     return { key: photo_key, url: photo_url };
   },
 };

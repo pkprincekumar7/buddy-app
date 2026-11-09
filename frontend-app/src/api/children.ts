@@ -5,7 +5,7 @@
 
 import type { components } from './generated/children';
 import { services, unwrap } from './services';
-import { localFile, postToS3 } from './uploads';
+import { postToS3 } from './uploads';
 
 type Schemas = components['schemas'];
 
@@ -63,7 +63,6 @@ export const children = {
     id: string,
     photo: Blob,
     contentType: string,
-    fileUri?: string,
   ): Promise<Child> {
     const problem = avatarProblem(contentType, photo.size);
     if (problem) throw new Error(problem);
@@ -73,12 +72,7 @@ export const children = {
         body: { content_type: contentType },
       }),
     );
-    // The picked file by its URI on a device (`photo` is only measured for the 5 MB check).
-    await postToS3(
-      upload_url,
-      upload_fields,
-      fileUri ? localFile(fileUri, contentType) : photo,
-    );
+    await postToS3(upload_url, upload_fields, photo, contentType);
     return children.update(id, { avatar_key });
   },
 

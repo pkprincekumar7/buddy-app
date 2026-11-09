@@ -408,13 +408,7 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
             // Same type and 5 MB limits as avatars, checked before presigning.
             const problem = avatarProblem(contentType, photo.size);
             if (problem) throw new PhotoRejected(problem);
-            return transform.uploadPhoto(
-              childId,
-              key,
-              photo,
-              contentType,
-              file.uri,
-            );
+            return transform.uploadPhoto(childId, key, photo, contentType);
           })
           .then(uploaded => {
             setPhotoFiles(prev => {
