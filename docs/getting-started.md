@@ -132,7 +132,7 @@ or the failure and convergence scenarios (workers killed mid-deletion, a late ev
 backend/.venv/bin/python scripts/e2e/convergence.py
 ```
 
-`RUN_E2E=1 ./check.sh` runs the last three after the other checks (about 7–10 minutes, some 20 LLM calls).
+`RUN_E2E=1 ./check.sh` runs the last three after the other checks (about 3–5 minutes on top of the other checks' 9–10, plus 1–2 minutes each way to switch the stack into test mode and back; some 20 LLM calls).
 
 ### The apps against the stack
 

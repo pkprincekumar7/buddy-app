@@ -594,7 +594,9 @@ fi
 # Off by default: they need the compose stack in test mode and Moto up
 # (`docker compose --env-file .env --env-file .env.test up -d`; scripts/e2e refuses a stack on
 # Atlas or a real bucket, docs/getting-started.md), make LLM calls with the keys in .env
-# (about 20 a run), stop and start the stack's workers, and take about 7-10 minutes.
+# (about 20 a run), and stop and start the stack's workers. They add about 3-5 minutes to the
+# other checks' 9-10 (13-15 in all, warm caches), plus 1-2 minutes each way to switch the stack
+# into test mode and back.
 # Gate 6 runs them:
 #   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 if [ "${RUN_E2E:-}" = "1" ]; then
