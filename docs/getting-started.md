@@ -161,10 +161,9 @@ The services run in Docker only: the backend venv (Quick start, step 2) is for t
 - Frontend dev server, against the compose stack's gateway:
   ```bash
   cd frontend
-  cp .env.example .env   # set ASSETS_ORIGIN to an environment's site (https://<fqdn>) to load app assets (avatars, splash videos, etc.) via Vite proxy
+  cp .env.example .env   # set ASSETS_BUCKET_NAME to load app assets (avatars, splash videos, etc.) via Vite proxy
   npm install && npm run dev
   ```
-  A `.env` from before this change may still set `ASSETS_BUCKET_NAME` for the frontend: it's no longer read there (the bucket only admits CloudFront), so `/app-assets/*` is a 404 until you set `ASSETS_ORIGIN` instead. The same goes for the compose `frontend` service and the root `.env`. The `shared` service still uses `ASSETS_BUCKET_NAME`, for the APK download.
 
 ## Connecting to MongoDB
 

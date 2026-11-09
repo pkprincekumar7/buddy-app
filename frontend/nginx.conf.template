@@ -56,15 +56,14 @@ server {
         access_log off;
     }
 
-    # App assets, proxied to an environment's CloudFront site (ASSETS_ORIGIN, e.g.
-    # https://dev.example.com), which serves /app-assets/* from its assets bucket. Not the
-    # bucket itself: its policy lets only that distribution read it, so unsigned requests
-    # get AccessDenied. /app-assets/ covers all current and future asset subfolders (e.g.
-    # child_activity_game/) and is separate from /assets/ (Vite build output).
-    # ${ASSETS_ORIGIN} is substituted by envsubst at container start (nginx-start.sh); with
-    # no path, the request's own (/app-assets/...) is passed on, and Host is the site's.
+    # App assets from the local assets bucket (ASSETS_BUCKET_NAME), whose app-assets/* is
+    # public on purpose (local/aws-manual/README.md), so the proxy reads it unsigned.
+    # /app-assets/ covers all current and future asset subfolders (e.g. child_activity_game/)
+    # and is separate from /assets/ (Vite build output).
+    # ${ASSETS_BUCKET_NAME} is substituted by envsubst at container start (nginx-start.sh).
     location /app-assets/ {
-        proxy_pass ${ASSETS_ORIGIN};
+        proxy_pass https://${ASSETS_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
+        proxy_set_header Host ${ASSETS_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
         proxy_ssl_server_name on;
         access_log off;
     }

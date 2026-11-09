@@ -25,9 +25,9 @@ RUN npm run build
 # Serve
 FROM nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
 COPY --from=build /app/dist /usr/share/nginx/html
-# Base config (used as-is when ASSETS_ORIGIN is not set).
+# Base config (used as-is when ASSETS_BUCKET_NAME is not set).
 COPY nginx.conf /etc/nginx/conf.d/default.conf.base
-# Template used when ASSETS_ORIGIN is set — nginx-start.sh runs envsubst and overwrites default.conf.
+# Template used when ASSETS_BUCKET_NAME is set — nginx-start.sh runs envsubst and overwrites default.conf.
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 COPY nginx-start.sh /nginx-start.sh
 RUN chmod +x /nginx-start.sh \

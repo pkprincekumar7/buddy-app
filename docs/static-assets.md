@@ -8,7 +8,7 @@ Activity-game images (used by the `ChildActivityGame` component) and avatar stag
 
 | Environment | Bucket | Path | How it works |
 |---|---|---|---|
-| **Local dev** | an environment's site (set via `ASSETS_ORIGIN`, `https://<fqdn>`, in `.env`) | `/app-assets/<path>` via the Vite or nginx proxy (web) | `vite.config.ts` and `frontend/nginx.conf.template` proxy `/app-assets/*` to `<ASSETS_ORIGIN>/app-assets/*`, i.e. through that environment's CloudFront. Not to the bucket: its policy lets only that distribution read it. No AWS credentials required. |
+| **Local dev** | dedicated local bucket (set via `ASSETS_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy (web) | `vite.config.ts` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
 | **Deployed (dev/stg/prod)** | per-environment bucket (set via the `ASSETS_BUCKET_NAME` GitHub environment variable) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
 
 The Vite-proxy row above is web-only — the mobile app talks to the same S3 buckets over their regular `https://<bucket>.s3.<region>.amazonaws.com` URL directly, no dev-server proxy involved.
@@ -153,9 +153,9 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Vite dev server (`npm run dev`):**
 
-1. Ensure `frontend/.env` has `ASSETS_ORIGIN` set to an environment's site (its CloudFront, which serves `/app-assets/*` from that environment's assets bucket):
+1. Ensure `frontend/.env` has `ASSETS_BUCKET_NAME` set to your local bucket name:
    ```env
-   ASSETS_ORIGIN=https://<fqdn>
+   ASSETS_BUCKET_NAME=<your-local-bucket-name>
    ```
 2. Run:
    ```bash
@@ -164,14 +164,14 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Docker Compose:**
 
-Ensure `ASSETS_ORIGIN` is set in the root `.env`, then start the stack. The frontend's `/app-assets/` proxy reads that site in either mode ([Manual and test modes](getting-started.md#manual-and-test-modes)); only the APK link follows the mode (Moto in test mode, `.env.test`'s `ASSETS_BUCKET_NAME`, which the frontend doesn't use). Manual mode:
+Ensure `ASSETS_BUCKET_NAME` is set to your local bucket name in the root `.env`, then start the stack. The frontend's `/app-assets/` proxy reads the real S3 bucket of that name, unsigned, in either mode ([Manual and test modes](getting-started.md#manual-and-test-modes)); only the APK link follows the mode (Moto in test mode, `.env.test`'s `ASSETS_BUCKET_NAME`). Manual mode:
 ```bash
 docker compose up -d --build
 ```
 
-nginx proxies `/app-assets/*` requests to `<ASSETS_ORIGIN>/app-assets/*`.
+nginx proxies `/app-assets/*` requests directly to S3.
 
-If `ASSETS_ORIGIN` is not set, `/app-assets/*` is a 404 (as a missing asset is in prod) and image requests fall back to the emoji/gradient tile automatically — no error is thrown.
+If `ASSETS_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.
 
 ---
 

@@ -190,9 +190,9 @@ services:
         VITE_API_URL: ${VITE_API_URL:-}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     environment:
-      # An environment's CloudFront site (https://<fqdn>): /app-assets/* is proxied to it.
-      # Empty: /app-assets/* is a 404 (the app falls back to its emoji tiles).
-      ASSETS_ORIGIN: ${ASSETS_ORIGIN:-}
+      # The local assets bucket (public app-assets/*): /app-assets/* is proxied to it, for
+      # the web app and the phone app's CDN_BASE_URL. Empty: /app-assets/* is a 404.
+      ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
       # /api/* goes to the gateway, which routes each path to its service as the ALB does.
       API_UPSTREAM: ${FRONTEND_API_UPSTREAM:-gateway:8080}
       # The photo URLs the services presign point at Moto (AWS_PUBLIC_ENDPOINT_URL): the CSP
