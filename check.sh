@@ -29,6 +29,20 @@ run() {
   fi
 }
 
+# A host tool a check needs: sets the variable named $2 to its path, or records the check as
+# failed (with the install hint $3) so a missing tool never passes silently.
+require_tool() {
+  local path
+  path="$(command -v "$1" 2>/dev/null || true)"
+  if [ -z "$path" ]; then
+    echo -e "${RED}✗ $1 not found in PATH — install: $3${RESET}"
+    FAILED+=("$1 (not installed)")
+    return 1
+  fi
+  printf -v "$2" '%s' "$path"
+  return 0
+}
+
 # ── bootstrap ─────────────────────────────────────────────────────────────────
 # Bootstrap failures exit immediately — these are hard prerequisites, not checks.
 
@@ -289,9 +303,10 @@ run "scheduler dispatcher tests (infra-live-scheduler)" \
 run "service lists match services.tf (scripts)" \
     bash "$ROOT/scripts/check-service-lists.sh"
 # Every tracked shell script, this one included, as CI checks them: a new one needs no list.
-if command -v shellcheck >/dev/null 2>&1; then
+SHELLCHECK=""
+if require_tool shellcheck SHELLCHECK "brew install shellcheck"; then
   run "shellcheck (every shell script)" \
-      bash -c "cd '$ROOT' && git ls-files -z '*.sh' | xargs -0 shellcheck -x"
+      bash -c "cd '$ROOT' && git ls-files -z '*.sh' | xargs -0 '$SHELLCHECK' -x"
 fi
 
 # shared/routing.json → generated backend/common/regions_data.py, backend/auth/countries_data.py
@@ -380,18 +395,6 @@ run "retire.js (frontend-app library CVE scan)" \
 # semgrep and checkov are installed into .venv via requirements-security.txt above.
 # The tools below must be installed on the host; see install hints on failure.
 # Docker must also be running — it is required for the trivy image scan.
-require_tool() {
-  local path
-  path="$(command -v "$1" 2>/dev/null || true)"
-  if [ -z "$path" ]; then
-    echo -e "${RED}✗ $1 not found in PATH — install: $3${RESET}"
-    FAILED+=("$1 (not installed)")
-    return 1
-  fi
-  printf -v "$2" '%s' "$path"
-  return 0
-}
-
 GITLEAKS=""; HADOLINT=""; TRIVY=""; DOCKER=""
 
 if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
