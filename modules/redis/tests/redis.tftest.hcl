@@ -35,6 +35,10 @@ run "prod_replicated_and_encrypted" {
     error_message = "Valkey 8.0 with the valkey8 parameter group (name carries the family)."
   }
   assert {
+    condition     = anytrue([for p in aws_elasticache_parameter_group.this.parameter : p.name == "maxmemory-policy" && p.value == "noeviction"])
+    error_message = "A full Valkey refuses writes rather than evicting counters and locks (TF-04)."
+  }
+  assert {
     condition     = aws_vpc_security_group_ingress_rule.from_client["ecs"].from_port == 6379 && aws_vpc_security_group_ingress_rule.from_client["ecs"].referenced_security_group_id == "sg-api"
     error_message = "Only the client SG may reach 6379."
   }

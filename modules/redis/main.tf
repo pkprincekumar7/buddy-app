@@ -50,6 +50,15 @@ resource "aws_elasticache_parameter_group" "this" {
   name   = "${var.app_name}-backend-${local.parameter_group_family}-${var.environment}"
   family = local.parameter_group_family
 
+  # Every key has a TTL, so the default volatile-lru would evict rate-limit counters and
+  # locks when memory fills. With noeviction a full Valkey refuses writes instead: the
+  # services count per task, and the Valkey memory and valkey-degraded alarms fire
+  # (production-readiness review, TF-04). Changing it is applied in place.
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+
   tags = {
     Name = "${var.app_name}-backend-${local.parameter_group_family}-${var.environment}"
   }
