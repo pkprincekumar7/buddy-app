@@ -39,3 +39,15 @@ run "the_bucket_serves_only_this_distribution_over_tls" {
     error_message = "The SPA bucket refuses every request not made over TLS (TF-05)."
   }
 }
+
+# A typo or an unknown environment name is refused at plan, before any SSM read or
+# bucket policy: the bucket name and the distribution belong to one of the four.
+run "an_unknown_environment_is_refused" {
+  command = plan
+
+  variables {
+    environment = "qa"
+  }
+
+  expect_failures = [var.environment]
+}

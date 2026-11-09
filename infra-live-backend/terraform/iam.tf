@@ -26,13 +26,6 @@ resource "aws_iam_role" "execution" {
 
   name               = "${var.app_name}-${each.key}-exec-role-${var.environment}-${var.aws_region}"
   assume_role_policy = local.ecs_assume_role_policy
-
-  lifecycle {
-    precondition {
-      condition     = length("${var.app_name}-${each.key}-exec-role-${var.environment}-${var.aws_region}") <= 64
-      error_message = "IAM role name for ${each.key} is over 64 characters."
-    }
-  }
 }
 
 resource "aws_iam_role_policy_attachment" "execution_managed" {

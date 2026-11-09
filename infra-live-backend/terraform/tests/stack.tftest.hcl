@@ -393,6 +393,36 @@ run "prod_stack_wiring" {
     condition     = aws_ssm_parameter.ecs_cluster_name.value == aws_ecs_cluster.backend.name
     error_message = "Deploy workflows still find the cluster in SSM."
   }
+  assert {
+    condition = (
+      aws_ssm_parameter.alb_internal_fqdn.name == "/superpower/prod/backend/ap-south-1/alb_internal_fqdn" &&
+      aws_ssm_parameter.alb_internal_fqdn.value == "superpower-internal-ap-south-1.example.com" &&
+      aws_ssm_parameter.alb_internal_fqdn.value == aws_route53_record.alb_internal.name &&
+      aws_ssm_parameter.alb_internal_fqdn.type == "String"
+    )
+    error_message = "The ALB's internal name (prod: no environment in it) is published to SSM as a String, for infra-live-edge's origin."
+  }
+
+  # -- secrets (15.1) ---------------------------------------------------------------
+  assert {
+    condition = (
+      toset(keys(aws_secretsmanager_secret_version.placeholder)) == toset(keys(aws_secretsmanager_secret.service)) &&
+      aws_secretsmanager_secret_version.placeholder["auth"].secret_id == aws_secretsmanager_secret.service["auth"].id &&
+      nonsensitive(jsondecode(aws_secretsmanager_secret_version.placeholder["auth"].secret_string)) == { MONGODB_URI = "REPLACE_ME", JWT_PRIVATE_KEY = "REPLACE_ME", GOOGLE_CLIENT_ID = "REPLACE_ME", EMAIL_HMAC_PEPPER = "REPLACE_ME" } &&
+      nonsensitive(jsondecode(aws_secretsmanager_secret_version.placeholder["shared"].secret_string)) == { OPENAI_API_KEY = "REPLACE_ME" }
+    )
+    error_message = "Each service's secret starts with a REPLACE_ME placeholder for every one of its keys, and nothing else."
+  }
+
+  # -- GuardDuty --------------------------------------------------------------------
+  assert {
+    condition = (
+      aws_guardduty_detector_feature.ecs_runtime[0].detector_id == aws_guardduty_detector.main[0].id &&
+      aws_guardduty_detector_feature.ecs_runtime[0].name == "RUNTIME_MONITORING" &&
+      aws_guardduty_detector_feature.ecs_runtime[0].status == "ENABLED"
+    )
+    error_message = "Prod's detector has Runtime Monitoring enabled, so GuardDuty watches the running containers."
+  }
 
   # -- alarms (OBS-01) ------------------------------------------------------------
   assert {
@@ -414,6 +444,81 @@ run "prod_stack_wiring" {
       one([for q in aws_cloudwatch_metric_alarm.valkey["evictions"].metric_query : q.expression if coalesce(q.return_data, false)]) == "SUM(METRICS())"
     )
     error_message = "Valkey CPU, memory and eviction alarms, each over every node."
+  }
+  assert {
+    condition = (
+      aws_sns_topic.alerts.name == "superpower-alerts-prod" && aws_sns_topic.alerts.tags["Name"] == "superpower-alerts-prod" &&
+      length(aws_sns_topic_subscription.ops_email) == 0
+    )
+    error_message = "One alerts topic per environment, <app>-alerts-<env>; no email subscription unless enable_ops_email."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_metric_alarm.alb_healthy_hosts)) == toset(keys(local.http_services)) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.alb_healthy_hosts : (
+        a.alarm_name == "superpower-alb-healthy-hosts-${k}-prod" && a.tags["Name"] == a.alarm_name &&
+        a.namespace == "AWS/ApplicationELB" && a.metric_name == "HealthyHostCount" && a.statistic == "Minimum" &&
+        a.threshold == 1 && a.comparison_operator == "LessThanThreshold" && a.treat_missing_data == "breaching" &&
+        a.dimensions == tomap({ TargetGroup = module.alb.target_group_arn_suffixes[k], LoadBalancer = module.alb.arn_suffix }) &&
+        a.alarm_actions == toset([aws_sns_topic.alerts.arn]) && a.ok_actions == toset([aws_sns_topic.alerts.arn])
+      )])
+    )
+    error_message = "Each HTTP service's target group alarms to the alerts topic when it has no healthy host (missing data breaching)."
+  }
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.redis_connections[0].alarm_name == "superpower-redis-connections-prod" &&
+      aws_cloudwatch_metric_alarm.redis_connections[0].threshold == 1 &&
+      aws_cloudwatch_metric_alarm.redis_connections[0].comparison_operator == "LessThanThreshold" &&
+      aws_cloudwatch_metric_alarm.redis_connections[0].treat_missing_data == "breaching" &&
+      one([for q in aws_cloudwatch_metric_alarm.redis_connections[0].metric_query : q.expression if coalesce(q.return_data, false)]) == "SUM(METRICS())" &&
+      toset([for q in aws_cloudwatch_metric_alarm.redis_connections[0].metric_query : one(q.metric).dimensions.CacheClusterId if length(q.metric) > 0]) == toset(local.redis_member_ids) &&
+      alltrue([for q in aws_cloudwatch_metric_alarm.redis_connections[0].metric_query : one(q.metric).namespace == "AWS/ElastiCache" && one(q.metric).metric_name == "CurrConnections" if length(q.metric) > 0]) &&
+      length(local.redis_member_ids) == 2 &&
+      aws_cloudwatch_metric_alarm.redis_connections[0].alarm_actions == toset([aws_sns_topic.alerts.arn])
+    )
+    error_message = "Valkey connections summed over every node (primary + replica in prod) alarm to the alerts topic when they drop below 1."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_metric_alarm.processing_stuck)) == toset(local.generating_services) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.processing_stuck : (
+        a.alarm_name == "superpower-${k}-processing-stuck-prod" &&
+        a.namespace == "Superpower/${k}" && a.metric_name == "OldestRunningJobAgeSeconds" && a.statistic == "Maximum" &&
+        a.threshold == 600 && a.comparison_operator == "GreaterThanThreshold" && a.dimensions == tomap({ Environment = "prod" }) &&
+        a.alarm_actions == toset([aws_sns_topic.alerts.arn]) && a.ok_actions == toset([aws_sns_topic.alerts.arn])
+      )])
+    )
+    error_message = "A job running over 10 minutes alarms, per generating service, to the alerts topic."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_metric_alarm.pending_jobs_missing)) == toset(local.generating_services) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.pending_jobs_missing : (
+        a.alarm_name == "superpower-${k}-pending-jobs-missing-prod" &&
+        a.namespace == "Superpower/${k}" && a.metric_name == "PendingJobCount" && a.statistic == "SampleCount" &&
+        a.threshold == 1 && a.comparison_operator == "LessThanThreshold" && a.treat_missing_data == "breaching" &&
+        a.dimensions == tomap({ Environment = "prod" }) && a.alarm_actions == toset([aws_sns_topic.alerts.arn])
+      )])
+    )
+    error_message = "A generating service that stops publishing PendingJobCount alarms (missing data breaching): its worker's scaling has lost its signal."
+  }
+  assert {
+    condition = (
+      toset(keys(aws_cloudwatch_log_metric_filter.outbox_set_aside)) == toset(local.worker_services) &&
+      alltrue([for k, f in aws_cloudwatch_log_metric_filter.outbox_set_aside : (
+        f.log_group_name == aws_cloudwatch_log_group.service["${k}-worker"].name && f.pattern == "\"outbox.row.set_aside\"" &&
+        f.metric_transformation[0].name == "SetAsideOutboxRows" && f.metric_transformation[0].namespace == "Superpower/${k}" &&
+        f.metric_transformation[0].value == "1"
+      )]) &&
+      toset(keys(aws_cloudwatch_metric_alarm.outbox_set_aside)) == toset(local.worker_services) &&
+      alltrue([for k, a in aws_cloudwatch_metric_alarm.outbox_set_aside : (
+        a.namespace == "Superpower/${k}" && a.metric_name == "SetAsideOutboxRows" && a.statistic == "Sum" &&
+        a.threshold == 0 && a.comparison_operator == "GreaterThanThreshold" &&
+        a.alarm_actions == toset([aws_sns_topic.alerts.arn])
+      )])
+    )
+    error_message = "Every data service's worker counts the outbox rows its relay sets aside, and any one alarms to the alerts topic."
   }
 
   # -- generation and runtime alarms (OBS-02, JOB-02, JOB-03, OBS-03) -------------
@@ -569,6 +674,14 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.valkey) == 0 && length(aws_cloudwatch_metric_alarm.alb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.alb_slow) == 0
     error_message = "Dev: no Valkey or ALB alarms."
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.processing_stuck) + length(aws_cloudwatch_metric_alarm.pending_jobs_missing) + length(aws_cloudwatch_log_metric_filter.outbox_set_aside) + length(aws_cloudwatch_metric_alarm.outbox_set_aside) + length(aws_cloudwatch_metric_alarm.alb_healthy_hosts) + length(aws_cloudwatch_metric_alarm.redis_connections) == 0
+    error_message = "Dev: no stuck-job, missing-metric, set-aside-outbox, healthy-host or Valkey-connection alarms."
+  }
+  assert {
+    condition     = length(aws_sns_topic_subscription.ops_email) == 0 && length(aws_cloudwatch_dashboard.main) == 0 && aws_sns_topic.alerts.name == "superpower-alerts-dev"
+    error_message = "Dev: the alerts topic still exists, with no email subscription or dashboard (both off by default)."
   }
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.pending_age) + length(aws_cloudwatch_metric_alarm.failed_jobs) + length(aws_cloudwatch_metric_alarm.llm_tokens) + length(aws_cloudwatch_metric_alarm.no_tasks) + length(aws_cloudwatch_metric_alarm.valkey_degraded) + length(aws_cloudwatch_metric_alarm.index_problems) + length(aws_cloudwatch_metric_alarm.security_events) == 0
@@ -762,4 +875,243 @@ run "execution_roles_uploads_and_the_atlas_endpoint" {
     condition     = aws_vpc_endpoint.atlas[0].security_group_ids == toset([aws_security_group.atlas_endpoint[0].id]) && aws_security_group.atlas_endpoint[0].vpc_id == aws_vpc_endpoint.atlas[0].vpc_id
     error_message = "The Atlas endpoint is guarded by its own security group only, which admits the service tasks (DEC-02)."
   }
+}
+
+# The opt-in alerting extras: the operator's email subscription and the dashboard.
+run "ops_email_and_dashboard_when_enabled" {
+  command = apply
+
+  variables {
+    enable_ops_email = true
+    ops_email        = "ops@example.com"
+    enable_dashboard = true
+  }
+
+  assert {
+    condition = (
+      aws_sns_topic_subscription.ops_email[0].topic_arn == aws_sns_topic.alerts.arn &&
+      aws_sns_topic_subscription.ops_email[0].protocol == "email" &&
+      aws_sns_topic_subscription.ops_email[0].endpoint == "ops@example.com"
+    )
+    error_message = "enable_ops_email subscribes ops_email to the alerts topic by email."
+  }
+  assert {
+    condition = (
+      aws_cloudwatch_dashboard.main[0].dashboard_name == "superpower-prod-ap-south-1" &&
+      [for w in jsondecode(aws_cloudwatch_dashboard.main[0].dashboard_body).widgets : w.properties.title] == [
+        "CPU by runtime", "Memory by runtime", "Requests per target", "5XX by service", "Pending generation jobs",
+        "Oldest unpublished event (s)", "Oldest event waiting in each queue (s)", "Valkey connections",
+      ] &&
+      length(jsondecode(aws_cloudwatch_dashboard.main[0].dashboard_body).widgets[0].properties.metrics) == length(local.services)
+    )
+    error_message = "The dashboard is named <app>-<env>-<region> (names are account-global) and charts every runtime."
+  }
+}
+
+# GuardDuty is never created in us-east-1: infra-live-edge owns that detector.
+run "no_guardduty_in_us_east_1" {
+  command = plan
+
+  variables {
+    environment      = "dev"
+    aws_region       = "us-east-1"
+    atlas_project_id = ""
+  }
+
+  assert {
+    condition     = length(aws_guardduty_detector.main) == 0 && length(aws_guardduty_detector_feature.ecs_runtime) == 0
+    error_message = "No GuardDuty detector or Runtime Monitoring feature in us-east-1 (infra-live-edge's)."
+  }
+}
+
+# -- validation rules and preconditions: one input breaking one rule each -----------
+
+run "an_unknown_environment_is_refused" {
+  command = plan
+
+  variables {
+    environment = "qa"
+  }
+
+  expect_failures = [var.environment]
+}
+
+run "vpc_cidrs_without_this_region_is_refused" {
+  command = plan
+
+  variables {
+    vpc_cidrs = { "eu-west-1" = "10.23.0.0/16" }
+  }
+
+  expect_failures = [var.vpc_cidrs]
+}
+
+run "vpc_cidrs_outside_routing_json_is_refused" {
+  command = plan
+
+  variables {
+    vpc_cidrs = {
+      "ap-south-1" = "10.22.0.0/16"
+      "us-west-2"  = "10.25.0.0/16"
+    }
+  }
+
+  expect_failures = [var.vpc_cidrs]
+}
+
+# Another region's entry, so only the CIDR shape is wrong (not this region's VPC).
+run "vpc_cidrs_must_be_10_x_slash_16_networks" {
+  command = plan
+
+  variables {
+    vpc_cidrs = {
+      "ap-south-1" = "10.22.0.0/16"
+      "eu-west-1"  = "192.168.0.0/16"
+    }
+  }
+
+  expect_failures = [var.vpc_cidrs]
+}
+
+run "vpc_cidrs_must_be_unique" {
+  command = plan
+
+  variables {
+    vpc_cidrs = {
+      "ap-south-1" = "10.22.0.0/16"
+      "eu-west-1"  = "10.22.0.0/16"
+    }
+  }
+
+  expect_failures = [var.vpc_cidrs]
+}
+
+run "four_nat_gateways_are_refused" {
+  command = plan
+
+  variables {
+    nat_gateway_count = 4
+  }
+
+  expect_failures = [var.nat_gateway_count]
+}
+
+run "three_valkey_replicas_are_refused" {
+  command = plan
+
+  variables {
+    elasticache_replica_count = 3
+  }
+
+  expect_failures = [var.elasticache_replica_count]
+}
+
+run "a_negative_on_demand_base_is_refused" {
+  command = plan
+
+  variables {
+    worker_spot = { on_demand_base = -1, spot_weight = 3 }
+  }
+
+  expect_failures = [var.worker_spot]
+}
+
+run "a_zero_connection_budget_is_refused" {
+  command = plan
+
+  variables {
+    mongodb_connection_budget = 0
+  }
+
+  expect_failures = [var.mongodb_connection_budget]
+}
+
+# A stopping worker gets llm_timeout_seconds + 30, and Fargate stops at 120 s.
+run "an_llm_timeout_over_90_seconds_is_refused" {
+  command = plan
+
+  variables {
+    llm_timeout_seconds = 91
+  }
+
+  expect_failures = [var.llm_timeout_seconds]
+}
+
+run "an_upload_url_ttl_under_5_minutes_is_refused" {
+  command = plan
+
+  variables {
+    uploads_url_ttl_seconds = 299
+  }
+
+  expect_failures = [var.uploads_url_ttl_seconds]
+}
+
+# enable_cloudtrail defaults to true, so the trail needs the bucket.
+run "cloudtrail_without_a_logging_bucket_is_refused" {
+  command = plan
+
+  variables {
+    regional_logging_bucket_name = ""
+  }
+
+  expect_failures = [var.regional_logging_bucket_name]
+}
+
+run "ops_email_on_without_an_address_is_refused" {
+  command = plan
+
+  variables {
+    enable_ops_email = true
+    ops_email        = ""
+  }
+
+  expect_failures = [var.ops_email]
+}
+
+run "a_zero_llm_tokens_alarm_is_refused" {
+  command = plan
+
+  variables {
+    llm_tokens_alarm_per_hour = 0
+  }
+
+  expect_failures = [var.llm_tokens_alarm_per_hour]
+}
+
+run "a_malformed_ecr_pull_account_id_is_refused" {
+  command = plan
+
+  variables {
+    ecr_pull_account_ids = ["12345"]
+  }
+
+  expect_failures = [var.ecr_pull_account_ids]
+}
+
+# Every tier present, but http's min_capacity is over its desired_count.
+run "runtime_sizes_needs_min_desired_max_in_order" {
+  command = plan
+
+  variables {
+    runtime_sizes = {
+      "http"              = { cpu = 1024, memory = 2048, desired_count = 2, min_capacity = 3, max_capacity = 25 }
+      "auth"              = { cpu = 2048, memory = 4096, desired_count = 3, min_capacity = 3, max_capacity = 30 }
+      "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
+      "generating-worker" = { cpu = 1024, memory = 2048, desired_count = 1, min_capacity = 1, max_capacity = 10 }
+      "collector"         = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
+    }
+  }
+
+  expect_failures = [var.runtime_sizes]
+}
+
+run "a_malformed_atlas_project_id_is_refused" {
+  command = plan
+
+  variables {
+    atlas_project_id = "not-an-atlas-project-id"
+  }
+
+  expect_failures = [var.atlas_project_id]
 }

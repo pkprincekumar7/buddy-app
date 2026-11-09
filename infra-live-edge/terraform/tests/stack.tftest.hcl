@@ -64,6 +64,92 @@ run "distribution" {
     condition     = alltrue([for e in aws_cloudfront_distribution.frontend.custom_error_response : e.response_page_path == null && e.response_code == null])
     error_message = "No custom error response rewrites a status or a page (EDGE-03)."
   }
+  # Z2FDTNDATAQYW2 is CloudFront's hosted zone in every account.
+  assert {
+    condition     = aws_route53_record.frontend.name == "superpower-stg.example.com" && aws_route53_record.frontend.type == "A" && aws_route53_record.frontend.zone_id == "Z0000000000000" && one(aws_route53_record.frontend.alias).name == aws_cloudfront_distribution.frontend.domain_name && one(aws_route53_record.frontend.alias).zone_id == "Z2FDTNDATAQYW2" && !one(aws_route53_record.frontend.alias).evaluate_target_health
+    error_message = "The non-prod name superpower-stg.example.com is an A alias to the distribution, in the app's hosted zone."
+  }
+}
+
+# What infra-live-frontend and deploy-live-frontend read: four String parameters under
+# /<app>/<env>/edge/, each wired to the value it names.
+run "ssm_outputs" {
+  command = apply
+
+  assert {
+    condition     = aws_ssm_parameter.cloudfront_distribution_id.name == "/superpower/stg/edge/cloudfront_distribution_id" && aws_ssm_parameter.cloudfront_distribution_id.type == "String" && nonsensitive(aws_ssm_parameter.cloudfront_distribution_id.value) == aws_cloudfront_distribution.frontend.id
+    error_message = "/superpower/stg/edge/cloudfront_distribution_id holds the distribution's ID."
+  }
+  assert {
+    condition     = aws_ssm_parameter.cloudfront_arn.name == "/superpower/stg/edge/cloudfront_arn" && aws_ssm_parameter.cloudfront_arn.type == "String" && nonsensitive(aws_ssm_parameter.cloudfront_arn.value) == aws_cloudfront_distribution.frontend.arn
+    error_message = "/superpower/stg/edge/cloudfront_arn holds the distribution's ARN."
+  }
+  assert {
+    condition     = aws_ssm_parameter.app_url.name == "/superpower/stg/edge/app_url" && aws_ssm_parameter.app_url.type == "String" && nonsensitive(aws_ssm_parameter.app_url.value) == "https://superpower-stg.example.com"
+    error_message = "/superpower/stg/edge/app_url holds the app's HTTPS URL on its public name."
+  }
+  assert {
+    condition     = aws_ssm_parameter.s3_bucket_name.name == "/superpower/stg/edge/s3_bucket_name" && aws_ssm_parameter.s3_bucket_name.type == "String" && nonsensitive(aws_ssm_parameter.s3_bucket_name.value) == "superpower-stg-spa"
+    error_message = "/superpower/stg/edge/s3_bucket_name holds the SPA bucket's name."
+  }
+  assert {
+    condition     = aws_ssm_parameter.cloudfront_distribution_id.tags.Name == "superpower-edge-cf-dist-id-stg" && aws_ssm_parameter.cloudfront_arn.tags.Name == "superpower-edge-cf-arn-stg" && aws_ssm_parameter.app_url.tags.Name == "superpower-edge-app-url-stg" && aws_ssm_parameter.s3_bucket_name.tags.Name == "superpower-edge-s3-bucket-stg"
+    error_message = "Each edge SSM parameter is tagged with its app, purpose and environment."
+  }
+}
+
+# The validator can't be deleted until CloudFront has removed its edge replicas: the
+# sleep waits on destroy only. Its depends_on (the function) has no attribute to assert.
+run "lambda_edge_replica_wait" {
+  command = apply
+
+  assert {
+    condition     = time_sleep.wait_for_lambda_edge_replica_cleanup.destroy_duration == "600s" && time_sleep.wait_for_lambda_edge_replica_cleanup.create_duration == null
+    error_message = "Destroy waits 600s for the Lambda@Edge replicas to go; apply doesn't wait."
+  }
+}
+
+# OBS-01: on stg and prod the 5xx alarm notifies a us-east-1 topic that emails OPS_EMAIL.
+run "edge_alarms" {
+  command = apply
+
+  assert {
+    condition     = aws_sns_topic.edge_alerts[0].name == "superpower-edge-alerts-stg" && aws_sns_topic.edge_alerts[0].tags.Name == "superpower-edge-alerts-stg"
+    error_message = "The edge alarm topic is named and tagged for the app and environment."
+  }
+  assert {
+    condition     = aws_sns_topic_subscription.edge_ops_email[0].topic_arn == aws_sns_topic.edge_alerts[0].arn && aws_sns_topic_subscription.edge_ops_email[0].protocol == "email" && aws_sns_topic_subscription.edge_ops_email[0].endpoint == "ops@example.com"
+    error_message = "The edge alarm topic emails ops_email."
+  }
+}
+
+# dev and sbx: no alarms and no GuardDuty (cost).
+run "no_alarms_or_guardduty_when_disabled" {
+  command = apply
+
+  variables {
+    enable_alarms    = false
+    enable_guardduty = false
+  }
+
+  assert {
+    condition     = length(aws_sns_topic.edge_alerts) == 0 && length(aws_sns_topic_subscription.edge_ops_email) == 0 && length(aws_cloudwatch_metric_alarm.cloudfront_5xx) == 0
+    error_message = "With enable_alarms = false there is no edge alarm, topic or subscription."
+  }
+  assert {
+    condition     = length(aws_guardduty_detector.main) == 0 && length(aws_guardduty_detector_feature.ecs_runtime) == 0
+    error_message = "With enable_guardduty = false there is no detector and no runtime monitoring."
+  }
+}
+
+# The us-east-1 detector is the account's only one there, so it carries ECS runtime monitoring.
+run "guardduty_runtime_monitoring" {
+  command = apply
+
+  assert {
+    condition     = aws_guardduty_detector_feature.ecs_runtime[0].detector_id == aws_guardduty_detector.main[0].id && aws_guardduty_detector_feature.ecs_runtime[0].name == "RUNTIME_MONITORING" && aws_guardduty_detector_feature.ecs_runtime[0].status == "ENABLED"
+    error_message = "Runtime monitoring is enabled on the edge stack's us-east-1 detector."
+  }
 }
 
 run "api_behaviour" {
@@ -146,6 +232,23 @@ run "security_headers" {
   assert {
     condition     = jsonencode(tolist(aws_cloudfront_response_headers_policy.api_security.cors_config[0].access_control_allow_origins[0].items)) == jsonencode(["https://superpower-stg.example.com"]) && aws_cloudfront_response_headers_policy.api_security.cors_config[0].access_control_allow_credentials
     error_message = "CORS with credentials allows the app's own origin only."
+  }
+  # Sub-resources get only what browsers apply to them: nosniff and HSTS.
+  assert {
+    condition = (
+      aws_cloudfront_response_headers_policy.assets.name == "superpower-assets-stg"
+      && aws_cloudfront_response_headers_policy.assets.security_headers_config[0].content_type_options[0].override
+      && aws_cloudfront_response_headers_policy.assets.security_headers_config[0].strict_transport_security[0].access_control_max_age_sec == 63072000
+      && aws_cloudfront_response_headers_policy.assets.security_headers_config[0].strict_transport_security[0].include_subdomains
+      && aws_cloudfront_response_headers_policy.assets.security_headers_config[0].strict_transport_security[0].override
+      && length(aws_cloudfront_response_headers_policy.assets.security_headers_config[0].content_security_policy) == 0
+      && length(aws_cloudfront_response_headers_policy.assets.security_headers_config[0].frame_options) == 0
+    )
+    error_message = "Static assets send nosniff and HSTS (2 years, subdomains), overriding the origin, and no document-level headers."
+  }
+  assert {
+    condition     = one([for b in aws_cloudfront_distribution.frontend.ordered_cache_behavior : b if b.path_pattern == "/app-assets/*"]).response_headers_policy_id == aws_cloudfront_response_headers_policy.assets.id
+    error_message = "/app-assets/* answers carry the assets headers policy."
   }
 }
 
@@ -230,6 +333,7 @@ run "waf_logging" {
     enable_waf_logging         = true
     enable_cloudtrail          = true
     global_logging_bucket_name = "superpower-global-logs"
+    waf_log_retention_days     = 30
   }
 
   assert {
@@ -248,4 +352,169 @@ run "waf_logging" {
     condition     = toset(flatten([for s in jsondecode(aws_iam_role_policy.firehose_s3[0].policy).Statement : s.Action])) == toset(["s3:GetBucketLocation", "s3:PutObject", "s3:AbortMultipartUpload"]) && alltrue([for s in jsondecode(aws_iam_role_policy.firehose_s3[0].policy).Statement : startswith(s.Resource, "arn:aws:s3:::superpower-global-logs")])
     error_message = "Firehose may only write objects into the global logging bucket."
   }
+  assert {
+    condition     = aws_route53_record.frontend.name == "superpower.example.com"
+    error_message = "prod's public name has no environment suffix."
+  }
+  assert {
+    condition     = aws_s3_bucket_policy.global_logging[0].bucket == "superpower-global-logs" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailAclCheck"]).Principal.Service == "cloudtrail.amazonaws.com" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailAclCheck"]).Action == "s3:GetBucketAcl" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailAclCheck"]).Resource == "arn:aws:s3:::superpower-global-logs"
+    error_message = "CloudTrail may check the global logging bucket's ACL."
+  }
+  assert {
+    condition     = one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailWrite"]).Principal.Service == "cloudtrail.amazonaws.com" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailWrite"]).Action == "s3:PutObject" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailWrite"]).Resource == "arn:aws:s3:::superpower-global-logs/cloudtrail/*" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Sid == "CloudTrailWrite"]).Condition.StringEquals["s3:x-amz-acl"] == "bucket-owner-full-control"
+    error_message = "CloudTrail may only put objects under cloudtrail/, handing the bucket owner full control."
+  }
+  assert {
+    condition     = length([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Effect == "Allow"]) == 2 && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Effect == "Deny"]).Principal == "*" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Effect == "Deny"]).Action == "s3:*" && one([for s in jsondecode(aws_s3_bucket_policy.global_logging[0].policy).Statement : s if s.Effect == "Deny"]).Condition.Bool["aws:SecureTransport"] == "false"
+    error_message = "CloudTrail is the only principal the global logging bucket policy allows, and it refuses every request not made over TLS (TF-05)."
+  }
+  assert {
+    condition     = aws_s3_bucket_lifecycle_configuration.global_logging[0].bucket == "superpower-global-logs" && toset([for r in aws_s3_bucket_lifecycle_configuration.global_logging[0].rule : "${r.id} ${one(r.filter).prefix} ${one(r.expiration).days}" if length(r.expiration) > 0]) == toset(["expire-waf-logs waf-logs/ 30", "expire-waf-log-errors waf-logs-errors/ 30"])
+    error_message = "WAF logs and WAF log errors expire after waf_log_retention_days (SEC-02); nothing else in the bucket expires."
+  }
+  assert {
+    condition     = one([for r in aws_s3_bucket_lifecycle_configuration.global_logging[0].rule : r if r.id == "abort-incomplete-uploads"]).abort_incomplete_multipart_upload[0].days_after_initiation == 7 && alltrue([for r in aws_s3_bucket_lifecycle_configuration.global_logging[0].rule : r.status == "Enabled"])
+    error_message = "Every lifecycle rule is enabled, and incomplete uploads are aborted after 7 days."
+  }
+}
+
+# stg: no CloudTrail and no WAF logging, so the stack leaves the global logging bucket alone.
+run "global_logging_bucket_untouched_without_logging" {
+  command = plan
+
+  assert {
+    condition     = length(aws_s3_bucket_policy.global_logging) == 0 && length(aws_s3_bucket_lifecycle_configuration.global_logging) == 0
+    error_message = "Without CloudTrail or WAF logging there is no global logging bucket policy or lifecycle."
+  }
+}
+
+# Each validation rule, broken alone. Every other input is the file's valid stg default.
+
+run "environment_must_be_known" {
+  command = plan
+
+  variables {
+    environment = "qa"
+  }
+
+  expect_failures = [var.environment]
+}
+
+# dev isn't in served_from, so an empty list breaks only the not-empty rule.
+run "backend_regions_must_not_be_empty" {
+  command = plan
+
+  variables {
+    environment          = "dev"
+    backend_regions      = []
+    uploads_bucket_names = {}
+  }
+
+  expect_failures = [var.backend_regions]
+}
+
+run "backend_regions_must_be_routing_regions" {
+  command = plan
+
+  variables {
+    environment          = "dev"
+    backend_regions      = ["ap-southeast-2"]
+    uploads_bucket_names = { "ap-southeast-2" = "superpower-dev-uploads-ap-southeast-2" }
+  }
+
+  expect_failures = [var.backend_regions]
+}
+
+run "bootstrap_region_must_be_a_backend_region" {
+  command = plan
+
+  variables {
+    bootstrap_region = "eu-west-1"
+  }
+
+  expect_failures = [var.bootstrap_region]
+}
+
+run "uploads_bucket_names_must_cover_every_backend_region" {
+  command = plan
+
+  variables {
+    uploads_bucket_names = { "eu-west-1" = "superpower-stg-uploads-eu-west-1" }
+  }
+
+  expect_failures = [var.uploads_bucket_names]
+}
+
+run "jwt_public_keys_must_not_be_empty" {
+  command = plan
+
+  variables {
+    jwt_public_keys = {}
+  }
+
+  expect_failures = [var.jwt_public_keys]
+}
+
+run "jwt_public_keys_must_be_pem" {
+  command = plan
+
+  variables {
+    jwt_public_keys = { "key-v1" = "MIIBIjANBgkq" }
+  }
+
+  expect_failures = [var.jwt_public_keys]
+}
+
+run "cloudfront_price_class_must_be_known" {
+  command = plan
+
+  variables {
+    cloudfront_price_class = "PriceClass_50"
+  }
+
+  expect_failures = [var.cloudfront_price_class]
+}
+
+# The bucket is set, so only the WAF rule is broken.
+run "waf_logging_requires_waf" {
+  command = plan
+
+  variables {
+    enable_waf                 = false
+    enable_waf_logging         = true
+    global_logging_bucket_name = "superpower-global-logs"
+  }
+
+  expect_failures = [var.enable_waf_logging]
+}
+
+run "waf_log_retention_days_must_be_positive" {
+  command = plan
+
+  variables {
+    waf_log_retention_days = 0
+  }
+
+  expect_failures = [var.waf_log_retention_days]
+}
+
+run "global_logging_bucket_name_required_for_cloudtrail" {
+  command = plan
+
+  variables {
+    enable_cloudtrail          = true
+    global_logging_bucket_name = ""
+  }
+
+  expect_failures = [var.global_logging_bucket_name]
+}
+
+run "ops_email_required_for_alarms" {
+  command = plan
+
+  variables {
+    ops_email = ""
+  }
+
+  expect_failures = [var.ops_email]
 }

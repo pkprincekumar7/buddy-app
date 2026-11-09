@@ -42,6 +42,24 @@ run "prod_replicated_and_encrypted" {
     condition     = aws_vpc_security_group_ingress_rule.from_client["ecs"].from_port == 6379 && aws_vpc_security_group_ingress_rule.from_client["ecs"].referenced_security_group_id == "sg-api"
     error_message = "Only the client SG may reach 6379."
   }
+  assert {
+    condition     = aws_elasticache_subnet_group.this.name == "superpower-backend-redis-subnet-group-prod" && toset(aws_elasticache_subnet_group.this.subnet_ids) == toset(["subnet-a", "subnet-b", "subnet-c"]) && aws_elasticache_replication_group.this.subnet_group_name == aws_elasticache_subnet_group.this.name
+    error_message = "The cache subnet group must span the given private subnets and be the one the replication group uses."
+  }
+  assert {
+    condition     = aws_security_group.this.name == "superpower-backend-elasticache-sg-prod" && aws_security_group.this.vpc_id == "vpc-1" && aws_elasticache_replication_group.this.security_group_ids == toset([aws_security_group.this.id]) && aws_vpc_security_group_ingress_rule.from_client["ecs"].security_group_id == aws_security_group.this.id
+    error_message = "The Redis security group must live in the given VPC, be the replication group's only SG and carry the client ingress rules."
+  }
+}
+
+run "replica_count_is_at_most_two" {
+  command = plan
+
+  variables {
+    replica_count = 3
+  }
+
+  expect_failures = [var.replica_count]
 }
 
 run "multi_az_needs_a_replica" {
@@ -193,4 +211,17 @@ run "rbac_service_names_are_checked" {
   }
 
   expect_failures = [var.rbac_services]
+}
+
+run "rbac_user_ids_over_40_characters_are_refused" {
+  command = plan
+
+  variables {
+    app_name      = "superpower-learning-platform"
+    auth_token    = null
+    rbac_services = { notifications = {} }
+  }
+
+  # "superpower-learning-platform-prod-notifications" is 47 characters.
+  expect_failures = [aws_elasticache_user.service]
 }

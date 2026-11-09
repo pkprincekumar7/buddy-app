@@ -634,3 +634,73 @@ run "only_fargate_capacity_providers" {
 
   expect_failures = [var.capacity_provider_strategy]
 }
+
+run "deployment_maximum_percent_is_at_least_150" {
+  # At desired_count 4, 140% still fits an extra task (floor(5.6) = 5), so only
+  # the variable's 150–200 range is broken, not the surge precondition.
+  command = plan
+
+  variables {
+    role                       = "worker"
+    scaling_name               = "worker"
+    security_group_ids         = ["sg-worker"]
+    desired_count              = 4
+    deployment_maximum_percent = 140
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+    }
+  }
+
+  expect_failures = [var.deployment_maximum_percent]
+}
+
+run "sustained_alarms_need_a_topic" {
+  command = plan
+
+  variables {
+    role                    = "worker"
+    scaling_name            = "worker"
+    security_group_ids      = ["sg-worker"]
+    alarm_topic_arn         = null
+    enable_sustained_alarms = true
+    sustained_alarms        = { cpu = "CPUUtilization" }
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+    }
+  }
+
+  expect_failures = [aws_cloudwatch_metric_alarm.sustained]
+}
+
+run "immediate_alarms_need_a_topic" {
+  command = plan
+
+  variables {
+    role                    = "worker"
+    scaling_name            = "worker"
+    security_group_ids      = ["sg-worker"]
+    alarm_topic_arn         = null
+    enable_sustained_alarms = true
+    immediate_alarms        = { cpu = "CPUUtilization" }
+    container = {
+      name              = "worker"
+      image             = "repo/backend:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-worker-prod"
+      log_stream_prefix = "worker"
+    }
+  }
+
+  expect_failures = [aws_cloudwatch_metric_alarm.immediate]
+}

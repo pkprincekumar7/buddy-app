@@ -118,6 +118,10 @@ run "topics_queues_and_subscriptions_from_the_catalogue" {
     error_message = "Topics are <app>-<env>-<service>-events, encrypted with the environment's rotating customer-managed key."
   }
   assert {
+    condition     = aws_kms_alias.events.name == "alias/superpower-prod-events" && aws_kms_alias.events.target_key_id == aws_kms_key.events.key_id
+    error_message = "The events key must have the alias alias/<app>-<env>-events pointing at it."
+  }
+  assert {
     condition = keys(aws_sqs_queue.consumer) == [
       "auth", "children", "discover", "grow", "onboarding", "release", "transform", "users",
     ]
@@ -288,4 +292,24 @@ run "queue_settings_are_bounded" {
   }
 
   expect_failures = [var.max_receive_count]
+}
+
+run "visibility_timeout_is_at_most_12_hours" {
+  command = plan
+
+  variables {
+    queue_visibility_timeout_seconds = 43201
+  }
+
+  expect_failures = [var.queue_visibility_timeout_seconds]
+}
+
+run "retention_is_at_most_14_days" {
+  command = plan
+
+  variables {
+    queue_retention_seconds = 1209601
+  }
+
+  expect_failures = [var.queue_retention_seconds]
 }

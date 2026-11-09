@@ -422,3 +422,26 @@ run "deregistration_delay_must_be_in_range" {
 
   expect_failures = [var.deregistration_delay_seconds]
 }
+
+run "target_keys_are_lowercase_names" {
+  # Only the key rule is broken: a catch-all target, so no priority is needed.
+  command = plan
+
+  variables {
+    targets = {
+      Backend_API = { port = 8000 }
+    }
+  }
+
+  expect_failures = [var.targets]
+}
+
+run "idle_timeout_must_be_in_range" {
+  command = plan
+
+  variables {
+    idle_timeout_seconds = 4001
+  }
+
+  expect_failures = [var.idle_timeout_seconds]
+}
