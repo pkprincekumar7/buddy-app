@@ -31,11 +31,12 @@ on:
         required: true
         default: "dev"
         type: choice
+        # No prod: prod is never started or stopped on a schedule (SEC-03), and the
+        # stack refuses it (infra-live-scheduler/terraform/variables.tf).
         options:
           - dev
           - sbx
           - stg
-          - prod
       action:
         description: "Terraform action"
         required: true

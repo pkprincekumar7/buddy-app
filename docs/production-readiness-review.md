@@ -3,7 +3,7 @@
 > **Updated 2026-11-09 (v10):** the doc was re-checked against the code; the tracker, the 🔄 notes and the line references reflect it (see the revision history). **v9 (2026-11-06)** recorded the fixes and decisions of 2026-11-01 to 2026-11-06. **v8 (2026-11-01)** checked every finding against the code after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-09):** of the 86 tracked findings, 56 are done, 18 partly done, 9 open and 3 moot; DR-01, CI-01, CI-02, CI-05, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred, and SEC-03 is partly done with the rest deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-09):** of the 86 tracked findings, 57 are done, 18 partly done, 8 open and 3 moot; DR-01, CI-02, CI-05, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred, and CI-01 is partly done with its branch rule deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -55,7 +55,7 @@ Rules for whoever implements these:
 
 **Close to ready for a first production launch in one region; not yet for multi-region production** (v10, 2026-11-09).
 
-Most findings are now fixed in code (56 done, 18 partly done). What's left is mostly things that can only be checked against a running environment, a few owner steps, and items the owner deferred.
+Most findings are now fixed in code (57 done, 18 partly done). What's left is mostly things that can only be checked against a running environment, a few owner steps, and items the owner deferred.
 
 Done since the backend split, among others:
 - **Images:** scanned, signed with cosign (keyless) and SBOM-attested in the deploy; every rollout checks the signature and runs the image by digest; prod gets only images promoted from stg, copied by digest (CI-03, CI-04, CI-09).
@@ -66,7 +66,7 @@ Done since the backend split, among others:
 What still stands in the way:
 - **Checks in a deployed stg** ([stg-first-deploy.md](stg-first-deploy.md)): edge 404s and secret rotation (EDGE-02, EDGE-03), the viewer-IP header (APP-01), index builds and an Atlas failover and restore (DB-01, DB-03, DB-05), PrivateLink in use (DEC-02), a failed deploy reported as failed (CI-11), the scheduler (SCH-01), and the load tests (TF-03, TF-04).
 - **Owner steps outside the repo:** provisioning the Atlas clusters and their backups, AI-provider data agreements, the privacy policy and transfer basis (PRIV-03), and the IAM restriction on the deployed-SHA parameter (CI-10).
-- **Deferred by the owner,** worth revisiting before prod: prod destroy protection (DR-01), prod applies only from `main` (CI-01), per-environment OIDC trust and a narrower deploy role (SEC-04), release-signed mobile builds (MOB-01), plus CI-02, CI-05, SEC-03 (its remaining fixes), SEC-08, SEC-09, TF-02 and parts of WAF-01 and CI-13.
+- **Deferred by the owner,** worth revisiting before prod: prod destroy protection (DR-01), prod applies only from `main` (CI-01), per-environment OIDC trust and a narrower deploy role (SEC-04), release-signed mobile builds (MOB-01), plus CI-02, CI-05, SEC-08, SEC-09, TF-02 and parts of WAF-01 and CI-13.
 - **Optional hardening with a small AWS cost:** flow logs, a KMS key for the alert topic, a monitoring endpoint, ECR enhanced scanning (L10, L11, L17, L19), and CloudFront logs and an uptime canary (OBS-01).
 
 As it stands it suits **dev and stg** now, and **prod in ap-south-1** once the stg checks pass and the deferred prod-safety items are settled. Multi-region prod waits for the Atlas Global Cluster (DB-01 Stage 2).
@@ -129,9 +129,9 @@ Status as of 2026-11-09 (v10), checked against the current code.
 | EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
 | EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud`; JWKS not planned (owner's decision, 2026-11-09) |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
-| SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); open: the scheduler PAT in state (with SEC-03, deferred), state bucket hardening (CMK, IAM on state keys) and the origin-verify secret in state (ALB rule, CloudFront header) |
+| SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); open: the scheduler PAT in state (a Secrets Manager value Terraform writes), state bucket hardening (CMK, IAM on state keys) and the origin-verify secret in state (ALB rule, CloudFront header) |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ✅ Done in code — `Authorization`/`Cookie` redacted, BLOCK/COUNT only, WAF logs expire after 90 days (`waf_log_retention_days`); seeing `REDACTED` needs a prod apply |
-| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | 🟡 Fine-grained token (this repo, Actions read and write) created; the server-built payload and trust conditions ⏸ deferred (until then a forged invoke can dispatch a prod run) |
+| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ✅ Done — fine-grained token (this repo, Actions read and write); the dispatch is built in the Lambda from the stack (the invoke picks only `apply`/`destroy`), and there is no prod scheduler; the role trust is scoped to this account's schedule group |
 | SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | ✅ Done — reads fail closed, only `REPLACE_ME` keys are filled; the Redis parts are moot (IAM auth) |
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ✅ Done — secrets on the Terraform plan/apply steps only, `terraform_wrapper: false` |
@@ -191,8 +191,8 @@ Status as of 2026-11-09 (v10), checked against the current code.
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ✅ Done — HTTPS-only deny on all five bucket policies (uploads added); the buckets stay manual by the owner's choice, since they must outlive a destroy |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (body rule), rate rule scoped to `/api/` and raised; the rest ⏸ deferred (auth-route rule, version pins, count-mode switch) |
-| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Code done (timeout, no async retries, log group, failure alarm and destination, duplicate check); acceptance needs an applied env; fix 5 is the deferred SEC-03 |
-| CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
+| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Code done (timeout, no async retries, log group, failure alarm and destination, duplicate check); acceptance needs an applied env; fix 5 done with SEC-03 |
+| CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | 🟡 prod gets only what stg had: code by promotion (CI-03), infrastructure only a commit stg applied first (2026-11-09); the `main`-only branch rule ⏸ deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ✅ Done — no direct prod deploy; scanned, signed (cosign keyless) and SBOM-attested images; verified before every rollout and run by digest; promote copies image and signature by digest |
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ✅ Done — actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, every image (base, local, CI, the collector) pinned by digest, Dependabot for all but the CI copies |
@@ -498,6 +498,14 @@ custom_error_response {
 > 🔄 **Current code (2026-11-06):** 🟡 Partial; the rest still ⏸ deferred (owner's decision, 2026-11-02). **Fix 1, the token, is decided:** `GIT_ACTIONS_PAT` is a fine-grained token for this repository only, with Actions: Read and write and nothing else, which covers both the run listing and the dispatch. The docs and code comments now say so (`docs/environments.md`, `docs/ci-cd.md`, `docs/stg-first-deploy.md`, `terraform-live-scheduler.yml`, `infra-live-scheduler/terraform/secrets.tf` and `variables.tf`). **The owner created it on 2026-11-06** and saved it as the `GIT_ACTIONS_PAT` environment secret; each environment's Secrets Manager copy picks it up on its next `terraform-live-scheduler` apply. **Still open, deferred:** fix 2 (`dispatcher.py` still forwards the raw invoke event as the payload), fix 3 (no `aws:SourceAccount`/`aws:SourceArn` on the scheduler's role trust) and fix 4 (the IAM audit).
 >
 > 🔄 **v10 correction (2026-11-09):** an earlier version of this note said the scheduler can't run prod, so a forged event can't touch prod. That is wrong. `infra-live-scheduler/terraform/variables.tf:77-79` only refuses `schedule_enabled` for a **prod scheduler stack**. The dev/stg dispatcher Lambda forwards the raw invoke event as the dispatch body (`infra-live-scheduler/lambda/dispatcher.py:77`, `data=json.dumps(event)`) to `terraform-live-all.yml`, whose `environment` choice includes `prod` (`:44-53`), and the token (Actions: Read and write) can dispatch it. With CI-01 also deferred, anyone allowed to invoke the function could send `{"inputs": {"environment": "prod", "action": "destroy"}}` and it would reach prod. Fix 2 (a server-built payload) is the control for this, and it is deferred.
+>
+> ✅ **Done 2026-11-09 (owner's decision to finish it):**
+> - **Fix 2:** the invoke event chooses only the action. `infra-live-scheduler/lambda/dispatcher.py` (`build_dispatch`) accepts exactly `{"action": "apply"}` or `{"action": "destroy"}` and builds the rest from the stack: the ref, the environment and the regions are the function's `DISPATCH_REF`, `DISPATCH_ENVIRONMENT` and `DISPATCH_BACKEND_REGIONS` (`terraform/lambda.tf`). Anything else, and any function configured for prod, is refused before the token is read; the failure alarm sees it. The schedules send only the action (`scheduler.tf`).
+> - **No prod scheduler:** `variables.tf` accepts dev, sbx and stg only, `terraform-live-scheduler.yml` no longer offers prod, and `tfvars/prod.tfvars` and its test are gone. A dev scheduler can only start or stop dev.
+> - **Fix 3:** the scheduler role's trust requires `aws:SourceAccount` (this account) and `aws:SourceArn` (this stack's schedule group).
+> - **Fix 4:** no longer needed. Whoever can invoke the function can only start or stop that stack's own non-prod environment from the default branch, which is what the schedule does anyway.
+> - **Tests:** `lambda/test_dispatcher.py` (12: a forged prod destroy, an event naming its own environment or ref, unknown actions and a prod-configured function are all refused without reading the token or calling GitHub); `tests/envs/*.tftest.hcl` check the function's dispatch settings, the action-only inputs, the scoped trust, and that prod is refused. checkov and tflint pass.
+> - **Owner steps:** apply `terraform-live-scheduler` in each scheduled environment (it also loads the new token into Secrets Manager), then revoke the old classic token. If a prod scheduler stack was ever applied, destroy it before this change reaches `main` (the workflow can't select prod afterwards).
 
 **Where:** `infra-live-scheduler/terraform/secrets.tf` (PAT), `infra-live-scheduler/lambda/dispatcher.py:26` (v10: now `:77`), `infra-live-scheduler/terraform/scheduler.tf:23-30` (trust policy).
 
@@ -2228,7 +2236,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### SCH-01 — Duplicate dispatch via Lambda async retries; no timeout/alarm 🟡
 
-> 🔄 **Current code (2026-11-03):** 🟡 Code done: fixes 1–4. Fix 5 is SEC-03 (deferred), and the acceptance check needs an applied environment.
+> 🔄 **Current code (2026-11-03):** 🟡 Code done: fixes 1–4. Fix 5 is SEC-03 (done 2026-11-09), and the acceptance check needs an applied environment.
 > - **1:** `dispatcher.py` calls GitHub with `timeout=GITHUB_TIMEOUT_SECONDS` (10 s, inside the function's 30 s).
 > - **2:** `aws_lambda_function_event_invoke_config.dispatcher` (`infra-live-scheduler/terraform/lambda.tf`) sets `maximum_retry_attempts = 0` and `maximum_event_age_in_seconds = 300`, so a failed or timed-out invocation never runs again and can't start a second apply or destroy. The CKV_AWS_116 skip now gives that reason.
 > - **4:** the function logs to a Terraform-managed group with 30-day retention, `/<app>/<env>/scheduler/github-dispatcher` (through `logging_config`). It isn't the default `/aws/lambda/…` name, which Lambda creates itself and which would clash on apply. The role can only write to that group, and the unused `aws_caller_identity` data source is gone.
@@ -2239,7 +2247,6 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 > - **Tests:** 5 more in `test_dispatcher.py` (8 in all): a duplicate skipped, other runs not counted, a failed list still dispatching, an event without the title inputs, and the title matching the run-name. `terraform validate` and tflint pass for the stack.
 >
 > Still open:
-> - fix 5 (SEC-03, deferred);
 > - the acceptance check (one run and one alert after a simulated timeout), which needs an applied environment.
 
 **Where:**
@@ -2268,6 +2275,14 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 ### CI-01 — Prod deploy/apply possible from any branch 🔴
 
 > 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. The only `github.ref` check is `check.yml:18`; there's no CODEOWNERS file and no ref guard on the deploy or apply workflows.
+>
+> 🔄 **2026-11-09 (owner's request: prod only what came through stg):** 🟡 Partial. Every way into prod now goes through stg:
+> - **Application code:** only `promote-live-backend` and `promote-live-frontend`, from stg (CI-03); the deploy workflows refuse prod.
+> - **Infrastructure:** a prod `apply` of `terraform-live-backend`, `-edge` or `-frontend`, alone or through `terraform-live-all`, first checks that the same commit had a successful stg apply of that stack (alone or in a full-stack run), and refuses otherwise. The check is `check_stg_first` in `scripts/workflow-inputs.sh`, in each workflow's `validate` job, before any prod credentials; it reads this repo's run history (`actions: read`), so no access to stg's AWS account is needed. Tests: `scripts/workflow-inputs.test.sh`. A prod `plan` or `destroy` isn't checked.
+> - **Scheduler:** there is no prod scheduler (SEC-03).
+> - **Not code changes:** `restart-live-backend` (same images) and `rollback-live-frontend` (an earlier prod release) stay as they are.
+>
+> Still open: the branch rule (fix 1, deferred), so a commit applied to stg from a feature branch could still follow to prod; and the mobile builds (`build-android-apk`, `build-ios-ipa`), which build prod from the dispatched ref (with MOB-01, deferred).
 
 **Where:** Every `workflow_dispatch` deploy, Terraform, promote, restart and mobile workflow. No workflow checks the ref (the only `github.ref*` use is the concurrency key at `check.yml:11`).
 
@@ -2747,7 +2762,7 @@ The "Where" column is from 2026-10-18; the status column gives the current locat
 > - **0:** provisioning the Atlas M10 clusters with backups, PITR and termination protection, and a timed restore (DB-01; owner steps, `docs/infra-operations.md` "Atlas clusters"). DEC-01 and DEC-02 are decided and done in code.
 > - **1:** SEC-04, CI-01 and MOB-01 (deferred); the stg checks for EDGE-02, EDGE-03, APP-01 and CI-11; CI-10's IAM restriction (outside the repo).
 > - **2:** CI-02 and CI-13's two-job split (deferred). CI-03, CI-09 and the rest are done.
-> - **3:** SEC-03's remaining fixes, SEC-08, SEC-09 and WAF-01 #2–4 (deferred); PRIV-03's owner steps (agreements, privacy policy, transfer basis).
+> - **3:** SEC-08, SEC-09 and WAF-01 #2–4 (deferred); PRIV-03's owner steps (agreements, privacy policy, transfer basis).
 > - **4:** CI-05 (deferred); the stg checks for DB-03, DB-05 and SCH-01; OBS-01's CloudFront logs and canary.
 > - **5:** TF-02 (deferred); the TF-03 and TF-04 load tests. TF-04's `maxmemory-policy = noeviction` is done (2026-11-09).
 > - **6:** L10, L11, L17 and L19; L12 on hold for stg.

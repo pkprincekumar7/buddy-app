@@ -17,6 +17,12 @@
 # ---------------------------------------------------------------------------
 # IAM role — allows EventBridge Scheduler to invoke the Lambda dispatcher
 # ---------------------------------------------------------------------------
+data "aws_caller_identity" "current" {}
+
+# Only this account's scheduler, for this stack's schedule group, may assume the role, so
+# another account's (or another group's) schedule can't borrow it to invoke the dispatcher
+# (production-readiness review, SEC-03 fix 3). For EventBridge Scheduler aws:SourceArn is
+# the schedule group's ARN, not the schedule's.
 resource "aws_iam_role" "scheduler" {
   name = "${var.app_name}-${var.environment}-scheduler-role"
 
@@ -26,6 +32,10 @@ resource "aws_iam_role" "scheduler" {
       Effect    = "Allow"
       Principal = { Service = "scheduler.amazonaws.com" }
       Action    = "sts:AssumeRole"
+      Condition = {
+        StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        ArnEquals    = { "aws:SourceArn" = aws_scheduler_schedule_group.main.arn }
+      }
     }]
   })
 }
@@ -56,7 +66,7 @@ resource "aws_scheduler_schedule_group" "main" {
 #
 # Exactly ONE schedule, not one per region: terraform-live-all.yml's
 # backend_regions must always receive the COMPLETE intended region set in a
-# single dispatch — infra-live-edge is one shared distribution per
+# single dispatch (the dispatcher sends var.target_aws_regions, lambda.tf) — infra-live-edge is one shared distribution per
 # environment, so a dispatch carrying only a subset of var.target_aws_regions
 # would make Terraform destroy whichever regions were left out, not just
 # leave them alone. A prior version of this file created one schedule per
@@ -65,7 +75,7 @@ resource "aws_scheduler_schedule_group" "main" {
 # actively destroying regions the moment a second one was added.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "start" {
-  #checkov:skip=CKV_AWS_297:The schedule's input is the workflow's dispatch inputs (action, environment, regions), no secrets; AWS-owned encryption is enough
+  #checkov:skip=CKV_AWS_297:The schedule's input is only the action (apply), no secrets; AWS-owned encryption is enough
   name       = "${var.app_name}-${var.environment}-start"
   group_name = aws_scheduler_schedule_group.main.name
   state      = var.schedule_enabled ? "ENABLED" : "DISABLED"
@@ -81,19 +91,9 @@ resource "aws_scheduler_schedule" "start" {
     arn      = aws_lambda_function.dispatcher.arn
     role_arn = aws_iam_role.scheduler.arn
 
-    input = jsonencode({
-      ref = var.github_default_branch
-      inputs = {
-        action      = "apply"
-        environment = var.environment
-        # terraform-live-all.yml's backend_regions expects a JSON-array
-        # *string* (its own input type is a plain string/choice, not a
-        # list) — jsonencode(var.target_aws_regions) here produces exactly
-        # that, carrying the complete region set in one dispatch.
-        backend_regions = jsonencode(var.target_aws_regions)
-        deploy          = "true"
-      }
-    })
+    # The action only: the dispatcher builds the rest of the dispatch from this
+    # stack (lambda.tf) and refuses anything else (SEC-03 fix 2).
+    input = jsonencode({ action = "apply" })
 
     retry_policy {
       maximum_event_age_in_seconds = 300
@@ -107,11 +107,7 @@ resource "aws_scheduler_schedule" "start" {
 # Exactly ONE schedule — same reasoning as the start schedule above.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "stop" {
-  #checkov:skip=CKV_AWS_297:The schedule's input is the workflow's dispatch inputs (action, environment, regions), no secrets; AWS-owned encryption is enough
-  # Never created for prod — even a DISABLED schedule there could be switched
-  # on in the console (bypassing schedule_enabled's validation) and destroy
-  # prod overnight.
-  count      = var.environment == "prod" ? 0 : 1
+  #checkov:skip=CKV_AWS_297:The schedule's input is only the action (destroy), no secrets; AWS-owned encryption is enough
   name       = "${var.app_name}-${var.environment}-stop"
   group_name = aws_scheduler_schedule_group.main.name
   state      = var.schedule_enabled ? "ENABLED" : "DISABLED"
@@ -127,15 +123,7 @@ resource "aws_scheduler_schedule" "stop" {
     arn      = aws_lambda_function.dispatcher.arn
     role_arn = aws_iam_role.scheduler.arn
 
-    input = jsonencode({
-      ref = var.github_default_branch
-      inputs = {
-        action          = "destroy"
-        environment     = var.environment
-        backend_regions = jsonencode(var.target_aws_regions)
-        deploy          = "false"
-      }
-    })
+    input = jsonencode({ action = "destroy" })
 
     retry_policy {
       maximum_event_age_in_seconds = 300

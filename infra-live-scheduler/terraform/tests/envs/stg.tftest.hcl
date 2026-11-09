@@ -23,12 +23,12 @@ run "stg_applies" {
   command = apply
 
   assert {
-    condition     = jsondecode(aws_scheduler_schedule.start.target[0].input).inputs.backend_regions == jsonencode(["ap-south-1"])
-    error_message = "The start dispatch carries the full region list."
+    condition     = aws_lambda_function.dispatcher.environment[0].variables.DISPATCH_BACKEND_REGIONS == jsonencode(["ap-south-1"]) && aws_lambda_function.dispatcher.environment[0].variables.DISPATCH_ENVIRONMENT == "stg"
+    error_message = "The dispatcher dispatches this environment with the full region list."
   }
   assert {
-    condition     = length(aws_scheduler_schedule.stop) == 1
-    error_message = "The nightly stop schedule."
+    condition     = jsondecode(aws_scheduler_schedule.start.target[0].input) == { action = "apply" } && jsondecode(aws_scheduler_schedule.stop.target[0].input) == { action = "destroy" }
+    error_message = "The schedules send only the action (SEC-03 fix 2)."
   }
   assert {
     condition     = length(aws_sns_topic.scheduler_alerts) == 1

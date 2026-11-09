@@ -88,7 +88,7 @@ resource "aws_lambda_function" "dispatcher" {
   #checkov:skip=CKV_AWS_50:X-Ray tracing not required for this simple dispatcher
   #checkov:skip=CKV_AWS_272:Code signing not required for internal infrastructure Lambda
   #checkov:skip=CKV_AWS_115:Reserved concurrency not required — invoked at most twice daily
-  #checkov:skip=CKV_AWS_173:The environment holds only the PAT secret's ARN and the repo/workflow names, no secret values; AWS-managed encryption is enough
+  #checkov:skip=CKV_AWS_173:The environment holds only the PAT secret's ARN, the repo/workflow names and the dispatch's ref, environment and regions, no secret values; AWS-managed encryption is enough
 
   function_name    = "${var.app_name}-${var.environment}-github-dispatcher"
   role             = aws_iam_role.lambda_exec.arn
@@ -109,6 +109,12 @@ resource "aws_lambda_function" "dispatcher" {
       GITHUB_REPO_OWNER     = var.github_repo_owner
       GITHUB_REPO_NAME      = var.github_repo_name
       GITHUB_WORKFLOW_FILE  = var.github_workflow_file
+      # The dispatch is built from these, never from the invoke event, which only picks
+      # the action (SEC-03 fix 2). backend_regions is a JSON-array string, as
+      # terraform-live-all.yml's input expects, with the complete region set.
+      DISPATCH_REF             = var.github_default_branch
+      DISPATCH_ENVIRONMENT     = var.environment
+      DISPATCH_BACKEND_REGIONS = jsonencode(var.target_aws_regions)
     }
   }
 }

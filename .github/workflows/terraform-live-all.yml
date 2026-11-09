@@ -91,10 +91,12 @@ on:
         type: boolean
         default: true
 
-# OIDC token + repo read required by every called workflow.
+# OIDC token + repo read required by every called workflow; actions: read for their
+# prod check that stg applied the commit first.
 permissions:
   id-token: write
   contents: read
+  actions: read
 
 # One full-stack run per environment at a time, regardless of which regions
 # it targets — terraform-live-edge's state is a single shared distribution

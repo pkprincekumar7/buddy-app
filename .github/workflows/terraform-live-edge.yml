@@ -60,6 +60,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: read # the validate job lists this commit's runs: prod applies only what stg applied
 
 # One run per environment at a time — deliberately does NOT include
 # backend_regions. infra-live-edge is a single shared distribution/state per
@@ -111,6 +112,20 @@ jobs:
           REGIONS=$(regions_json "$BACKEND_REGIONS")
           check_bootstrap_region "$BOOTSTRAP_REGION" "$REGIONS"
           echo "regions=$REGIONS" >> "$GITHUB_OUTPUT"
+
+      # prod applies only a commit whose edge stack stg applied first (on its own or in
+      # a full-stack run). See check_stg_first in scripts/workflow-inputs.sh.
+      - name: Check stg applied this commit first (prod apply)
+        if: inputs.environment == 'prod' && inputs.action == 'apply'
+        env:
+          GH_TOKEN:    ${{ github.token }}
+          ACTION:      ${{ inputs.action }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SHA:         ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_stg_first edge "$ACTION" "$ENVIRONMENT" "$SHA"
 
   terraform:
     name: Terraform Live Edge ${{ inputs.action }}

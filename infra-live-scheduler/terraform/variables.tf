@@ -30,12 +30,12 @@ variable "target_aws_regions" {
 }
 
 variable "environment" {
-  description = "Deployment environment (dev, sbx, stg, prod)"
+  description = "Deployment environment (dev, sbx, stg). There is no prod scheduler: prod is never started or stopped on a schedule (SEC-03)."
   type        = string
 
   validation {
-    condition     = contains(["dev", "sbx", "stg", "prod"], var.environment)
-    error_message = "environment must be one of: dev, sbx, stg, prod."
+    condition     = contains(["dev", "sbx", "stg"], var.environment)
+    error_message = "environment must be one of: dev, sbx, stg (prod is never scheduled)."
   }
 }
 
@@ -71,13 +71,6 @@ variable "schedule_enabled" {
   description = "Enable or disable the EventBridge schedules; controlled via workflow input schedule_enabled, not tfvars."
   type        = bool
   default     = false
-
-  # The stop schedule runs a full destroy of the environment every night —
-  # never acceptable for prod. (Cross-variable validation needs Terraform >= 1.9.)
-  validation {
-    condition     = !(var.schedule_enabled && var.environment == "prod")
-    error_message = "schedule_enabled must be false for prod: the stop schedule destroys the whole environment nightly."
-  }
 }
 
 variable "start_schedule_expression" {
@@ -98,7 +91,7 @@ variable "schedule_timezone" {
 }
 
 variable "enable_alarms" {
-  description = "Email OPS_EMAIL when the GitHub dispatcher fails: an alarm on its Errors and a failure destination with the failed event (SCH-01). true on stg (prod can't be scheduled)."
+  description = "Email OPS_EMAIL when the GitHub dispatcher fails: an alarm on its Errors and a failure destination with the failed event (SCH-01). true on stg."
   type        = bool
   default     = false
 }

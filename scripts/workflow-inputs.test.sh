@@ -74,6 +74,36 @@ accepts "bootstrap auto" check_bootstrap_region auto '["eu-west-1"]'
 accepts "bootstrap in the list" check_bootstrap_region eu-west-1 '["ap-south-1","eu-west-1"]'
 refuses "bootstrap outside the list" check_bootstrap_region us-east-1 '["eu-west-1"]'
 
+# prod applies only what stg applied first (stg_applied_in, check_stg_first).
+runs() { jq -n --argjson r "$1" '{workflow_runs: $r}'; }
+run() { jq -n --arg t "$1" --arg c "${2:-success}" '{display_title: $t, conclusion: $c}'; }
+STG_BACKEND="$(run 'Terraform Live Backend (apply, stg, ["ap-south-1"])')"
+STG_FULL="$(run 'Full Stack (apply, stg, ["ap-south-1"])')"
+STG_FRONTEND="$(run 'Terraform Live Frontend (apply, stg)')"
+accepts "backend applied to stg on its own" stg_applied_in "$(runs "[$STG_BACKEND]")" backend
+accepts "every stack applied to stg in a full-stack run" stg_applied_in "$(runs "[$STG_FULL]")" edge
+accepts "frontend applied to stg" stg_applied_in "$(runs "[$STG_FRONTEND]")" frontend
+refuses "another stack's stg apply doesn't count" stg_applied_in "$(runs "[$STG_BACKEND]")" edge
+refuses "a stg plan doesn't count" stg_applied_in "$(runs "[$(run 'Terraform Live Backend (plan, stg, ["ap-south-1"])')]")" backend
+refuses "a dev apply doesn't count" stg_applied_in "$(runs "[$(run 'Full Stack (apply, dev, ["ap-south-1"])')]")" backend
+refuses "a failed stg apply doesn't count" stg_applied_in "$(runs "[$(run 'Full Stack (apply, stg, ["ap-south-1"])' failure)]")" backend
+refuses "no runs for the commit" stg_applied_in "$(runs '[]')" backend
+refuses "an unknown stack" stg_applied_in "$(runs "[$STG_FULL]")" scheduler
+SHA="$(printf 'a%.0s' {1..40})"
+accepts "a prod plan isn't checked" check_stg_first backend plan prod "$SHA"
+accepts "a prod destroy isn't checked" check_stg_first backend destroy prod "$SHA"
+accepts "a stg apply isn't checked" check_stg_first backend apply stg "$SHA"
+refuses "a prod apply with a bad SHA" check_stg_first backend apply prod "main"
+# shellcheck disable=SC2329 # a stand-in for gh, called by check_stg_first
+gh() { [ "$2" = "repos/o/r/actions/runs?head_sha=${SHA}&status=success&per_page=100" ] && echo "$GH_RUNS"; }
+export GITHUB_REPOSITORY=o/r
+GH_RUNS="$(runs "[$STG_FULL]")" accepts "a prod apply stg applied first" check_stg_first backend apply prod "$SHA"
+GH_RUNS="$(runs '[]')" refuses "a prod apply stg never applied" check_stg_first backend apply prod "$SHA"
+# shellcheck disable=SC2329 # a stand-in for gh, called by check_stg_first
+gh() { return 1; }
+refuses "a prod apply whose runs can't be listed" check_stg_first backend apply prod "$SHA"
+unset -f gh
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

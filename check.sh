@@ -562,6 +562,8 @@ if require_tool terraform TERRAFORM "brew install terraform"; then
   for d in "$ROOT"/infra-live-*/terraform/; do
     name="${d#"$ROOT/"}"
     for env in dev sbx stg prod; do
+      # The scheduler has no prod (SEC-03): prod is never scheduled.
+      [ "$env" = prod ] && [ "$name" = infra-live-scheduler/terraform/ ] && continue
       run "terraform test (${name%/}, $env)" \
           bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' test -test-directory=tests/envs -filter=tests/envs/$env.tftest.hcl -var-file=tfvars/$env.tfvars"
     done

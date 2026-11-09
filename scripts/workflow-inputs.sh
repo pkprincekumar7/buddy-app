@@ -101,3 +101,47 @@ check_bootstrap_region() {
   echo "::error::bootstrap_region must be 'auto' or one of $2, not '$1'."
   return 1
 }
+
+# prod applies only what stg applied first: the same commit, through the same stack
+# (backend, edge or frontend), either on its own or in a full-stack run. Checked against
+# this repo's successful workflow runs for the commit, by their titles (each workflow's
+# run-name), so no AWS access to stg is needed.
+
+# stg_apply_titles STACK → the run-title prefixes that mean "STACK was applied to stg".
+stg_apply_titles() {
+  case "$1" in
+    backend)  echo "Terraform Live Backend (apply, stg," ;;
+    edge)     echo "Terraform Live Edge (apply, stg," ;;
+    frontend) echo "Terraform Live Frontend (apply, stg)" ;;
+    *) echo "::error::unknown stack '$1'." >&2; return 1 ;;
+  esac
+  echo "Full Stack (apply, stg,"
+}
+
+# stg_applied_in RUNS_JSON STACK → success if RUNS_JSON (the runs API's answer for one
+# commit, successful runs only) has a run that applied STACK to stg.
+stg_applied_in() {
+  local titles
+  titles="$(stg_apply_titles "$2")" || return 1
+  jq -e --arg titles "$titles" '
+    ($titles | split("\n")) as $prefixes
+    | [.workflow_runs[]? | select(.conclusion == "success") | .display_title
+       | select(. as $t | any($prefixes[]; . as $p | $t | startswith($p)))]
+    | length > 0' <<<"$1" >/dev/null
+}
+
+# check_stg_first STACK ACTION ENVIRONMENT SHA → for a prod apply, error unless stg
+# applied STACK at SHA in a successful run. Anything else passes. Needs gh with GH_TOKEN
+# (actions: read) and GITHUB_REPOSITORY.
+check_stg_first() {
+  local stack="$1" action="$2" environment="$3" sha="$4" runs
+  [[ "$environment" == "prod" && "$action" == "apply" ]] || return 0
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::'$sha' isn't a commit SHA."; return 1; }
+  runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${sha}&status=success&per_page=100")" || {
+    echo "::error::Couldn't list this commit's runs to check that stg applied it first."
+    return 1
+  }
+  stg_applied_in "$runs" "$stack" && return 0
+  echo "::error::prod applies only what stg applied first: no successful stg apply of the $stack stack at ${sha:0:12}. Apply this commit to stg (terraform-live-$stack or terraform-live-all), then prod."
+  return 1
+}

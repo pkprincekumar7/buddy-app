@@ -558,6 +558,8 @@ jobs:
           for d in infra-live-*/terraform/; do
             (cd "$d" && terraform init -backend=false -input=false >/dev/null)
             for env in dev sbx stg prod; do
+              # The scheduler has no prod (SEC-03): prod is never scheduled.
+              if [ "$env" = prod ] && [ "$d" = infra-live-scheduler/terraform/ ]; then continue; fi
               echo "── terraform test $d ($env)"
               (cd "$d" && terraform test -test-directory=tests/envs -filter="tests/envs/$env.tftest.hcl" -var-file="tfvars/$env.tfvars")
             done
