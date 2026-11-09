@@ -1,15 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Image,
+  Modal,
+  Platform,
   Text,
   TextInput,
   View,
   type KeyboardTypeOptions,
 } from 'react-native';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from '@react-native-community/datetimepicker';
 import { Pressable } from '@/components/ui/pressable';
 import * as ImagePicker from 'expo-image-picker';
 import { pickedImageType } from '@/api/uploads';
-import { ChevronDown } from 'lucide-react-native';
+import { Calendar, ChevronDown } from 'lucide-react-native';
 
 import { toast } from '@/lib/toast';
 import { rgb } from '@/theme';
@@ -108,11 +113,11 @@ export function TextAreaField({
 }
 
 // ─── Date entry ──────────────────────────────────────────────────────────────
-// The web uses <input type="date">, whose value is either '' or a complete
-// YYYY-MM-DD. There's no native date-picker package in this app, so this is a
-// typed DD/MM/YYYY entry (the en-GB format the web's picker displays) that
-// only reports a complete, valid date upward — '' otherwise — so callers see
-// exactly the values a web date input would give them.
+// The web uses <input type="date">: the browser's calendar, and a value that's either '' or
+// a complete YYYY-MM-DD. This is the same on a phone: tapping the field opens the system
+// date picker (@react-native-community/datetimepicker), and only a complete date, or '' once
+// cleared, is reported upward. iOS opens the calendar in a small window over the screen
+// (the plan's card is too narrow for it inline); Android uses its calendar dialog.
 
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -121,24 +126,16 @@ function isoToDisplay(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 }
 
-function formatDisplay(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length > 4)
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-  if (digits.length > 2) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return digits;
+function isoToDate(iso: string): Date | null {
+  const m = ISO_RE.exec(iso);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
 
-function displayToIso(display: string): string {
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display);
-  if (!m) return '';
-  const [, dd = '', mm = '', yyyy = ''] = m;
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-  const valid =
-    d.getFullYear() === Number(yyyy) &&
-    d.getMonth() === Number(mm) - 1 &&
-    d.getDate() === Number(dd);
-  return valid ? `${yyyy}-${mm}-${dd}` : '';
+/** The picked day as YYYY-MM-DD, in the phone's own time zone (not toISOString's UTC). */
+export function dateToIso(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 export function DateInput({
@@ -152,31 +149,133 @@ export function DateInput({
   onChange: (value: string) => void;
   style: React.ComponentProps<typeof TextInput>['style'];
 }) {
-  const [draft, setDraft] = useState(() => isoToDisplay(value));
+  const [open, setOpen] = useState(false);
+  const shown = isoToDisplay(value);
+  const current = isoToDate(value) ?? new Date();
 
-  // Follow external changes (e.g. the saved plan hydrating after mount).
-  useEffect(() => {
-    if (value && displayToIso(draft) !== value) setDraft(isoToDisplay(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to the prop
-  }, [value]);
+  const openPicker = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: current,
+        mode: 'date',
+        onChange: (event, picked) => {
+          if (event.type === 'set' && picked) onChange(dateToIso(picked));
+        },
+      });
+      return;
+    }
+    setOpen(o => !o);
+  };
 
   return (
-    <TextInput
-      accessibilityLabel={label}
-      accessibilityHint="Day, month and year"
-      value={draft}
-      onChangeText={text => {
-        const next = formatDisplay(text);
-        setDraft(next);
-        const iso = displayToIso(next);
-        if (iso !== value) onChange(iso);
-      }}
-      placeholder="dd/mm/yyyy"
-      placeholderTextColor={PLACEHOLDER}
-      keyboardType="number-pad"
-      maxLength={10}
-      style={style}
-    />
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityValue={{ text: shown || 'Not set' }}
+        accessibilityHint="Opens a calendar"
+        onPress={openPicker}
+        style={[
+          style as object,
+          { flexDirection: 'row', alignItems: 'center' },
+        ]}
+      >
+        <Text
+          style={{ flex: 1, color: shown ? FROST : PLACEHOLDER, fontSize: 15 }}
+          numberOfLines={1}
+        >
+          {shown || 'dd/mm/yyyy'}
+        </Text>
+        <Calendar size={16} color={SLATE_LIGHT} />
+      </Pressable>
+      {Platform.OS === 'ios' && (
+        // The calendar in its own small window over the screen: inline under the field it
+        // needs ~320 pt, more than the plan's card has, and the wheels can't be narrowed.
+        // A Modal opens over the plan's own Modal on iOS.
+        <Modal
+          visible={open}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setOpen(false)}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close the calendar"
+            onPress={() => setOpen(false)}
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            }}
+          >
+            {/* Taps inside the card don't close it. */}
+            <Pressable
+              accessible={false}
+              onPress={() => {}}
+              style={{
+                width: '100%',
+                maxWidth: 360,
+                borderRadius: 16,
+                padding: 12,
+                backgroundColor: rgb('constellation-navy-panel3', 0.98),
+                borderWidth: 1,
+                borderColor: rgb('constellation-cyan', 0.24),
+              }}
+            >
+              <DateTimePicker
+                value={current}
+                mode="date"
+                display="inline"
+                themeVariant="dark"
+                onChange={(event, picked) => {
+                  if (event.type === 'set' && picked)
+                    onChange(dateToIso(picked));
+                }}
+              />
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'flex-end',
+                  gap: 18,
+                  paddingHorizontal: 8,
+                  paddingTop: 4,
+                }}
+              >
+                {value !== '' && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Clear ${label}`}
+                    onPress={() => {
+                      onChange('');
+                      setOpen(false);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Text style={{ color: SLATE_LIGHT, fontSize: 15 }}>
+                      Clear
+                    </Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Done"
+                  onPress={() => setOpen(false)}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={{ color: FROST, fontSize: 15, fontWeight: '600' }}
+                  >
+                    Done
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+    </View>
   );
 }
 

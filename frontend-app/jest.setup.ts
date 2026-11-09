@@ -82,6 +82,13 @@ beforeEach(async () => {
   await AsyncStorage.setItem('superpower:installed', '1');
 });
 
+// The native date picker (lifepathway/fields.tsx, DateInput): no native module in Node.
+jest.mock('@react-native-community/datetimepicker', () => ({
+  __esModule: true,
+  default: () => null,
+  DateTimePickerAndroid: { open: jest.fn() },
+}));
+
 // Mock expo-secure-store (the token store): an in-memory Keychain/Keystore.
 jest.mock('expo-secure-store', () => {
   const store: Record<string, string> = {};
