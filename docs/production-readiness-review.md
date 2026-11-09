@@ -127,7 +127,7 @@ Status as of 2026-11-09 (v10), checked against the current code.
 | EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 waits for the Global Cluster |
 | EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | 🟡 Code done; rotation runbook not yet exercised (rotate once after deploy) |
 | EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
-| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
+| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud`; JWKS not planned (owner's decision, 2026-11-09) |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); open: the scheduler PAT in state (with SEC-03, deferred), state bucket hardening (CMK, IAM on state keys) and the origin-verify secret in state (ALB rule, CloudFront header) |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ✅ Done in code — `Authorization`/`Cookie` redacted, BLOCK/COUNT only, WAF logs expire after 90 days (`waf_log_retention_days`); seeing `REDACTED` needs a prod apply |
@@ -337,7 +337,11 @@ custom_error_response {
 
 ### EDGE-04 — Edge JWT validation gaps 🟡 (v2: lowered from High)
 
-> 🔄 **Current code (2026-11-01):** ✅ Done, as the v6 note says: `jwt-validator-lambda.js.tpl:78` (keys built once), `:208-245` (alg, kid, iss, aud, exp, leeway), `:390` (type). On the backend, `backend/common/authz.py:56,240-251` replaces the deleted `backend/app/auth_utils.py` and `deps.py`. JWKS isn't done.
+> 🔄 **Current code (2026-11-01):** ✅ Done, as the v6 note says: `jwt-validator-lambda.js.tpl:78` (keys built once), `:208-245` (alg, kid, iss, aud, exp, leeway), `:390` (type). On the backend, `backend/common/authz.py:56,240-251` replaces the deleted `backend/app/auth_utils.py` and `deps.py`.
+
+> 🔄 **2026-11-09:** every acceptance criterion is met. The edge tests (`jwt-validator-lambda.test.js`, the `EDGE-04:` cases) cover no `exp`, a refresh token, a bad `alg`, no or unknown `kid`, the leeway, `nbf`, and `iss`/`aud`. The backend's `test_bad_tokens_are_401` (`backend/common/tests/test_authz.py`) now also covers a token with no `exp`, `type`, `iss` or `aud`, next to no or unknown `kid`, expired, and a refresh token. Fix 5 is done too (`DEFAULT_KID` and `jwt_key_id` are gone).
+>
+> **Fix 4, a JWKS: not planned (owner's decision, 2026-11-09).** Rotation stays a Terraform apply: several `kid`s are accepted at once (APP-02), so a rotation logs nobody out, and with one admin rotations are rare and planned. A JWKS would make Lambda@Edge fetch keys from auth in the bootstrap region on every cold start at every edge location: added latency, and a failure mode with no good answer (refuse every token, an outage, or accept unchecked ones). Worth revisiting only if many independent verifiers appear or keys must rotate automatically.
 
 **Where:** `jwt-validator-lambda.js.tpl:165-199` (`verifyJwt`), `:170` (`const kid = header.kid || DEFAULT_KID`), `:194` (`if (payload.exp && now > payload.exp)`), `:300-316` (authenticated-path check).
 
@@ -374,7 +378,7 @@ custom_error_response {
    3. After the longest token lifetime (24 h), switch to `audience=`/`issuer=`.
 
    v5 correction: v3/v4 said to pass `audience=` first. In PyJWT 2.15, `decode(audience=...)` on a token **without** `aud` raises `MissingRequiredClaimError`, so that order causes the global 401.
-4. **Longer term:** a JWKS (see APP-02) so rotation needs no redeploy.
+4. **Longer term:** a JWKS (see APP-02) so rotation needs no redeploy. *(Not planned, 2026-11-09: see the note above.)*
 5. Once a missing `kid` is rejected, remove the dead `DEFAULT_KID` and `jwt_key_id` template variable (`tpl:60`). This also resolves L15's `${jwt_key_id}`.
 
 ⚠️ **Pitfall:** PyJWT raises `InvalidAudienceError` when a token carries `aud` and `decode()` is called without `audience=`. Issuing `aud` before the decoders are updated produces a **global 401**.
@@ -708,7 +712,7 @@ v10 acceptance (the `CloudFront-Viewer-Address` design):
 - Backend gets `JWT_PUBLIC_KEYS` (a `kid` → PEM map, e.g. a JSON secret) and selects the key by the token's `kid` header at **all three** decode sites: `auth_utils.py:104,120` **and** `limiter.py:44`. If the limiter isn't updated, users with old-`kid` tokens silently drop into IP buckets.
 - Sign with the current key only.
 - Keep the old public key until the maximum refresh lifetime (24 h) has passed.
-- Align the edge's key map with it (the same JWKS source; EDGE-04 #4).
+- Align the edge's key map with it (the same `kid` → PEM map; a JWKS source is not planned, EDGE-04 #4).
 - Reject an **unknown `kid`** with 401; never fall back to a default key.
 - Cache the parsed key objects (see EDGE-04 #2).
 - Update `docs/jwt-keys.md`. Note that the backend currently has **no** `JWT_PUBLIC_KEYS` setting at all; `jwt-keys.md:13` lists it as edge-only.
