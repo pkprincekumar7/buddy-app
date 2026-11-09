@@ -1,5 +1,5 @@
 # The services' runtime packages, for the local venv (check.sh) and CI's backend jobs: common's
-# tests, mypy, the tools, scripts/e2e, scripts/local-aws-setup.py and moto_server's neighbours.
+# tests, mypy, the tools, scripts/e2e, and scripts/local-aws-setup.py.
 # Exactly the union of every backend/<service>/requirements.txt (without buddy-common, which runs
 # from source here via pytest's pythonpath); tools/tests/test_dev_requirements.py fails when a
 # service's pins change and this file doesn't. Each service's own file is the source of truth.

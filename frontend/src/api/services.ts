@@ -9,7 +9,7 @@
 // `detail.code`. Screens move here from client.ts as they move to the new API (7.2–7.8).
 
 import createClient from 'openapi-fetch';
-import { dispatchAuthExpired, ensureRefreshed, resolveAuthExpiry } from './client';
+import { dispatchAuthExpired, ensureRefreshed, isSessionEnded, resolveAuthExpiry } from './client';
 import { ApiError } from './errors';
 import type { paths as AuthPaths } from './generated/auth';
 import type { paths as ChildrenPaths } from './generated/children';
@@ -40,6 +40,10 @@ export async function serviceFetch(input: Request): Promise<Response> {
   try {
     await ensureRefreshed();
   } catch (err) {
+    // A refresh that merely failed (offline, 5xx, 429) keeps the session: the caller gets
+    // that error, not the 401, so nothing treats it as signed out (AuthContext shows its
+    // retry screen instead of logging out, which would revoke the session).
+    if (!isSessionEnded(err)) throw err;
     const { status, message } = resolveAuthExpiry(err);
     dispatchAuthExpired(status, message);
     return response;

@@ -16,6 +16,9 @@ mkdir -p "$FAKE/bin" "$FAKE/s3"
 # -- fake aws: s3 sync / cp, s3api list-objects-v2 / delete-objects ------------------
 # Objects are files under $FAKE/s3/<bucket>/<key>; their LastModified is in
 # $FAKE/meta.json, from a clock that ticks a second per write (or FAKE_TIME, an ISO date).
+# sync skips as the real one does: a download keeps the object's date as the file's mtime,
+# and an upload skips a file that's the same size and not newer than the object (the
+# stored file's mtime stands in for its date).
 cat > "$FAKE/bin/aws" <<'EOF'
 #!/usr/bin/env python3
 import fnmatch, json, os, shutil, sys
@@ -74,7 +77,7 @@ if cmd == ["s3", "sync"]:
             rel = key[len(prefix):]
             if not excluded(rel):
                 (Path(dst) / rel).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(f, Path(dst) / rel)
+                shutil.copy2(f, Path(dst) / rel)
     else:  # from a local directory
         bucket, prefix = split(dst)
         sent = set()
@@ -82,15 +85,29 @@ if cmd == ["s3", "sync"]:
             rel = f.relative_to(src).as_posix()
             if f.is_file() and not excluded(rel):
                 target = store / bucket / (prefix + rel)
+                sent.add(rel)
+                if (target.exists() and target.stat().st_size == f.stat().st_size
+                        and f.stat().st_mtime <= target.stat().st_mtime):
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(f, target)
                 stamp(f"{bucket}/{prefix}{rel}")
-                sent.add(rel)
         if "--delete" in args:
             for key, f in objects(bucket, prefix).items():
                 rel = key[len(prefix):]
                 if rel not in sent and not excluded(rel):
                     f.unlink()
+    done()
+if cmd == ["s3", "cp"] and "--recursive" in args:  # from a local directory, every file
+    src, dst = args[2], args[3]
+    bucket, prefix = split(dst)
+    for f in Path(src).rglob("*"):
+        rel = f.relative_to(src).as_posix()
+        if f.is_file() and not excluded(rel):
+            target = store / bucket / (prefix + rel)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(f, target)
+            stamp(f"{bucket}/{prefix}{rel}")
     done()
 if cmd == ["s3", "cp"]:
     src, dst = args[2], args[3]

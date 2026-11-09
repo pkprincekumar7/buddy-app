@@ -12,24 +12,14 @@ The backend is a set of services, each with its own worker and its own MongoDB d
 
    Set `JWT_PRIVATE_KEY` (see docs/jwt-keys.md), `EMAIL_HMAC_PEPPER` (`openssl rand -hex 32`), `LOCAL_ALLOWED_EMAIL` (the email you'll register with locally), at least one LLM key (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`), and the Google IDs if you use Sign in with Google. For the manual mode, also the Atlas connection strings, the bucket and the AWS profile; until they're set, use the test mode. Every variable is documented inline in `.env.example`.
 
-2. Create the backend venv once (it runs Moto, the e2e scripts, the tests and the tools; the services themselves run in containers):
+2. Create the backend venv once (it runs the e2e scripts, the tests and the tools; the services themselves run in containers):
 
    ```bash
    cd backend && python3.13 -m venv .venv && \
      .venv/bin/pip install -r requirements-dev.txt -r requirements-test.txt
    ```
 
-3. Start Moto (local SNS, SQS and S3) and create the topics, queues and buckets. Moto keeps them in memory, so repeat the setup after restarting it:
-
-   ```bash
-   backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
-   ```
-
-   ```bash
-   backend/.venv/bin/python scripts/local-aws-setup.py
-   ```
-
-   Where Docker's policy allows the `motoserver/moto` image, `docker compose --profile moto up -d moto` runs the same server in a container instead (then run `local-aws-setup.py` as above). It publishes port 5050 on the host, so the addresses in `.env.test` still reach it.
+3. Nothing to start for Moto (local SNS, SQS and S3): it's part of the stack. Compose builds the `moto` service (`local/moto/Dockerfile`, since Docker Desktop's policy here blocks the `motoserver/moto` image), and on every `up` the one-shot `moto-setup` creates the topics, queues and buckets (`scripts/local-aws-setup.py`) before any service starts. Moto keeps them in memory, so they're made afresh each time; if the `moto` container alone restarts, run `docker compose up -d` again (with the same env files) to repeat the setup.
 
 4. Start the stack, in test mode (local Mongo and Moto) or, once `.env` has them, manual mode (Atlas and a real bucket):
 
@@ -171,9 +161,10 @@ The services run in Docker only: the backend venv (Quick start, step 2) is for t
 - Frontend dev server, against the compose stack's gateway:
   ```bash
   cd frontend
-  cp .env.example .env   # set ASSETS_BUCKET_NAME to your local assets bucket to load app assets (avatars, splash videos, etc.) via Vite proxy
+  cp .env.example .env   # set ASSETS_ORIGIN to an environment's site (https://<fqdn>) to load app assets (avatars, splash videos, etc.) via Vite proxy
   npm install && npm run dev
   ```
+  A `.env` from before this change may still set `ASSETS_BUCKET_NAME` for the frontend: it's no longer read there (the bucket only admits CloudFront), so `/app-assets/*` is a 404 until you set `ASSETS_ORIGIN` instead. The same goes for the compose `frontend` service and the root `.env`. The `shared` service still uses `ASSETS_BUCKET_NAME`, for the APK download.
 
 ## Connecting to MongoDB
 

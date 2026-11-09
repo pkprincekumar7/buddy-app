@@ -1,4 +1,4 @@
-import { forwardRef, useState } from 'react';
+import { forwardRef, useRef, useState } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import VoiceInput from './VoiceInput';
@@ -14,9 +14,14 @@ type TextareaWithVoiceProps = Omit<
 const TextareaWithVoice = forwardRef<HTMLTextAreaElement, TextareaWithVoiceProps>(
   ({ value, onChange, placeholder, className, ...props }, ref) => {
     const [isRecording, setIsRecording] = useState(false);
+    // Latest value, so a transcript arriving after "Transcribing…" appends to
+    // whatever was typed meanwhile instead of the value captured at record time.
+    const valueRef = useRef(value);
+    valueRef.current = value;
 
     const handleTranscript = (transcript: string) => {
-      const newValue = value ? `${value} ${transcript}` : transcript;
+      const current = valueRef.current;
+      const newValue = current ? `${current} ${transcript}` : transcript;
       onChange({ target: { value: newValue } });
     };
 

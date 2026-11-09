@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { account, type CurrentUser } from '@/api/account';
 import { api, dispatchAuthExpired, resolveAuthExpiry } from '@/api/client';
 import { ApiError } from '@/api/errors';
+import { queryClientInstance } from '@/lib/query-client';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
 type UserData = CurrentUser;
@@ -41,37 +42,53 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The account the query cache was filled for: keys like ['children'] aren't per-user,
+  // so the cache is cleared whenever that account changes or signs out.
+  const cachedUserIdRef = useRef<string | null>(null);
 
-  const checkAppState = useCallback(async (options: { withLoading?: boolean } = {}) => {
-    const withLoading = options.withLoading !== false;
-    setAuthError(null);
-    if (withLoading) {
-      setIsLoadingAuth(true);
-    }
-    try {
-      const currentUser = await account.current();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      if (error instanceof ApiError && error.status === 401) {
-        void account.logout();
-        setUser(null);
-        setIsAuthenticated(false);
-        setAuthError(null);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-        const msg =
-          (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
-        setAuthError({ type: 'unknown', message: msg });
-      }
-    } finally {
-      if (withLoading) {
-        setIsLoadingAuth(false);
-      }
-    }
+  const clearUserCache = useCallback(() => {
+    cachedUserIdRef.current = null;
+    queryClientInstance.clear();
   }, []);
+
+  const checkAppState = useCallback(
+    async (options: { withLoading?: boolean } = {}) => {
+      const withLoading = options.withLoading !== false;
+      setAuthError(null);
+      if (withLoading) {
+        setIsLoadingAuth(true);
+      }
+      try {
+        const currentUser = await account.current();
+        if (cachedUserIdRef.current !== null && cachedUserIdRef.current !== currentUser.id) {
+          queryClientInstance.clear();
+        }
+        cachedUserIdRef.current = currentUser.id;
+        setUser(currentUser);
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        if (error instanceof ApiError && error.status === 401) {
+          void account.logout();
+          clearUserCache();
+          setUser(null);
+          setIsAuthenticated(false);
+          setAuthError(null);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+          const msg =
+            (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
+          setAuthError({ type: 'unknown', message: msg });
+        }
+      } finally {
+        if (withLoading) {
+          setIsLoadingAuth(false);
+        }
+      }
+    },
+    [clearUserCache],
+  );
 
   useEffect(() => {
     void checkAppState();
@@ -91,6 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         toast.error(message);
       }
       void account.logout();
+      clearUserCache();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
@@ -101,7 +119,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return () => window.removeEventListener('superpower:auth-expired', onExpired);
     }
     return undefined;
-  }, [navigate]);
+  }, [navigate, clearUserCache]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -137,6 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(
     async (shouldRedirect = true) => {
       await account.logout();
+      clearUserCache();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
@@ -144,7 +163,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void navigate('/Login', { replace: true });
       }
     },
-    [navigate],
+    [navigate, clearUserCache],
   );
 
   const mainPath = createPageUrl(pagesConfig.mainPage ?? 'Home');

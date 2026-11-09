@@ -6,6 +6,7 @@ import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
 import Spinner from '@/components/shared/Spinner';
+import { Button } from '@/components/ui/button';
 
 import {
   cfs,
@@ -41,6 +42,10 @@ export default function Connect() {
   const [isLoading, setIsLoading] = useState(true);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
+  // Anything but a lock or a missing child: the visit wasn't recorded, so the page
+  // offers a retry rather than rendering as if it had been.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -69,6 +74,7 @@ export default function Connect() {
           void navigate('/Home', { replace: true });
         } else {
           console.warn('[Connect] Load failed:', err);
+          setLoadFailed(true);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -77,7 +83,7 @@ export default function Connect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   const isNarrow = useMediaQuery('(max-width: 859px)');
 
@@ -229,6 +235,27 @@ export default function Connect() {
             borderTopColor: 'transparent',
           }}
         />
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div
+        className="flex min-h-screen flex-col items-center justify-center gap-4 px-4"
+        style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
+      >
+        <p className="text-muted-foreground">We could not load this page. Please try again.</p>
+        <Button
+          onClick={() => {
+            setLoadFailed(false);
+            setIsLoading(true);
+            setReloadKey((k) => k + 1);
+          }}
+          className="btn-primary rounded-2xl px-8"
+        >
+          Try again
+        </Button>
       </div>
     );
   }

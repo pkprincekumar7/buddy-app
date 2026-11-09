@@ -25,7 +25,7 @@ cp .env.example .env.local
 | `VITE_GOOGLE_CLIENT_ID` | Yes      | Google OAuth client ID for Sign-In                                                            |
 | `VITE_API_URL`          | No       | API base URL — leave empty to use the Vite dev-server proxy (`/api → localhost:8088`, the gateway) |
 
-> `ASSETS_BUCKET_NAME` is a Docker build arg only — it is never exposed to the client and should **not** go in `.env.local`.
+> `ASSETS_ORIGIN` (an environment's site, `https://<fqdn>`) makes the dev server and the container's nginx proxy `/app-assets/*` to that site's CloudFront. It's read by the proxy only (not a `VITE_` variable), so it's never exposed to the client.
 
 ## Development
 

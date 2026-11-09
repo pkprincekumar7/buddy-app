@@ -69,7 +69,7 @@ def _claims(token: str) -> dict[str, Any]:
 def _upload(url: str, fields: dict[str, str], content_type: str) -> None:
     """POST a tiny image with a presigned form (APP-07): the signed fields, then the file.
     The services sign for Moto as the containers see it."""
-    local = url.replace("http://host.docker.internal:5050", MOTO_URL)
+    local = url.replace("http://moto:5000", MOTO_URL)
     response = httpx.post(
         local,
         data=fields,

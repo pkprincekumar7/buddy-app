@@ -15,8 +15,8 @@ opentelemetry-instrumentation-botocore==0.66b1
 opentelemetry-instrumentation-redis==0.66b1
 # Runs the import-boundary contract tests in common/tests (build plan 0.1).
 import-linter==2.15
-# Local SNS, SQS and S3 (build plan 0.3): in-process in tests (mock_aws), and `moto_server`
-# for local end-to-end runs, since Docker Desktop's org policy blocks the motoserver image here.
+# Local SNS, SQS and S3 (build plan 0.3): in-process in tests (mock_aws), and the compose
+# `moto` service, which installs this same pin (local/moto/Dockerfile reads this line).
 moto[server,sns,sqs,s3]==5.2.3
 pytest-cov==6.0.0
 httpx==0.28.1

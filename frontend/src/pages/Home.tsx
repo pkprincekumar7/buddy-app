@@ -107,7 +107,13 @@ export default function Home() {
     }
   };
 
-  const { data: childrenRaw = [], isLoading } = useQuery({
+  const {
+    data: childrenRaw = [],
+    isLoading,
+    isLoadingError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['children'],
     queryFn: () => childrenApi.list(),
   });
@@ -122,6 +128,23 @@ export default function Home() {
 
   if (isLoading) {
     return <PageLoader />;
+  }
+
+  // Not "no children yet": that would offer Start Your Journey to a parent who has one.
+  // Only when nothing has loaded: a failed background refetch keeps the list on screen.
+  if (isLoadingError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
+        <p className="text-muted-foreground">We could not load your account. Please try again.</p>
+        <Button
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          className="btn-primary rounded-2xl px-8"
+        >
+          {isFetching ? 'Trying again…' : 'Try again'}
+        </Button>
+      </div>
+    );
   }
 
   return (

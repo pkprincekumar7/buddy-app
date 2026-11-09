@@ -84,9 +84,9 @@ Country/region routing data: edit only `shared/routing.json`, then run
 - `docker-compose.yml` (project `superpower`) starts `mongo` (single-node replica set), `valkey`,
   `local-keys` (one-shot: service-token keys and `JWT_PUBLIC_KEYS` from `JWT_PRIVATE_KEY`), each
   service and its worker, the `gateway` (nginx; `local/gateway/nginx.conf` is generated from
-  `shared/service-routes.json` by `node scripts/sync-gateway.mjs`) and `frontend`. Moto (SNS, SQS,
-  S3) runs from the venv: `backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050`, then
-  `backend/.venv/bin/python scripts/local-aws-setup.py`.
+  `shared/service-routes.json` by `node scripts/sync-gateway.mjs`), `frontend`, and Moto (SNS,
+  SQS, S3): the `moto` service, built from `local/moto/Dockerfile`, and the one-shot `moto-setup`
+  (`scripts/local-aws-setup.py`: topics, queues, buckets), which every service waits for.
 - Each service has its own database, named after it. Allow-list a local email with
   `docker compose exec auth python -m auth.seed` (reads `LOCAL_ALLOWED_EMAIL`).
 - Without `REDIS_URL` (or while Valkey is down), rate limits are counted per task and the

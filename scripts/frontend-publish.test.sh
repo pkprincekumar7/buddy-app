@@ -19,7 +19,7 @@ cat > "$FAKE/bin/aws" <<'EOF'
 echo "$*" >> "$FAKE/calls"
 arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "$2"; return; }; shift; done; }
 case "$1 $2" in
-  "s3 sync") ;;
+  "s3 sync" | "s3 cp") ;;
   "cloudfront create-invalidation") echo "I123" ;;
   "s3api list-objects-v2") cat "$FAKE/listing.json" ;;
   "s3api delete-objects")
@@ -52,11 +52,18 @@ reset
 publish_files "$DIST" bucket
 first=$(sed -n 1p "$FAKE/calls")
 second=$(sed -n 2p "$FAKE/calls")
+third=$(sed -n 3p "$FAKE/calls")
 [[ "$first" == "s3 sync $DIST/assets/ s3://bucket/assets/"* ]] && ok "assets go up first" || fail "assets go up first" "$first"
 [[ "$first" != *"--delete"* ]] && ok "old chunks are kept (no --delete on assets/)" || fail "no --delete on assets/" "$first"
 [[ "$first" == *"immutable"* ]] && ok "hashed assets are cached for a year" || fail "asset cache header" "$first"
-[[ "$second" == *"--exclude assets/*"* && "$second" == *"--delete"* && "$second" == *"no-store"* ]] \
-  && ok "then the rest, mirrored and not cached" || fail "the rest" "$second"
+# cp, not sync: sync skips a same-size file that isn't newer, which a rollback's restored
+# (older) index.html is, so the old build would never go back up.
+[[ "$second" == "s3 cp $DIST/ s3://bucket/ --recursive"* && "$second" == *"--exclude assets/*"* \
+  && "$second" == *"--exclude releases/*"* && "$second" == *"no-store"* ]] \
+  && ok "then the rest, every file re-uploaded and not cached" || fail "the rest" "$second"
+[[ "$third" == "s3 sync $DIST/ s3://bucket/"* && "$third" == *"--exclude assets/*"* \
+  && "$third" == *"--exclude releases/*"* && "$third" == *"--delete"* ]] \
+  && ok "then mirrored: what the build no longer has is deleted" || fail "the mirror" "$third"
 
 # -- invalidation_paths / invalidate -------------------------------------------------
 check "only unhashed files are invalidated" "$(invalidation_paths "$DIST" | paste -sd, -)" \

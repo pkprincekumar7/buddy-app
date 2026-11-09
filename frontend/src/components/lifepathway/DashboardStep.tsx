@@ -1124,6 +1124,7 @@ function ActivityField({
             <button
               type="button"
               onClick={() => progress.removePhoto(key, i)}
+              aria-label="Remove photo"
               className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full"
               style={{
                 cursor: 'pointer',
@@ -1145,7 +1146,7 @@ function ActivityField({
           </div>
         ))}
         <label
-          className="flex h-[58px] w-[58px] items-center justify-center rounded-[10px]"
+          className="relative flex h-[58px] w-[58px] items-center justify-center rounded-[10px] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
           style={{
             cursor: 'pointer',
             border: '1.5px dashed rgb(var(--constellation-cyan-rgb) / .24)',
@@ -1166,9 +1167,13 @@ function ActivityField({
             type="file"
             accept="image/*"
             multiple
-            className="hidden"
+            className="sr-only"
             aria-label={label}
-            onChange={(e) => progress.addPhotos(key, e.target.files)}
+            onChange={(e) => {
+              progress.addPhotos(key, e.target.files);
+              // Reset so re-picking the same (e.g. just-removed) photo fires onChange again.
+              e.target.value = '';
+            }}
           />
         </label>
       </div>

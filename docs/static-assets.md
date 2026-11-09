@@ -8,7 +8,7 @@ Activity-game images (used by the `ChildActivityGame` component) and avatar stag
 
 | Environment | Bucket | Path | How it works |
 |---|---|---|---|
-| **Local dev** | dedicated local bucket (set via `ASSETS_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy (web) | `vite.config.ts` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
+| **Local dev** | an environment's site (set via `ASSETS_ORIGIN`, `https://<fqdn>`, in `.env`) | `/app-assets/<path>` via the Vite or nginx proxy (web) | `vite.config.ts` and `frontend/nginx.conf.template` proxy `/app-assets/*` to `<ASSETS_ORIGIN>/app-assets/*`, i.e. through that environment's CloudFront. Not to the bucket: its policy lets only that distribution read it. No AWS credentials required. |
 | **Deployed (dev/stg/prod)** | per-environment bucket (set via the `ASSETS_BUCKET_NAME` GitHub environment variable) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
 
 The Vite-proxy row above is web-only — the mobile app talks to the same S3 buckets over their regular `https://<bucket>.s3.<region>.amazonaws.com` URL directly, no dev-server proxy involved.
@@ -153,9 +153,9 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Vite dev server (`npm run dev`):**
 
-1. Ensure `frontend/.env` has `ASSETS_BUCKET_NAME` set to your local bucket name:
+1. Ensure `frontend/.env` has `ASSETS_ORIGIN` set to an environment's site (its CloudFront, which serves `/app-assets/*` from that environment's assets bucket):
    ```env
-   ASSETS_BUCKET_NAME=<your-local-bucket-name>
+   ASSETS_ORIGIN=https://<fqdn>
    ```
 2. Run:
    ```bash
@@ -164,14 +164,14 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Docker Compose:**
 
-Ensure `ASSETS_BUCKET_NAME` is set to your local bucket name in the root `.env`, then start the stack. The frontend's `/app-assets/` proxy reads the real S3 bucket of that name, unsigned, in either mode ([Manual and test modes](getting-started.md#manual-and-test-modes)); only the APK link follows the mode (Moto in test mode, `.env.test`'s `ASSETS_BUCKET_NAME`). Manual mode:
+Ensure `ASSETS_ORIGIN` is set in the root `.env`, then start the stack. The frontend's `/app-assets/` proxy reads that site in either mode ([Manual and test modes](getting-started.md#manual-and-test-modes)); only the APK link follows the mode (Moto in test mode, `.env.test`'s `ASSETS_BUCKET_NAME`, which the frontend doesn't use). Manual mode:
 ```bash
 docker compose up -d --build
 ```
 
-nginx proxies `/app-assets/*` requests directly to S3.
+nginx proxies `/app-assets/*` requests to `<ASSETS_ORIGIN>/app-assets/*`.
 
-If `ASSETS_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.
+If `ASSETS_ORIGIN` is not set, `/app-assets/*` is a 404 (as a missing asset is in prod) and image requests fall back to the emoji/gradient tile automatically — no error is thrown.
 
 ---
 
@@ -189,19 +189,14 @@ Both services use the shared helper in `backend/common/uploads.py`.
 
 ### Local dev (Moto)
 
-Nothing to create in AWS: the compose stack's children and transform services (and their workers) call Moto for S3, with Moto's dummy credentials. Start Moto and create the buckets (and the event topics and queues) once per Moto start — Moto keeps everything in memory:
-
-```bash
-backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
-backend/.venv/bin/python scripts/local-aws-setup.py
-```
+Nothing to create in AWS: the compose stack's children and transform services (and their workers) call Moto for S3, with Moto's dummy credentials. Moto is the compose `moto` service, and `moto-setup` creates the buckets (and the event topics and queues) on every `docker compose up`, before the services start.
 
 `scripts/local-aws-setup.py` creates the uploads bucket in Moto with a CORS rule for the local frontend origins, so the browser can post to a presigned URL. That's the test mode; in manual mode the photos go to a real bucket instead ([Manual and test modes](getting-started.md#manual-and-test-modes); its policy, CORS and setup are in [local/aws-manual](../local/aws-manual/README.md)). The keys involved (`.env.test` sets the Moto values):
 
 ```env
 UPLOADS_BUCKET_NAME=person-local-uploads-bucket-ap-south-1
 # UPLOADS_URL_TTL_SECONDS=3600
-LOCAL_S3_URL=http://host.docker.internal:5050    # what the services call for S3; empty: AWS's S3
+LOCAL_S3_URL=http://moto:5000                    # what the services call for S3; empty: AWS's S3
 LOCAL_S3_PUBLIC_URL=http://localhost:5050        # what presigned URLs point at; empty: AWS's S3
 ```
 
@@ -209,7 +204,7 @@ Compose passes `LOCAL_S3_URL` to the services as `AWS_ENDPOINT_URL_S3` (S3 alone
 
 In ECS (dev/stg/prod) no AWS keys are set — the ECS task role provides credentials. Those role credentials sign both the PUT (upload) and GET (view) URLs; the role has `s3:PutObject` and `s3:GetObject` on the uploads bucket.
 
-> **Production:** For deployed environments (dev/stg/prod), CORS is managed automatically by Terraform (`infra-live-backend/terraform/s3.tf`) — `AllowedOrigins` is set to the CloudFront app domain. Deployed environments get their CSP from CloudFront's response headers policy (`infra-live-edge/terraform/response_headers.tf`), not nginx: `img-src` and `connect-src` list each active backend region's uploads bucket (the presigned URLs), built from the backend regions, so a new region is covered once the edge stack is applied with it. The nginx CSP in `frontend/nginx.conf` and `frontend/nginx.conf.template` (`https://*.s3.amazonaws.com` plus one domain per region) applies only to the local Docker stack and the frontend container; a new region's S3 domain has to be added there by hand for local use.
+> **Production:** For deployed environments (dev/stg/prod), CORS is managed automatically by Terraform (`infra-live-backend/terraform/s3.tf`) — `AllowedOrigins` is set to the CloudFront app domain. Deployed environments get their CSP from CloudFront's response headers policy (`infra-live-edge/terraform/response_headers.tf`), not nginx: `img-src` and `connect-src` list each active backend region's uploads bucket (the presigned URLs), built from the backend regions, so a new region is covered once the edge stack is applied with it. The nginx CSP in `frontend/nginx.conf` and `frontend/nginx.conf.template` applies only to the local Docker stack and the frontend container. Like prod's, it lists one exact uploads origin, which `frontend/nginx-start.sh` builds: Moto's (`LOCAL_S3_PUBLIC_URL`) in test mode, else `https://<UPLOADS_BUCKET_NAME>.s3.<AWS_REGION>.amazonaws.com`.
 
 Objects are stored as `uploads/<location>/<child_id>/<kind>/<uuid>.<ext>`, where `<kind>` is `avatar` or `ninety-day-plan` (`Uploads.new_key()` in `backend/common/uploads.py` always leads with the user's sharding `location` value — e.g. `eu` for a user registered from Germany, assigned from their country at registration — not the AWS region). S3 creates the prefixes on first upload; no folder needs creating.
 

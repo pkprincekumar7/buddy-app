@@ -23,7 +23,7 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://*.s3.eu-west-1.amazonaws.com https://*.s3.ap-south-1.amazonaws.com $LOCAL_S3_ORIGIN; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://*.s3.eu-west-1.amazonaws.com https://*.s3.ap-south-1.amazonaws.com $LOCAL_S3_ORIGIN; frame-src https://accounts.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: $UPLOADS_ORIGIN; font-src 'self' data:; connect-src 'self' https://accounts.google.com $UPLOADS_ORIGIN; frame-src https://accounts.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';" always;
     add_header Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" always;
 
     # API → the local gateway, which routes each path to its service as the ALB does
@@ -56,15 +56,22 @@ server {
         access_log off;
     }
 
-    # Backend S3 assets proxied to the backend S3 bucket.
-    # /app-assets/ covers all current and future asset subfolders (e.g. child_activity_game/).
-    # Completely separate from /assets/ (Vite build output) — no path conflict.
-    # ${ASSETS_BUCKET_NAME} is substituted by envsubst at container start (nginx-start.sh).
+    # App assets, proxied to an environment's CloudFront site (ASSETS_ORIGIN, e.g.
+    # https://dev.example.com), which serves /app-assets/* from its assets bucket. Not the
+    # bucket itself: its policy lets only that distribution read it, so unsigned requests
+    # get AccessDenied. /app-assets/ covers all current and future asset subfolders (e.g.
+    # child_activity_game/) and is separate from /assets/ (Vite build output).
+    # ${ASSETS_ORIGIN} is substituted by envsubst at container start (nginx-start.sh); with
+    # no path, the request's own (/app-assets/...) is passed on, and Host is the site's.
     location /app-assets/ {
-        proxy_pass https://${ASSETS_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
-        proxy_set_header Host ${ASSETS_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
+        proxy_pass ${ASSETS_ORIGIN};
         proxy_ssl_server_name on;
         access_log off;
+    }
+
+    # Never the SPA, as in prod: photos come straight from S3 with presigned URLs.
+    location /uploads/ {
+        return 404;
     }
 
     location = /manifest.json {
@@ -83,8 +90,15 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://*.s3.eu-west-1.amazonaws.com https://*.s3.ap-south-1.amazonaws.com $LOCAL_S3_ORIGIN; font-src 'self' data:; connect-src 'self' https://accounts.google.com https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com https://*.s3.eu-west-1.amazonaws.com https://*.s3.ap-south-1.amazonaws.com $LOCAL_S3_ORIGIN; frame-src https://accounts.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: $UPLOADS_ORIGIN; font-src 'self' data:; connect-src 'self' https://accounts.google.com $UPLOADS_ORIGIN; frame-src https://accounts.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';" always;
         add_header Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" always;
-        try_files $uri $uri/ /index.html;
+        # As prod's spa-rewrite function (infra-live-edge/functions/spa-rewrite.js): a path
+        # whose last segment has no "." is an app route and gets index.html; one with a "." is
+        # a file, and a missing one is a 404, not index.html (which would turn a missing chunk
+        # or font into a MIME-type error). The nested location inherits the headers above.
+        try_files /index.html =404;
+        location ~ \.[^/]*$ {
+            try_files $uri =404;
+        }
     }
 }

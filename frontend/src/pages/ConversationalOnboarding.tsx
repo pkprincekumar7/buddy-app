@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { onboarding, answersFrom, ONBOARDING_ERRORS } from '@/api/onboarding';
+import { settlePersonality } from '@/api/discover';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import PageLoader from '@/components/shared/PageLoader';
 import { httpErrorMessage } from '@/lib/apiError';
@@ -10,7 +12,8 @@ import { Button } from '@/components/ui/button';
 
 // The conversational onboarding (build plan 7.5): the chat keeps the answers until the
 // end, then this page saves all seven in one PUT and goes on to the Personality Journey.
-// Discover starts the personality by itself, and the hub waits for it.
+// Discover starts the personality by itself; the chat's thank-you screen stays up until it
+// is ready, so the hub opens on the result instead of a second loading screen.
 
 export default function ConversationalOnboarding() {
   const navigate = useNavigate();
@@ -24,6 +27,8 @@ export default function ConversationalOnboarding() {
   const [saveError, setSaveError] = useState<string | null>(null);
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
   const bootKey = 0;
+  // Stops waiting for the personality if the parent leaves the page.
+  const unmountSignal = useUnmountSignal();
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -76,9 +81,20 @@ export default function ConversationalOnboarding() {
         );
         return;
       }
+      // Wait here, on the thank-you screen, for discover to finish the personality.
+      // Whatever happens (it failed, it's slow, the network dropped), go on to the hub:
+      // it shows a failure with Try again, and keeps waiting for a slow one.
+      const signal = unmountSignal.current.signal;
+      try {
+        await settlePersonality(childId, { signal, timeoutMs: 3 * 60_000 });
+      } catch (err) {
+        if (signal.aborted) return;
+        console.warn('[ConversationalOnboarding] Personality not ready yet:', err);
+      }
+      if (signal.aborted) return;
       void navigate(`/PersonalityJourney/${childId}`);
     },
-    [childId, navigate],
+    [childId, navigate, unmountSignal],
   );
 
   const handleComplete = useCallback(
@@ -107,9 +123,7 @@ export default function ConversationalOnboarding() {
                 activeChildId={childId}
                 resumeHydrationReady={hydrated}
                 onComplete={handleComplete}
-                onContinueToPersonality={() => {
-                  void handleComplete({});
-                }}
+                onContinueToPersonality={() => handleComplete({})}
               />
             </div>
 

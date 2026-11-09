@@ -313,6 +313,10 @@ export default function Observations() {
   // the growth areas, and validates them on the server (build plan 7.7).
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // The first read failing is not a failed generation: its retry re-reads, so it
+  // never replaces the stored set (or costs a model call).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
   // Stops polling when the page goes away.
@@ -405,7 +409,7 @@ export default function Observations() {
           return;
         }
         console.error('[Observations] Load failed:', err);
-        setGenError('We could not load this page. Please try again.');
+        setLoadError('We could not load this page. Please try again.');
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -413,7 +417,13 @@ export default function Observations() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate, show, generate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, show, generate, reloadKey]);
+
+  const reload = useCallback(() => {
+    setLoadError(null);
+    setIsLoading(true);
+    setReloadKey((k) => k + 1);
+  }, []);
 
   const toggleTracked = (id: string) => {
     setTracked((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
@@ -467,6 +477,53 @@ export default function Observations() {
   // check-in scheduler behind it yet. It reads as a promise to the parent, so it
   // needs to become a real next-due date when the check-in store lands.
   const startedLine = `${chosen.length} observation${chosen.length === 1 ? ' is' : 's are'} now being watched for ${activeSpan.label}. Your first check-in arrives in three days.`;
+
+  /** A failure card with its retry: a whole-page state, or a banner above stored items. */
+  const failureCard = (title: string, message: string, onRetry: () => void) => (
+    <div style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '30px 24px' }}>
+      <div
+        style={{
+          fontWeight: 700,
+          fontSize: fs(16),
+          color: 'rgb(var(--constellation-cyan-pale-rgb))',
+        }}
+      >
+        {title}
+      </div>
+      <div
+        style={{
+          margin: '8px auto 0',
+          maxWidth: proseW(440),
+          fontSize: fs(14),
+          fontWeight: 600,
+          lineHeight: 1.5,
+          color: 'rgb(var(--constellation-slate-light-rgb))',
+        }}
+      >
+        {message}
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{
+          cursor: 'pointer',
+          marginTop: 18,
+          padding: '11px 26px',
+          borderRadius: 999,
+          border: '1px solid rgb(var(--constellation-cyan-rgb) / .45)',
+          background: 'rgb(var(--constellation-navy-dusk-rgb) / .8)',
+          fontWeight: 700,
+          fontSize: fs(12.5),
+          letterSpacing: '.16em',
+          textTransform: 'uppercase',
+          color: 'rgb(var(--constellation-cyan-soft-rgb))',
+        }}
+        className="font-rajdhani"
+      >
+        Try again
+      </button>
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -621,52 +678,14 @@ export default function Observations() {
                 <ObservationSkeleton key={i} />
               ))}
             </div>
-          ) : generationFailed ? (
-            <div
-              style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '30px 24px' }}
-            >
-              <div
-                style={{
-                  fontWeight: 700,
-                  fontSize: fs(16),
-                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
-                }}
-              >
-                We could not group your answers just now
-              </div>
-              <div
-                style={{
-                  margin: '8px auto 0',
-                  maxWidth: proseW(440),
-                  fontSize: fs(14),
-                  fontWeight: 600,
-                  lineHeight: 1.5,
-                  color: 'rgb(var(--constellation-slate-light-rgb))',
-                }}
-              >
-                {genError ?? 'Something went wrong on our side. Your answers are safe.'}
-              </div>
-              <button
-                type="button"
-                onClick={() => void generate()}
-                style={{
-                  cursor: 'pointer',
-                  marginTop: 18,
-                  padding: '11px 26px',
-                  borderRadius: 999,
-                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .45)',
-                  background: 'rgb(var(--constellation-navy-dusk-rgb) / .8)',
-                  fontWeight: 700,
-                  fontSize: fs(12.5),
-                  letterSpacing: '.16em',
-                  textTransform: 'uppercase',
-                  color: 'rgb(var(--constellation-cyan-soft-rgb))',
-                }}
-                className="font-rajdhani"
-              >
-                Try again
-              </button>
-            </div>
+          ) : loadError ? (
+            failureCard('We could not load this page', loadError, reload)
+          ) : generationFailed && observations.length === 0 ? (
+            failureCard(
+              'We could not group your answers just now',
+              genError ?? 'Something went wrong on our side. Your answers are safe.',
+              () => void generate(),
+            )
           ) : observations.length === 0 ? (
             <div
               style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '34px 24px' }}
@@ -715,168 +734,179 @@ export default function Observations() {
               </button>
             </div>
           ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns:
-                  'repeat(auto-fill,minmax(min(var(--obs-card-min, 330px), 100%),1fr))',
-                gap: 14,
-                marginTop: 16,
-              }}
-            >
-              {observations.map((obs) => {
-                const on = tracked.includes(obs.id);
-                const provenance = formatObservationSources(obs.sources, childName);
-                return (
-                  <div
-                    key={obs.id}
-                    style={{
-                      ...CARD_SHELL,
-                      background: on
-                        ? 'linear-gradient(150deg,rgb(var(--constellation-navy-soft2-rgb) / .85),rgb(var(--constellation-ink-navy-rgb) / .8))'
-                        : 'rgb(var(--constellation-card-rgb) / .6)',
-                      border: `1px solid ${on ? 'rgb(var(--constellation-cyan-rgb) / .45)' : 'rgb(var(--constellation-cyan-rgb) / .12)'}`,
-                      transition: 'all .22s ease',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 14,
-                    }}
-                  >
+            <>
+              {/* A failed regeneration keeps the stored set on screen; the error sits above it. */}
+              {generationFailed &&
+                failureCard(
+                  'We could not group your answers just now',
+                  genError ?? 'Something went wrong on our side. Your answers are safe.',
+                  () => void generate(),
+                )}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(auto-fill,minmax(min(var(--obs-card-min, 330px), 100%),1fr))',
+                  gap: 14,
+                  marginTop: 16,
+                }}
+              >
+                {observations.map((obs) => {
+                  const on = tracked.includes(obs.id);
+                  const provenance = formatObservationSources(obs.sources, childName);
+                  return (
                     <div
+                      key={obs.id}
                       style={{
+                        ...CARD_SHELL,
+                        background: on
+                          ? 'linear-gradient(150deg,rgb(var(--constellation-navy-soft2-rgb) / .85),rgb(var(--constellation-ink-navy-rgb) / .8))'
+                          : 'rgb(var(--constellation-card-rgb) / .6)',
+                        border: `1px solid ${on ? 'rgb(var(--constellation-cyan-rgb) / .45)' : 'rgb(var(--constellation-cyan-rgb) / .12)'}`,
+                        transition: 'all .22s ease',
                         display: 'flex',
-                        alignItems: 'flex-start',
-                        justifyContent: 'space-between',
+                        flexDirection: 'column',
                         gap: 14,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: 14,
+                        }}
+                      >
                         <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}
+                        >
+                          <div
+                            style={{
+                              width: 38,
+                              height: 38,
+                              flexShrink: 0,
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background:
+                                'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+                              border: '1.5px solid rgb(var(--constellation-gold-rgb) / .5)',
+                            }}
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="rgb(var(--constellation-gold-rgb))"
+                              strokeWidth={1.8}
+                              style={{ width: 18, height: 18 }}
+                            >
+                              <path d={OBSERVATION_ICONS[obs.icon]} />
+                            </svg>
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: fs(16),
+                                color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                              }}
+                            >
+                              {obs.title}
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 2,
+                                fontWeight: 700,
+                                fontSize: fs(10.5),
+                                letterSpacing: '.16em',
+                                textTransform: 'uppercase',
+                                color: 'rgb(var(--constellation-slate-rgb))',
+                              }}
+                            >
+                              {provenance}
+                            </div>
+                          </div>
+                        </div>
+                        <div
+                          role="checkbox"
+                          aria-checked={on}
+                          aria-label={on ? `Stop watching ${obs.title}` : `Watch ${obs.title}`}
+                          tabIndex={0}
+                          onClick={() => toggleTracked(obs.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') toggleTracked(obs.id);
+                          }}
                           style={{
-                            width: 38,
-                            height: 38,
+                            cursor: 'pointer',
                             flexShrink: 0,
-                            borderRadius: '50%',
+                            width: 22,
+                            height: 22,
+                            borderRadius: 7,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            background:
-                              'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
-                            border: '1.5px solid rgb(var(--constellation-gold-rgb) / .5)',
+                            border: `1.5px solid ${on ? 'rgb(var(--constellation-cyan-rgb))' : 'rgb(var(--constellation-ring-faint-rgb) / .4)'}`,
+                            background: on ? 'rgb(var(--constellation-cyan-rgb))' : 'transparent',
+                            transition: 'all .2s ease',
                           }}
                         >
-                          <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="rgb(var(--constellation-gold-rgb))"
-                            strokeWidth={1.8}
-                            style={{ width: 18, height: 18 }}
-                          >
-                            <path d={OBSERVATION_ICONS[obs.icon]} />
-                          </svg>
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              fontSize: fs(16),
-                              color: 'rgb(var(--constellation-cyan-pale-rgb))',
-                            }}
-                          >
-                            {obs.title}
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 2,
-                              fontWeight: 700,
-                              fontSize: fs(10.5),
-                              letterSpacing: '.16em',
-                              textTransform: 'uppercase',
-                              color: 'rgb(var(--constellation-slate-rgb))',
-                            }}
-                          >
-                            {provenance}
-                          </div>
+                          <CheckIcon opacity={on ? 1 : 0} />
                         </div>
                       </div>
+
                       <div
-                        role="checkbox"
-                        aria-checked={on}
-                        aria-label={on ? `Stop watching ${obs.title}` : `Watch ${obs.title}`}
-                        tabIndex={0}
-                        onClick={() => toggleTracked(obs.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') toggleTracked(obs.id);
-                        }}
                         style={{
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                          width: 22,
-                          height: 22,
-                          borderRadius: 7,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: `1.5px solid ${on ? 'rgb(var(--constellation-cyan-rgb))' : 'rgb(var(--constellation-ring-faint-rgb) / .4)'}`,
-                          background: on ? 'rgb(var(--constellation-cyan-rgb))' : 'transparent',
-                          transition: 'all .2s ease',
+                          fontSize: fs(14.5),
+                          fontWeight: 600,
+                          lineHeight: 1.5,
+                          color: 'rgb(var(--constellation-caption-rgb))',
                         }}
                       >
-                        <CheckIcon opacity={on ? 1 : 0} />
+                        {obs.summary}
                       </div>
-                    </div>
 
-                    <div
-                      style={{
-                        fontSize: fs(14.5),
-                        fontWeight: 600,
-                        lineHeight: 1.5,
-                        color: 'rgb(var(--constellation-caption-rgb))',
-                      }}
-                    >
-                      {obs.summary}
-                    </div>
-
-                    {/* The parent's own words, presented as the evidence for the
+                      {/* The parent's own words, presented as the evidence for the
                         pattern above — never model-authored prose. */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      {obs.notes.map((note) => (
-                        <div
-                          key={note}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '14px 1fr',
-                            gap: 10,
-                            alignItems: 'start',
-                          }}
-                        >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        {obs.notes.map((note) => (
                           <div
+                            key={note}
                             style={{
-                              width: 5,
-                              height: 5,
-                              marginTop: 8,
-                              marginLeft: 4,
-                              borderRadius: '50%',
-                              background: 'rgb(var(--constellation-cyan-rgb))',
-                            }}
-                          />
-                          <div
-                            style={{
-                              fontSize: fs(13.5),
-                              fontWeight: 600,
-                              lineHeight: 1.45,
-                              color: 'rgb(var(--constellation-slate-light-rgb))',
+                              display: 'grid',
+                              gridTemplateColumns: '14px 1fr',
+                              gap: 10,
+                              alignItems: 'start',
                             }}
                           >
-                            {note}
+                            <div
+                              style={{
+                                width: 5,
+                                height: 5,
+                                marginTop: 8,
+                                marginLeft: 4,
+                                borderRadius: '50%',
+                                background: 'rgb(var(--constellation-cyan-rgb))',
+                              }}
+                            />
+                            <div
+                              style={{
+                                fontSize: fs(13.5),
+                                fontWeight: 600,
+                                lineHeight: 1.45,
+                                color: 'rgb(var(--constellation-slate-light-rgb))',
+                              }}
+                            >
+                              {note}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </section>
 

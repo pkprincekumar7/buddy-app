@@ -76,7 +76,7 @@ interface ConversationalOnboardingProps {
   activeChildId?: string;
   onComplete: (data: Record<string, unknown>) => void | Promise<void>;
   resumeHydrationReady?: boolean;
-  onContinueToPersonality?: () => void;
+  onContinueToPersonality?: () => void | Promise<unknown>;
 }
 
 // ── Summary card icon map ─────────────────────────────────────────────────────
@@ -300,6 +300,7 @@ export default function ConversationalOnboarding({
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   const [analyzingState, setAnalyzingState] = useState<AnalyzingState>(ANALYZING_INITIAL);
   const [allAnswered, setAllAnswered] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const [phaseSplash, setPhaseSplash] = useState<PhaseSplash | null>(null);
   const [resumeSummary, setResumeSummary] = useState<Array<{
     label: string;
@@ -339,6 +340,9 @@ export default function ConversationalOnboarding({
   // Ivy intro: show image, speak greeting, dismiss when speech ends.
   useEffect(() => {
     const IVY_MSG = "Hi, I am Ivy. Let's transform your child to their superpower personality.";
+    // The Web Speech API is missing in some browsers/webviews — guard once here.
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+    let dismissTimer: ReturnType<typeof setTimeout> | undefined;
     // Fallback: dismiss after 10s if speech never fires onend.
     const fallback = setTimeout(() => {
       showIntroRef.current = false;
@@ -346,9 +350,9 @@ export default function ConversationalOnboarding({
     }, 10000);
 
     const speakIntro = () => {
-      if (typeof window === 'undefined' || !window.speechSynthesis || !voiceEnabledRef.current) {
+      if (!synth || !voiceEnabledRef.current) {
         clearTimeout(fallback);
-        setTimeout(() => {
+        dismissTimer = setTimeout(() => {
           showIntroRef.current = false;
           setShowIntro(false);
         }, 2000);
@@ -363,17 +367,19 @@ export default function ConversationalOnboarding({
         showIntroRef.current = false;
         setShowIntro(false);
       };
-      window.speechSynthesis.speak(utter);
+      synth.speak(utter);
     };
 
-    if (window.speechSynthesis.getVoices().length > 0) {
+    if (!synth || synth.getVoices().length > 0) {
       speakIntro();
     } else {
-      window.speechSynthesis.addEventListener('voiceschanged', speakIntro, { once: true });
+      synth.addEventListener('voiceschanged', speakIntro, { once: true });
     }
     return () => {
       clearTimeout(fallback);
-      window.speechSynthesis.cancel();
+      clearTimeout(dismissTimer);
+      synth?.removeEventListener('voiceschanged', speakIntro);
+      synth?.cancel();
     };
   }, []);
 
@@ -484,7 +490,8 @@ export default function ConversationalOnboarding({
 
   // TTS
   const speak = useCallback((text: string) => {
-    if (!voiceEnabledRef.current || typeof window === 'undefined') return;
+    if (!voiceEnabledRef.current || typeof window === 'undefined' || !window.speechSynthesis)
+      return;
     // Don't cancel while the Ivy intro is speaking — let it finish naturally.
     if (!showIntroRef.current) window.speechSynthesis.cancel();
     const cleanText = text.replace(/[👋🎉💪😊🌟🚀]/g, '').replace(/\n/g, ' ');
@@ -996,7 +1003,31 @@ export default function ConversationalOnboarding({
                         <Button
                           type="button"
                           className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80 md:h-14 md:px-10 md:text-base"
-                          onClick={() => onContinueToPersonality()}
+                          disabled={continuing}
+                          aria-busy={continuing}
+                          onClick={() => {
+                            if (continuing) return;
+                            setContinuing(true);
+                            // The thank-you screen, as at the end of the chat, while the
+                            // answers save and the personality is made.
+                            setAnalyzingState((s) => ({ ...s, show: true, showingDots: true }));
+                            const result = onContinueToPersonality();
+                            // A returned promise re-enables the button once it settles; a
+                            // void handler leaves it disabled (the page takes over).
+                            if (result instanceof Promise) {
+                              // Still mounted only when the save failed (the page shows its
+                              // error): back to the button.
+                              const done = () => {
+                                setContinuing(false);
+                                setAnalyzingState((s) => ({
+                                  ...s,
+                                  show: false,
+                                  showingDots: false,
+                                }));
+                              };
+                              void result.then(done, done);
+                            }
+                          }}
                         >
                           Continue to personality analysis
                         </Button>

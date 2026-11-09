@@ -61,6 +61,7 @@ export default function TwitterModal({
 
   return (
     <ModalBackdrop
+      title="Post on Twitter"
       gradient="radial-gradient(ellipse at 50% 40%,rgba(12,18,26,.72),rgba(2,4,8,.94) 72%)"
       onClose={onClose}
     >

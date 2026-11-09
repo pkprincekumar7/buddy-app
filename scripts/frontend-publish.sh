@@ -20,8 +20,8 @@
 # - assets/ (Vite's hashed JS and CSS) is synced WITHOUT --delete. The live index.html
 #   names the current chunks until the new one replaces it, and a tab opened before the
 #   deploy keeps loading the old ones (lazy routes).
-# - Everything else (index.html, manifest, fonts, sounds) goes up afterwards, with --delete,
-#   so index.html only ever points at chunks that are already there.
+# - Everything else (index.html, manifest, fonts, sounds) goes up afterwards, every file
+#   re-uploaded, then --delete, so index.html only ever points at chunks that are already there.
 # - Only those unhashed files are invalidated. A hashed file never changes, so purging it
 #   only costs cache hits; app routes are all cached as /index.html (the spa_rewrite
 #   function rewrites them before the cache lookup).
@@ -49,14 +49,16 @@ publish_files() {
 
 # publish_unhashed DIST BUCKET: index.html and the other unhashed files, mirrored at the
 # root (assets/ and the kept releases left alone).
+# Copied with cp, not sync: sync skips a file that's the same size and not newer than the
+# object, and a restored release's files carry their old S3 dates (and index.html is
+# usually the same size, the chunk hashes being fixed-length), so a rollback would leave
+# the new build live. The sync after it only deletes what DIST no longer has.
 publish_unhashed() {
-  local dist="$1" bucket="$2"
-  aws s3 sync "$dist/" "s3://$bucket/" \
-    --exclude "assets/*" \
-    --exclude "releases/*" \
-    --exclude ".DS_Store" \
-    --cache-control "no-cache,no-store,must-revalidate" \
-    --delete || return 1
+  local dist="$1" bucket="$2" filters
+  filters=(--exclude "assets/*" --exclude "releases/*" --exclude ".DS_Store"
+    --cache-control "no-cache,no-store,must-revalidate")
+  aws s3 cp "$dist/" "s3://$bucket/" --recursive "${filters[@]}" || return 1
+  aws s3 sync "$dist/" "s3://$bucket/" "${filters[@]}" --delete || return 1
 }
 
 _check_sha() {

@@ -14,9 +14,11 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  if (env.ASSETS_BUCKET_NAME) {
+  // /app-assets/* from an environment's CloudFront site (ASSETS_ORIGIN, https://<fqdn>), not
+  // the assets bucket: its policy lets only that distribution read it.
+  if (env.ASSETS_ORIGIN) {
     proxy['/app-assets'] = {
-      target: `https://${env.ASSETS_BUCKET_NAME}.s3.us-east-1.amazonaws.com`,
+      target: env.ASSETS_ORIGIN.replace(/\/+$/, ''),
       changeOrigin: true,
     };
   }

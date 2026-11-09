@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Create the local S3 buckets and event topology in Moto for end-to-end runs (build plan 0.3, 1.2).
 
-Run with the backend venv once Moto is up:
+docker compose runs it on every `up`, as the one-shot `moto-setup` (in auth's image), once the
+`moto` service is healthy and before any other service starts. By hand, against the moto
+service's published port:
 
-    backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
     backend/.venv/bin/python scripts/local-aws-setup.py
 
 Creates the uploads and assets buckets with a CORS rule for the local frontend origins, so

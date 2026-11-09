@@ -1068,9 +1068,6 @@ jobs:
           cache: "pip"
           cache-dependency-path: backend/requirements-dev.txt
 
-      - name: Install backend dependencies (for the Moto setup)
-        run: pip install -r backend/requirements-dev.txt
-
       # Throwaway values for this run only, never printed.
       - name: Write the stack's .env
         run: |
@@ -1078,22 +1075,12 @@ jobs:
           {
             echo "JWT_PRIVATE_KEY=$key"
             echo "EMAIL_HMAC_PEPPER=$(openssl rand -hex 32)"
-            # Moto in its container for every AWS call, S3 included (LOCAL_S3_URL), and for the
-            # presigned URLs (LOCAL_S3_PUBLIC_URL); Mongo and the fake keys are compose's defaults.
-            echo "LOCAL_MOTO_URL=http://moto:5000"
-            echo "LOCAL_S3_URL=http://moto:5000"
-            echo "LOCAL_S3_PUBLIC_URL=http://localhost:5050"
+            # Everything else is compose's defaults, the test values: the mongo container,
+            # and the moto service (built by compose) for every AWS call, S3 included.
           } > .env
 
-      - name: Start Moto and create the topics, queues and buckets
-        run: |
-          docker compose --profile moto up -d --wait moto
-          python scripts/local-aws-setup.py
-        env:
-          LOCAL_MOTO_URL: http://localhost:5050
-          AWS_ACCESS_KEY_ID: local
-          AWS_SECRET_ACCESS_KEY: local
-
+      # Moto is part of the stack: compose builds it, and moto-setup creates the topics,
+      # queues and buckets before any service starts.
       - name: Start the stack
         run: docker compose up -d --build
 

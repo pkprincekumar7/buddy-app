@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import StageSplash from '@/components/shared/StageSplash';
@@ -38,6 +38,7 @@ import {
 } from '@/lib/lifePathwayData';
 import type { Milestone } from '@/lib/lifePathwayData';
 import type { TransformArea } from '@/api/transform';
+import { ApiError } from '@/api/errors';
 
 /**
  * Multiplies a design-time pixel value by `--lp-type-scale` — 1 on phones, 1.2
@@ -161,7 +162,35 @@ export default function LifePathway() {
   // the few px of slack absorb font-loading and sub-pixel variance.
   const isNarrow = useMediaQuery('(max-width: 535px)');
 
-  const { childData, viewModel, profile, isLoading, completedAreas } = useLifePathwayData(childId);
+  const navigate = useNavigate();
+  const {
+    childData,
+    viewModel,
+    profile,
+    isLoading,
+    completedAreas,
+    error: loadError,
+    retry: retryLoad,
+  } = useLifePathwayData(childId);
+  const redirectCode =
+    loadError instanceof ApiError &&
+    (loadError.code === 'circle_locked' || loadError.code === 'child_not_found')
+      ? loadError.code
+      : null;
+  // Any other failure with nothing loaded gets an error state: rendering on would
+  // show template milestones for a made-up child.
+  const loadFailed = !!loadError && !redirectCode && !childData;
+
+  useEffect(() => {
+    if (!childId) {
+      void navigate('/Home', { replace: true });
+    } else if (redirectCode === 'circle_locked') {
+      // Discover isn't done yet: back to the journey.
+      void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+    } else if (redirectCode === 'child_not_found') {
+      void navigate('/Home', { replace: true });
+    }
+  }, [childId, redirectCode, navigate]);
   const [showSplash, startTimer] = useStageSplash(0);
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
 
@@ -296,7 +325,7 @@ export default function LifePathway() {
     area: selectedArea,
     areas: completedAreas,
     ages,
-    enabled: !isLoading && !showSplash,
+    enabled: !isLoading && !showSplash && !!childData,
   });
 
   const isAreaLoading = areaStatus === 'loading';
@@ -407,9 +436,39 @@ export default function LifePathway() {
         animate={{ opacity: showSplash ? 0 : 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
-        {isLoading ? (
+        {isLoading || !childId || redirectCode ? (
           <div className="flex min-h-screen items-center justify-center bg-background">
             <Spinner className="h-12 w-12 border-4" />
+          </div>
+        ) : loadFailed ? (
+          <div
+            className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center font-rajdhani"
+            style={{
+              background: 'rgb(var(--constellation-navy-deepest-rgb))',
+              color: 'rgb(var(--constellation-text-frost-rgb))',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: lpfs(16) }}>
+              We couldn’t load the life pathway.
+            </div>
+            <button
+              type="button"
+              onClick={() => void retryLoad()}
+              style={{
+                cursor: 'pointer',
+                padding: '11px 26px',
+                borderRadius: 999,
+                border: '1px solid rgb(var(--constellation-cyan-rgb) / .45)',
+                background: 'rgb(var(--constellation-navy-dusk-rgb) / .8)',
+                fontWeight: 700,
+                fontSize: lpfs(12.5),
+                letterSpacing: '.16em',
+                textTransform: 'uppercase',
+                color: 'rgb(var(--constellation-cyan-soft-rgb))',
+              }}
+            >
+              Try again
+            </button>
           </div>
         ) : (
           <div

@@ -1421,11 +1421,9 @@ export default function PersonalityJourney() {
             : 'Something went wrong. Please try again.'}
         </p>
         <div className="flex gap-3">
-          {child && (
-            <Button onClick={retry} className="btn-primary rounded-2xl px-8">
-              Try again
-            </Button>
-          )}
+          <Button onClick={retry} className="btn-primary rounded-2xl px-8">
+            Try again
+          </Button>
           <Button
             variant="outline"
             onClick={() => void navigate('/Home')}
@@ -1566,7 +1564,7 @@ export default function PersonalityJourney() {
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
                   release: transformCompleted,
-                  connect: transformCompleted,
+                  connect: releaseCompleted,
                 }}
                 current={currentDimension}
               />

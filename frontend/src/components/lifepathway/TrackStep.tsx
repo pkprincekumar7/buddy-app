@@ -525,6 +525,7 @@ function TrackPhotoImport({
             <button
               type="button"
               onClick={() => progress.removePhoto(upKey, i)}
+              aria-label="Remove photo"
               className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full"
               style={{
                 cursor: 'pointer',
@@ -546,7 +547,7 @@ function TrackPhotoImport({
           </div>
         ))}
         <label
-          className="flex h-[64px] w-[64px] items-center justify-center rounded-xl"
+          className="relative flex h-[64px] w-[64px] items-center justify-center rounded-xl has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
           style={{
             cursor: 'pointer',
             border: '1.5px dashed rgb(var(--constellation-cyan-rgb) / .26)',
@@ -567,9 +568,13 @@ function TrackPhotoImport({
             type="file"
             accept="image/*"
             multiple
-            className="hidden"
+            className="sr-only"
             aria-label={label}
-            onChange={(e) => progress.addPhotos(upKey, e.target.files)}
+            onChange={(e) => {
+              progress.addPhotos(upKey, e.target.files);
+              // Reset so re-picking the same (e.g. just-removed) photo fires onChange again.
+              e.target.value = '';
+            }}
           />
         </label>
       </div>

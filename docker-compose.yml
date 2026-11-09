@@ -10,11 +10,12 @@
 # Every default below is the test value, so a variable .env leaves out falls back to local,
 # never to Atlas or AWS.
 #
-# SNS, SQS and S3 come from Moto. Run it from the backend venv (Docker Desktop's org policy
-# blocks the motoserver/moto image here):
-#   backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
-# Containers reach it at http://host.docker.internal:5050. Where the image is allowed,
-# `docker compose --profile moto up -d moto` runs the same server in a container instead.
+# SNS, SQS and S3 come from Moto, the `moto` service (built from local/moto/Dockerfile:
+# Docker Desktop's org policy blocks the motoserver/moto image here). The services reach it
+# at http://moto:5000, the browser (presigned photo URLs) at http://localhost:5050. Moto
+# keeps everything in memory: `moto-setup` creates the topics, queues and buckets on every
+# `up`, and the services start only after it, so no event is published before the queues
+# exist.
 # There is no separate "nginx" service: nginx runs inside the frontend container on port 80.
 #
 # UI:  http://localhost:${FRONTEND_PORT:-5173} → nginx proxies /api/* to the gateway
@@ -31,11 +32,11 @@ x-service-env: &service-env
   AWS_REGION: ap-south-1
   REDIS_URL: redis://valkey:6379
   JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
-  # Moto on the host (see the top of this file) for SNS, SQS and the rest.
-  AWS_ENDPOINT_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}
+  # The moto service (see the top of this file) for SNS, SQS and the rest.
+  AWS_ENDPOINT_URL: ${LOCAL_MOTO_URL:-http://moto:5000}
   # S3 alone (common.uploads.s3_endpoint_url): Moto by default; set empty in .env, AWS's S3.
   # `-`, not `:-`, in these: an empty value is kept, not replaced by the default.
-  AWS_ENDPOINT_URL_S3: ${LOCAL_S3_URL-http://host.docker.internal:5050}
+  AWS_ENDPOINT_URL_S3: ${LOCAL_S3_URL-http://moto:5000}
   # Moto's fake credentials by default. Set both empty in .env and the services use
   # LOCAL_AWS_PROFILE from LOCAL_AWS_DIR (your ~/.aws, mounted read-only below).
   AWS_ACCESS_KEY_ID: ${LOCAL_AWS_ACCESS_KEY_ID-local}
@@ -51,8 +52,6 @@ x-service: &service
     # AWS_PROFILE resolves); in manual mode your ~/.aws, whose credentials file holds the
     # profile's access key. Read-only: nothing in a container writes to it.
     - ${LOCAL_AWS_DIR:-./local/aws-test}:/home/appuser/.aws:ro
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
   networks:
     - superpower_net
   depends_on:
@@ -60,6 +59,9 @@ x-service: &service
       condition: service_healthy
     valkey:
       condition: service_healthy
+    # Moto's topics and queues exist before anything publishes or polls (moto-setup).
+    moto-setup:
+      condition: service_completed_successfully
     local-keys:
       condition: service_completed_successfully
 
@@ -122,28 +124,43 @@ services:
       retries: 5
       start_period: 5s
 
-  # Optional (profile "moto"): Moto in a container, for where the image is allowed. Otherwise
-  # run moto_server from the backend venv, as above; same port, same API.
+  # Moto: local SNS, SQS and S3 (see the top of this file). Built, not pulled
+  # (local/moto/Dockerfile), with the Moto version backend/requirements-test.txt pins.
+  # Port 5050 on the host is for the browser (presigned photo URLs) and the host's scripts
+  # (scripts/e2e, scripts/check-local-stack.py); not 5000, which macOS's AirPlay holds.
   moto:
-    image: motoserver/moto:5.2.3@sha256:91fd602a21f49cf9eb82fdf474015a3c131d40104c8297ea6a2ca920708ae32c
-    profiles: ["moto"]
+    image: superpower-moto:local
+    build:
+      context: ./backend
+      dockerfile: ../local/moto/Dockerfile
     restart: unless-stopped
     networks:
       - superpower_net
     ports:
       - "${MOTO_PORT:-5050}:5000"
+
+  # One-shot, on every `up`: the topics, queues (with their DLQs), filtered subscriptions
+  # and buckets in Moto (scripts/local-aws-setup.py). auth's image has boto3 and the event
+  # catalogue the script reads. Every service waits for it (x-service's depends_on). Moto
+  # forgets everything when it restarts: `docker compose up -d` runs this again.
+  moto-setup:
+    image: superpower-auth:local  # built by `auth`
+    pull_policy: never
+    command: ["python", "/tools/local-aws-setup.py"]
+    environment:
+      LOCAL_MOTO_URL: http://moto:5000
+      UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
+      ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-person-local-assets-bucket}
+    volumes:
+      - ./scripts/local-aws-setup.py:/tools/local-aws-setup.py:ro
+    depends_on:
+      moto:
+        condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/moto-api/')",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
+      disable: true
+    restart: "no"
+    networks:
+      - superpower_net
 
   # Local stand-in for the ALB's path rules (design 13.1): routes each /api/* path to its
   # service, and answers any other path with the ALB's 404. Generated from
@@ -173,13 +190,17 @@ services:
         VITE_API_URL: ${VITE_API_URL:-}
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     environment:
-      ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
+      # An environment's CloudFront site (https://<fqdn>): /app-assets/* is proxied to it.
+      # Empty: /app-assets/* is a 404 (the app falls back to its emoji tiles).
+      ASSETS_ORIGIN: ${ASSETS_ORIGIN:-}
       # /api/* goes to the gateway, which routes each path to its service as the ALB does.
       API_UPSTREAM: ${FRONTEND_API_UPSTREAM:-gateway:8080}
       # The photo URLs the services presign point at Moto (AWS_PUBLIC_ENDPOINT_URL): the CSP
       # lets the browser upload to and show them (frontend/nginx-start.sh). Empty with a real
-      # bucket: the CSP already allows the regional S3 hosts.
+      # bucket: the CSP allows that bucket's regional host instead (the two below).
       LOCAL_S3_ORIGIN: ${LOCAL_S3_PUBLIC_URL-http://localhost:5050}
+      UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
+      AWS_REGION: ap-south-1
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5173}:8080"
@@ -244,7 +265,7 @@ services:
       # Every service that holds user data (common.deletion.PARTICIPANTS).
       DELETION_PARTICIPANTS: users,children,onboarding,discover,grow,transform,release
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-auth-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-auth-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-auth-events
     <<: *service
 
   auth-worker:
@@ -271,7 +292,7 @@ services:
       MONGODB_URI: ${USERS_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: users-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-users-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-users-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-users-events
     <<: *service
 
   users-worker:
@@ -298,7 +319,7 @@ services:
       MONGODB_URI: ${CHILDREN_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: children-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-children-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-children-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-children-events
       UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
       UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
       # What presigned photo URLs point at: the host's Moto, which the browser can reach;
@@ -330,7 +351,7 @@ services:
       MONGODB_URI: ${ONBOARDING_MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
       INTERNAL_SIGNING_KID: onboarding-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-onboarding-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-onboarding-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-onboarding-events
     <<: *service
 
   onboarding-worker:
@@ -359,7 +380,7 @@ services:
       INTERNAL_SIGNING_KID: discover-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-discover-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-discover-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-discover-events
     <<: *service
 
   discover-worker:
@@ -397,7 +418,7 @@ services:
       INTERNAL_SIGNING_KID: grow-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-grow-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-grow-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-grow-events
     <<: *service
 
   grow-worker:
@@ -435,7 +456,7 @@ services:
       INTERNAL_SIGNING_KID: transform-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-transform-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-transform-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-transform-events
       UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
       UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
       # What presigned photo URLs point at: the host's Moto, which the browser can reach;
@@ -478,7 +499,7 @@ services:
       INTERNAL_SIGNING_KID: release-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-release-events
-      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-release-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://moto:5000}/123456789012/superpower-local-release-events
     <<: *service
 
   release-worker:

@@ -79,6 +79,13 @@ function toPhotosPayload(files: Record<string, PhotoItem[]>): Record<string, str
 export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   const [doc, setDoc] = useState<TransformDoc | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(true);
+  // The load failed: local state is empty, not the parent's, so nothing may be
+  // saved or generated from it — each PATCH field replaces the stored one, and an
+  // empty map sent from here would wipe what the parent already saved.
+  const [loadError, setLoadError] = useState<unknown>(null);
+  // Mirrors "a load succeeded for this child" for the callbacks, free of render timing.
+  const loadedRef = useRef(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [ask, setAsk] = useState('');
   const [monthIdx, setMonthIdx] = useState(0);
@@ -106,11 +113,14 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   useEffect(() => {
     if (!childId) return;
     let cancelled = false;
+    loadedRef.current = false;
     setLoadingDoc(true);
+    setLoadError(null);
     transform
       .get(childId)
       .then((fetched) => {
         if (cancelled) return;
+        loadedRef.current = true;
         setDoc(fetched);
         setAsk(fetched.ask ?? '');
         setApplied(fetched.applied);
@@ -130,7 +140,9 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
           setResume((prev) => [...prev, 'event_tracker']);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.warn('[useNinetyDayPlan] Could not load the saved plan:', err);
+        setLoadError(err ?? new Error('load failed'));
       })
       .finally(() => {
         if (!cancelled) setLoadingDoc(false);
@@ -138,7 +150,10 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
     return () => {
       cancelled = true;
     };
-  }, [childId]);
+  }, [childId, reloadKey]);
+
+  /** Loads the saved plan again, after a failed load. */
+  const reload = useCallback(() => setReloadKey((n) => n + 1), []);
 
   // Debounced, best-effort persistence — merges every scheduled patch into one
   // pending buffer so a burst of quick taps/keystrokes becomes one write.
@@ -169,6 +184,8 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
 
   const schedulePatch = useCallback(
     (partial: PlanPatch) => {
+      // Never save over the stored document from state that wasn't loaded from it.
+      if (!loadedRef.current) return;
       pendingPatchRef.current = { ...pendingPatchRef.current, ...partial };
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
       patchTimerRef.current = setTimeout(() => void flushPatch(), PATCH_DEBOUNCE_MS);
@@ -196,7 +213,7 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
    */
   const runGeneration = useCallback(
     async (kind: 'plan' | 'event_tracker') => {
-      if (!childId) return;
+      if (!childId || !loadedRef.current) return;
       const setState = kind === 'plan' ? setPlanState : setTrackerState;
       setState('running');
       try {
@@ -332,7 +349,7 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
 
   const addPhotos = useCallback(
     (key: string, files: FileList | null) => {
-      if (!files || files.length === 0 || !childId) return;
+      if (!files || files.length === 0 || !childId || !loadedRef.current) return;
       const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
       if (imageFiles.length === 0) {
         // Silent no-op otherwise — e.g. a HEIC photo some browsers report
@@ -478,6 +495,10 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   return {
     doc,
     loadingDoc,
+    /** The saved plan couldn't be loaded; saving and generation are off until `reload` succeeds. */
+    loadError,
+    loadFailed: loadError !== null,
+    reload,
     hasPlan: !!doc?.plan,
     hasTrackSteps: !!doc?.track_steps,
     generatePlan,
