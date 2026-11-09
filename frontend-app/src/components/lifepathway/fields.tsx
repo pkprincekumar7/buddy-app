@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import * as ImagePicker from 'expo-image-picker';
+import { pickedImageType } from '@/api/uploads';
 import { ChevronDown } from 'lucide-react-native';
 
 import { toast } from '@/lib/toast';
@@ -278,11 +279,17 @@ export async function pickPhotos(): Promise<PickedPhoto[] | null> {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
+      // HEIC photos (iPhone, many Android phones) are converted to JPEG, which the API
+      // accepts: iOS by asking for the compatible format, Android by re-encoding (any
+      // quality below 1). It also keeps a full-size photo well under the 5 MB limit.
+      quality: 0.85,
+      preferredAssetRepresentationMode:
+        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
     });
     if (result.canceled) return null;
     return result.assets.map(a => ({
       uri: a.uri,
-      mimeType: a.mimeType ?? null,
+      mimeType: pickedImageType(a.uri, a.mimeType),
     }));
   } catch (err) {
     console.error('[lifepathway] Photo picker failed:', err);

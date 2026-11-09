@@ -14,6 +14,7 @@ import { Camera, Check, Upload } from 'lucide-react-native';
 import { Button } from '@/components/ui/button';
 import Spinner from '@/components/shared/Spinner';
 import { AVATAR_LIMITS, avatarProblem } from '@/api/children';
+import { pickedImageType } from '@/api/uploads';
 import { cn } from '@/lib/utils';
 import { color, css, glow, hsl, rgb } from '@/theme';
 import { ALL_AVATARS, BOY_AVATARS, GIRL_AVATARS } from './avatars';
@@ -166,7 +167,7 @@ export default function ChildProfileStep({
   const applyPickedAsset = (result: ImagePicker.ImagePickerResult) => {
     const asset = result.canceled ? undefined : result.assets[0];
     if (!asset) return;
-    const mimeType = asset.mimeType ?? 'image/jpeg';
+    const mimeType = pickedImageType(asset.uri, asset.mimeType);
     // Children refuses anything else when the photo is saved (build plan 7.4).
     const problem = avatarProblem(mimeType, asset.fileSize ?? 0);
     setErrors(current => ({ ...current, avatarId: problem ?? undefined }));
@@ -192,6 +193,9 @@ export default function ChildProfileStep({
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
+        // iOS: HEIC photos come back as JPEG, which the API accepts (pickedImageType).
+        preferredAssetRepresentationMode:
+          ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
       }),
     );
   };

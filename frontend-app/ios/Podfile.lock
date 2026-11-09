@@ -115,6 +115,8 @@ PODS:
     - ExpoModulesJSI
     - ExpoModulesWorklets
     - RNWorklets
+  - ExpoSecureStore (56.0.4):
+    - ExpoModulesCore
   - ExpoSpeechRecognition (56.0.0):
     - ExpoModulesCore
   - ExpoVideo (56.1.3):
@@ -2371,6 +2373,7 @@ DEPENDENCIES:
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core`)
   - ExpoModulesWorkletsAdapter (from `../node_modules/expo-modules-core`)
+  - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
   - ExpoSpeechRecognition (from `../node_modules/expo-speech-recognition/ios`)
   - ExpoVideo (from `../node_modules/expo-video/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
@@ -2502,6 +2505,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-core"
   ExpoModulesWorkletsAdapter:
     :path: "../node_modules/expo-modules-core"
+  ExpoSecureStore:
+    :path: "../node_modules/expo-secure-store/ios"
   ExpoSpeechRecognition:
     :path: "../node_modules/expo-speech-recognition/ios"
   ExpoVideo:
@@ -2696,6 +2701,7 @@ SPEC CHECKSUMS:
   ExpoModulesJSI: e62656cfaffb5aeb3fdc1dd2bc49f77e87ed2261
   ExpoModulesWorklets: 3aaf91bb08abf910858592221480d6519f0daa1e
   ExpoModulesWorkletsAdapter: e306a37d93a7312d73bb8c3695a98228d3a749fa
+  ExpoSecureStore: f1bd083c1b7b8d4142013ffcc0082d377d9f49f4
   ExpoSpeechRecognition: 255445556dbf20df46cc7585d0f5827e4825df8a
   ExpoVideo: 8cf233ce6652a21a349ce5e12a4c513a6b40252e
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d

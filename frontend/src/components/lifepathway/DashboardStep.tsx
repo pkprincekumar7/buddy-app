@@ -11,6 +11,7 @@ import {
 import type { NinetyDayPlan } from '@/hooks/useNinetyDayPlan';
 import { GOLD, GOLD_PALE, CYAN, INK, FROST, FIELD_LABEL_STYLE } from './theme';
 import { TextField, TextAreaField } from './fields';
+import { AVATAR_TYPES } from '@/api/children';
 
 interface DashboardStepProps {
   childName: string;
@@ -1165,7 +1166,9 @@ function ActivityField({
           </svg>
           <input
             type="file"
-            accept="image/*"
+            // The API's types only: Safari on an iPhone then converts HEIC photos to JPEG
+            // instead of sending a file the upload would refuse.
+            accept={AVATAR_TYPES.join(',')}
             multiple
             className="sr-only"
             aria-label={label}
