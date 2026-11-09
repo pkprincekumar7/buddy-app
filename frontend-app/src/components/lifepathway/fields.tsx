@@ -35,7 +35,7 @@ const KEYBOARD: Record<string, KeyboardTypeOptions> = {
 };
 
 /** A single-column labeled input — the shape shared by most text fields
- * across every step. `type="date"` renders a DD/MM/YYYY date entry (see DateInput). */
+ * across every step. `type="date"` opens the system date picker (see DateInput). */
 export function TextField({
   id,
   label,
