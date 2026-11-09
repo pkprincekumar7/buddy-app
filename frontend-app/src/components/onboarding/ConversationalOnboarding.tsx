@@ -56,6 +56,9 @@ interface ConversationalOnboardingProps {
   onComplete: (data: Record<string, unknown>) => void | Promise<void>;
   resumeHydrationReady?: boolean;
   onContinueToPersonality?: () => void | Promise<unknown>;
+  /** The page is saving the answers (or waiting for the personality): show the
+   *  thank-you screen, e.g. while a "Try again" after a failed save runs. */
+  saving?: boolean;
 }
 
 const IVY_MSG =
@@ -163,6 +166,7 @@ export default function ConversationalOnboarding({
   onComplete,
   resumeHydrationReady = true,
   onContinueToPersonality,
+  saving = false,
 }: ConversationalOnboardingProps) {
   const insets = useSafeAreaInsets();
   const [showIntro, setShowIntro] = useState(true);
@@ -571,7 +575,9 @@ export default function ConversationalOnboarding({
           showingDots: true,
           dotCount: 0,
         });
-        schedule(() => {
+        // Not schedule(): leaving within these 2 s must not drop the answers. The page
+        // saves them even after the chat unmounts, and doesn't navigate then.
+        setTimeout(() => {
           Promise.resolve(onComplete(finalData)).catch(() => {});
         }, 2000);
         return;
@@ -676,7 +682,7 @@ export default function ConversationalOnboarding({
     onComplete,
   ]);
 
-  const showThankYou = showingLoadingDots || showAnalyzing;
+  const showThankYou = showingLoadingDots || showAnalyzing || saving;
   // mode="wait": whatever mounts after the first step view waits out the previous exit.
   const enterDelay = flipDelayRef.current;
   useEffect(() => {

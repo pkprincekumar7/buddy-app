@@ -1751,8 +1751,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 **Where:**
 - `frontend-app/android/app/build.gradle:116-131`: `release` uses `signingConfigs.debug`, the committed `debug.keystore` with password `android`.
 - `build.gradle:91`: `versionCode 1` is hard-coded.
-- `.github/workflows/build-android-apk.yml:222` and `build-ios-ipa.yml:394` copy the builds to `s3://<assets>/app-assets/applications/...`, which CloudFront serves **publicly** via `/app-assets/*` (`infra-live-edge/terraform/cloudfront.tf:137`).
-- iOS uses the `ad-hoc` export method (`build-ios-ipa.yml:326`), which is capped at 100 registered devices.
+- `.github/workflows/build-android-apk.yml:231` and `build-ios-ipa.yml:406` copy the builds to `s3://<assets>/app-assets/applications/...`, which CloudFront serves **publicly** via `/app-assets/*` (`infra-live-edge/terraform/cloudfront.tf:137`).
+- iOS uses the `ad-hoc` export method (`build-ios-ipa.yml:336-337`), which is capped at 100 registered devices.
 
 **Problems:**
 - Anyone can download the prod builds.

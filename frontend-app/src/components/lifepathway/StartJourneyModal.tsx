@@ -450,7 +450,8 @@ export default function StartJourneyModal({
                   )}
 
                   {/* No steps until the saved plan has loaded: nothing could be saved or generated. */}
-                  {!progress.loadFailed && (
+                  {/* Not while a Try again is loading: the step isn't decided yet. */}
+                  {!progress.loadFailed && !progress.loadingDoc && (
                     <Animated.View key={step} entering={STEP_ENTER}>
                       {step === 0 && (
                         <View

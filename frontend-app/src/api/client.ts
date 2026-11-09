@@ -30,34 +30,45 @@ const SECURE: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
-// Builds before the move kept the tokens in AsyncStorage. They're deleted, not moved:
-// a plaintext copy must not stay behind, and signing in once more is the whole cost.
+// Once per app start, before the store is used:
+// - A fresh install forgets any tokens. The iOS Keychain outlives an uninstall, while
+//   AsyncStorage (the app's own files) doesn't, so a missing INSTALLED_KEY means this
+//   install never signed in, and a Keychain pair from before belongs to whoever used the
+//   app last. Without this, reinstalling would sign straight back into their account.
+// - Builds before the move kept the tokens in AsyncStorage. They're deleted, not moved:
+//   a plaintext copy must not stay behind, and signing in once more is the whole cost.
+const INSTALLED_KEY = 'superpower:installed';
 const PLAINTEXT_KEYS = ['superpower:access_token', 'superpower:refresh_token'];
-let plaintextRemoved: Promise<void> | null = null;
-function removePlaintextTokens(): Promise<void> {
-  plaintextRemoved ??= AsyncStorage.removeMany(PLAINTEXT_KEYS).catch(
-    (err: unknown) => {
-      plaintextRemoved = null; // tried again on the next token read
-      console.warn(
-        '[tokenStore] Could not remove the old plaintext tokens:',
-        err,
-      );
-    },
-  );
-  return plaintextRemoved;
+let prepared: Promise<void> | null = null;
+function prepare(): Promise<void> {
+  prepared ??= (async () => {
+    await AsyncStorage.removeMany(PLAINTEXT_KEYS);
+    if ((await AsyncStorage.getItem(INSTALLED_KEY)) === null) {
+      await Promise.all([
+        SecureStore.deleteItemAsync(ACCESS_KEY, SECURE),
+        SecureStore.deleteItemAsync(REFRESH_KEY, SECURE),
+      ]);
+      await AsyncStorage.setItem(INSTALLED_KEY, '1');
+    }
+  })().catch((err: unknown) => {
+    prepared = null; // tried again on the next use
+    throw err; // never hand out a pair this install may not own
+  });
+  return prepared;
 }
 
 /** Also used by api/services.ts, the generated clients' fetch. */
 export const tokenStore = {
   async getAccess(): Promise<string | null> {
-    await removePlaintextTokens();
+    await prepare();
     return SecureStore.getItemAsync(ACCESS_KEY, SECURE);
   },
   async getRefresh(): Promise<string | null> {
-    await removePlaintextTokens();
+    await prepare();
     return SecureStore.getItemAsync(REFRESH_KEY, SECURE);
   },
   async set(access: string, refresh: string): Promise<void> {
+    await prepare(); // after a fresh install's clean-up, never wiped by it
     await Promise.all([
       SecureStore.setItemAsync(ACCESS_KEY, access, SECURE),
       SecureStore.setItemAsync(REFRESH_KEY, refresh, SECURE),
@@ -155,6 +166,12 @@ async function refreshTokenPair(): Promise<void> {
       credentials: 'include',
       signal: controller.signal,
     });
+  } catch (err) {
+    // Not an AbortError: callers read that as "the screen went away" and stop silently,
+    // which would leave a generation spinning. A timed-out refresh is a plain failure.
+    if (controller.signal.aborted)
+      throw new Error('The session refresh timed out.');
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
@@ -180,11 +197,16 @@ async function refreshTokenPair(): Promise<void> {
     if (res.status === 401 || res.status === 403) await tokenStore.clear();
     throw new ApiError(res.status, detail);
   }
+  let body: unknown;
   try {
-    await captureTokens(await res.json());
+    body = await res.json();
   } catch {
-    /* empty body */
+    return; /* empty body */
   }
+  // Not caught: the server has already rotated the pair, so a failed save (a locked
+  // device, a Keystore error) must fail this refresh rather than keep the old refresh
+  // token, whose next use would look like reuse and revoke the session.
+  await captureTokens(body);
 }
 
 export const api = {

@@ -73,6 +73,15 @@ jest.mock('@react-native-async-storage/async-storage', () => {
   };
 });
 
+// An app that has started on this device before: the token store only forgets the
+// Keychain on a fresh install (api/client.ts, prepare). Tests of that path remove it.
+beforeEach(async () => {
+  const AsyncStorage = jest.requireMock(
+    '@react-native-async-storage/async-storage',
+  ) as { setItem: (k: string, v: string) => Promise<void> };
+  await AsyncStorage.setItem('superpower:installed', '1');
+});
+
 // Mock expo-secure-store (the token store): an in-memory Keychain/Keystore.
 jest.mock('expo-secure-store', () => {
   const store: Record<string, string> = {};

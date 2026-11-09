@@ -5,7 +5,7 @@ import { useNavigate, useParams } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
 import { onboarding, answersFrom, ONBOARDING_ERRORS } from '@/api/onboarding';
 import { settlePersonality } from '@/api/discover';
-import { useUnmountSignal } from '@/hooks/useUnmountSignal';
+import { useFocusEffect } from '@react-navigation/native';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import PageLoader from '@/components/shared/PageLoader';
 import PageBackRow from '@/components/layout/PageBackRow';
@@ -51,8 +51,24 @@ export default function ConversationalOnboarding() {
   // must not send the answers twice or navigate twice.
   const savingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
-  // Stops waiting for the personality (and navigating) if the parent leaves the screen.
-  const unmountSignal = useUnmountSignal();
+  // The wait for the personality (below) stops when the parent leaves this screen:
+  // going Back unmounts it, but the header's Home pushes over it and keeps it mounted,
+  // so it's tied to focus, not to unmounting.
+  const waitRef = useRef<AbortController | null>(null);
+  // The answers were saved but the parent left before the wait ended: coming back goes
+  // straight on to the hub, which keeps waiting for the personality itself.
+  const savedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (savedRef.current && !inFlightRef.current && childId) {
+        void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+      }
+      return () => waitRef.current?.abort();
+    }, [childId, navigate]),
+  );
+  // A second save while one runs gets the same promise, so whoever awaits it (the
+  // Continue button) waits for the real outcome.
+  const inFlightRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -84,56 +100,67 @@ export default function ConversationalOnboarding() {
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
   const save = useCallback(
-    async (collected: Record<string, unknown>) => {
-      if (!childId || savingRef.current) return;
-      pendingRef.current = collected;
-      setSaveError(null);
-      const answers = answersFrom(collected);
-      if (!answers) {
-        setSaveError(
-          'Some answers are missing. Please go through the chat again.',
-        );
-        return;
-      }
-      savingRef.current = true;
-      setIsSaving(true);
-      try {
-        try {
-          await onboarding.save(childId, answers);
-        } catch (err) {
-          console.warn(
-            '[ConversationalOnboarding] Could not save the answers:',
-            err,
-          );
+    (collected: Record<string, unknown>): Promise<void> => {
+      if (inFlightRef.current) return inFlightRef.current;
+      const run = (async () => {
+        if (!childId || savingRef.current) return;
+        pendingRef.current = collected;
+        setSaveError(null);
+        const answers = answersFrom(collected);
+        if (!answers) {
           setSaveError(
-            httpErrorMessage(err as Error, {
-              codeMessages: ONBOARDING_ERRORS,
-              fallback: "We couldn't save your answers. Please try again.",
-            }),
+            'Some answers are missing. Please go through the chat again.',
           );
           return;
         }
-        // Wait here, on the thank-you screen, for discover to finish the personality.
-        // Whatever happens (it failed, it's slow, the network dropped), go on to the
-        // hub: it shows a failure with Try again, and keeps waiting for a slow one.
-        const signal = unmountSignal.current.signal;
+        savingRef.current = true;
+        setIsSaving(true);
         try {
-          await settlePersonality(childId, { signal, timeoutMs: 180_000 });
-        } catch (err) {
+          try {
+            await onboarding.save(childId, answers);
+          } catch (err) {
+            console.warn(
+              '[ConversationalOnboarding] Could not save the answers:',
+              err,
+            );
+            setSaveError(
+              httpErrorMessage(err as Error, {
+                codeMessages: ONBOARDING_ERRORS,
+                fallback: "We couldn't save your answers. Please try again.",
+              }),
+            );
+            return;
+          }
+          savedRef.current = true;
+          // Wait here, on the thank-you screen, for discover to finish the personality.
+          // Whatever happens (it failed, it's slow, the network dropped), go on to the
+          // hub: it shows a failure with Try again, and keeps waiting for a slow one.
+          const wait = new AbortController();
+          waitRef.current = wait;
+          const { signal } = wait;
+          try {
+            await settlePersonality(childId, { signal, timeoutMs: 180_000 });
+          } catch (err) {
+            if (signal.aborted) return;
+            console.warn(
+              '[ConversationalOnboarding] Personality not ready yet:',
+              err,
+            );
+          }
           if (signal.aborted) return;
-          console.warn(
-            '[ConversationalOnboarding] Personality not ready yet:',
-            err,
-          );
+          void navigate(`/PersonalityJourney/${childId}`);
+        } finally {
+          savingRef.current = false;
+          setIsSaving(false);
         }
-        if (signal.aborted) return;
-        void navigate(`/PersonalityJourney/${childId}`);
-      } finally {
-        savingRef.current = false;
-        setIsSaving(false);
-      }
+      })();
+      inFlightRef.current = run;
+      void run.finally(() => {
+        inFlightRef.current = null;
+      });
+      return run;
     },
-    [childId, navigate, unmountSignal],
+    [childId, navigate],
   );
 
   const handleComplete = useCallback(
@@ -160,6 +187,7 @@ export default function ConversationalOnboarding() {
                 resumeHydrationReady={hydrated}
                 onComplete={handleComplete}
                 onContinueToPersonality={() => handleComplete({})}
+                saving={isSaving}
               />
             </View>
 

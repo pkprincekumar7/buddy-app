@@ -215,9 +215,7 @@ export default function Onboarding() {
           ) : (
             <View key="step2">
               <ChildProfileStep
-                onContinue={(data, photoFile) =>
-                  void handleProfileContinue(data, photoFile)
-                }
+                onContinue={handleProfileContinue}
                 initialData={prefillData}
                 isLoading={isSaving}
               />

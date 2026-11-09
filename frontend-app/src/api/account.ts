@@ -73,14 +73,24 @@ export const account = {
    *  ends the session its refresh token names, read from the Bearer header as refresh reads
    *  it (no cookie jar), so this sends that token, not the access token. */
   async logout(): Promise<void> {
-    const refresh = await tokenStore.getRefresh();
+    // Never throws: a token that can't be read or deleted (a locked device, a Keystore
+    // error) must not leave the app unable to sign out.
+    const refresh = await tokenStore.getRefresh().catch((err: unknown) => {
+      console.warn(
+        '[account] Could not read the refresh token to sign out:',
+        err,
+      );
+      return null;
+    });
     await unwrap(
       services.auth.POST(
         '/api/v1/auth/logout',
         refresh ? { headers: { Authorization: `Bearer ${refresh}` } } : {},
       ),
     ).catch(() => {});
-    await tokenStore.clear();
+    await tokenStore.clear().catch((err: unknown) => {
+      console.warn('[account] Could not delete the tokens:', err);
+    });
   },
 
   /** End every session of the account, on every device. */
