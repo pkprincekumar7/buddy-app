@@ -6,7 +6,7 @@ React 19 + TypeScript + Vite frontend for the Superpower platform.
 
 - Node.js 22
 - npm 10+
-- The [FastAPI backend](../backend/README.md) running on port 8000 (required for API calls)
+- The local stack running from the repo root, in manual mode (`docker compose up -d --build`: Atlas and a real bucket) or test mode (`docker compose --env-file .env --env-file .env.test up -d --build`: the `mongo` container and Moto), see [docs/getting-started.md](../docs/getting-started.md#manual-and-test-modes): the API is served by the gateway on port 8088
 
 ## Setup
 
@@ -23,9 +23,9 @@ cp .env.example .env.local
 | Variable                | Required | Description                                                                                   |
 | ----------------------- | -------- | --------------------------------------------------------------------------------------------- |
 | `VITE_GOOGLE_CLIENT_ID` | Yes      | Google OAuth client ID for Sign-In                                                            |
-| `VITE_API_URL`          | No       | Backend API base URL — leave empty to use the Vite dev-server proxy (`/api → localhost:8000`) |
+| `VITE_API_URL`          | No       | API base URL — leave empty to use the Vite dev-server proxy (`/api → localhost:8088`, the gateway) |
 
-> `ASSETS_BUCKET_NAME` is a Docker build arg only — it is never exposed to the client and should **not** go in `.env.local`.
+> `ASSETS_BUCKET_NAME` (the local assets bucket, public for `app-assets/*`; see `local/aws-manual`) makes the dev server and the container's nginx proxy `/app-assets/*` to it. It's read by the proxy only (not a `VITE_` variable), so it's never exposed to the client.
 
 ## Development
 
@@ -36,7 +36,7 @@ npm run lint       # run ESLint (zero errors required)
 npm run build      # production build → dist/
 ```
 
-The dev server proxies `/api` requests to `http://localhost:8000` automatically when `VITE_API_URL` is not set. Start the backend first.
+The dev server proxies `/api` requests to the gateway on `http://localhost:8088` automatically when `VITE_API_URL` is not set (`API_PROXY_TARGET` points it elsewhere). Start the stack first.
 
 ## Tech stack
 

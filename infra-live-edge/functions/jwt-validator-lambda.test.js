@@ -181,7 +181,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
     const res = await invoke(
       lambda,
       mockRequest('/api/v1/auth/register', {
-        cookies: { access_token: expiredToken },
+        cookies: { '__Host-access_token': expiredToken },
         headers: { 'X-Client-Location': 'us' },
       })
     )
@@ -191,13 +191,13 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
   await t.test('register: a forged (bad signature) cookie is ignored, falls through unchanged', async () => {
     const forged = signJwt({ sub: 'u1', type: 'access', location: 'eu' })
     const tampered = forged.slice(0, -5) + 'AAAAA'
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/register', { cookies: { access_token: tampered } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/register', { cookies: { '__Host-access_token': tampered } }))
     assert.equal(res.origin.custom.domainName, 'placeholder.example.com')
   })
 
   await t.test('refresh: a valid refresh_token cookie routes by its location claim', async () => {
     const refreshToken = signJwt({ sub: 'u1', type: 'refresh', jti: 'j1', location: 'eu' })
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: refreshToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { '__Secure-refresh_token': refreshToken } }))
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
   })
 
@@ -209,32 +209,40 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
 
   await t.test('refresh: a location mapped to a region not yet deployed falls through unchanged, not 503', async () => {
     const refreshToken = signJwt({ sub: 'u1', type: 'refresh', jti: 'j1', location: 'br' })
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: refreshToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { '__Secure-refresh_token': refreshToken } }))
     assert.equal(res.origin.custom.domainName, 'placeholder.example.com')
     assert.equal(res.status, undefined)
   })
 
   await t.test('rerouting also rewrites Host to the selected ALB', async () => {
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/me', { cookies: { access_token: signJwt({ type: 'access', location: 'eu' }) } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/me', { cookies: { '__Host-access_token': signJwt({ type: 'access', location: 'eu' }) } }))
     assert.equal(res.headers['host'][0].value, 'alb.eu-west-1.example.com')
   })
 
   await t.test('authenticated /api/* call with a valid token routes by location', async () => {
     const accessToken = signJwt({ sub: 'u1', type: 'access', location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
-    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': accessToken } }))
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
   })
 
   await t.test('authenticated /api/* call with an expired token: 401 (staleness must reject here)', async () => {
     const expiredToken = signJwt({ sub: 'u1', type: 'access', location: 'eu' }, { exp: Math.floor(Date.now() / 1000) - 3600 })
-    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: expiredToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': expiredToken } }))
+    assert.equal(res.status, '401')
+  })
+
+  await t.test('a cookie with the bare name is ignored: only the prefixed one counts (AUTH-05)', async () => {
+    const accessToken = signJwt({ sub: 'u1', type: 'access', location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
+    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } }))
     assert.equal(res.status, '401')
   })
 
   await t.test('authenticated /api/* call with location=cn (deliberately excluded): 503', async () => {
     const accessToken = signJwt({ sub: 'u1', type: 'access', location: 'cn' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
-    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': accessToken } }))
     assert.equal(res.status, '503')
+    // L7: the body says nothing about locations or regions.
+    assert.ok(!/cn|region|location|provisioned/i.test(res.body), res.body)
   })
 
   await t.test('mobile: refresh_token sent as Authorization: Bearer (no cookie jar) still routes correctly', async () => {
@@ -265,7 +273,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
   // -- EDGE-04: stricter validation on authenticated paths --------------------
 
   const now = () => Math.floor(Date.now() / 1000)
-  const callMe = (token) => invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: token } }))
+  const callMe = (token) => invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': token } }))
 
   await t.test('EDGE-04: a token with no exp is rejected (401)', async () => {
     const res = await callMe(signJwt({ type: 'access', location: 'eu' }, { omitExp: true }))
@@ -317,13 +325,13 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
 
   await t.test('EDGE-04: routing hints still accept an expired, correctly signed refresh token', async () => {
     const stale = signJwt({ type: 'refresh', jti: 'j1', location: 'eu' }, { exp: now() - 86400 })
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: stale } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { '__Secure-refresh_token': stale } }))
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
   })
 
   await t.test('EDGE-04: a routing hint with a bad alg is ignored, never trusted', async () => {
     const bad = signJwt({ type: 'refresh', jti: 'j1', location: 'eu' }, { alg: 'HS256' })
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: bad } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { '__Secure-refresh_token': bad } }))
     assert.equal(res.origin.custom.domainName, 'placeholder.example.com')
   })
 
@@ -352,7 +360,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
 
   await t.test("EDGE-04: another environment's token can't steer routing hints either", async () => {
     const foreign = signJwt({ type: 'refresh', jti: 'j1', location: 'eu', iss: 'superpower-prod' })
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: foreign } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { '__Secure-refresh_token': foreign } }))
     assert.equal(res.origin.custom.domainName, 'placeholder.example.com')
   })
 
@@ -360,7 +368,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
 
   await t.test('authenticated re-route carries the configured X-Origin-Verify header over', async () => {
     const accessToken = signJwt({ type: 'access', location: 'eu' })
-    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': accessToken } }))
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
     assert.deepEqual(res.origin.custom.customHeaders, {
       'x-origin-verify': [{ key: 'X-Origin-Verify', value: ORIGIN_VERIFY_VALUE }],
@@ -369,7 +377,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
 
   await t.test('hint-based re-route (refresh) also carries the X-Origin-Verify header over', async () => {
     const refreshToken = signJwt({ sub: 'u1', type: 'refresh', jti: 'j1', location: 'eu' })
-    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: refreshToken } }))
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { '__Secure-refresh_token': refreshToken } }))
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
     assert.equal(res.origin.custom.customHeaders['x-origin-verify'][0].value, ORIGIN_VERIFY_VALUE)
   })
@@ -379,7 +387,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
     const res = await invoke(
       lambda,
       mockRequest('/api/v1/users/me', {
-        cookies: { access_token: accessToken },
+        cookies: { '__Host-access_token': accessToken },
         originCustomHeaders: { 'x-origin-verify': [{ key: 'X-Origin-Verify', value: 'rotated-value' }] },
       })
     )
@@ -388,7 +396,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
 
   await t.test('origin with no custom headers: re-route still works and sends none (ALB 403s it)', async () => {
     const accessToken = signJwt({ type: 'access', location: 'eu' })
-    const req = mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } })
+    const req = mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': accessToken } })
     delete req.origin.custom.customHeaders
     const res = await invoke(lambda, req)
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
@@ -400,7 +408,7 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
     const res = await invoke(
       lambda,
       mockRequest('/api/v1/users/me', {
-        cookies: { access_token: accessToken },
+        cookies: { '__Host-access_token': accessToken },
         headers: { 'X-Origin-Verify': 'viewer-guess' },
       })
     )
@@ -453,7 +461,7 @@ output "rendered" { value = local.rendered }
   const now = Math.floor(Date.now() / 1000)
   const body = Buffer.from(JSON.stringify({ sub: 'u1', type: 'access', location: 'eu', iat: now, exp: now + 600, iss: ISS, aud: AUD })).toString('base64url')
   const sig = crypto.sign('SHA256', Buffer.from(`${header}.${body}`), { key: privateKey, padding: crypto.constants.RSA_PKCS1_PADDING }).toString('base64url')
-  const ok = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: `${header}.${body}.${sig}` } }))
+  const ok = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { '__Host-access_token': `${header}.${body}.${sig}` } }))
   assert.equal(ok.origin.custom.domainName, 'alb.eu-west-1.example.com')
   const bypass = await invoke(lambda, mockRequest('/api/v1/auth/login'))
   assert.equal(bypass.origin.custom.domainName, 'placeholder.example.com')

@@ -3,8 +3,15 @@ name: Check
 on:
   push:
     branches: ["main"]
+  # Pull requests into develop too: feature work merges there before main, so it's
+  # checked before it lands rather than only when develop goes to main.
   pull_request:
-    branches: ["main"]
+    branches: ["main", "develop"]
+  # Weekly, so new CVEs (Trivy, pip-audit, npm/yarn audit, retire.js) and CodeQL queries
+  # are checked against main even in a week with no push (production-readiness review,
+  # CI-17 b).
+  schedule:
+    - cron: "23 3 * * 1"
   workflow_dispatch:
 
 concurrency:
@@ -28,19 +35,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
-            backend/requirements.txt
+            backend/requirements-dev.txt
             backend/requirements-lint.txt
+            backend/requirements-test.txt
 
+      # The services' runtime packages (their union), the lint tools and the test tools: mypy
+      # checks the tests too, and without pytest it can't see that pytest.skip() never
+      # returns, so a skipped test's `str | None` stays unnarrowed (as check.sh's venv has them).
       - name: Install dependencies + dev tools
-        run: pip install -r requirements.txt -r requirements-lint.txt
+        run: pip install -r requirements-dev.txt -r requirements-lint.txt -r requirements-test.txt
 
       - name: ruff check
         run: ruff check .
@@ -49,12 +60,23 @@ jobs:
         run: ruff format --check .
 
       - name: mypy type check
-        run: mypy app/ tools/
+        run: mypy tools/ common/
 
-      # Validates the hand-built mutant lists against the current source (seconds).
-      # Never runs mutation testing itself — that's manual (docs/mutation-testing.md).
-      - name: Mutant lists valid
-        run: python tools/mutate_handlers.py --check
+      # Every directory under backend/ with requirements.txt is a service; each gets its own
+      # job below (backend-service). This fails on a malformed one or an orphaned spec.
+      - name: Service tree valid
+        run: python tools/services.py --check
+
+      # Service import boundaries (docs/auth-users-split.md, section 2): common never
+      # imports service code, and services never import each other. The contracts are
+      # generated from the services in the tree.
+      - name: import-linter
+        run: python tools/import_contracts.py
+
+      # The shared package must install on its own and with each extra, the way every
+      # service image installs it (build plan 0.1).
+      - name: Install common (core and extras)
+        run: pip install ./common './common[generation,uploads]'
 
   backend-test:
     name: Backend Tests
@@ -64,68 +86,182 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # MongoDB isn't a service container: services can't pass the --replSet flag, and
+    # change streams and transactions need a replica set. A step starts it instead,
+    # the same way docker-compose.yml does (build plan 0.3).
     services:
       # Health checks make GitHub wait until each service accepts connections
       # before the first step runs (it otherwise only waits for "started").
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-      redis:
-        image: redis:7-alpine
+      valkey:
+        image: valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "valkey-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Start MongoDB 8.0 (single-node replica set)
+        run: bash ../scripts/ci-start-mongo.sh
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
-            backend/requirements.txt
+            backend/requirements-dev.txt
             backend/requirements-test.txt
 
       - name: Install dependencies + test tools
-        run: pip install -r requirements.txt -r requirements-test.txt
+        run: pip install -r requirements-dev.txt -r requirements-test.txt
 
-      - name: Generate test RSA key pair
-        run: |
-          {
-            echo 'JWT_PRIVATE_KEY<<JWTKEYEOF'
-            openssl genrsa 2048 2>/dev/null
-            echo 'JWTKEYEOF'
-          } >> "$GITHUB_ENV"
-
-      # Line + branch coverage of app/ is ~99.96% (one branch in main.py's
-      # session-cleanup loop real Motor can't reach); the gate stops it slipping.
-      - name: pytest + coverage
-        run: pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
+      # common's and the tools' tests (each service has its own job below). The gate keeps
+      # common's line + branch coverage from slipping.
+      - name: pytest + coverage (common, tools)
+        timeout-minutes: 10
+        run: pytest common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
         env:
-          MONGODB_URI: mongodb://localhost:27017
-          # Enables tests/test_mongo_integration.py against the mongo:7 service above
-          # (separate from MONGODB_URI so local runs never touch a real cluster).
-          MONGODB_TEST_URI: mongodb://localhost:27017
+          # The live tests run against the MongoDB replica set and the Valkey started above
+          # (MONGODB_TEST_URI, so local runs never touch a real cluster).
+          MONGODB_TEST_URI: mongodb://localhost:27017/?directConnection=true
           # A skipped live_service test (Mongo/Redis unreachable) fails the run instead
-          # of passing silently — see tests/conftest.py.
+          # of passing silently — see common/tests/conftest.py.
           REQUIRE_LIVE_SERVICES: "1"
-          JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
-          JWT_KEY_ID: key-v1
           REDIS_URL: redis://localhost:6379
+
+  # ── per-service jobs (build plan 0.5) ────────────────────────────────────────
+  # The services are found from the tree (backend/tools/services.py), so a new one gets its
+  # job without editing this file. Each installs only its own requirements.txt, the way its
+  # image does, which proves the file is complete.
+  backend-service-list:
+    name: Backend Service List
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: List services
+        id: list
+        run: echo "services=$(python tools/services.py --json)" >> "$GITHUB_OUTPUT"
+
+  backend-service:
+    name: Backend Service (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [backend-lint, backend-service-list]
+    if: needs.backend-service-list.outputs.services != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.backend-service-list.outputs.services) }}
+    env:
+      SERVICE: ${{ matrix.service }}
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      valkey:
+        image: valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Start MongoDB 8.0 (single-node replica set)
+        run: bash ../scripts/ci-start-mongo.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/${{ matrix.service }}/requirements.txt
+            backend/requirements-test.txt
+            backend/requirements-lint.txt
+
+      # buddy-common comes from this tree's backend/common only, never from PyPI.
+      - name: Install the service alone (as its image does) + test tools
+        run: bash ../scripts/install-backend-service.sh "$SERVICE" requirements-test.txt requirements-lint.txt
+
+      - name: mypy type check
+        run: mypy "$SERVICE/"
+
+      # A hung test fails the step instead of holding the job to its limit.
+      - name: pytest + coverage
+        timeout-minutes: 10
+        run: pytest "$SERVICE/tests" --cov="$SERVICE" --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
+        env:
+          MONGODB_TEST_URI: mongodb://localhost:27017/?directConnection=true
+          REDIS_URL: redis://localhost:6379
+          REQUIRE_LIVE_SERVICES: "1"
+          # Not what the tests run as: each testkit pins APP_ENV=local (it sets the event
+          # topics' prefix), and auth's conftest pins it in the process too, for the cookie
+          # names common.cookies reads at import. A different value here checks that nothing
+          # else leaks in from the environment.
           APP_ENV: dev
+
+      # backend/openapi/<service>.json is committed; Spectral lints the
+      # committed copies in the dast job.
+      - name: OpenAPI spec up to date
+        run: |
+          if [ ! -f "$SERVICE/app/main.py" ]; then
+            echo "$SERVICE serves no HTTP yet"
+            exit 0
+          fi
+          python tools/export-openapi.py --service "$SERVICE" > "openapi/$SERVICE.json"
+          if [ -n "$(git status --porcelain -- "openapi/$SERVICE.json")" ]; then
+            git diff -- "openapi/$SERVICE.json"
+            echo "::error::backend/openapi/$SERVICE.json is missing or out of date. Run check.sh locally and commit the regenerated file."
+            exit 1
+          fi
+
+  # One stable check name for branch protection, whatever services exist.
+  backend-services:
+    name: Backend Services
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [backend-service-list, backend-service]
+    if: always()
+    steps:
+      - name: All service jobs passed
+        env:
+          LIST_RESULT: ${{ needs.backend-service-list.result }}
+          SERVICES: ${{ needs.backend-service-list.outputs.services }}
+          RESULT: ${{ needs.backend-service.result }}
+        run: |
+          if [ "$LIST_RESULT" != success ]; then
+            echo "Listing the services failed: $LIST_RESULT"; exit 1
+          fi
+          if [ "$RESULT" = success ] || { [ "$RESULT" = skipped ] && [ "$SERVICES" = "[]" ]; }; then
+            echo "Services: $SERVICES"; exit 0
+          fi
+          echo "Service jobs: $RESULT"; exit 1
 
   frontend-lint:
     name: Frontend Lint
@@ -137,10 +273,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Node
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -148,6 +284,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Both apps' typed API files, generated from backend/openapi/*.json with
+      # openapi-typescript from frontend/node_modules (build plan 7.1).
+      - name: API clients in sync with backend/openapi
+        run: node ../scripts/sync-api-clients.mjs --check
 
       - name: ESLint
         run: npm run lint
@@ -163,8 +304,9 @@ jobs:
 
       - name: Bundle size budget (main JS ≤ 1.4 MB)
         run: |
-          BUNDLE=$(ls dist/assets/index-*.js 2>/dev/null | head -1)
-          if [ -z "$BUNDLE" ]; then echo "No bundle found"; exit 1; fi
+          BUNDLES=(dist/assets/index-*.js)
+          BUNDLE="${BUNDLES[0]}"
+          if [ ! -f "$BUNDLE" ]; then echo "No bundle found"; exit 1; fi
           SIZE=$(wc -c < "$BUNDLE")
           LIMIT=1468006
           echo "Bundle: $BUNDLE — ${SIZE} bytes (limit ${LIMIT})"
@@ -180,10 +322,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Node
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
           cache: "yarn"
@@ -211,10 +353,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Node
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
 
@@ -223,14 +365,22 @@ jobs:
       # templatefile() syntax), so the test exercises exactly what gets
       # deployed.
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v4.0.1
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
 
       # shared/routing.json is the single source of truth for country → location →
       # region; the backend and both frontends commit generated copies of it.
       - name: Routing data in sync with shared/routing.json
         run: node scripts/sync-routing.mjs --check
+
+      # shared/service-routes.json drives both the ALB rules and the local gateway's
+      # nginx config (docs/auth-users-split.md, 13.1; build plan 0.3).
+      - name: Gateway config in sync with shared/service-routes.json
+        run: node scripts/sync-gateway.mjs --check
 
       - name: Run jwt-validator-lambda unit tests
         run: node --test infra-live-edge/functions/jwt-validator-lambda.test.js
@@ -243,47 +393,112 @@ jobs:
       - name: Run ecs-services.sh tests
         run: bash scripts/ecs-services.test.sh
 
+      # terraform-live-backend's first-apply fill of the per-service secrets,
+      # against a fake aws CLI (fake values only).
+      - name: Run fill-service-secrets.sh tests
+        run: bash scripts/fill-service-secrets.test.sh
+
+      - name: Run service-token-keys.sh tests
+        run: bash scripts/service-token-keys.test.sh
+
+      # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07),
+      # against a fake aws CLI.
+      - name: Run frontend-publish.sh tests
+        run: bash scripts/frontend-publish.test.sh
+
+      # The frontend releases kept for rollback-live-frontend (CI-07): save, prune, restore.
+      - name: Run frontend release tests
+        run: bash scripts/frontend-release.test.sh
+
+      # The reusable workflows' input checks (SEC-07): environment, action, regions.
+      - name: Run workflow-inputs.sh tests
+        run: bash scripts/workflow-inputs.test.sh
+
+      # The scheduler's GitHub dispatcher (SCH-01): standard library only, so the
+      # runner's Python is enough; no AWS or GitHub access.
+      - name: Run scheduler dispatcher tests
+        run: python3 infra-live-scheduler/lambda/test_dispatcher.py
+
       # The service names in deploy/restart/promote's `service` input
       # descriptions (help text) must match services.tf, in deploy_order.
       - name: Service lists match services.tf
         run: bash scripts/check-service-lists.sh
 
-      - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh
+      # Every tracked shell script, check.sh included, so a new one needs no list here.
+      - name: ShellCheck (every shell script)
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck -x
 
+  # Lint and test are two jobs that run side by side, so the tests don't wait for validate
+  # and tflint (validate inits every stack and module, CI-15; the tests init them again).
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v4.0.1
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
 
+      # Providers shared by every init in this job, and kept between runs, keyed by the lock
+      # files: a version change in any of them starts a fresh cache. Terraform reuses a cached
+      # provider only where the lock file has its Linux hash (the stacks do); elsewhere it
+      # downloads it again.
+      - name: Share the Terraform provider cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/tf-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tf-plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore the Terraform provider cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/tf-plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-${{ runner.os }}-
+
+      # A misspelled argument or attribute, a wrong type or a missing reference fails
+      # here (CI-15), not at plan time in an environment. -backend=false: no state, no
+      # credentials; the committed lock files pick the provider versions.
+      - name: Terraform validate (every stack and module)
+        run: |
+          for d in infra-live-*/terraform/ modules/*/; do
+            echo "── terraform validate $d"
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate -no-color)
+          done
+
       - name: Set up TFLint
-        uses: terraform-linters/setup-tflint@v6.2.2
+        uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
         with:
           tflint_version: v0.62.1
 
+      # The plugins .tflint.hcl names (the AWS ruleset, CI-15), at their pinned versions.
+      # The token only raises GitHub's API rate limit for the download.
+      - name: Install TFLint plugins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+
       - name: TFLint (infra-live-backend)
-        run: tflint --chdir=infra-live-backend/terraform
+        run: tflint --chdir=infra-live-backend/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       - name: TFLint (infra-live-edge)
-        run: tflint --chdir=infra-live-edge/terraform
+        run: tflint --chdir=infra-live-edge/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       - name: TFLint (infra-live-frontend)
-        run: tflint --chdir=infra-live-frontend/terraform
+        run: tflint --chdir=infra-live-frontend/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       - name: TFLint (infra-live-scheduler)
-        run: tflint --chdir=infra-live-scheduler/terraform
+        run: tflint --chdir=infra-live-scheduler/terraform --config="$GITHUB_WORKSPACE/.tflint.hcl"
 
       # Shared modules (TF-01) — linted on their own as well as through the
       # stacks that call them.
@@ -291,16 +506,63 @@ jobs:
         run: |
           for m in modules/*/; do
             echo "── tflint $m"
-            tflint --chdir="$m"
+            tflint --chdir="$m" --config="$GITHUB_WORKSPACE/.tflint.hcl"
           done
 
-      # terraform test against a mock AWS provider: no credentials, nothing is
-      # created. Each module's own tests, plus the backend stack's wiring test.
-      - name: Terraform test (modules + infra-live-backend)
+  terraform-test:
+    name: Terraform Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          # Off (SEC-06): the wrapper runs every later terraform call through
+          # Node, which sees that step's env, secrets included.
+          terraform_wrapper: false
+
+      # Providers shared by every init in this job, and kept between runs, keyed by the lock
+      # files: a version change in any of them starts a fresh cache. Terraform reuses a cached
+      # provider only where the lock file has its Linux hash (the stacks do); elsewhere it
+      # downloads it again.
+      - name: Share the Terraform provider cache
         run: |
-          for d in modules/*/ infra-live-backend/terraform/; do
+          mkdir -p "$RUNNER_TEMP/tf-plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$RUNNER_TEMP/tf-plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Restore the Terraform provider cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/tf-plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: terraform-providers-${{ runner.os }}-
+
+      # terraform test against a mock AWS provider: no credentials, nothing is
+      # created. Each module's own tests, plus each stack's own tests.
+      - name: Terraform test (modules + stacks)
+        run: |
+          for d in modules/*/ infra-live-backend/terraform/ infra-live-edge/terraform/ infra-live-frontend/terraform/ infra-live-scheduler/terraform/; do
             echo "── terraform test $d"
             (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform test)
+          done
+
+      # Every stack with each environment's own tfvars (tests/envs), so a tfvars change
+      # that breaks one environment fails here, not at its next apply.
+      - name: Terraform test per environment (infra-live-*)
+        run: |
+          for d in infra-live-*/terraform/; do
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null)
+            for env in dev sbx stg prod; do
+              # The scheduler has no prod (SEC-03): prod is never scheduled.
+              if [ "$env" = prod ] && [ "$d" = infra-live-scheduler/terraform/ ]; then continue; fi
+              echo "── terraform test $d ($env)"
+              (cd "$d" && terraform test -test-directory=tests/envs -filter="tests/envs/$env.tftest.hcl" -var-file="tfvars/$env.tfvars")
+            done
           done
 
   security-scan:
@@ -311,18 +573,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0  # gitleaks needs full git history to scan past commits
 
       # ── secret & infra scanning ──────────────────────────────────────────────
+      # Every binary downloaded here is checked before it runs (production-readiness
+      # review, CI-04). gitleaks: against the SHA-256 GitHub records for the release
+      # asset, pinned here, so a replaced asset is refused even with a matching
+      # checksums file. Bump the version and the digest together.
+      # Every download in this file retries (--retry-all-errors): a 5xx from GitHub's
+      # release servers is usually gone a few seconds later, and failing here skips the
+      # whole job.
       - name: Install gitleaks
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
             -o /tmp/gitleaks_8.30.1_linux_x64.tar.gz
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt \
-            -o /tmp/gitleaks_checksums.txt
-          (cd /tmp && grep gitleaks_8.30.1_linux_x64.tar.gz gitleaks_checksums.txt | sha256sum --check --status)
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks_8.30.1_linux_x64.tar.gz" \
+            | sha256sum --check --strict
           tar -xz -C /usr/local/bin gitleaks < /tmp/gitleaks_8.30.1_linux_x64.tar.gz
 
       - name: Gitleaks (secret detection)
@@ -333,20 +601,20 @@ jobs:
       - name: Hadolint (backend Dockerfile lint)
         id: hadolint_backend
         continue-on-error: true
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: backend/Dockerfile
 
       - name: Hadolint (frontend Dockerfile lint)
         id: hadolint_frontend
         continue-on-error: true
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: frontend/Dockerfile
 
       # ── Python security tools ────────────────────────────────────────────────
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
           cache: "pip"
@@ -358,35 +626,39 @@ jobs:
       - name: Bandit (Python SAST)
         id: bandit
         continue-on-error: true
-        run: bandit -r backend/app/ backend/tools/ -ll -q
+        run: |
+          read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
+          bandit -r backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" -ll -q
 
       - name: Semgrep (SAST)
         id: semgrep
         continue-on-error: true
-        run: semgrep --config p/security-audit --error backend/app/ backend/tools/ frontend/src/ frontend-app/src/
+        run: |
+          read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
+          mkdir -p sarif
+          semgrep --config p/security-audit --error --sarif-output=sarif/semgrep.sarif \
+            backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" frontend/src/ frontend-app/src/
 
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
         continue-on-error: true
         run: |
-          pip-audit -r backend/requirements.txt --skip-editable \
-            --ignore-vuln PYSEC-2025-183
+          bash scripts/audit-backend-services.sh pip-audit python
 
+      # Every Terraform root and module in one scan from the repo root: checkov 3.2
+      # given several -d scans only the first, once per flag (CI-08).
       - name: Checkov (Terraform IaC security)
         id: checkov
         continue-on-error: true
         run: |
-          checkov \
-            -d infra-live-backend/terraform \
-            -d infra-live-edge/terraform \
-            -d infra-live-frontend/terraform \
-            -d infra-live-scheduler/terraform \
-            -d modules \
-            --framework terraform --quiet --compact --skip-download
+          mkdir -p sarif
+          checkov -d . --framework terraform --quiet --compact --skip-download \
+            --skip-path node_modules --skip-path '\.terraform' --skip-path '\.venv' \
+            -o cli -o sarif --output-file-path console,sarif/checkov.sarif
 
       # ── Node.js security tools ───────────────────────────────────────────────
       - name: Set up Node
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -397,7 +669,7 @@ jobs:
         working-directory: frontend
 
       - name: Set up Node (frontend-app)
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
           cache: "yarn"
@@ -466,19 +738,25 @@ jobs:
           "
         working-directory: frontend-app
 
+      # The ISO week, so the retire.js database is fetched again at least weekly, not
+      # only when a lockfile changes (CI-17 a; check.sh refreshes weekly too).
+      - name: This week, for the retire.js cache key
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
       - name: Restore retire.js database cache
         id: retiredb_cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: frontend/retire-jsrepo.json
-          # Cache key tied to package-lock.json — refreshes when JS deps change.
-          # Falls back to any prior cache for this OS if the exact key misses.
-          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/yarn.lock') }}
+          # Refreshes when JS deps change and every week. An exact miss restores the
+          # latest older cache, but cache-hit is then false, so the fetch below runs.
+          key: retiredb-${{ runner.os }}-${{ steps.week.outputs.week }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/yarn.lock') }}
           restore-keys: retiredb-${{ runner.os }}-
 
       - name: Fetch retire.js vulnerability database
         if: steps.retiredb_cache.outputs.cache-hit != 'true'
-        run: curl -sSfL https://raw.githubusercontent.com/RetireJS/retire.js/master/repository/jsrepository-v5.json -o retire-jsrepo.json
+        run: curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://raw.githubusercontent.com/RetireJS/retire.js/master/repository/jsrepository-v5.json -o retire-jsrepo.json
         working-directory: frontend
 
       - name: Retire.js (browser library CVE scan)
@@ -499,7 +777,7 @@ jobs:
       - name: Trivy (backend dependency CVE scan)
         id: trivy_backend_vuln
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: backend/
@@ -510,7 +788,7 @@ jobs:
       - name: Trivy (frontend dependency CVE scan)
         id: trivy_frontend_vuln
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: frontend/
@@ -525,7 +803,7 @@ jobs:
       - name: Trivy (frontend-app dependency CVE scan)
         id: trivy_frontend_app_vuln
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: frontend-app/
@@ -538,7 +816,7 @@ jobs:
       - name: Trivy (backend license scan)
         id: trivy_backend_license
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: backend/
@@ -549,7 +827,7 @@ jobs:
       - name: Trivy (frontend license scan)
         id: trivy_frontend_license
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: frontend/
@@ -560,7 +838,7 @@ jobs:
       - name: Trivy (frontend-app license scan)
         id: trivy_frontend_app_license
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: frontend-app/
@@ -597,61 +875,91 @@ jobs:
         continue-on-error: true
         run: trivy config modules --exit-code 1 --severity HIGH,CRITICAL
 
-      # ── Docker image scan (OS-level CVEs inside the built image) ────────────
-      # GIT_SHA is the Dockerfile's apt-layer cache-bust key, so `apt-get upgrade`
-      # re-runs and the scan sees current Debian security patches even if a layer
-      # cache is ever added (check.sh passes a per-day value for the same reason).
-      - name: Build backend Docker image
-        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t superpower-backend:scan -f backend/Dockerfile .
+      # The same rule set over the whole repo, as SARIF for GitHub code scanning
+      # (CI-08); reporting only, the five steps above gate. Runs whenever they ran (even
+      # failing): if an earlier step stopped the job, trivy was never set up, and this
+      # would only bury that error under "trivy: command not found".
+      - name: Trivy config (SARIF report)
+        if: ${{ !cancelled() && steps.trivy_config_modules.outcome != 'skipped' }}
+        run: |
+          mkdir -p sarif
+          trivy config . --severity HIGH,CRITICAL --format sarif --output sarif/trivy-config.sarif \
+            --skip-dirs '**/node_modules' --skip-dirs '**/.terraform' --skip-dirs '**/.venv'
 
-      - name: Trivy (backend image scan)
+      # Picked up by the code-scanning job, which alone may write security events.
+      - name: Upload SARIF reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sarif-reports
+          path: sarif/
+          retention-days: 7
+          if-no-files-found: warn
+          overwrite: true
+
+      # ── Docker image scans (OS-level CVEs inside each service's image) ───────
+      # One image per service (backend/Dockerfile, --build-arg SERVICE), found from the tree
+      # (backend/tools/services.py). The base image is pinned by digest (CI-03), so this scans
+      # the same base a deploy builds on; Debian fixes arrive as Dependabot digest bumps.
+      - name: Build the service images
+        run: |
+          for svc in $(python backend/tools/services.py); do
+            docker build --build-arg GIT_SHA="${GITHUB_SHA}" --build-arg SERVICE="$svc" \
+              -t "superpower-$svc:scan" -f backend/Dockerfile .
+          done
+
+      - name: Trivy (service image scans)
         id: trivy_image
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: superpower-backend:scan
-          severity: HIGH,CRITICAL
-          exit-code: '1'
-          scanners: vuln
-          ignore-unfixed: true
+        run: |
+          failed=()
+          for svc in $(python backend/tools/services.py); do
+            echo "── $svc"
+            trivy image --severity HIGH,CRITICAL --exit-code 1 --scanners vuln \
+              --ignore-unfixed "superpower-$svc:scan" || failed+=("$svc")
+          done
+          if [ ${#failed[@]} -gt 0 ]; then echo "::error::Image CVEs: ${failed[*]}"; exit 1; fi
 
       # ── CIS Docker Benchmark ─────────────────────────────────────────────────
       # Checks image configuration (root user, exposed secrets in layers,
       # missing HEALTHCHECK, etc.) — separate concern from CVE scanning.
+      # Checked against a pinned SHA-256 (from the release's checksums file) before it
+      # runs (CI-04). Bump the version and the digest together.
       - name: Install Dockle
         run: |
-          curl -sSfL https://github.com/goodwithtech/dockle/releases/download/v0.4.15/dockle_0.4.15_Linux-64bit.tar.gz \
-            -o /tmp/dockle.tar.gz
-          tar -xz -C /usr/local/bin dockle < /tmp/dockle.tar.gz
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://github.com/goodwithtech/dockle/releases/download/v0.4.15/dockle_0.4.15_Linux-64bit.tar.gz \
+            -o /tmp/dockle_0.4.15_Linux-64bit.tar.gz
+          echo "8bfc9183d1d3d67800edb45bea4bb63ddf1d28bec5f89944075a07007d79caad  /tmp/dockle_0.4.15_Linux-64bit.tar.gz" \
+            | sha256sum --check --strict
+          tar -xz -C /usr/local/bin dockle < /tmp/dockle_0.4.15_Linux-64bit.tar.gz
 
       - name: Dockle (CIS Docker Benchmark)
         id: dockle
         continue-on-error: true
         run: |
-          dockle \
-            -af settings.py \
-            --ignore DKL-DI-0005 \
-            superpower-backend:scan
+          failed=()
+          for svc in $(python backend/tools/services.py); do
+            echo "── $svc"
+            dockle -af settings.py --ignore DKL-DI-0005 "superpower-$svc:scan" || failed+=("$svc")
+          done
+          if [ ${#failed[@]} -gt 0 ]; then echo "::error::Dockle: ${failed[*]}"; exit 1; fi
 
       # ── SBOM generation ──────────────────────────────────────────────────────
-      - name: Generate SBOM (backend image)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: superpower-backend:scan
-          format: cyclonedx
-          output: sbom-backend.cyclonedx.json
+      - name: Generate SBOMs (service images)
+        run: |
+          for svc in $(python backend/tools/services.py); do
+            trivy image --format cyclonedx --output "sbom-backend-$svc.cyclonedx.json" "superpower-$svc:scan"
+          done
 
-      - name: Upload SBOM artifact (backend)
-        uses: actions/upload-artifact@v7
+      - name: Upload SBOM artifact (services)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-backend
-          path: sbom-backend.cyclonedx.json
+          path: sbom-backend-*.cyclonedx.json
           retention-days: 90
 
       - name: Generate SBOM (frontend filesystem)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: frontend/
@@ -659,14 +967,14 @@ jobs:
           output: sbom-frontend.cyclonedx.json
 
       - name: Upload SBOM artifact (frontend)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-frontend
           path: sbom-frontend.cyclonedx.json
           retention-days: 90
 
       - name: Generate SBOM (frontend-app filesystem)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: frontend-app/
@@ -674,7 +982,7 @@ jobs:
           output: sbom-frontend-app.cyclonedx.json
 
       - name: Upload SBOM artifact (frontend-app)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-frontend-app
           path: sbom-frontend-app.cyclonedx.json
@@ -683,32 +991,57 @@ jobs:
       # ── fail gate: surface all check results before failing the job ──────────
       - name: Fail if any security check failed
         if: always()
+        env:
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          HADOLINT_BACKEND_OUTCOME: ${{ steps.hadolint_backend.outcome }}
+          HADOLINT_FRONTEND_OUTCOME: ${{ steps.hadolint_frontend.outcome }}
+          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
+          SEMGREP_OUTCOME: ${{ steps.semgrep.outcome }}
+          PIP_AUDIT_OUTCOME: ${{ steps.pip_audit.outcome }}
+          CHECKOV_OUTCOME: ${{ steps.checkov.outcome }}
+          NPM_AUDIT_OUTCOME: ${{ steps.npm_audit.outcome }}
+          YARN_AUDIT_FRONTEND_APP_OUTCOME: ${{ steps.yarn_audit_frontend_app.outcome }}
+          RETIRE_OUTCOME: ${{ steps.retire.outcome }}
+          RETIRE_FRONTEND_APP_OUTCOME: ${{ steps.retire_frontend_app.outcome }}
+          TRIVY_BACKEND_VULN_OUTCOME: ${{ steps.trivy_backend_vuln.outcome }}
+          TRIVY_FRONTEND_VULN_OUTCOME: ${{ steps.trivy_frontend_vuln.outcome }}
+          TRIVY_FRONTEND_APP_VULN_OUTCOME: ${{ steps.trivy_frontend_app_vuln.outcome }}
+          TRIVY_BACKEND_LICENSE_OUTCOME: ${{ steps.trivy_backend_license.outcome }}
+          TRIVY_FRONTEND_LICENSE_OUTCOME: ${{ steps.trivy_frontend_license.outcome }}
+          TRIVY_FRONTEND_APP_LICENSE_OUTCOME: ${{ steps.trivy_frontend_app_license.outcome }}
+          TRIVY_CONFIG_BACKEND_OUTCOME: ${{ steps.trivy_config_backend.outcome }}
+          TRIVY_CONFIG_EDGE_OUTCOME: ${{ steps.trivy_config_edge.outcome }}
+          TRIVY_CONFIG_FRONTEND_OUTCOME: ${{ steps.trivy_config_frontend.outcome }}
+          TRIVY_CONFIG_SCHEDULER_OUTCOME: ${{ steps.trivy_config_scheduler.outcome }}
+          TRIVY_CONFIG_MODULES_OUTCOME: ${{ steps.trivy_config_modules.outcome }}
+          TRIVY_IMAGE_OUTCOME: ${{ steps.trivy_image.outcome }}
+          DOCKLE_OUTCOME: ${{ steps.dockle.outcome }}
         run: |
           FAILED_CHECKS=()
-          [[ "${{ steps.gitleaks.outcome }}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
-          [[ "${{ steps.hadolint_backend.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
-          [[ "${{ steps.hadolint_frontend.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
-          [[ "${{ steps.bandit.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
-          [[ "${{ steps.semgrep.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
-          [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
-          [[ "${{ steps.checkov.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
-          [[ "${{ steps.npm_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
-          [[ "${{ steps.yarn_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
-          [[ "${{ steps.retire.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
-          [[ "${{ steps.retire_frontend_app.outcome }}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
-          [[ "${{ steps.trivy_backend_vuln.outcome }}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
-          [[ "${{ steps.trivy_frontend_vuln.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
-          [[ "${{ steps.trivy_frontend_app_vuln.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
-          [[ "${{ steps.trivy_backend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
-          [[ "${{ steps.trivy_frontend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
-          [[ "${{ steps.trivy_frontend_app_license.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
-          [[ "${{ steps.trivy_config_backend.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
-          [[ "${{ steps.trivy_config_edge.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
-          [[ "${{ steps.trivy_config_frontend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
-          [[ "${{ steps.trivy_config_scheduler.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
-          [[ "${{ steps.trivy_config_modules.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
-          [[ "${{ steps.trivy_image.outcome }}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
-          [[ "${{ steps.dockle.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
+          [[ "${GITLEAKS_OUTCOME}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
+          [[ "${HADOLINT_BACKEND_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
+          [[ "${HADOLINT_FRONTEND_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
+          [[ "${BANDIT_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
+          [[ "${SEMGREP_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
+          [[ "${PIP_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
+          [[ "${CHECKOV_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
+          [[ "${NPM_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
+          [[ "${YARN_AUDIT_FRONTEND_APP_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
+          [[ "${RETIRE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
+          [[ "${RETIRE_FRONTEND_APP_OUTCOME}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
+          [[ "${TRIVY_BACKEND_VULN_OUTCOME}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
+          [[ "${TRIVY_FRONTEND_VULN_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
+          [[ "${TRIVY_FRONTEND_APP_VULN_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
+          [[ "${TRIVY_BACKEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
+          [[ "${TRIVY_FRONTEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
+          [[ "${TRIVY_FRONTEND_APP_LICENSE_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
+          [[ "${TRIVY_CONFIG_BACKEND_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
+          [[ "${TRIVY_CONFIG_EDGE_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
+          [[ "${TRIVY_CONFIG_FRONTEND_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
+          [[ "${TRIVY_CONFIG_SCHEDULER_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
+          [[ "${TRIVY_CONFIG_MODULES_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
+          [[ "${TRIVY_IMAGE_OUTCOME}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
+          [[ "${DOCKLE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
             echo "Failed security checks: ${FAILED_CHECKS[*]}"
             exit 1
@@ -718,92 +1051,65 @@ jobs:
   dast:
     name: DAST & API Spec
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     needs: [backend-lint, frontend-lint, frontend-app-lint]
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
+    # Nuclei scans the local stack (docker-compose.yml) through its gateway, the way the ALB
+    # fronts the services: every service and worker, Mongo, Valkey and Moto, with throwaway
+    # keys generated in the job.
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements-dev.txt
 
-      - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
-
-      - name: Generate test RSA key pair
+      # Throwaway values for this run only, never printed.
+      - name: Write the stack's .env
         run: |
+          key=$(openssl genrsa 2048 2>/dev/null | awk 'NF {sub(/\r/,""); printf "%s\\n",$0}')
           {
-            echo 'JWT_PRIVATE_KEY<<JWTKEYEOF'
-            openssl genrsa 2048 2>/dev/null
-            echo 'JWTKEYEOF'
-          } >> "$GITHUB_ENV"
+            echo "JWT_PRIVATE_KEY=$key"
+            echo "EMAIL_HMAC_PEPPER=$(openssl rand -hex 32)"
+            # Everything else is compose's defaults, the test values: the mongo container,
+            # and the moto service (built by compose) for every AWS call, S3 included.
+          } > .env
 
-      - name: Start backend
+      # Moto is part of the stack: compose builds it, and moto-setup creates the topics,
+      # queues and buckets before any service starts.
+      - name: Start the stack
+        run: docker compose up -d --build
+
+      # The gateway publishes only shared's /api/health, so each service's /health is read
+      # inside its container.
+      - name: Wait for the gateway and the services
         run: |
-          cd backend
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          echo $! > /tmp/backend.pid
-        env:
-          MONGODB_URI: mongodb://localhost:27017
-          JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
-          JWT_KEY_ID: key-v1
-          REDIS_URL: redis://localhost:6379
-          APP_ENV: dev
-
-      - name: Wait for backend to be healthy
-        run: |
-          for i in {1..30}; do
-            if curl -sf http://localhost:8000/health > /dev/null; then
-              echo "Backend is up"
-              exit 0
-            fi
-            echo "Waiting... ($i/30)"
-            sleep 2
-          done
-          echo "Backend failed to start within 60 s"
-          exit 1
-
-      # Uses the same script check.sh does — NOT `curl .../openapi.json` against the
-      # live server. FastAPI serves that route as compact/minified JSON, while this
-      # script pretty-prints (indent=2, matching the committed file's format). Diffing
-      # a curled copy against the committed one would show a spurious diff on every
-      # run from formatting alone, even with zero actual schema changes — both sides
-      # of the comparison must be generated the same way.
-      - name: Export OpenAPI spec
-        run: python backend/tools/export-openapi.py > openapi.json
-
-      # openapi.json is committed as the reference copy of the API spec (see check.sh).
-      # This overwrites the checked-out copy with a freshly generated one above, so a
-      # plain `git diff` here tells us whether the committed copy still matches what
-      # the code actually produces — i.e. whether someone forgot to regenerate and
-      # commit it after changing an endpoint.
-      - name: Verify committed openapi.json is up to date
-        id: openapi_drift
-        continue-on-error: true
-        run: |
-          git diff --exit-code -- openapi.json || {
-            echo "::error::openapi.json is out of date. Run check.sh locally and commit the regenerated file."
-            exit 1
+          up() {
+            curl -sf http://localhost:8088/gateway/health > /dev/null || return 1
+            for svc in $(python backend/tools/services.py); do
+              docker compose exec -T "$svc" python -c \
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" \
+                > /dev/null 2>&1 || return 1
+            done
           }
+          for i in {1..60}; do
+            if up; then echo "The stack is up"; exit 0; fi
+            echo "Waiting... ($i/60)"
+            sleep 3
+          done
+          docker compose ps
+          docker compose logs --tail 50
+          echo "The stack failed to start within 3 minutes"
+          exit 1
 
       # ── OpenAPI spec linting (Spectral) ──────────────────────────────────────
       # spectral-cli is a devDependency in frontend/package.json — no global install needed.
       - name: Set up Node (for spectral)
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -813,24 +1119,34 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Spectral (OpenAPI lint)
-        id: spectral
+      # The services' committed specs (backend/openapi/*.json); the backend-service job
+      # checks each one matches its code.
+      - name: Spectral (service OpenAPI specs)
+        id: spectral_services
         continue-on-error: true
-        run: frontend/node_modules/.bin/spectral lint openapi.json --ruleset .spectral.yaml --fail-severity error
+        run: |
+          shopt -s nullglob
+          specs=(backend/openapi/*.json)
+          if [ ${#specs[@]} -eq 0 ]; then echo "No service specs yet"; exit 0; fi
+          frontend/node_modules/.bin/spectral lint "${specs[@]}" --ruleset .spectral.yaml --fail-severity error
 
       # ── Dynamic Application Security Testing (Nuclei) ────────────────────────
+      # Checked against a pinned SHA-256 (from the release's checksums file) before it
+      # runs (CI-04). Bump the version and the digest together.
       - name: Install Nuclei
         run: |
-          curl -sSfL https://github.com/projectdiscovery/nuclei/releases/download/v3.3.9/nuclei_3.3.9_linux_amd64.zip \
-            -o /tmp/nuclei.zip
-          unzip -q /tmp/nuclei.zip -d /tmp/nuclei-bin
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://github.com/projectdiscovery/nuclei/releases/download/v3.3.9/nuclei_3.3.9_linux_amd64.zip \
+            -o /tmp/nuclei_3.3.9_linux_amd64.zip
+          echo "dfecedc31364d70b7291b347c74fd4d1d3185d30301c025b7490717d29daf28a  /tmp/nuclei_3.3.9_linux_amd64.zip" \
+            | sha256sum --check --strict
+          unzip -q /tmp/nuclei_3.3.9_linux_amd64.zip -d /tmp/nuclei-bin
           mv /tmp/nuclei-bin/nuclei /usr/local/bin/nuclei
 
       - name: Nuclei (DAST)
         id: nuclei
         continue-on-error: true
         run: |
-          nuclei -u http://localhost:8000 \
+          nuclei -u http://localhost:8088 \
             -t http/misconfiguration,http/exposures,http/technologies \
             -severity medium,high,critical \
             -silent -no-color
@@ -838,11 +1154,13 @@ jobs:
       # ── fail gate ────────────────────────────────────────────────────────────
       - name: Fail if any DAST check failed
         if: always()
+        env:
+          SPECTRAL_SERVICES_OUTCOME: ${{ steps.spectral_services.outcome }}
+          NUCLEI_OUTCOME: ${{ steps.nuclei.outcome }}
         run: |
           FAILED_CHECKS=()
-          [[ "${{ steps.openapi_drift.outcome }}" == "failure" ]] && FAILED_CHECKS+=(openapi-drift)
-          [[ "${{ steps.spectral.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral)
-          [[ "${{ steps.nuclei.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
+          [[ "${SPECTRAL_SERVICES_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(spectral-services)
+          [[ "${NUCLEI_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
             echo "Failed DAST checks: ${FAILED_CHECKS[*]}"
             exit 1
@@ -865,21 +1183,74 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+          # Python and JS/TS are analysed from source: no build step (CI-17 b).
+          build-mode: none
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:${{ matrix.language }}"
+
+  # Uploads the security scan's SARIF (semgrep, checkov, trivy config) to GitHub code
+  # scanning, next to CodeQL's, so findings keep a triage history (production-readiness
+  # review, CI-08). Its own job: security-events: write never reaches the job that runs
+  # the scanners. Skipped where GitHub gives a read-only token (fork and Dependabot
+  # PRs). Blocking merges on findings is a repository ruleset (docs/ci-cd.md).
+  code-scanning:
+    name: Upload Code Scanning Results
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: security-scan
+    if: >-
+      always() && needs.security-scan.result != 'skipped' && github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [semgrep, checkov, trivy-config]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # No artifact when the scan job stopped before any scanner ran: nothing to upload,
+      # and that job's own failure is the one to read. The steps below skip without a file.
+      - name: Download SARIF reports
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sarif-reports
+          path: sarif/
+
+      # A check skipped in the code with its reason (checkov's `#checkov:skip=`) is still in
+      # the SARIF, marked `suppressions`, and code scanning opens an alert for it anyway.
+      # Dropped here, so an alert is only a finding nobody has justified.
+      - name: Drop the suppressed results
+        if: hashFiles(format('sarif/{0}.sarif', matrix.tool)) != ''
+        env:
+          SARIF: sarif/${{ matrix.tool }}.sarif
+        run: |
+          jq '.runs |= map(.results |= map(select((.suppressions // []) | length == 0)))' \
+            "$SARIF" > "$SARIF.tmp"
+          mv "$SARIF.tmp" "$SARIF"
+
+      - name: Upload ${{ matrix.tool }} results
+        if: hashFiles(format('sarif/{0}.sarif', matrix.tool)) != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: sarif/${{ matrix.tool }}.sarif
+          category: ${{ matrix.tool }}
 
   dependency-review:
     name: Dependency Review
@@ -892,9 +1263,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # What pull-requests: write is for: a summary on the PR when it fails (CI-17 e).
+          comment-summary-in-pr: on-failure

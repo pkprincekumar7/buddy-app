@@ -13,9 +13,16 @@ import {
   LockOpen,
   Users,
 } from 'lucide-react';
-import { api } from '@/api/client';
-import { ApiError } from '@/api/errors';
-import type { AdminUserRecord } from '@/types/api';
+import {
+  admin,
+  ADMIN_ERRORS,
+  nameOf,
+  type Account,
+  type AllowedEmail,
+  type ProfileName,
+  type Role,
+} from '@/api/admin';
+import { httpErrorMessage } from '@/lib/apiError';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,27 +47,109 @@ import {
 
 const PAGE_SIZE = 20;
 
+// The services' refusals, matched on detail.code (build plan 7.3).
+const errorMessage = (err: unknown, fallback: string) =>
+  httpErrorMessage(err as Error | undefined, { fallback, codeMessages: ADMIN_ERRORS });
+
+const formatDate = (iso: string | null) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+/** An account's row: its name (from users), email, role, lock state and actions. */
+function AccountRow({
+  account,
+  name,
+  busy,
+  onLock,
+  onRole,
+}: {
+  account: Account;
+  name: ProfileName | undefined;
+  busy: boolean;
+  onLock: (account: Account) => void;
+  onRole: (account: Account, role: Role) => void;
+}) {
+  return (
+    <>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium text-foreground">{nameOf(name) ?? '—'}</span>
+        <span className="truncate text-xs text-muted-foreground">{account.email}</span>
+      </div>
+      <div className="ml-4 flex shrink-0 items-center gap-3">
+        {account.locked && (
+          <span className="rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">
+            Locked
+          </span>
+        )}
+        <span className="hidden text-xs text-muted-foreground sm:block">
+          {formatDate(account.created_at)}
+        </span>
+        <select
+          aria-label={`Role of ${account.email}`}
+          value={account.role}
+          disabled={busy}
+          onChange={(e) => onRole(account, e.target.value as Role)}
+          className="form-input h-7 w-auto py-0 text-xs"
+        >
+          <option value="parent">Parent</option>
+          <option value="admin">Admin</option>
+        </select>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={
+            account.locked
+              ? 'hover:bg-ghost h-7 w-7 text-muted-foreground hover:text-foreground'
+              : 'h-7 w-7 text-error hover:bg-error/10 hover:text-error'
+          }
+          disabled={busy}
+          onClick={() => onLock(account)}
+          title={account.locked ? 'Unlock user' : 'Lock user'}
+        >
+          {account.locked ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+    </>
+  );
+}
+
+/** A confirmation's target, kept while the dialog closes so its text doesn't flash empty. */
+function useDialogTarget<T>() {
+  const [state, setState] = useState<{ target: T | null; open: boolean }>({
+    target: null,
+    open: false,
+  });
+  return {
+    target: state.target,
+    open: state.open,
+    show: (target: T) => setState({ target, open: true }),
+    close: () => setState((current) => ({ ...current, open: false })),
+  };
+}
+
 export default function AdminAllowedEmails() {
   const qc = useQueryClient();
 
   const [page, setPage] = useState(0);
   const [searchEmail, setSearchEmail] = useState('');
-  const [searchResult, setSearchResult] = useState<
-    { email: string; added_at: string | null } | null | 'not_found'
-  >(null);
+  const [searchResult, setSearchResult] = useState<AllowedEmail | null | 'not_found'>(null);
   const [searching, setSearching] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState('');
 
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const deleteDialog = useDialogTarget<AllowedEmail>();
 
   const [usersPage, setUsersPage] = useState(0);
-  const [lockTarget, setLockTarget] = useState<AdminUserRecord | null>(null);
+  const lockDialog = useDialogTarget<Account>();
+  const roleDialog = useDialogTarget<{ account: Account; role: Role }>();
   const [userSearchEmail, setUserSearchEmail] = useState('');
-  const [userSearchResult, setUserSearchResult] = useState<AdminUserRecord | null | 'not_found'>(
-    null,
-  );
+  const [userSearchResult, setUserSearchResult] = useState<Account | null | 'not_found'>(null);
   const [userSearching, setUserSearching] = useState(false);
 
   const skip = page * PAGE_SIZE;
@@ -68,75 +157,81 @@ export default function AdminAllowedEmails() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'allowed-emails', page],
-    queryFn: () => api.admin.listAllowedEmails(skip, PAGE_SIZE),
+    queryFn: () => admin.allowedEmails.list(skip, PAGE_SIZE),
   });
 
   const addMutation = useMutation({
-    mutationFn: (email: string) => api.admin.addAllowedEmail(email),
+    mutationFn: (email: string) => admin.allowedEmails.add(email),
     onSuccess: (record) => {
-      toast.success(`${record.email} added to allowlist`);
+      toast.success(`${record.email_hint} added to allowlist`);
       setAddOpen(false);
       setAddEmail('');
       void qc.invalidateQueries({ queryKey: ['admin', 'allowed-emails'] });
     },
-    onError: (err) => {
-      const msg =
-        err instanceof ApiError
-          ? typeof err.detail === 'string'
-            ? err.detail
-            : JSON.stringify(err.detail)
-          : 'Failed to add email';
-      toast.error(msg);
-    },
+    onError: (err) => toast.error(errorMessage(err, 'Failed to add email')),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (email: string) => api.admin.removeAllowedEmail(email),
-    onSuccess: () => {
+    mutationFn: (entry: AllowedEmail) => admin.allowedEmails.remove(entry.key),
+    onSuccess: (_, entry) => {
       toast.success('Email removed from allowlist');
-      setDeleteTarget(null);
+      deleteDialog.close();
       setPage(0);
+      setSearchResult((prev) =>
+        prev && prev !== 'not_found' && prev.key === entry.key ? null : prev,
+      );
       void qc.invalidateQueries({ queryKey: ['admin', 'allowed-emails'] });
     },
-    onError: (err) => {
-      const msg =
-        err instanceof ApiError
-          ? typeof err.detail === 'string'
-            ? err.detail
-            : JSON.stringify(err.detail)
-          : 'Failed to remove email';
-      toast.error(msg);
-    },
+    onError: (err) => toast.error(errorMessage(err, 'Failed to remove email')),
   });
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['admin', 'users', usersPage],
-    queryFn: () => api.admin.listUsers(usersSkip, PAGE_SIZE),
+    queryFn: () => admin.accounts.list(usersSkip, PAGE_SIZE),
   });
 
+  // The names of the page's accounts, and of a found one, in one call each.
+  const pageIds = usersData?.items.map((account) => account.id) ?? [];
+  const foundId = userSearchResult && userSearchResult !== 'not_found' ? userSearchResult.id : null;
+  const ids = foundId && !pageIds.includes(foundId) ? [...pageIds, foundId] : pageIds;
+  const { data: names } = useQuery({
+    queryKey: ['admin', 'names', ids],
+    queryFn: () => admin.names(ids),
+    enabled: ids.length > 0,
+  });
+
+  const updateAccount = (id: string, change: Partial<Account>) => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+    setUserSearchResult((prev) =>
+      prev && prev !== 'not_found' && prev.id === id ? { ...prev, ...change } : prev,
+    );
+  };
+
   const lockMutation = useMutation({
-    mutationFn: (user: AdminUserRecord) =>
-      user.locked
-        ? api.admin.unlockUser(user.id, user.location ?? '')
-        : api.admin.lockUser(user.id, user.location ?? ''),
+    mutationFn: (account: Account) =>
+      account.locked ? admin.accounts.unlock(account) : admin.accounts.lock(account),
     onSuccess: (result) => {
       toast.success(result.locked ? 'User locked' : 'User unlocked');
-      setLockTarget(null);
-      void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
-      setUserSearchResult((prev) =>
-        prev && prev !== 'not_found' && prev.id === result.id
-          ? { ...prev, locked: result.locked }
-          : prev,
-      );
+      lockDialog.close();
+      updateAccount(result.id, { locked: result.locked });
     },
     onError: (err) => {
-      const msg =
-        err instanceof ApiError
-          ? typeof err.detail === 'string'
-            ? err.detail
-            : JSON.stringify(err.detail)
-          : 'Action failed';
-      toast.error(msg);
+      lockDialog.close();
+      toast.error(errorMessage(err, 'Action failed'));
+    },
+  });
+
+  const roleMutation = useMutation({
+    mutationFn: ({ account, role }: { account: Account; role: Role }) =>
+      admin.accounts.setRole(account, role),
+    onSuccess: (result) => {
+      toast.success(result.role === 'admin' ? 'Now an admin' : 'Now a parent');
+      roleDialog.close();
+      updateAccount(result.id, { role: result.role });
+    },
+    onError: (err) => {
+      roleDialog.close();
+      toast.error(errorMessage(err, 'Could not change the role'));
     },
   });
 
@@ -146,20 +241,9 @@ export default function AdminAllowedEmails() {
     setSearching(true);
     setSearchResult(null);
     try {
-      const result = await api.admin.getAllowedEmail(trimmed);
-      setSearchResult(result);
+      setSearchResult((await admin.allowedEmails.search(trimmed)) ?? 'not_found');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setSearchResult('not_found');
-      } else {
-        const msg =
-          err instanceof ApiError
-            ? typeof err.detail === 'string'
-              ? err.detail
-              : JSON.stringify(err.detail)
-            : 'Search failed';
-        toast.error(msg);
-      }
+      toast.error(errorMessage(err, 'Search failed'));
     } finally {
       setSearching(false);
     }
@@ -171,20 +255,9 @@ export default function AdminAllowedEmails() {
     setUserSearching(true);
     setUserSearchResult(null);
     try {
-      const result = await api.admin.getUserByEmail(trimmed);
-      setUserSearchResult(result);
+      setUserSearchResult((await admin.accounts.search(trimmed)) ?? 'not_found');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setUserSearchResult('not_found');
-      } else {
-        const msg =
-          err instanceof ApiError
-            ? typeof err.detail === 'string'
-              ? err.detail
-              : JSON.stringify(err.detail)
-            : 'Search failed';
-        toast.error(msg);
-      }
+      toast.error(errorMessage(err, 'Search failed'));
     } finally {
       setUserSearching(false);
     }
@@ -192,15 +265,7 @@ export default function AdminAllowedEmails() {
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
   const usersTotalPages = usersData ? Math.ceil(usersData.total / PAGE_SIZE) : 0;
-
-  const formatDate = (iso: string | null) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const accountBusy = lockMutation.isPending || roleMutation.isPending;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -234,7 +299,8 @@ export default function AdminAllowedEmails() {
         <TabsContent value="allowed-emails" className="mt-4 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Only these emails can register for the application.
+              Only these emails can register for the application. Emails are stored as a key, so the
+              list shows a masked hint.
             </p>
             <Button variant="action" size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="mr-1.5 h-4 w-4" />
@@ -283,9 +349,9 @@ export default function AdminAllowedEmails() {
                 <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
                   <div className="flex items-center gap-2">
                     <Mail className="h-4 w-4 text-primary" />
-                    <span className="text-sm text-foreground">{searchResult.email}</span>
+                    <span className="text-sm text-foreground">{searchResult.email_hint}</span>
                     <span className="text-xs text-muted-foreground">
-                      Added {formatDate(searchResult.added_at)}
+                      Added {formatDate(searchResult.created_at)}
                     </span>
                   </div>
                   <Button
@@ -293,7 +359,7 @@ export default function AdminAllowedEmails() {
                     size="icon"
                     className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
                     disabled={deleteMutation.isPending}
-                    onClick={() => setDeleteTarget(searchResult.email)}
+                    onClick={() => deleteDialog.show(searchResult)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -327,23 +393,23 @@ export default function AdminAllowedEmails() {
                 <ul className="divide-edge divide-y">
                   {data.items.map((item) => (
                     <li
-                      key={item.email}
+                      key={item.key}
                       className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <Mail className="h-4 w-4 shrink-0 text-primary" />
-                        <span className="truncate text-sm text-foreground">{item.email}</span>
+                        <span className="truncate text-sm text-foreground">{item.email_hint}</span>
                       </div>
                       <div className="ml-4 flex shrink-0 items-center gap-3">
                         <span className="hidden text-xs text-muted-foreground sm:block">
-                          {formatDate(item.added_at)}
+                          {formatDate(item.created_at)}
                         </span>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
                           disabled={deleteMutation.isPending}
-                          onClick={() => setDeleteTarget(item.email)}
+                          onClick={() => deleteDialog.show(item)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -427,39 +493,13 @@ export default function AdminAllowedEmails() {
               )}
               {userSearchResult && userSearchResult !== 'not_found' && (
                 <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {userSearchResult.full_name ?? '—'}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {userSearchResult.email ?? '—'}
-                    </span>
-                  </div>
-                  <div className="ml-4 flex shrink-0 items-center gap-3">
-                    {userSearchResult.locked && (
-                      <span className="rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">
-                        Locked
-                      </span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={
-                        userSearchResult.locked
-                          ? 'hover:bg-ghost h-7 w-7 text-muted-foreground hover:text-foreground'
-                          : 'h-7 w-7 text-error hover:bg-error/10 hover:text-error'
-                      }
-                      disabled={lockMutation.isPending}
-                      onClick={() => setLockTarget(userSearchResult)}
-                      title={userSearchResult.locked ? 'Unlock user' : 'Lock user'}
-                    >
-                      {userSearchResult.locked ? (
-                        <LockOpen className="h-3.5 w-3.5" />
-                      ) : (
-                        <Lock className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </div>
+                  <AccountRow
+                    account={userSearchResult}
+                    name={names?.get(userSearchResult.id)}
+                    busy={accountBusy}
+                    onLock={lockDialog.show}
+                    onRole={(account, role) => roleDialog.show({ account, role })}
+                  />
                 </div>
               )}
             </CardContent>
@@ -488,47 +528,18 @@ export default function AdminAllowedEmails() {
                 </p>
               ) : (
                 <ul className="divide-edge divide-y">
-                  {usersData.items.map((user) => (
+                  {usersData.items.map((account) => (
                     <li
-                      key={user.id}
+                      key={account.id}
                       className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
                     >
-                      <div className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {user.full_name ?? '—'}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {user.email ?? '—'}
-                        </span>
-                      </div>
-                      <div className="ml-4 flex shrink-0 items-center gap-3">
-                        {user.locked && (
-                          <span className="rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">
-                            Locked
-                          </span>
-                        )}
-                        <span className="hidden text-xs text-muted-foreground sm:block">
-                          {formatDate(user.created_at)}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={
-                            user.locked
-                              ? 'hover:bg-ghost h-7 w-7 text-muted-foreground hover:text-foreground'
-                              : 'h-7 w-7 text-error hover:bg-error/10 hover:text-error'
-                          }
-                          disabled={lockMutation.isPending}
-                          onClick={() => setLockTarget(user)}
-                          title={user.locked ? 'Unlock user' : 'Lock user'}
-                        >
-                          {user.locked ? (
-                            <LockOpen className="h-3.5 w-3.5" />
-                          ) : (
-                            <Lock className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </div>
+                      <AccountRow
+                        account={account}
+                        name={names?.get(account.id)}
+                        busy={accountBusy}
+                        onLock={lockDialog.show}
+                        onRole={(a, role) => roleDialog.show({ account: a, role })}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -598,13 +609,13 @@ export default function AdminAllowedEmails() {
       </Dialog>
 
       {/* Delete confirm */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <AlertDialog open={deleteDialog.open} onOpenChange={(o) => !o && deleteDialog.close()}>
         <AlertDialogContent className="border-edge bg-card">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-foreground">Remove from allowlist?</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
-              <span className="font-medium text-foreground">{deleteTarget}</span> will no longer be
-              able to register. Existing account is unaffected.
+              <span className="font-medium text-foreground">{deleteDialog.target?.email_hint}</span>{' '}
+              will no longer be able to register. Existing account is unaffected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -612,7 +623,7 @@ export default function AdminAllowedEmails() {
             <AlertDialogAction
               className="bg-error/90 text-white hover:bg-error"
               disabled={deleteMutation.isPending}
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+              onClick={() => deleteDialog.target && deleteMutation.mutate(deleteDialog.target)}
             >
               Remove
             </AlertDialogAction>
@@ -621,22 +632,22 @@ export default function AdminAllowedEmails() {
       </AlertDialog>
 
       {/* Lock / unlock confirm */}
-      <AlertDialog open={!!lockTarget} onOpenChange={(o) => !o && setLockTarget(null)}>
+      <AlertDialog open={lockDialog.open} onOpenChange={(o) => !o && lockDialog.close()}>
         <AlertDialogContent className="border-edge bg-card">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-foreground">
-              {lockTarget?.locked ? 'Unlock user?' : 'Lock user?'}
+              {lockDialog.target?.locked ? 'Unlock user?' : 'Lock user?'}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
-              {lockTarget?.locked ? (
+              {lockDialog.target?.locked ? (
                 <>
-                  <span className="font-medium text-foreground">{lockTarget.email}</span> will be
-                  able to log in again.
+                  <span className="font-medium text-foreground">{lockDialog.target.email}</span>{' '}
+                  will be able to log in again.
                 </>
               ) : (
                 <>
-                  <span className="font-medium text-foreground">{lockTarget?.email}</span> will be
-                  immediately signed out and blocked from logging in.
+                  <span className="font-medium text-foreground">{lockDialog.target?.email}</span>{' '}
+                  will be immediately signed out and blocked from logging in.
                 </>
               )}
             </AlertDialogDescription>
@@ -645,14 +656,43 @@ export default function AdminAllowedEmails() {
             <AlertDialogCancel className="border-edge">Cancel</AlertDialogCancel>
             <AlertDialogAction
               className={
-                lockTarget?.locked
+                lockDialog.target?.locked
                   ? 'bg-primary hover:bg-primary/90'
                   : 'bg-error/90 text-white hover:bg-error'
               }
               disabled={lockMutation.isPending}
-              onClick={() => lockTarget && lockMutation.mutate(lockTarget)}
+              onClick={() => lockDialog.target && lockMutation.mutate(lockDialog.target)}
             >
-              {lockTarget?.locked ? 'Unlock' : 'Lock'}
+              {lockDialog.target?.locked ? 'Unlock' : 'Lock'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Role change confirm */}
+      <AlertDialog open={roleDialog.open} onOpenChange={(o) => !o && roleDialog.close()}>
+        <AlertDialogContent className="border-edge bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">
+              {roleDialog.target?.role === 'admin' ? 'Make admin?' : 'Make parent?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {roleDialog.target?.account.email}
+              </span>{' '}
+              {roleDialog.target?.role === 'admin'
+                ? 'will be able to manage the allowlist and every account.'
+                : 'will no longer have admin access.'}{' '}
+              They're signed out, and the new role applies when they sign in again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-edge">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={roleMutation.isPending}
+              onClick={() => roleDialog.target && roleMutation.mutate(roleDialog.target)}
+            >
+              {roleDialog.target?.role === 'admin' ? 'Make admin' : 'Make parent'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

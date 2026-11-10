@@ -8,7 +8,7 @@ import {
   useMemo,
 } from 'react';
 import type { ReactNode } from 'react';
-import { api } from '@/api/client';
+import { account } from '@/api/account';
 import { useAuth } from '@/lib/AuthContext';
 
 interface TtsContextValue {
@@ -45,9 +45,7 @@ export const TtsProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
     void (async () => {
       try {
-        const prefs = (await api.preferences.get()) as {
-          tts_enabled?: boolean;
-        };
+        const prefs = await account.preferences.get();
         if (!cancelled && typeof prefs.tts_enabled === 'boolean')
           setTtsEnabled(prefs.tts_enabled);
       } catch (err) {
@@ -62,7 +60,7 @@ export const TtsProvider = ({ children }: { children: ReactNode }) => {
   const toggleTts = useCallback(() => {
     const next = !ttsEnabledRef.current;
     setTtsEnabled(next);
-    api.preferences.patch({ tts_enabled: next }).catch(err => {
+    account.preferences.patch({ tts_enabled: next }).catch(err => {
       console.warn('[TtsContext] Could not persist TTS toggle:', err);
     });
   }, []);

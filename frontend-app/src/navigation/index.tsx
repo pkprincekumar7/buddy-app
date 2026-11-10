@@ -34,8 +34,8 @@ import LifePathway from '@/screens/LifePathway';
 import GrowthAreas from '@/screens/GrowthAreas';
 import Observations from '@/screens/Observations';
 import Connect from '@/screens/Connect';
+import AccountSettings from '@/screens/AccountSettings';
 import PageNotFound from '@/screens/PageNotFound';
-import UserNotRegisteredError from '@/screens/UserNotRegisteredError';
 import { withStackWindow } from './withStackWindow';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -80,6 +80,7 @@ const PROTECTED_PAGES = {
   GrowthAreas: withStackWindow(GrowthAreas),
   Observations: withStackWindow(Observations),
   Connect: withStackWindow(Connect),
+  AccountSettings: withStackWindow(AccountSettings),
 } as const;
 
 function FullScreenSpinner() {
@@ -115,9 +116,6 @@ function RootNavigator() {
     );
   }
 
-  if (authError?.type === 'user_not_registered')
-    return <UserNotRegisteredError />;
-
   return (
     <Stack.Navigator screenOptions={withLayout}>
       {!isAuthenticated ? (
@@ -126,7 +124,10 @@ function RootNavigator() {
           <Stack.Screen name="Register" component={Register} />
         </Stack.Group>
       ) : user?.role === 'admin' ? (
-        <Stack.Screen name="Admin" component={Admin} />
+        <>
+          <Stack.Screen name="Admin" component={Admin} />
+          <Stack.Screen name="AccountSettings" component={AccountSettings} />
+        </>
       ) : (
         <>
           {(

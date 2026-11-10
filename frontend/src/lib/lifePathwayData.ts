@@ -122,7 +122,8 @@ export const AREA_HEX: Record<string, string> = Object.fromEntries(
 
 /**
  * One archetype → one superpower name plus the quality noun the 90-day copy
- * refers back to. Keys match personalityTypes in PersonalityAnalysis.tsx.
+ * refers back to. Keys match the archetypes discover's view model uses (its `type`;
+ * `PERSONALITY_TYPES` in backend/discover/app/personality.py).
  * `lead` is only used when the personality view model carries no description of
  * its own — the generated one is more specific, so it wins where present.
  */

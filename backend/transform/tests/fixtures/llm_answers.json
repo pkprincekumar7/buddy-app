@@ -1,0 +1,301 @@
+[
+  {
+    "age": 9,
+    "answer": {
+      "y1": {
+        "title": "  Year 0 title  ",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0"
+      },
+      "y2": {
+        "title": "  Year 1 title  ",
+        "guided": "Guided 1",
+        "power": "Power 1",
+        "drift": "Drift 1"
+      },
+      "y3": {
+        "title": "  Year 2 title  ",
+        "guided": "Guided 2",
+        "power": "Power 2",
+        "drift": "Drift 2"
+      },
+      "y5": {
+        "title": "  Year 3 title  ",
+        "guided": "Guided 3",
+        "power": "Power 3",
+        "drift": "Drift 3"
+      },
+      "y8": {
+        "title": "  Year 4 title  ",
+        "guided": "Guided 4",
+        "power": "Power 4",
+        "drift": "Drift 4"
+      },
+      "y10": {
+        "title": "  Year 5 title  ",
+        "guided": "Guided 5",
+        "power": "Power 5",
+        "drift": "Drift 5"
+      }
+    }
+  },
+  {
+    "age": 9,
+    "answer": {
+      "y1": {
+        "title": "  Year 0 title  ",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0",
+        "y2": {
+          "title": "  Year 1 title  ",
+          "guided": "Guided 1",
+          "power": "Power 1",
+          "drift": "Drift 1",
+          "y3": {
+            "title": "  Year 2 title  ",
+            "guided": "Guided 2",
+            "power": "Power 2",
+            "drift": "Drift 2",
+            "y5": {
+              "title": "  Year 3 title  ",
+              "guided": "Guided 3",
+              "power": "Power 3",
+              "drift": "Drift 3",
+              "y8": {
+                "title": "  Year 4 title  ",
+                "guided": "Guided 4",
+                "power": "Power 4",
+                "drift": "Drift 4",
+                "y10": {
+                  "title": "  Year 5 title  ",
+                  "guided": "Guided 5",
+                  "power": "Power 5",
+                  "drift": "Drift 5"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "age": 12,
+    "answer": {
+      "y1": {
+        "title": "  Year 0 title  ",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0"
+      },
+      "y3": {
+        "title": "  Year 2 title  ",
+        "guided": "Guided 2",
+        "power": null,
+        "drift": "Drift 2"
+      },
+      "y5": {
+        "title": "x"
+      },
+      "y8": "oops",
+      "y10": {
+        "title": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+        "guided": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+        "power": "Power 5",
+        "drift": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+      }
+    }
+  },
+  {
+    "age": 9,
+    "answer": {
+      "milestones": [
+        {
+          "title": "  Year 0 title  ",
+          "guided": "Guided 0",
+          "power": "Power 0",
+          "drift": "Drift 0",
+          "age": "10"
+        },
+        {
+          "title": "  Year 1 title  ",
+          "guided": "Guided 1",
+          "power": "Power 1",
+          "drift": "Drift 1",
+          "age": 10
+        },
+        {
+          "title": "  Year 2 title  ",
+          "guided": "Guided 2",
+          "power": "Power 2",
+          "drift": "Drift 2",
+          "age": "11"
+        },
+        {
+          "title": "bad",
+          "age": "12"
+        }
+      ]
+    }
+  },
+  {
+    "age": 9,
+    "answer": {
+      "milestones": [
+        {
+          "title": "bad"
+        }
+      ]
+    }
+  },
+  {
+    "age": 9,
+    "answer": {
+      "other": 1
+    }
+  },
+  {
+    "age": 9,
+    "answer": "not an object"
+  },
+  {
+    "age": 9,
+    "answer": null
+  },
+  {
+    "age": 9,
+    "answer": {
+      "y1": {
+        "title": "T0",
+        "guided": "G0",
+        "power": "",
+        "drift": "D0",
+        "y1": {
+          "title": "T1",
+          "guided": "G1",
+          "power": "",
+          "drift": "D1",
+          "y1": {
+            "title": "T2",
+            "guided": "G2",
+            "power": "",
+            "drift": "D2",
+            "y1": {
+              "title": "T3",
+              "guided": "G3",
+              "power": "",
+              "drift": "D3",
+              "y1": {
+                "title": "T4",
+                "guided": "G4",
+                "power": "",
+                "drift": "D4",
+                "y1": {
+                  "title": "T5",
+                  "guided": "G5",
+                  "power": "",
+                  "drift": "D5",
+                  "y1": {
+                    "title": "T6",
+                    "guided": "G6",
+                    "power": "",
+                    "drift": "D6",
+                    "y1": {
+                      "title": "T7",
+                      "guided": "G7",
+                      "power": "",
+                      "drift": "D7",
+                      "y1": {
+                        "title": "T8",
+                        "guided": "G8",
+                        "power": "",
+                        "drift": "D8",
+                        "y1": {
+                          "title": "T9",
+                          "guided": "G9",
+                          "power": "",
+                          "drift": "D9",
+                          "y1": {
+                            "title": "T10",
+                            "guided": "G10",
+                            "power": "",
+                            "drift": "D10",
+                            "y1": {
+                              "title": "T11",
+                              "guided": "G11",
+                              "power": "",
+                              "drift": "D11"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "age": 9,
+    "answer": {
+      "milestones": [
+        "oops",
+        {
+          "title": "T1",
+          "guided": "G1",
+          "power": "",
+          "drift": "D1",
+          "age": "10"
+        },
+        {
+          "title": "T2",
+          "guided": "G2",
+          "power": "",
+          "drift": "D2",
+          "age": "10"
+        }
+      ]
+    }
+  },
+  {
+    "age": 9,
+    "answer": {
+      "y2": {
+        "y2": {
+          "y2": {
+            "y2": {
+              "y2": {
+                "y2": {
+                  "y2": {
+                    "y2": {
+                      "y2": {
+                        "y2": {
+                          "y2": {
+                            "y2": {
+                              "y3": {
+                                "title": "T3",
+                                "guided": "G3",
+                                "power": "",
+                                "drift": "D3"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+]

@@ -247,16 +247,6 @@ export const GROWTH_AREAS: GrowthArea[] = [
   },
 ];
 
-/** Map URL param name → area definition, e.g. "LifeAmbition" → { id: 'life_ambition', ... } */
-export function areaByUrlName(urlName: string): GrowthArea | null {
-  return GROWTH_AREAS.find(a => a.urlName === urlName) ?? null;
-}
-
-/** Map area_id → area definition, e.g. "life_ambition" → { id: 'life_ambition', ... } */
-export function areaById(id: string): GrowthArea | null {
-  return GROWTH_AREAS.find(a => a.id === id) ?? null;
-}
-
 // ─── Step 1: five free-text reflections, answered by the parent ───────────────
 // Ids are area-prefixed and positional, and share no key with the pre-redesign
 // question set. A document still holding old answers therefore resolves to
@@ -267,182 +257,6 @@ export interface Question {
   question: string;
   hint: string;
 }
-
-export const AREA_QUESTIONS: Record<string, Question[]> = {
-  life_ambition: [
-    {
-      id: 'la_q1',
-      question:
-        'When {name} talks about what {he} want{s} to be one day, what {does} {he} say?',
-      hint: '{His} words, even if they change every month.',
-    },
-    {
-      id: 'la_q2',
-      question: 'What {does} {he} do without being asked or reminded?',
-      hint: 'The thing {he} return{s} to on {his} own.',
-    },
-    {
-      id: 'la_q3',
-      question: 'Which activity makes {him} forget about time completely?',
-      hint: 'The last time you had to call {him} twice.',
-    },
-    {
-      id: 'la_q4',
-      question:
-        'Who {does} {he} look up to, and what {does} {he} admire about them?',
-      hint: 'A family member, teacher, athlete or character.',
-    },
-    {
-      id: 'la_q5',
-      question:
-        'What is one thing you would like to see {him} try in the next few months?',
-      hint: 'Something small and specific.',
-    },
-  ],
-  self_care: [
-    {
-      id: 'sc_q1',
-      question:
-        'How does {name} usually show you that {he} {is} upset or overwhelmed?',
-      hint: 'Words, silence, anger, stomach aches.',
-    },
-    {
-      id: 'sc_q2',
-      question: 'What helps {him} settle down again?',
-      hint: 'What has actually worked, not what should work.',
-    },
-    {
-      id: 'sc_q3',
-      question: 'Which daily routines are a struggle at the moment?',
-      hint: 'Waking, homework, screens, bedtime.',
-    },
-    {
-      id: 'sc_q4',
-      question:
-        'Who {does} {he} go to first when something is bothering {him}?',
-      hint: 'If it is no one, write that.',
-    },
-    {
-      id: 'sc_q5',
-      question: 'What {does} {he} say about {himself} when things go wrong?',
-      hint: 'Try to recall {his} exact phrasing.',
-    },
-  ],
-  critical_thinking: [
-    {
-      id: 'ct_q1',
-      question:
-        'When {name} gets stuck on something hard, what {does} {he} do next?',
-      hint: 'Asks, guesses, gives up, tries again.',
-    },
-    {
-      id: 'ct_q2',
-      question: 'What kinds of questions {does} {he} ask you most often?',
-      hint: 'How things work, why rules exist, what if.',
-    },
-    {
-      id: 'ct_q3',
-      question: 'How {does} {he} handle being told {he} {is} wrong?',
-      hint: 'Describe a recent example.',
-    },
-    {
-      id: 'ct_q4',
-      question: 'Give an example of {him} working something out for {himself}.',
-      hint: 'School, a game, a problem at home.',
-    },
-    {
-      id: 'ct_q5',
-      question: 'Which decisions do you let {him} make on {his} own right now?',
-      hint: 'And which ones feel too early.',
-    },
-  ],
-  creativity: [
-    {
-      id: 'cr_q1',
-      question:
-        'What does {name} make, build or invent when left to {himself}?',
-      hint: 'Drawings, stories, games, contraptions.',
-    },
-    {
-      id: 'cr_q2',
-      question: 'What {does} {he} do when {he} say{s} {he} {is} bored?',
-      hint: 'What happens in the ten minutes after.',
-    },
-    {
-      id: 'cr_q3',
-      question:
-        'How {does} {he} react when something {he} make{s} does not turn out right?',
-      hint: 'Starts over, hides it, gets frustrated.',
-    },
-    {
-      id: 'cr_q4',
-      question: 'Which of {his} ideas has surprised you recently?',
-      hint: 'Even a small one counts.',
-    },
-    {
-      id: 'cr_q5',
-      question:
-        'What creative materials or space {does} {he} have access to at home?',
-      hint: 'And what is missing.',
-    },
-  ],
-  physical_wellness: [
-    {
-      id: 'pw_q1',
-      question: 'How much of {his} day involves active play or sport?',
-      hint: 'A rough estimate across a normal week.',
-    },
-    {
-      id: 'pw_q2',
-      question: 'Which kinds of physical activity {does} {he} genuinely enjoy?',
-      hint: 'Enjoys, not tolerates.',
-    },
-    {
-      id: 'pw_q3',
-      question: 'What does {his} sleep look like on a school night?',
-      hint: 'Bedtime, how long to fall asleep, waking.',
-    },
-    {
-      id: 'pw_q4',
-      question: 'How would you describe {his} eating habits and appetite?',
-      hint: 'Include the parts that worry you.',
-    },
-    {
-      id: 'pw_q5',
-      question: 'What {does} {he} say about {his} own body or strength?',
-      hint: 'Comments about being fast, weak, tall, tired.',
-    },
-  ],
-  social_skills: [
-    {
-      id: 'ss_q1',
-      question:
-        'How does {name} behave when {he} join{s} a group of children {he} {does} not know?',
-      hint: 'Leads, watches, waits to be invited.',
-    },
-    {
-      id: 'ss_q2',
-      question: 'Who are {his} closest friends, and what draws {him} to them?',
-      hint: 'Names are not needed, just the pattern.',
-    },
-    {
-      id: 'ss_q3',
-      question:
-        'How {does} {he} handle disagreements with friends or siblings?',
-      hint: 'A recent example is best.',
-    },
-    {
-      id: 'ss_q4',
-      question: 'When {does} {he} find it hardest to speak up?',
-      hint: 'With adults, in class, in large groups.',
-    },
-    {
-      id: 'ss_q5',
-      question: 'How {does} {he} respond when someone else is upset?',
-      hint: 'Notices, comforts, withdraws, teases.',
-    },
-  ],
-};
 
 // ─── Step 2: six either/or rounds, answered by the child ──────────────────────
 // Each option carries a `tag`; the most-frequent tag across the six picks
@@ -511,9 +325,6 @@ export const ICON_PATHS = {
 const P = ICON_PATHS;
 
 export type IconKey = keyof typeof ICON_PATHS;
-
-/** The icon vocabulary a generated round may choose from. */
-export const ICON_KEYS = Object.keys(ICON_PATHS) as IconKey[];
 
 /**
  * Resolve an icon key to its path, falling back to a neutral sparkle.
@@ -1374,8 +1185,7 @@ export function topArchetype(
 
 // ─── Recommendations ──────────────────────────────────────────────────────────
 // Two shapes coexist in the database permanently and neither is migrated:
-//   • plain strings — every area completed before the redesign, plus anything
-//     the onboarding RecommendationsPhase writes (it still emits strings)
+//   • plain strings — every area completed before the redesign
 //   • { title, detail } — everything the redesigned Growth Areas flow writes
 // Every read path must go through normalizeRecommendations() so both render.
 
@@ -1441,13 +1251,6 @@ export function normalizeRecommendations(raw: unknown): GrowthRecommendation[] {
   return out;
 }
 
-/** Flatten recommendations to plain lines, for prompt context. */
-export function recommendationsToLines(raw: unknown): string[] {
-  return normalizeRecommendations(raw).map(r =>
-    r.detail ? `${r.title} — ${r.detail}` : r.title,
-  );
-}
-
 // ─── Generated question sets ──────────────────────────────────────────────────
 // Both question sets above are the fallback shape only; what a parent actually
 // answers is generated per child per area and cached on the child document at
@@ -1455,7 +1258,7 @@ export function recommendationsToLines(raw: unknown): string[] {
 //
 // The LLM call runs in plain JSON mode, not a provider's strict structured
 // output — the response schema reaches the model as a hint in the system message
-// (see backend/app/services/llm_service.py), so its enums and counts are
+// (see backend/common/generation/llm.py), so its enums and counts are
 // advisory. These normalisers are therefore the actual guarantee that what
 // reaches the UI is renderable, not a backstop for one.
 //

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Camera, Upload, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AVATAR_LIMITS, AVATAR_TYPES, avatarProblem } from '@/api/children';
 import type { ReactNode } from 'react';
 
 // ── Inline SVG avatar illustrations ──────────────────────────────────────────
@@ -234,7 +235,13 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = '';
     if (!file) return;
+    // Children refuses anything else when the photo is saved (build plan 7.4).
+    const problem = avatarProblem(file.type, file.size);
+    setErrors((current) => ({ ...current, avatarId: problem ?? undefined }));
+    if (problem) return;
     setPhotoFile(file);
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -243,8 +250,6 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     reader.readAsDataURL(file);
     // Clear emoji avatar selection when a photo is chosen
     setForm((f) => ({ ...f, avatarId: '' }));
-    // Reset input so the same file can be re-selected if needed
-    e.target.value = '';
   };
 
   const avatars = avatarTab === 'boy' ? BOY_AVATARS : GIRL_AVATARS;
@@ -255,7 +260,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     if (!form.name.trim()) e.name = 'Name is required';
     const ageNum = Number(form.age);
     if (!form.age.trim()) e.age = 'Age is required';
-    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 30) e.age = 'Age must be between 8 and 30';
+    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 25) e.age = 'Age must be between 8 and 25';
     if (!form.gender) e.gender = 'Please select a gender';
     if (!form.avatarId && !photoFile && !initialData?.avatarUrl)
       e.avatarId = 'Please upload a photo or pick an avatar';
@@ -325,7 +330,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept={AVATAR_TYPES.join(',')}
             className="hidden"
             onChange={handlePhotoChange}
           />
@@ -339,6 +344,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             <Upload className="h-3 w-3" />
             Upload photo
           </Button>
+          <p className="text-[11px] text-muted-foreground">{AVATAR_LIMITS}</p>
         </div>
 
         {/* Avatar picker */}

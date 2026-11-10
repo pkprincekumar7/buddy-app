@@ -1,0 +1,93 @@
+# Dependency updates (production-readiness review, CI-04): weekly, grouped so each
+# ecosystem opens one pull request rather than one per package. Every PR runs check.yml.
+version: 2
+updates:
+  # Actions are pinned to commit SHAs with the version in a comment; Dependabot updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # One PR for every backend requirements file: each service pins its own versions, the
+  # shared ones the same everywhere, and requirements-dev.txt must stay exactly their union
+  # (tools/tests/test_dev_requirements.py), so they have to move together.
+  - package-ecosystem: pip
+    directories:
+      - /backend
+      - /backend/auth
+      - /backend/children
+      - /backend/discover
+      - /backend/grow
+      - /backend/onboarding
+      - /backend/release
+      - /backend/shared
+      - /backend/transform
+      - /backend/users
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+    ignore:
+      # Built from backend/common in this repo, never from PyPI. A lookup there could
+      # resolve an unrelated public package of the same name.
+      - dependency-name: buddy-common
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      web:
+        patterns: ["*"]
+
+  # yarn.lock; the npm ecosystem covers yarn.
+  - package-ecosystem: npm
+    directory: /frontend-app
+    schedule:
+      interval: weekly
+    groups:
+      mobile:
+        patterns: ["*"]
+
+  # Base images in backend/Dockerfile and frontend/Dockerfile. The backend's is pinned as
+  # tag@digest (CI-03): Dependabot bumps both, including a new digest of the same tag when
+  # Debian ships security fixes, so that's how the deployed image gets them.
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]
+
+  # docker-compose.yml's local images (mongo, valkey, moto, the nginx gateway), pinned as
+  # tag@digest (CI-04): bumped together. CI's copies of mongo (scripts/ci-start-mongo.sh)
+  # and valkey (check.yml services) and the collector image (otel_collector_image) aren't
+  # covered by any ecosystem: move them with this PR.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      compose:
+        patterns: ["*"]
+
+  # Terraform providers (the committed .terraform.lock.hcl files): monthly.
+  - package-ecosystem: terraform
+    directories:
+      - /infra-live-backend/terraform
+      - /infra-live-edge/terraform
+      - /infra-live-frontend/terraform
+      - /infra-live-scheduler/terraform
+      - /modules/*
+    schedule:
+      interval: monthly
+    groups:
+      terraform:
+        patterns: ["*"]

@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useNavigate } from '@/lib/router';
-import { api } from '@/api/client';
+import { children as childrenApi } from '@/api/children';
 import ChildCard from '@/components/shared/ChildCard';
 import PageLoader from '@/components/shared/PageLoader';
 import PageScroll from '@/components/layout/PageScroll';
@@ -211,9 +211,15 @@ export default function Home() {
   const navigate = useNavigate();
   const { notify, value: revealCtx } = useRevealNotifier();
 
-  const { data: childrenRaw = [], isLoading } = useQuery({
+  const {
+    data: childrenRaw = [],
+    isLoading,
+    isLoadingError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['children'],
-    queryFn: () => api.entities.Child.list('-created_date'),
+    queryFn: () => childrenApi.list(),
   });
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
@@ -226,6 +232,26 @@ export default function Home() {
 
   if (isLoading) {
     return <PageLoader />;
+  }
+
+  // Not "no children yet": that would offer Start Your Journey to a parent who has one.
+  // Only when nothing has loaded: a failed background refetch keeps the list on screen.
+  if (isLoadingError) {
+    return (
+      <View className="flex-1 items-center justify-center gap-4 bg-background px-4">
+        <Text className="text-center text-muted-foreground">
+          We could not load your account. Please try again.
+        </Text>
+        <Button
+          onPress={() => void refetch()}
+          disabled={isFetching}
+          className="rounded-2xl px-8 font-semibold text-primary-foreground"
+          style={recipe.btnPrimary}
+        >
+          {isFetching ? 'Trying again…' : 'Try again'}
+        </Button>
+      </View>
+    );
   }
 
   return (

@@ -14,6 +14,31 @@ Placeholders used below: `{app}` = `APP_NAME` environment variable (e.g. `superp
 
 ---
 
+## After every apply of an environment
+
+Each environment lives in its own AWS account and is applied and destroyed as a whole,
+account services included (production-readiness review, DR-02):
+
+- **stg and prod: nothing to do for Atlas.** They reach their cluster through the PrivateLink
+  endpoint, which Terraform re-creates and links in Atlas on every apply (DEC-02).
+- **dev and sbx: the Atlas IP access list.** The NAT gateways' Elastic IPs are created with the
+  environment, so every re-apply gets new ones. After `terraform-live-backend` (apply), copy each region's NAT
+  public IPs into the environment's Atlas project (Network Access → IP Access List) and remove the
+  old ones. The IPs are on the VPC console's NAT gateways page (filter `<APP_NAME>-nat-*-<env>`),
+  or:
+
+  ```
+  aws ec2 describe-nat-gateways --region <region> \
+    --filter "Name=tag:Name,Values=<APP_NAME>-nat-*-<env>" "Name=state,Values=available" \
+    --query 'NatGateways[].NatGatewayAddresses[].PublicIp' --output text
+  ```
+
+  Until that's done, the services can't reach MongoDB (their health checks fail).
+- **GuardDuty and CloudTrail** (stg and prod) are destroyed and re-created with the environment.
+  While it's destroyed, the account's **CloudTrail Event history** (90 days of management
+  events, kept by AWS with no trail) still records what happens, the destroy and the next
+  apply included.
+
 ## SSM Parameter Store — cross-module hand-off
 
 The modules and workflows never read each other's Terraform state. They exchange values through
@@ -26,9 +51,9 @@ passes `--region us-east-1`.
 | Parameter | Written by | Read by |
 |---|---|---|
 | `/{app}/{env}/backend/{region}/alb_internal_fqdn` | `infra-live-backend` (that region) | `infra-live-edge` (one CloudFront `/api/*` origin per region in `backend_regions`) |
-| `/{app}/{env}/backend/{region}/ecr_repository_url` | `infra-live-backend` | `deploy-live-backend` (build job: push targets; deploy job: image URI), `promote-live-backend` (target push) |
 | `/{app}/{env}/backend/{region}/ecs_cluster_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
-| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in `deploy_order` order, of `{name, service, family, container}`, one per ECS service |
+| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in `deploy_order` order, of `{name, service, family, container, image_service, ecr_repository_url}`, one per ECS service. A worker's `image_service` and repository are its service's; the collector's are empty (public image) |
+| `/{app}/{env}/backend/{region}/internal_public_keys` | `infra-live-backend` (`service_tokens.tf`) | — (the service-token public keys, `{service: {kid: PEM}}`, for anything outside the tasks that verifies them; the tasks get the same map as `INTERNAL_PUBLIC_KEYS`) |
 | `/{app}/{env}/edge/cloudfront_distribution_id` | `infra-live-edge` | `deploy-live-frontend`, `promote-live-frontend` (cache invalidation) |
 | `/{app}/{env}/edge/cloudfront_arn` | `infra-live-edge` | `infra-live-frontend` (S3 bucket policy) |
 | `/{app}/{env}/edge/s3_bucket_name` | `infra-live-edge` | `infra-live-frontend` (precondition check), `deploy-live-frontend`, `promote-live-frontend` |
@@ -69,18 +94,50 @@ backend region has its own state, so regions can be applied in parallel (`terraf
 runs them as a matrix). The edge state is a single shared distribution per environment, which is
 why edge always receives the **full** region list.
 
+### If a Terraform job timed out or was cancelled
+
+Every workflow job has a `timeout-minutes` (CI-16): Terraform backend, frontend and scheduler 60/30/30, edge 90 (CloudFront and Lambda@Edge are slow), deploys 30–45. A timeout or a cancel sends Terraform an interrupt: it stops starting changes and saves the state, but GitHub kills the job about 10 seconds later, so a slow change still in flight can be cut off. State is written as the apply goes, so only that change is in doubt. To recover:
+
+1. Run `plan` again for the same environment (and region). Anything left undone shows up as a change; apply it as usual.
+2. If the run fails with **"Error acquiring the state lock"**, the killed run left its lock file. Make sure no other run is using that state, then, in the stack directory, initialised against that state:
+
+   ```bash
+   terraform force-unlock <LOCK_ID>
+   ```
+
+   The lock ID is in the error message.
+3. If an apply fails with **"already exists"**, AWS finished creating a resource that Terraform never recorded. Import it (`terraform import <address> <id>`, or an `import {}` block), then plan again.
+
+**Scheduled starts and stops** (`infra-live-scheduler`, dev, sbx and stg): the dispatcher Lambda
+isn't retried, and skips a dispatch whose run (same action, environment and regions) already
+started in the last hour, so a schedule delivered twice runs once (SCH-01). Where
+`enable_alarms` (stg), a failed dispatch emails `OPS_EMAIL` twice over: the
+`scheduler-dispatch-failed` alarm, and the failed event itself through the function's
+`on_failure` destination. The environment then didn't start or stop: run
+`terraform-live-all` by hand if it must.
+
+**Queued runs:** each Terraform and deploy workflow has a concurrency group (per environment, plus region for the backend), with `cancel-in-progress: false`. GitHub keeps one running and **one** pending run per group, so a third run started while one is pending replaces the pending one, without an error. That includes the scheduler's runs. If a run shows as cancelled without anyone cancelling it, that's why: start it again once the group is free.
+
 ---
 
 ## ECS task definitions — what each workflow changes
 
-Each backend region runs one ECS service per entry in `local.services`
-(`infra-live-backend/terraform/services.tf`). Today that's four, all from the same image:
-`auth` (`APP_COMPONENT=auth`: `/api/v1/auth/*` and account deletion; the only service with
-`JWT_PRIVATE_KEY`), `admin` (`APP_COMPONENT=admin`: `/api/v1/admin/*`), the API (`backend`,
-`APP_COMPONENT=api`: everything else under `/api/v1`) and the job worker (`worker`,
-`python worker.py`). The ALB routes between auth, admin and the API by path (see below). The
-workflows' `service` input takes `all` or a comma-separated list of those names, e.g.
-`auth,admin,backend`; anything else fails up front with the valid list. See [Adding a backend service](#adding-a-backend-service).
+Each backend region runs one ECS service per runtime in `local.services`
+(`infra-live-backend/terraform/services.tf`), 18 in all, derived from `local.split_services`:
+
+- **9 HTTP runtimes**, one per service (auth, users, children, onboarding, discover, grow, transform,
+  release, shared): the public API on 8000 behind the ALB, and (all but shared) the internal API
+  on 8001, registered in Cloud Map as `<service>.<app>-<env>.internal`.
+- **8 workers**, `<service>-worker` (no shared worker): the same image as their service, with the
+  command `python -m <service>.worker` (outbox relay, event consumer, and for discover, grow,
+  transform and release the LLM job worker).
+- **`otel-collector`**: the AWS Distro for OpenTelemetry image (`otel_collector_image`), on 4318
+  in Cloud Map. Every runtime sends it traces; it tail-samples them into X-Ray (`otel_collector.tf`).
+
+A service and its worker share one ECR repository (`<app>/<env>/<service>`), one secret, one
+service-token key and one Valkey user. The ALB routes by path from `shared/service-routes.json`.
+The workflows' `service` input takes `all` or a comma-separated list of runtime names, e.g.
+`users,users-worker`; anything else fails up front with the valid list. See [Adding a backend service](#adding-a-backend-service).
 
 ### `terraform-live-backend` (apply)
 
@@ -90,10 +147,10 @@ registers a **new revision**:
 | Category | Examples |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `*_MODEL`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` / `COOKIE_DOMAIN` (derived from `SUBDOMAIN` + env + `DOMAIN_NAME`) |
-| Secret references | Secrets Manager ARN pointers (not values). Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `REDIS_AUTH_TOKEN`. Admin: `MONGODB_URI`, `REDIS_AUTH_TOKEN`. API: `MONGODB_URI`, the three LLM keys, `REDIS_AUTH_TOKEN` (no private key — it verifies with `JWT_PUBLIC_KEYS`). Worker: `MONGODB_URI`, the three LLM keys. |
+| Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_NAME`, `APP_ENV`, `AWS_REGION`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user) + `REDIS_REPLICATION_GROUP_ID`, `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, `PUBLIC_ORIGINS` (the web app's origin, `https://<cookie_domain>`: the cross-site cookie check, AUTH-05), the `JWT_*` verification settings (`JWT_KEY_ID`, `JWT_PUBLIC_KEYS`, `JWT_ISSUER`, `JWT_AUDIENCE`). HTTP runtimes: `BEHIND_PROXY`; auth's cookie settings (`COOKIE_SECURE`, `COOKIE_SAMESITE`; the cookies are host-only, so there's no domain to set). Auth and its worker: `DELETION_PARTICIPANTS`. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform (HTTP and worker): `UPLOADS_BUCKET_NAME`, `UPLOADS_URL_TTL_SECONDS`; shared: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
+| Secret references | ARN pointers (not values) into the runtime's own service secret, plus `INTERNAL_SIGNING_KEY` from its SSM SecureString. Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `EMAIL_HMAC_PEPPER`. Generating workers: `MONGODB_URI` + the three LLM keys (their HTTP runtimes get `MONGODB_URI` only). Shared: `OPENAI_API_KEY`. The others: `MONGODB_URI`. The collector: none |
 | Infrastructure | log group, health check, execution/task role, network mode |
-| Image | always `:latest` — a placeholder; see below |
+| Image | the service's repository at `:latest` — a placeholder until the first deploy, which registers `<repo>@sha256:<digest>` (signed, CI-03); see below (the collector: the pinned `otel_collector_image`) |
 
 Every ECS **service** has `ignore_changes = [task_definition, desired_count]`. Terraform
 therefore registers the new revision but never switches a service to it. The revision stays idle
@@ -101,145 +158,228 @@ until the next deploy.
 
 ### `deploy-live-backend`
 
-Builds the image once, pushes it as `:<YYYYMMDD>-<short-sha>` to every selected region's ECR, then
-in each region:
+A `resolve` job lists the selected runtimes and the images they need: one per service, since a
+worker runs its service's. The collector runs the pinned `otel_collector_image`, so `all` skips it,
+and naming it is an error. A build matrix then builds each image once
+(`--build-arg SERVICE=<service>`), scans it with Trivy (a HIGH or CRITICAL CVE with a fix fails the
+build before anything is pushed; `.trivyignore` holds the reviewed exceptions), and
+pushes it as `:<YYYYMMDD>-<short-sha>` to that service's repository in every selected region,
+with a second tag on the same image, `:<YYYYMMDD>-<short-sha>-scanned` (CI-03). A re-run finds
+the tag already there; since that's another build of the commit, it pulls and scans it before
+adding the marker.
+
+**Signed images (CI-03).** After the push, each region's image is **signed** by the build job
+with cosign, keyless: the certificate names this repository's `deploy-live-backend.yml` and the
+GitHub OIDC issuer, and Sigstore's public log (Rekor) records it. Its CycloneDX SBOM (Trivy) is
+attached as a signed attestation. The signature and attestation are stored next to the image as
+`sha256-<hex>.sig` / `.att`, and ECR's lifecycle keeps the newest 60 of them apart from the 30
+releases. **Before any rollout**, the deploy and promote jobs check the signature
+(`verify_signature` in `scripts/ecs-services.sh`) and register the task definition with
+`<repo>@sha256:…`, the digest they checked, so ECS can only run that image. Promote copies the
+signature and attestation along with the image (`copy_signatures`). Restart keeps the current
+task definition, so it runs the same verified digest. cosign is installed checksum-pinned
+(`scripts/install-cosign.sh`, v2.6.5).
+
+To check an image by hand (with the registry login `aws ecr get-login-password | docker login`):
+
+```bash
+cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/<owner>/buddy-app/\.github/workflows/deploy-live-backend\.yml@refs/(heads|tags)/.+$' \
+  <account>.dkr.ecr.<region>.amazonaws.com/<app>/<env>/<service>@sha256:<digest>
+cosign verify-attestation --type cyclonedx …same flags… <image>@sha256:<digest>   # the SBOM
+```
+
+**If Sigstore is unreachable,** signing and verification fail, so deploys and promotes stop
+rather than run an unchecked image. Wait for Sigstore (status.sigstore.dev) and re-run; the
+run is safe to repeat. There's no switch to skip the check.
+`prod` can't be deployed this way, from the dropdown or through `workflow_call`. It gets
+releases only through promote.
+Then, in each region:
 
 1. Reads the services to deploy from the region's `ecs_services` SSM list and rolls them all out
    **in parallel**: each is an independent ECS service, so the deploy takes as long as the
    slowest one. Log lines are prefixed with the service name. For each service, it reads
    the **latest active revision** of its task definition family, so it picks up anything
    `terraform apply` just registered.
-2. Patches only the container `image` to the pushed tag, and registers a new revision.
+2. Patches only the container `image` to its service's repository at the pushed tag, and registers a new revision.
 3. Updates the service to that revision. This is a rolling deployment with circuit-breaker
    rollback, waiting up to 15 minutes for steady state.
 
 Everything else (env vars, secret references, CPU/memory, roles) is carried over unchanged. The
 `:latest` placeholder never runs after the first deploy. If a service fails to stabilise, the
 ECS circuit breaker rolls it back and the others carry on. The step then fails, naming the services
-left on their previous image and the `service=` value to re-run them with. Because the services
+left on their previous image and the `service=` value to re-run them with, and the run shows a
+**Mixed images** warning and a summary table of which service runs which image (CI-12). Because the services
 are rolled out together, any change must keep working while some services still run the previous
 image (e.g. the API and the worker must both handle a job written by the other version). The rollout logic is shared by all
 three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.test.sh`).
 
 `promote-live-backend` does the same, but takes the image from the source environment's running
-task definition instead of building one: an export job (source environment's role) pulls it, and
-the promote job (target's role) pushes it into the target's own ECR under the same tag before
-registering the revision. The target never references the source's ECR, so source and target can
-be different AWS accounts, and the target is unaffected when the source repo expires the image or
-the source environment is destroyed. `restart-live-backend` forces a new deployment of the
+task definition instead of building one: an export job (source environment's role) reads its tag
+and digest, and the promote job (target's role) copies it by digest with `crane`, registry to
+registry, into its service's repository in the target under the same tag before registering the
+revision. The copy keeps the digest, and the job fails if the target's digest differs, or if the
+tag is already in the target as another image. No image moves through workflow artifacts. Only an
+image with the scan marker on the same digest in the source is promoted, and the promote job adds
+the marker in the target too, so stg → prod accepts it in turn. The target runs from its own ECR,
+never the source's, so it is unaffected when the source repo expires the image or the source
+environment is destroyed.
+
+Source and target can be different AWS accounts. Then the target's role has to read the source
+repositories: list the target account in the source environment's `ecr_pull_account_ids`
+(`infra-live-backend` tfvars; it adds a pull-only repository policy to every service repository),
+and allow the target `ROLE_ARN` (managed outside this repo) `ecr:BatchGetImage`,
+`ecr:GetDownloadUrlForLayer` and `ecr:BatchCheckLayerAvailability` on those repositories. In one
+account, the role's own IAM permissions are enough and the list stays empty. `restart-live-backend` forces a new deployment of the
 current revision without registering one.
 
 ### Which workflow to run
 
 | What changed | Run |
 |---|---|
-| Application code | `deploy-live-backend` |
+| Application code | `deploy-live-backend` (dev, sbx, stg). For prod: `promote-live-backend` and `promote-live-frontend` from stg |
 | Env var / model / CPU / memory (tfvars or GitHub secrets that feed env vars) | `terraform-live-backend` apply, **then** `deploy-live-backend` (apply registers, deploy activates) |
 | Secret values in Secrets Manager | `put-secret-value` (below), then `restart-live-backend` |
 
 ### Adding a backend service
 
-Add one entry to `local.services` in `infra-live-backend/terraform/services.tf`, for example a
-copy of the `worker` entry with a new key. The key is lowercase with hyphens, and it's the name
-the workflows take. That one entry produces:
+Add the service's name to `local.split_services` in `infra-live-backend/terraform/services.tf`
+(and to `generating_services` if it runs LLM jobs). Its place in the list is its deploy order; the
+name is lowercase with hyphens. That produces two runtimes, `<service>` and `<service>-worker`
+(exclude it on the `worker_services` line if it has no database or events, as shared does), each
+with:
 
-| From the entry | Created |
+| From | Created |
 |---|---|
-| `cpu`, `memory`, `command`, `environment`, `secret_keys`, `health_check` | Task definition and ECS service (`modules/ecs-service`), running the shared backend image |
-| `min_capacity`, `max_capacity`, `target_tracking_policies`, `step_scaling_policies` | Autoscaling |
-| `sustained_alarms`, `immediate_alarms` | CloudWatch alarms (when `enable_all_alarms`) |
-| `task_policies` | Task IAM role `<app>-<key>-task-role-<env>-<region>` with those policies (plus ECS Exec / X-Ray policies when those features are on) |
-| — | Security group `<app>-<key>-sg-<env>` (reaches the VPC endpoints; Redis too if `uses_redis`), log group `/ecs/<app>/<key>/<env>` |
-| `deploy_order` | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow logic change.** Add the key to the name list in the `service` input description of `deploy-`, `restart-` and `promote-live-backend.yml` (in `deploy_order` order). That list is only help text, but CI (`scripts/check-service-lists.sh`) fails if it doesn't match. |
+| `runtime_sizes` (its tier) | Task definition and ECS service (`modules/ecs-service`); autoscaling between the tier's `min_capacity` and `max_capacity` |
+| The environment and secret locals | Its env vars and secret keys: add the service's own extras to `service_http_environment`, `service_worker_environment` and `secret_keys` |
+| `task_policies` | Execution role (`<app>-<runtime>-exec-role-<env>-<region>`: only its service's secret and signing key) and task role (`<app>-<runtime>-task-role-<env>-<region>`: Valkey as its own user, metrics in `Superpower/<service>`, its own topic and queue for the worker, plus whatever is added here) |
+| — | ECR repository and secret (one per service), a service-token key pair, a Valkey RBAC user, its security group `<app>-<runtime>-sg-<env>`, its log group `/ecs/<app>/<runtime>/<env>`, Cloud Map registration on 8001 (if in `internal_services`), alarms (when `enable_all_alarms`) |
+| `deploy_order` (from the list) | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow logic change.** Add both runtime names to the name list in the `service` input description of `deploy-`, `restart-` and `promote-live-backend.yml`. That list is only help text, but CI (`scripts/check-service-lists.sh`) fails if it doesn't match. |
+
+Then add its routes to `shared/service-routes.json` (the ALB and the local gateway both read it) and
+its events to `backend/common/events/catalogue.json` (topics, queues and subscriptions follow,
+`modules/events`).
 
 Then:
-1. Apply `terraform-live-backend` in every region of the environment.
-2. Run `deploy-live-backend` with `service` = the new key (or `all`).
+1. Apply `terraform-live-backend` in every region of the environment, and fill the new service's
+   secret (see [Secrets Manager](#secrets-manager--service-secrets)).
+2. Run `deploy-live-backend` with `service` = the new runtimes (or `all`).
 
-New secrets go into the backend-secrets JSON (see [Rotating a value](#rotating-a-value)) and are
-listed in `secret_keys`.
+**HTTP routing.** Each HTTP runtime gets its own ALB target group, ingress from the ALB SG and
+`alb-healthy-hosts-<runtime>` alarm (`modules/alb`). The listener rules come from
+`shared/service-routes.json`: each rule has a priority, a target and 1–3 path patterns. There's
+no catch-all: an origin-verified request matching no rule gets a JSON 404 from the fixed rule
+at 50000.
 
-**HTTP services.** An entry with `http` set also gets its own ALB target group, listener rule,
-ingress from the ALB SG and `alb-healthy-hosts-<key>` alarm (`modules/alb`). Exactly one HTTP
-service leaves `http.path_patterns` empty: the catch-all (`backend`). Any other lists the paths it
-owns and a unique `http.priority`:
-
-```hcl
-http = { port = 8000, health_check_grace_period_seconds = 90, path_patterns = ["/api/v1/reports/*"], priority = 20 }
-```
-
-- Lower priority is matched first; the catch-all is always last (50000).
+- Lower priority is matched first.
 - Each rule also requires `X-Origin-Verify`, and AWS allows **5 condition values per rule**: the
   origin-verify values (2 during a rotation) plus the path patterns. So keep it to 3 patterns;
   Terraform refuses more.
-- Target group names are `<app>-<key>-tg-<env>-<hash>`, at most 32 characters. The 4-character
+- Target group names are `<app>-<runtime>-<env>-<hash>`, at most 32 characters (no `-tg`: with it,
+  `superpower-onboarding-tg-prod-xxxx` would be 34). The 4-character
   hash covers port, protocol, target type and VPC, which can't change in place. So a port change
   creates a new group (`create_before_destroy`), moves the listener rule and ECS service to it,
   and only then deletes the old one.
 - CloudFront and Lambda@Edge need no change: they send all of `/api/*` to the ALB, which splits it.
-  No service discovery is needed either; services share data through MongoDB, not by calling
-  each other.
 - An `ALBRequestCountPerTarget` scaling policy tracks the service's own target group (`ecs.tf`
   fills in its `resource_label`).
-- A backend router moving to a new service also needs `APP_COMPONENT` support in
-  `backend/app/main.py` (`ROUTERS_BY_COMPONENT`), and `backend/tests/test_main.py` checks the
-  path patterns against the real routes.
 
-**Not automatic yet:**
-- **Dashboard.** `dashboard.json.tpl` has widgets for auth, admin, the API and the worker only.
+**Internal calls.** Services call each other's `/internal/*` endpoints directly, at
+`http://<service>.<app>-<env>.internal:8001` (Cloud Map, `service_discovery.tf`). Each
+registered runtime admits its internal port only from the `internal-callers` security group,
+which every service runtime joins. Each call carries a token signed with the caller's own
+Ed25519 key (`service_tokens.tf`).
 
 ### Scaling
 
 - **`desired_count` is ignored after the first apply.** A manual
   `aws ecs update-service --desired-count N` is never reverted, and a later `apply` won't restore
   it either. Scale back explicitly.
-- **The API service is also under App Auto Scaling** (`api_min_capacity` / `api_max_capacity`,
-  with CPU, memory and ALB-request target-tracking policies). Change its range through those
-  tfvars, not just `desired_count`. **Auth** scales on CPU and memory (`auth_min_capacity` /
-  `auth_max_capacity`; login and register are bcrypt-bound). **Admin** scales on CPU and memory (`admin_min_capacity` / `admin_max_capacity`). The worker scales on queue depth
-  (`worker_min_capacity` / `worker_max_capacity`).
-- **ADOT sidecar: off in every environment.** The collector only forwards traces and metrics the
-  app sends it, and the backend has no OpenTelemetry/X-Ray instrumentation. ECS already
-  publishes per-service CPU and memory metrics (`AWS/ECS`). If it's ever turned on, it reserves 256 CPU / 512 MiB
-  of each task, so a task needs at least 512 / 1024: `modules/ecs-service` refuses smaller at plan
-  time. Tracing plan: [auth-users-split.md](auth-users-split.md) 15.5.
+- **Every runtime is under App Auto Scaling**, between its tier's `min_capacity` and
+  `max_capacity` (`runtime_sizes`). Change the range there, not just `desired_count`.
+  - **HTTP runtimes** use CPU, memory and ALB-request target tracking. Auth has its own tier,
+    because login and register are bcrypt-bound.
+  - **Workers** have a CPU floor that never scales in. They scale out on queue depth (over 100
+    messages) and back in when it stays at 10 or below for 5 minutes; the generating ones also
+    scale out on `PendingJobCount`.
+  - **The collector** uses CPU.
+- **Deploys surge to 150%** of the desired count where that's at least one extra task
+  (desired count 2+), else to 200% (one extra task); the minimum stays 100% healthy (TF-03).
+- **Workers run mostly on Fargate Spot** (`worker_spot`): each keeps its first task on demand,
+  then 3 Spot tasks per further on-demand one. AWS can reclaim a Spot task with 2 minutes'
+  notice: it gets SIGTERM, finishes the job in hand (APP-06) and anything unfinished is
+  claimed again (JOB-01). HTTP services and the collector stay on demand.
+- **MongoDB connections are budgeted** (`mongodb_connection_budget`): the plan fails if every
+  runtime at its `max_capacity` could open more than the Atlas tier allows. Raise
+  `max_capacity` only with the budget, a smaller pool or a larger tier (TF-03).
+- **Keep-alive.** The ALB closes idle connections after 60 s; uvicorn keeps them 65 s
+  (`HTTP_KEEP_ALIVE_SECONDS`), so the ALB never reuses one a task has just closed (a 502). On
+  SIGTERM, in-flight requests get 25 s, inside ECS's 30 s stop timeout.
+- **Tracing.** Every runtime sends its spans to the collector; the collector keeps every error
+  and every trace slower than 2 s, plus `xray_default_sampling_rate` of the rest. With more
+  than one collector task, a trace's spans can land on different tasks, which each decide
+  alone: see [auth-users-split.md](auth-users-split.md) 15.5.
 
 ---
 
-## Secrets Manager — app secrets
+## Secrets Manager — service secrets
 
-Each backend region has its own secret, `{app}/{env}/backend-secrets`, in that region. It's a JSON
-object with `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-`GEMINI_API_KEY`, `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
+Each service has its own secret per region, `{app}/{env}/<service>-secrets`: a JSON object with
+the keys in `local.secret_keys` (`services.tf`). Every service with a database has its own
+`MONGODB_URI`. Auth's also holds `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID` and `EMAIL_HMAC_PEPPER`;
+discover, grow, transform and release hold the three LLM keys; shared holds `OPENAI_API_KEY`.
+A service and its worker share the secret, and each runtime's execution role can read only its
+own service's.
 
 - **Created with placeholders.** Terraform writes `REPLACE_ME` for every key and then ignores
   the value (`ignore_changes = [secret_string]`).
-- **Filled on the first apply only.** After `terraform apply`, `terraform-live-backend` reads
-  the secret. If any **required** key (`JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`,
-  `MONGODB_URI`, `REDIS_AUTH_TOKEN`) is still `REPLACE_ME`, it writes all keys from the GitHub
-  environment secrets. Otherwise it leaves the secret alone, so manual rotations are never
-  overwritten. `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` stay `REPLACE_ME` if unset; the app starts,
-  but those providers are unavailable.
+- **Placeholders filled, key by key.** After every `terraform apply`, `terraform-live-backend`
+  runs `scripts/fill-service-secrets.sh`. Each key still `REPLACE_ME` gets its value from the
+  GitHub environment: the service's own entry of `MONGODB_URIS`, `JWT_PRIVATE_KEY`,
+  `EMAIL_HMAC_PEPPER`, `GOOGLE_CLIENT_ID` or an LLM key. Every key with another value is kept
+  as it is, so manual rotations are never overwritten, and only placeholder keys need their
+  GitHub value (SEC-05). A secret with nothing to fill isn't written. Nothing is written unless
+  every secret that needs it can be, so a missing `MONGODB_URIS` entry leaves no secret
+  half-filled. An unset `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` stays `REPLACE_ME`: the services
+  start, but those providers are unavailable; set it in GitHub later and the next apply fills it.
 - **Hard-deleted on destroy.** `recovery_window_in_days = 0` means `terraform destroy` deletes
   the secret immediately, with no 30-day recovery window, so a re-apply doesn't hit a name clash.
   ⚠ This is irreversible — back up the values first.
+- **Service-token keys aren't here, nor in Terraform state** (SEC-01).
+  `scripts/service-token-keys.sh` makes one Ed25519 pair per service and kid, as
+  `/{app}/{env}/backend/{region}/<service>/service_token/<kid>/private` (SecureString) and
+  `…/public` (String). `terraform-live-backend` runs it before every plan, creating only what's
+  missing, and deletes the pairs after a destroy. Terraform reads only the public keys
+  (`INTERNAL_PUBLIC_KEYS`) and points `INTERNAL_SIGNING_KEY` at the private parameter.
+  - **To rotate one,** bump the service's version in
+    `infra-live-backend/terraform/service-token-versions.json` (for example `{"users": 2}`), run
+    `terraform-live-backend` apply, then `deploy-live-backend` for `all`: the others learn the new
+    public key from `INTERNAL_PUBLIC_KEYS` when they restart. The old pair is deleted.
+  - **A pair deleted by hand** is recreated (new keys) on the next apply; deploy `all` after it.
+  - **Running Terraform from a laptop,** create the pairs first, from
+    `infra-live-backend/terraform` with that environment's AWS credentials (needs OpenSSL 3):
+
+    ```
+    source ../../scripts/service-token-keys.sh
+    ensure_service_token_keys <APP_NAME> <env> <region> service-token-versions.json $(python3 ../../backend/tools/services.py)
+    ```
 
 ### Rotating a value
 
-After the first apply this is the only way to change a secret. **Repeat it for every active
-backend region.** `put-secret-value` replaces the whole JSON, so send every key:
+This is how a secret's value changes. **Repeat it for every active backend region.** `put-secret-value` replaces the whole JSON, so send every key:
 
 ```bash
 for region in ap-south-1 eu-west-1 us-east-1; do   # the regions this environment runs in
   aws secretsmanager put-secret-value \
     --region "$region" \
-    --secret-id "{app}/{env}/backend-secrets" \
-    --secret-string file://backend-secrets.json
+    --secret-id "{app}/{env}/<service>-secrets" \
+    --secret-string file://<service>-secrets.json
 done
 ```
 
-Running tasks keep the old values until they restart. Run `restart-live-backend` (service `all`,
-same region set) afterwards. Delete the local JSON file once done.
+Running tasks keep the old values until they restart. Run `restart-live-backend` afterwards for that
+service's runtimes (e.g. `users,users-worker`, same region set). Delete the local JSON file once done.
 
 JWT key rotation has its own procedure, because the Lambda@Edge validator also holds the public
 keys: see [jwt-keys.md](jwt-keys.md).
@@ -322,6 +462,216 @@ anything outside that child's own prefix with 422 (APP-08).
 
 ---
 
+## First admin of an environment
+
+A new environment has no admin and an empty allow-list, and both are needed to add anyone:
+registration accepts only allow-listed emails, the allow-list API is admin-only, and
+`auth.seed` runs only with `APP_ENV=local`. So the first email goes on the allow-list by hand,
+and the first account is promoted with `auth.promote_admin` as a one-off ECS task (ECS Exec is
+off). After that, admins manage the allow-list and roles from the admin screens. Locally, see
+[getting-started.md](getting-started.md#admin-setup) instead.
+
+The commands below use one region (the one whose site you'll sign up on); any region works,
+since auth's `allowed_emails` and `admin_count` are unsharded global collections (section 14 of
+[auth-users-split.md](auth-users-split.md)). Set these first:
+
+```bash
+APP=superpower ENV=sbx REGION=ap-south-1
+EMAIL=admin@example.com   # the first admin's address
+```
+
+**1. Deploy auth.** `terraform-live-backend` then `deploy-live-backend` (at least `auth`,
+`auth-worker`). Auth creates its database, collections, indexes and validators when it starts
+(`ensure_collections`), so don't create any of them in Atlas by hand.
+
+**2. Allow-list the email.** An entry's `_id` is the HMAC-SHA256 of the lower-cased email,
+keyed with auth's `EMAIL_HMAC_PEPPER`; the plain email never matches. Compute it from the
+secret without printing the pepper:
+
+```bash
+KEY=$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$APP/$ENV/auth-secrets" \
+  --query SecretString --output text \
+  | EMAIL="$EMAIL" python3 -c 'import hmac,hashlib,json,os,sys
+p = json.loads(sys.stdin.read())["EMAIL_HMAC_PEPPER"].strip()
+if p.startswith("{"): v = json.loads(p); n = max(v, key=int); p = v[n]; print(n, end=" ")
+else: print(1, end=" ")
+print(hmac.new(p.encode(), os.environ["EMAIL"].strip().lower().encode(), hashlib.sha256).hexdigest())')
+echo "key_version ${KEY%% *}, _id ${KEY#* }"
+```
+
+During a pepper rotation (a JSON map of versions) this uses the highest version, as auth does.
+Then, in Atlas Data Explorer (or `mongosh` with an admin user), insert into database `auth`,
+collection `allowed_emails`, matching its validator:
+
+```js
+{
+  _id: "<_id from above>",
+  key_version: 1,                                   // the key_version from above
+  email_hint: "a***@example.com",                   // first character, ***, the domain
+  added_by: "00000000-0000-4000-8000-000000000000", // the placeholder auth.seed uses
+  created_at: new Date()
+}
+```
+
+**3. Register** `$EMAIL` on the environment's site (password, or Google if that origin is an
+authorized JavaScript origin of the OAuth client), and sign in.
+
+**4. Get the user id.** Signed in, open `/api/v1/auth/me` on the site; its `id` is the UUID.
+
+**5. Promote it** with a one-off task from auth's task definition. The task family and
+container come from the deploy manifest in SSM, and the subnets and security group from the
+running auth service, so nothing is copied by hand. `--user-id` (not the email) keeps the
+address out of the task override and CloudTrail:
+
+```bash
+USER_ID=<uuid from step 4>
+CLUSTER="$APP-backend-$ENV"
+MANIFEST=$(aws ssm get-parameter --region us-east-1 --name "/$APP/$ENV/backend/$REGION/ecs_services" \
+  --query Parameter.Value --output text)
+FAMILY=$(jq -r '.[] | select(.name == "auth") | .family' <<<"$MANIFEST")
+CONTAINER=$(jq -r '.[] | select(.name == "auth") | .container' <<<"$MANIFEST")
+SERVICE=$(jq -r '.[] | select(.name == "auth") | .service' <<<"$MANIFEST")
+NETWORK=$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+  --query 'services[0].networkConfiguration' --output json)
+
+TASK=$(aws ecs run-task --region "$REGION" --cluster "$CLUSTER" --task-definition "$FAMILY" \
+  --launch-type FARGATE --network-configuration "$NETWORK" \
+  --overrides "$(jq -n --arg c "$CONTAINER" --arg u "$USER_ID" \
+    '{containerOverrides: [{name: $c, command: ["python", "-m", "auth.promote_admin", "--user-id", $u]}]}')" \
+  --query 'tasks[0].taskArn' --output text)
+aws ecs wait tasks-stopped --region "$REGION" --cluster "$CLUSTER" --tasks "$TASK"
+aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" --tasks "$TASK" \
+  --query 'tasks[0].containers[0].exitCode'
+```
+
+Exit code 0 means promoted; the output is in auth's CloudWatch log group. It refuses (exit 1,
+with the reason) if an admin already exists, or if the account doesn't exist, is locked, is
+being deleted or is already an admin.
+
+**6. Sign in again.** The promotion ends the account's sessions; the next sign-in carries the
+admin role, and the admin screens appear.
+
+**Don't set `role: "admin"` in Atlas instead.** `promote_admin` does what a role change needs:
+a new `authz_version` (so the Valkey authz cache and old tokens stop carrying the old role), the
+account's sessions ended, `admin_count` set to 1 (which keeps `promote_admin` one-shot and stops
+the last admin being demoted), an `audit` row and the `audit.role_changed` log line the
+role-change alarm watches. A manual edit does none of them.
+
+---
+
+## Atlas clusters (stg and prod)
+
+The clusters aren't in Terraform (only stg's and prod's PrivateLink endpoint is, `atlas.tf`): these are set once per cluster in the Atlas console (production-readiness
+review, DB-01). dev and sbx stay on free M0 clusters, which have none of this. **Every environment has its own Atlas project and cluster** (`superpower-dev`, `superpower-sbx`, `superpower-stg`, `superpower-prod`): the database names are the same in each (the services' names), so environments must never share a cluster ([environments.md](environments.md), section 5).
+
+| Setting | stg (M10) | prod (M10) |
+|---|---|---|
+| Region | ap-south-1, 3 nodes across 3 AZs; the environment runs there only (`served_from`, DEC-01) | same |
+| Network access | **PrivateLink only**: Terraform's endpoint in the backend VPC (`atlas.tf`), no IP access list (DEC-02) | same |
+| Terraform's API key | Project Owner on this project only (`MONGODB_ATLAS_PUBLIC_KEY` / `_PRIVATE_KEY`) | same |
+| Compute auto-scaling | optional | **on**, floor M10, ceiling M30 (adds CPU and RAM; not connections) |
+| Storage auto-scaling | on | **on** |
+| Cloud Backup | on | **on, with continuous point-in-time restore** |
+| Snapshot copy to a second region | optional | **on**, so backups survive an ap-south-1 outage. **ap-south-2 (Hyderabad)** keeps them in India; another country's region moves them abroad ([data-residency.md](data-residency.md)) |
+| Termination protection | on | **on** |
+| Test restore | once, to learn the steps | **once before go-live**, restore to a new cluster and write down how long it took |
+| Connection budget | `mongodb_connection_budget = 1050`, 70% of 1500 (peak 836) | `1050`, 70% of 1500 (peak 1023) |
+
+**Growing prod past M10:** compute auto-scaling handles CPU and RAM, but connections are fixed
+per tier (M10 1500; M20 and M30 3000). When prod needs more tasks than its budget allows, move
+to M20 first, then raise `mongodb_connection_budget` (70% of 3000 is 2100) and `max_capacity`
+in `prod.tfvars` together: the plan fails if the tasks could open more than the budget (TF-03).
+
+## MongoDB indexes: built once per release
+
+Each service's indexes are declared in its `ensure_*` functions (`backend/CLAUDE.md`, "MongoDB &
+indexes"). A task's startup creates the collections and validators only. The indexes are built in
+the background (`common/index_builds.py`, DB-03): a new index on a large collection no longer
+holds up startup or fails the health check, and an option conflict no longer crash-loops tasks.
+
+- **Once per release:** the first task of a release (its `GIT_SHA`) to claim the
+  `<service>:<release>` document in the service's `index_builds` collection builds them, with one
+  `createIndexes` per collection. Every other task, in every region, waits for that build, then
+  only checks that each index exists. Restarts and promotes of the same image build nothing.
+- **A stopped builder:** a build still `running` after 30 minutes is taken over by the next task
+  that starts.
+- **Problems:** a failed build (an option conflict, or duplicates under a new unique index) or an
+  index missing afterwards is logged with a top-level `index_problem` field (`failed` or
+  `missing`). The tasks keep serving. In stg and prod, the `index-problems` alarm emails.
+  1. Find the service, release and error in that service's log, or in
+     `db.index_builds.find({status: "failed"})` in its database.
+  2. Fix the cause (for example, drop the conflicting index, or remove the duplicates).
+  3. Restart the service (`restart-live-backend`): the next start retries a failed build.
+- **Until a new index exists,** queries that need it run unindexed, and a new unique rule isn't
+  enforced. On a large collection, check the build finished (`index_builds` status `done`)
+  before relying on it.
+- **Through an Atlas election** (DB-05): a task starting while the replica set has no primary
+  retries the collection step on connection and "not primary" errors, waiting 1, 2, 4, 8 and
+  16 s (about 60 s in all, inside its health-check allowance), instead of exiting and being
+  restarted in a loop. Other errors still stop it at once. Requests in flight during an
+  election can fail; pymongo retries a single write once.
+- **Before a release that changes MongoDB access,** run Atlas's *Test Failover* on the stg
+  cluster while the services run: the API should recover within about a minute, with no task
+  crash-looping and no generation job stuck (the `jobs-waiting` and `failed-jobs` alarms stay
+  quiet).
+
+---
+
+## Finding a request in the logs
+
+Every runtime writes JSON lines to its log group, `/ecs/<app>/<runtime>/<env>`. Each request
+has one access line (`logger` `common.access`: `method`, `path`, `route`, `status`,
+`latency_ms`, `user`), and every line logged for it carries the same `request_id`, which the
+response returns in `X-Request-Id` (OBS-04). The id follows the work: internal calls send it,
+a generation job keeps the id of the request that started it (so the worker's lines carry it
+too), and an event carries it to its consumers. `user` is a hash of the user id
+(`common.logging.user_hash`), so the id itself isn't in the access lines. Successful health
+checks aren't logged.
+
+In CloudWatch Logs Insights, across the service's log groups:
+
+```
+fields @timestamp, service, logger, message, status, latency_ms
+| filter request_id = "<X-Request-Id from the response or the client's error report>"
+| sort @timestamp asc
+```
+
+Slowest routes in the last hour, and the ones failing:
+
+```
+filter logger = "common.access"
+| stats count(*) as requests, pct(latency_ms, 95) as p95 by route
+| sort p95 desc
+```
+
+```
+filter logger = "common.access" and status >= 500
+| stats count(*) as errors by route, status
+```
+
+---
+
+## Pausing LLM generation (the kill switch)
+
+When LLM spend runs away (the `llm-tokens` alarm, a loop, abuse) or a provider misbehaves, pause generation in a region without a deploy. Each backend stack has one switch, an SSM parameter that Terraform creates as `true` and never resets (`infra-live-backend/terraform/generation_switch.tf`):
+
+```bash
+APP=superpower ENV=prod REGION=ap-south-1
+aws ssm put-parameter --overwrite --region "$REGION" --type String \
+  --name "/$APP/$ENV/backend/$REGION/llm_generation_enabled" --value false
+```
+
+Within about a minute, every task of discover, grow, transform and release has re-read it (`backend/common/generation/switch.py`):
+- new generations get `503 generation_paused`, before the hourly limit is touched;
+- the workers stop claiming jobs: a job already running finishes, and the rest wait.
+
+To resume, run the same command with `--value true`. Waiting jobs are then taken in order. If the pause was long, the `jobs-waiting` alarm will have fired while it was off. That's expected, and it clears once the jobs are taken.
+
+Notes:
+- **Region by region.** Pause every backend region that serves the environment.
+- **A failed read keeps the last value.** If a task can't read the parameter, it keeps the value it last read (on, if it has never read one), so an SSM outage doesn't stop generation by itself.
+- **Local runs don't use it.** They set no `LLM_SWITCH_PARAMETER`, so generation is always on.
+
 ## Key resource settings
 
 What [aws-resources.md](aws-resources.md) doesn't show: *how* the main resources are configured.
@@ -363,17 +713,37 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 |---|---|
 | Networking | ECS tasks in **private** subnets (`assign_public_ip = false`); outbound via NAT (1 per region in dev/sbx, 2 stg, 3 prod); interface VPC endpoints (ECR, Secrets Manager, Logs, X-Ray) only when `nat_gateway_count > 1` |
 | ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy); deregistration delay `llm_timeout_seconds` + 30 s (90 s dev/sbx/stg, 120 s prod), so a rollout waits that long at most for old tasks' in-flight requests instead of AWS's 300 s default |
-| ECS | Container Insights on in prod only (`enable_container_insights`; dev/sbx/stg rely on the free `AWS/ECS` metrics); container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
-| ECR | `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
-| ElastiCache Valkey 8.0 | At-rest encryption + TLS required + AUTH token (`REDIS_AUTH_TOKEN`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters and locks only |
-| CloudWatch Logs | One log group per service, `/ecs/<app>/<key>/<env>` (auth, admin, backend, worker); retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
+| ECS | 18 runtimes (9 HTTP, 8 workers, the OpenTelemetry collector), sized by `runtime_sizes`; Container Insights on in prod only (`enable_container_insights`; dev/sbx/stg rely on the free `AWS/ECS` metrics); HTTP container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
+| Cloud Map | Private DNS namespace `<app>-<env>.internal`: each HTTP service except shared on 8001, the collector on 4318, reachable only from the `internal-callers` security group |
+| SNS / SQS | From `backend/common/events/catalogue.json` (`modules/events`): a topic per producing service (customer-managed KMS key), a queue + DLQ per consuming service (SSE-SQS), filtered subscriptions; DLQ and message-age alarms when `enable_all_alarms` |
+| ECR | One repository per service, `<app>/<env>/<service>`; `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
+| ElastiCache Valkey 8.0 | At-rest encryption + TLS required + RBAC: one IAM-authenticated user per service, limited to its own keys (`modules/redis`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters, leader locks and the `authz:{user}` cache. `maxmemory-policy = noeviction` (TF-04): when memory is full, writes fail rather than evict a counter or lock (every key has a TTL, so Valkey's default `volatile-lru` would); the services then count per task, and the Valkey memory and `valkey-degraded` alarms fire |
+| CloudWatch Logs | One log group per runtime, `/ecs/<app>/<runtime>/<env>`; retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
 
-### Frontend deploy (`deploy-live-frontend.yml`)
+### Frontend deploy (`deploy-live-frontend.yml`, `promote-live-frontend.yml`)
+
+Both publish through `scripts/frontend-publish.sh` (CI-07):
 
 1. Builds the React app (`VITE_API_URL` is baked in, derived from `SUBDOMAIN` + env + `DOMAIN_NAME`).
-2. Syncs `dist/assets/` with `Cache-Control: public,max-age=31536000,immutable` (hashed files).
-3. Syncs the rest (`index.html` …) with `no-cache,no-store,must-revalidate`; both syncs `--delete`.
-4. Invalidates CloudFront `/*`, waits for completion, and records `deployed_git_sha` in SSM.
+2. Syncs `dist/assets/` with `Cache-Control: public,max-age=31536000,immutable` (hashed files),
+   **without** `--delete`, so open pages and the live `index.html` keep finding their chunks.
+3. Syncs the rest (`index.html` …) with `no-cache,no-store,must-revalidate` and `--delete`,
+   leaving `assets/` and `releases/` alone.
+4. Keeps the build's unhashed files and its chunk list under `releases/<sha>/` (about 450 KB).
+5. Invalidates only the unhashed files (and `/`), waits, and records `deployed_git_sha` in SSM.
+6. Prunes: releases beyond the last 10, then chunks that neither this build nor a kept
+   release uses and that are over 30 days old.
+
+### Rolling the frontend back (`rollback-live-frontend.yml`)
+
+A bad frontend release goes back to an earlier one in minutes, with no rebuild. Run
+**Rollback Live Frontend** with the environment (prod included) and either a commit SHA or
+nothing, which means the newest saved release that isn't live now. The run's log lists the
+saved releases. It checks that every chunk the release uses is still in the bucket, copies
+its files back over the root, invalidates them, and records that SHA as `deployed_git_sha`,
+so a later promote from this environment promotes what's live. Only the last 10 releases
+are kept; an older commit has to be deployed (or promoted) again. The backend isn't touched:
+roll it back by deploying or promoting its earlier image.
 
 `infra-live-frontend`'s bucket policy has a precondition: apply fails if `spa_bucket_name` in its
 tfvars differs from the bucket name `infra-live-edge` wrote to SSM.

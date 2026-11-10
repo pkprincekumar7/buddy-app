@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { CheckCircle, Clock, Eye, Trash2 } from 'lucide-react-native';
 import { useNavigate } from '@/lib/router';
-import type { ChildRecord } from '@/types/api';
+import type { Child } from '@/api/children';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { color } from '@/theme';
 
 interface ChildCardProps {
-  child: ChildRecord;
+  child: Child;
 }
 
 export default function ChildCard({ child }: ChildCardProps) {
@@ -25,15 +25,16 @@ export default function ChildCard({ child }: ChildCardProps) {
   const { doStartOver, isStartingOver } = useStartOver(child.id);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const displayName = child.name ?? 'Unnamed child';
-  const completed = !!child.onboarding_completed;
+  const displayName = child.name;
+  // The onboarding chat is done (build plan 7.4: `progress.conversation`).
+  const completed = child.progress.conversation;
   // Phone width: the web's below-name (`sm:hidden`) badge is the one shown.
   const statusBadgeClass = completed ? 'bg-success/10' : 'bg-warning-medium/10';
   const statusTextClass = completed ? 'text-success' : 'text-warning-medium';
   const statusIconColor = completed ? color.success : color['warning-medium'];
 
   const details =
-    [child.age && `Age ${child.age}`, child.school]
+    [child.age !== null && `Age ${child.age}`, child.school]
       .filter(Boolean)
       .join(' · ') || 'No details yet';
 

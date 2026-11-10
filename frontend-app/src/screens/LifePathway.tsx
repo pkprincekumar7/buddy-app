@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -26,7 +26,9 @@ import { useStageSplash } from '@/hooks/useStageSplash';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { useLifePathwayArea } from '@/hooks/useLifePathwayArea';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
-import { useParams } from '@/lib/router';
+import { useNavigate, useParams } from '@/lib/router';
+import { ApiError } from '@/api/errors';
+import { Button } from '@/components/ui/button';
 import {
   GROWTH_AREAS,
   copyTokensFor,
@@ -48,8 +50,8 @@ import {
   mergeMilestones,
 } from '@/lib/lifePathwayData';
 import type { Milestone } from '@/lib/lifePathwayData';
-import { css } from '@/theme';
-import type { CompletedArea } from '@/types/api';
+import { css, recipe } from '@/theme';
+import type { TransformArea } from '@/api/transform';
 
 /** Root background (radial layers; the final solid layer is the background color). */
 const ROOT_BG_IMAGE = css(
@@ -70,8 +72,35 @@ export default function LifePathway() {
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
 
-  const { childData, profile, isLoading, completedAreas } =
-    useLifePathwayData(childId);
+  const navigate = useNavigate();
+  const {
+    childData,
+    viewModel,
+    profile,
+    isLoading,
+    completedAreas,
+    error: loadError,
+    retry: retryLoad,
+  } = useLifePathwayData(childId);
+  const redirectCode =
+    loadError instanceof ApiError &&
+    (loadError.code === 'circle_locked' || loadError.code === 'child_not_found')
+      ? loadError.code
+      : null;
+  // Nothing loaded (and no redirect due): an error state, since rendering on would
+  // show template milestones for a made-up child.
+  const loadFailed = !isLoading && !!childId && !redirectCode && !childData;
+
+  useEffect(() => {
+    if (!childId) {
+      void navigate('/Home', { replace: true });
+    } else if (redirectCode === 'circle_locked') {
+      // Discover isn't done yet: back to the journey.
+      void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+    } else if (redirectCode === 'child_not_found') {
+      void navigate('/Home', { replace: true });
+    }
+  }, [childId, redirectCode, navigate]);
   const [showSplash, startTimer] = useStageSplash(0);
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
 
@@ -90,31 +119,23 @@ export default function LifePathway() {
 
   // ── Derived child facts ────────────────────────────────────────────────────
 
-  const childName = typeof childData?.name === 'string' ? childData.name : '';
-  const gender =
-    typeof childData?.gender === 'string' ? childData.gender : null;
-  const currentAge = useMemo(
-    () => Number.parseInt(String(childData?.age ?? ''), 10) || 10,
-    [childData],
-  );
+  const childName = childData?.name ?? '';
+  const gender = childData?.gender ?? null;
+  const currentAge = useMemo(() => childData?.age ?? 10, [childData]);
   const ages = useMemo(
     () => AGE_OFFSETS.map(o => currentAge + o),
     [currentAge],
   );
   const journeyEndAge = ages[ages.length - 1] ?? currentAge;
   const archetype = profile?.personality_type ?? null;
-  const strengths = useMemo(
-    () => (profile?.top_strengths ?? []).map(s => String(s)).filter(Boolean),
-    [profile],
-  );
   const traits = useMemo(() => {
-    const rawTraits = childData?.personality?.view_model?.profile?.traits;
+    const rawTraits = viewModel?.profile.traits;
     if (!Array.isArray(rawTraits)) return [];
     return rawTraits
       .map(v => String(v))
       .filter(Boolean)
       .slice(0, 3);
-  }, [childData]);
+  }, [viewModel]);
 
   /** Voice tokens for this child, for the few places that need one pronoun alone. */
   const voice = useMemo(() => copyTokensFor(gender), [gender]);
@@ -162,15 +183,11 @@ export default function LifePathway() {
     progressMessage,
   } = useLifePathwayArea({
     childId,
-    child: childData,
     area: selectedArea,
-    completedArea: selected?.completed ?? null,
     areas: completedAreas,
-    archetype,
-    personalityNarrative: profile?.summary ?? null,
-    strengths,
     ages,
-    enabled: !isLoading && !showSplash,
+    // Only once the child's own data has loaded: never for a made-up child.
+    enabled: !isLoading && !showSplash && !!childData,
   });
 
   const isAreaLoading = areaStatus === 'loading';
@@ -207,7 +224,7 @@ export default function LifePathway() {
       ? areaOptions
       : GROWTH_AREAS.map(g => ({
           area: g,
-          completed: null as CompletedArea | null,
+          completed: null as TransformArea | null,
         }));
     return source
       .map(({ area, completed }) => {
@@ -262,9 +279,25 @@ export default function LifePathway() {
   return (
     <View className="flex-1 bg-background">
       <Animated.View style={[{ flex: 1 }, pageStyle]}>
-        {isLoading ? (
+        {isLoading || !childId || redirectCode ? (
           <View className="flex-1 items-center justify-center bg-background">
             <Spinner className="h-12 w-12 border-4" />
+          </View>
+        ) : loadFailed ? (
+          <View
+            className="flex-1 items-center justify-center gap-4 px-6"
+            style={{ backgroundColor: ROOT_BG_COLOR }}
+          >
+            <Text className="text-center text-muted-foreground">
+              We couldn’t load the life pathway.
+            </Text>
+            <Button
+              onPress={() => void retryLoad()}
+              className="rounded-2xl px-8 font-semibold text-primary-foreground"
+              style={recipe.btnPrimary}
+            >
+              Try again
+            </Button>
           </View>
         ) : (
           <PageScroll contentContainerStyle={{ flexGrow: 1, paddingBottom: 0 }}>
@@ -353,15 +386,13 @@ export default function LifePathway() {
         )}
       </Animated.View>
 
-      {!isLoading && (
+      {!isLoading && childData && (
         <StartJourneyModal
           open={showStartJourneyModal}
           onClose={closeStartJourneyModal}
           childName={childName}
           childGender={gender}
           childId={childId}
-          childData={childData}
-          profile={profile}
         />
       )}
 

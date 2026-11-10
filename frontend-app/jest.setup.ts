@@ -3,14 +3,23 @@ import '@testing-library/jest-native/extend-expect';
 // Gesture handler must be set up before tests that use react-navigation
 import 'react-native-gesture-handler/jestSetup';
 
-// Silence non-critical RN warnings in tests
+// Silence non-critical RN warnings in tests. Everything else goes to the real warn,
+// kept before the spy replaces it (calling console.warn here would call the spy).
+const realWarn = console.warn.bind(console);
 jest
   .spyOn(console, 'warn')
   .mockImplementation((msg: string, ...rest: unknown[]) => {
     if (typeof msg === 'string' && msg.includes('VirtualizedLists')) return;
     if (typeof msg === 'string' && msg.includes('NativeWind')) return;
+    // @react-navigation/stack loads InteractionManager when it can't read the RN version,
+    // which the Jest preset doesn't set; on RN 0.82+ devices it never loads it.
+    if (
+      typeof msg === 'string' &&
+      msg.includes('InteractionManager has been deprecated')
+    )
+      return;
 
-    console.warn(msg, ...rest);
+    realWarn(msg, ...rest);
   });
 
 // Mock react-native-config so env vars resolve to empty strings in tests
@@ -55,6 +64,45 @@ jest.mock('@react-native-async-storage/async-storage', () => {
       return Promise.resolve();
     }),
     getAllKeys: jest.fn(() => Promise.resolve(Object.keys(store))),
+    removeMany: jest.fn((keys: string[]) => {
+      keys.forEach(k => {
+        delete store[k];
+      });
+      return Promise.resolve();
+    }),
+  };
+});
+
+// An app that has started on this device before: the token store only forgets the
+// Keychain on a fresh install (api/client.ts, prepare). Tests of that path remove it.
+beforeEach(async () => {
+  const AsyncStorage = jest.requireMock(
+    '@react-native-async-storage/async-storage',
+  ) as { setItem: (k: string, v: string) => Promise<void> };
+  await AsyncStorage.setItem('superpower:installed', '1');
+});
+
+// The native date picker (lifepathway/fields.tsx, DateInput): no native module in Node.
+jest.mock('@react-native-community/datetimepicker', () => ({
+  __esModule: true,
+  default: () => null,
+  DateTimePickerAndroid: { open: jest.fn() },
+}));
+
+// Mock expo-secure-store (the token store): an in-memory Keychain/Keystore.
+jest.mock('expo-secure-store', () => {
+  const store: Record<string, string> = {};
+  return {
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
+    setItemAsync: jest.fn((key: string, value: string) => {
+      store[key] = value;
+      return Promise.resolve();
+    }),
+    getItemAsync: jest.fn((key: string) => Promise.resolve(store[key] ?? null)),
+    deleteItemAsync: jest.fn((key: string) => {
+      delete store[key];
+      return Promise.resolve();
+    }),
   };
 });
 

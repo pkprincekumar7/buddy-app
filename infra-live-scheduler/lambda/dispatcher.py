@@ -1,12 +1,94 @@
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
+# Seconds to wait for GitHub, well inside the function's 30 s. A dispatch that hangs fails
+# once and is not retried (the function's async retries are off, lambda.tf), so a slow
+# GitHub can't start the same apply or destroy twice (production-readiness review, SCH-01).
+GITHUB_TIMEOUT_SECONDS = 10
+
+# Before dispatching, a run of the workflow with this dispatch's title started this
+# recently means it was already dispatched (a schedule delivered twice): skip it (SCH-01,
+# fix 3). RUN_TITLE is terraform-live-all.yml's run-name, filled from the inputs; the
+# tests check the two match.
+DUPLICATE_WINDOW_MINUTES = 60
+RUN_TITLE = "Full Stack ({action}, {environment}, {backend_regions})"
+
+# The only thing an invoke chooses is the action. The ref, the environment and the regions
+# are this stack's own (Terraform sets them on the function), so whoever can invoke it can
+# only start or stop the environment it belongs to, on the default branch. The workflow it
+# dispatches offers prod, so prod is refused here too: prod is never scheduled
+# (production-readiness review, SEC-03 fix 2).
+ACTIONS = ("apply", "destroy")
+NEVER_SCHEDULED = ("prod",)
+
+
+class RefusedEvent(ValueError):
+    """An invoke this function won't dispatch: it fails, so the failure alarm sees it."""
+
+
+def build_dispatch(event):
+    """The workflow_dispatch body for `event`, which must be exactly {"action": ...}."""
+    if not isinstance(event, dict) or set(event) != {"action"} or event["action"] not in ACTIONS:
+        raise RefusedEvent(f"Refused: the event must be exactly {{\"action\": one of {ACTIONS}}}")
+    environment = os.environ["DISPATCH_ENVIRONMENT"]
+    if environment in NEVER_SCHEDULED:
+        raise RefusedEvent(f"Refused: {environment} is never scheduled")
+    action = event["action"]
+    return {
+        "ref": os.environ["DISPATCH_REF"],
+        "inputs": {
+            "action": action,
+            "environment": environment,
+            "backend_regions": os.environ["DISPATCH_BACKEND_REGIONS"],
+            "deploy": "true" if action == "apply" else "false",
+        },
+    }
+
+
+def _github(url, pat, data=None):
+    return urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization":        f"Bearer {pat}",
+            "Accept":               "application/vnd.github+json",
+            "Content-Type":         "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="POST" if data is not None else "GET",
+    )
+
+
+def already_dispatched(workflow_url, pat, dispatch, now):
+    """True when a run with this dispatch's title started within the window. If the runs
+    can't be listed, False: a missed start or stop is worse than a duplicate, which the
+    workflow's own concurrency group runs one after the other anyway."""
+    title = RUN_TITLE.format(**dispatch["inputs"])
+    since = (now - timedelta(minutes=DUPLICATE_WINDOW_MINUTES)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    query = urllib.parse.urlencode(
+        {"event": "workflow_dispatch", "created": f">={since}", "per_page": 50}
+    )
+    try:
+        with urllib.request.urlopen(
+            _github(f"{workflow_url}/runs?{query}", pat), timeout=GITHUB_TIMEOUT_SECONDS
+        ) as resp:
+            runs = json.loads(resp.read()).get("workflow_runs", [])
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        print(f"Couldn't list recent runs ({type(exc).__name__}); dispatching anyway")
+        return False
+    return any(run.get("display_title") == title for run in runs)
+
 
 def lambda_handler(event, context):
+    # Checked first: a refused event never reads the token.
+    dispatch = build_dispatch(event)
+
     secret_arn   = os.environ["GITHUB_PAT_SECRET_ARN"]
     repo_owner   = os.environ["GITHUB_REPO_OWNER"]
     repo_name    = os.environ["GITHUB_REPO_NAME"]
@@ -16,25 +98,17 @@ def lambda_handler(event, context):
         SecretId=secret_arn
     )["SecretString"]
 
-    url = (
-        f"https://api.github.com/repos/{repo_owner}/{repo_name}"
-        f"/actions/workflows/{workflow}/dispatches"
+    workflow_url = (
+        f"https://api.github.com/repos/{repo_owner}/{repo_name}/actions/workflows/{workflow}"
     )
+    if already_dispatched(workflow_url, pat, dispatch, datetime.now(timezone.utc)):
+        print(f"Already dispatched within {DUPLICATE_WINDOW_MINUTES} minutes; skipping")
+        return {"statusCode": 200, "skipped": True}
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(event).encode(),
-        headers={
-            "Authorization":        f"Bearer {pat}",
-            "Accept":               "application/vnd.github+json",
-            "Content-Type":         "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        method="POST",
-    )
+    req = _github(f"{workflow_url}/dispatches", pat, data=json.dumps(dispatch).encode())
 
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=GITHUB_TIMEOUT_SECONDS) as resp:
             print(f"GitHub API responded with HTTP {resp.status}")
             return {"statusCode": resp.status}
     except urllib.error.HTTPError as exc:

@@ -4,10 +4,12 @@ import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
 import { useNavigate, useParams } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { children } from '@/api/children';
+import { ApiError } from '@/api/errors';
 import Spinner from '@/components/shared/Spinner';
+import { Button } from '@/components/ui/button';
 import PageScroll from '@/components/layout/PageScroll';
-import { css, rgb } from '@/theme';
+import { css, recipe, rgb } from '@/theme';
 
 import {
   caps,
@@ -85,6 +87,10 @@ export default function Connect() {
   const [isLoading, setIsLoading] = useState(true);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
+  // A load that failed for any reason other than a redirect: shows Try again,
+  // which re-runs the load (and the visit) via reloadKey.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -99,20 +105,24 @@ export default function Connect() {
     let cancelled = false;
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        // Opening Connect records the visit (build plan 7.7): the last circle, done.
+        // Refused while Release isn't done, so it also gates the page.
+        const [child] = await Promise.all([
+          children.get(childId),
+          children.visitConnect(childId),
+        ]);
         if (cancelled) return;
-        if (!child) {
+        setChildName(child.name);
+        setChildAge(child.age === null ? '' : String(child.age));
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'circle_locked') {
+          void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+        } else if (err instanceof ApiError && err.code === 'child_not_found') {
           void navigate('/Home', { replace: true });
-          return;
-        }
-        setChildName(child.name ?? '');
-        setChildAge(child.age != null ? String(child.age) : '');
-        // Mark Connect as visited — this advances which circle the
-        // DimensionCircles hub points to next (there is none left after this).
-        if (!child.connect_visited) {
-          api.entities.Child.markProgress(childId, 'connect_visited').catch(
-            console.error,
-          );
+        } else {
+          console.warn('[Connect] Load failed:', err);
+          setLoadFailed(true);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -121,7 +131,7 @@ export default function Connect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   const items = useMemo(
     () =>
@@ -296,6 +306,30 @@ export default function Connect() {
             borderTopColor: 'transparent',
           }}
         />
+      </View>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <View
+        className="flex-1 items-center justify-center gap-4 px-4"
+        style={{ backgroundColor: rgb('constellation-navy-deepest') }}
+      >
+        <Text className="text-center text-muted-foreground">
+          We could not load this page. Please try again.
+        </Text>
+        <Button
+          onPress={() => {
+            setLoadFailed(false);
+            setIsLoading(true);
+            setReloadKey(k => k + 1);
+          }}
+          className="rounded-2xl px-8 font-semibold text-primary-foreground"
+          style={recipe.btnPrimary}
+        >
+          Try again
+        </Button>
       </View>
     );
   }

@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "UploadsObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::person-local-uploads-bucket-ap-south-1/uploads/*",
+        "arn:aws:s3:::person-local-uploads-bucket-eu-west-1/uploads/*",
+        "arn:aws:s3:::person-local-uploads-bucket-us-east-1/uploads/*"
+      ]
+    },
+    {
+      "Sid": "UploadsList",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": [
+        "arn:aws:s3:::person-local-uploads-bucket-ap-south-1",
+        "arn:aws:s3:::person-local-uploads-bucket-eu-west-1",
+        "arn:aws:s3:::person-local-uploads-bucket-us-east-1"
+      ],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "uploads/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "UploadsLocation",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": [
+        "arn:aws:s3:::person-local-uploads-bucket-ap-south-1",
+        "arn:aws:s3:::person-local-uploads-bucket-eu-west-1",
+        "arn:aws:s3:::person-local-uploads-bucket-us-east-1"
+      ]
+    },
+    {
+      "Sid": "AndroidApkRead",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::person-local-assets-bucket/app-assets/applications/android/*"
+    },
+    {
+      "Sid": "AndroidApkList",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::person-local-assets-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "app-assets/applications/android/*"
+          ]
+        }
+      }
+    }
+  ]
+}

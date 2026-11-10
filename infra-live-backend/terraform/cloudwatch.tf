@@ -49,62 +49,95 @@ resource "aws_sns_topic_subscription" "ops_email" {
 }
 
 # ---------------------------------------------------------------------------
-# Worker alerting alarms — enable_all_alarms (prod only)
+# Job and event alarms — enable_all_alarms (docs/auth-users-split.md, 15.5)
+#
+# Each service publishes its metrics to its own namespace, Superpower/<service>,
+# with an Environment dimension:
+#   - PendingJobCount and OldestRunningJobAgeSeconds (the 4 generating services,
+#     from one leader per region in the HTTP runtime);
+#   - OldestUnpublishedOutboxAgeSeconds (the 8 data services' relays, 0 when idle).
 # ---------------------------------------------------------------------------
 
-# ProcessingJobCount > 0 for 10+ consecutive minutes means jobs are stuck in
-# "processing" state (worker slots claimed them but never finished). This
-# usually indicates a worker crash-loop or a MongoDB connectivity problem.
-resource "aws_cloudwatch_metric_alarm" "worker_processing_stuck" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-worker-processing-stuck-${var.environment}"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 10 # 10 × 60s = 10 minutes
-  metric_name         = "ProcessingJobCount"
-  namespace           = "Superpower/Worker"
-  period              = 60
-  statistic           = "Maximum"
-  threshold           = 0
-  treat_missing_data  = "notBreaching"
-
-  alarm_description = "Worker jobs stuck in processing for >10 minutes — check ECS logs and MongoDB connectivity."
-
-  dimensions = {
-    Environment = var.environment
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
-
-  tags = {
-    Name = "${var.app_name}-worker-processing-stuck-${var.environment}"
-  }
+locals {
+  alarm_actions     = [aws_sns_topic.alerts.arn]
+  generating_alarms = var.enable_all_alarms ? toset(local.generating_services) : toset([])
+  outbox_alarms     = var.enable_all_alarms ? toset(local.worker_services) : toset([])
 }
 
-# PendingJobCount sustained high — jobs are not being consumed fast enough.
-resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_high" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-worker-pending-jobs-high-${var.environment}"
-  alarm_description   = "Job queue backlog is high — worker may need manual scaling or investigation."
-  namespace           = "Superpower/Worker"
+# Jobs waiting faster than workers take them.
+resource "aws_cloudwatch_metric_alarm" "pending_jobs_high" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-pending-jobs-high-${var.environment}"
+  alarm_description   = "${each.key}'s generation backlog is over 100 for 5 minutes: its worker may need more tasks, or is failing."
+  namespace           = "Superpower/${each.key}"
   metric_name         = "PendingJobCount"
-  statistic           = "Average"
+  statistic           = "Maximum"
   period              = 300
   evaluation_periods  = 1
   threshold           = 100
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
 
-  dimensions = {
-    Environment = var.environment
-  }
+# A job running this long means a hung job or worker.
+resource "aws_cloudwatch_metric_alarm" "processing_stuck" {
+  for_each = local.generating_alarms
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
+  alarm_name          = "${var.app_name}-${each.key}-processing-stuck-${var.environment}"
+  alarm_description   = "A ${each.key} job has been running over 10 minutes: a hung job or worker; check the worker's logs."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "OldestRunningJobAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 600
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
 
-  tags = {
-    Name = "${var.app_name}-worker-pending-jobs-high-${var.environment}"
-  }
+# The leader stopped publishing PendingJobCount: scaling has lost its signal.
+resource "aws_cloudwatch_metric_alarm" "pending_jobs_missing" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-pending-jobs-missing-${var.environment}"
+  alarm_description   = "No PendingJobCount from ${each.key} for 10 minutes: its HTTP runtime's metrics leader is down, so the worker can't scale on its backlog."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "PendingJobCount"
+  statistic           = "SampleCount"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# The relay publishes 0 every minute when idle, so missing data means a dead relay.
+resource "aws_cloudwatch_metric_alarm" "outbox_stale" {
+  for_each = local.outbox_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-outbox-stale-${var.environment}"
+  alarm_description   = "${each.key}'s oldest unpublished event is over 10 minutes old, or its relay stopped reporting: events aren't reaching other services."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "OldestUnpublishedOutboxAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 600
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "breaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
 }
 
 # ---------------------------------------------------------------------------
@@ -138,16 +171,85 @@ resource "aws_cloudwatch_metric_alarm" "alb_healthy_hosts" {
   }
 }
 
+# 5xx as a share of requests, not a count, so it means the same at any traffic level
+# (OBS-01): the services' own 5xx plus the load balancer's (502/503/504 when a target
+# fails or times out), over 5 % of requests for 3 of 5 minutes. Below 20 requests a
+# minute a few errors would be a large share of nothing, so those minutes count as 0.
+# The 5xx counts are only published in minutes that have one, hence FILL(…, 0).
+locals {
+  alb_5xx_percent  = 5
+  alb_min_requests = 20
+  # p95 over this, for 3 of 5 minutes: most requests are reads; recordings and job
+  # starts are the slowest, and still well under it.
+  alb_p95_seconds = 3
+}
+
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   count               = var.enable_basic_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-alb-5xx-${var.environment}"
-  alarm_description   = "ALB 5XX error spike (all target groups) — check the API, Auth and Admin task logs."
+  alarm_description   = "Over ${local.alb_5xx_percent}% of API requests failed with a 5xx (from the services or the load balancer) — check the HTTP services' task logs and the healthy-host alarms."
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = local.alb_5xx_percent
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "rate"
+    expression  = "IF(requests >= ${local.alb_min_requests}, 100 * (FILL(target5xx, 0) + FILL(elb5xx, 0)) / requests, 0)"
+    label       = "5xx (% of requests)"
+    return_data = true
+  }
+  metric_query {
+    id = "requests"
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "RequestCount"
+      stat        = "Sum"
+      period      = 60
+      dimensions  = { LoadBalancer = module.alb.arn_suffix }
+    }
+  }
+  metric_query {
+    id = "target5xx"
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "HTTPCode_Target_5XX_Count"
+      stat        = "Sum"
+      period      = 60
+      dimensions  = { LoadBalancer = module.alb.arn_suffix }
+    }
+  }
+  metric_query {
+    id = "elb5xx"
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "HTTPCode_ELB_5XX_Count"
+      stat        = "Sum"
+      period      = 60
+      dimensions  = { LoadBalancer = module.alb.arn_suffix }
+    }
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
+  tags = {
+    Name = "${var.app_name}-alb-5xx-${var.environment}"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "alb_slow" {
+  count               = var.enable_basic_alarms ? 1 : 0
+  alarm_name          = "${var.app_name}-alb-slow-${var.environment}"
+  alarm_description   = "API responses are slow: p95 over ${local.alb_p95_seconds} s — check the services' CPU, MongoDB and Valkey."
   namespace           = "AWS/ApplicationELB"
-  metric_name         = "HTTPCode_Target_5XX_Count"
-  statistic           = "Sum"
+  metric_name         = "TargetResponseTime"
+  extended_statistic  = "p95"
   period              = 60
-  evaluation_periods  = 3
-  threshold           = 10
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = local.alb_p95_seconds
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
@@ -159,7 +261,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   ok_actions    = [aws_sns_topic.alerts.arn]
 
   tags = {
-    Name = "${var.app_name}-alb-5xx-${var.environment}"
+    Name = "${var.app_name}-alb-slow-${var.environment}"
   }
 }
 
@@ -220,74 +322,515 @@ resource "aws_cloudwatch_metric_alarm" "redis_connections" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# X-Ray sampling rules
-# dev/sbx/stg: 1 rule at var.xray_default_sampling_rate (5%)
-# prod:        1 rule at var.xray_default_sampling_rate (1%) + 1 error rule at 100%
-# ---------------------------------------------------------------------------
-
-resource "aws_xray_sampling_rule" "default" {
-  rule_name      = "${var.app_name}-default-${var.environment}"
-  priority       = 9999
-  version        = 1
-  reservoir_size = 1
-  fixed_rate     = var.xray_default_sampling_rate
-  host           = "*"
-  http_method    = "*"
-  url_path       = "*"
-  service_name   = "*"
-  service_type   = "*"
-  resource_arn   = "*"
-
-  tags = {
-    Name = "${var.app_name}-xray-default-${var.environment}"
-  }
+# Valkey under strain (OBS-01). It holds the rate limits, the login throttle, the LLM
+# hourly limits and the authz cache, so running out of CPU or memory slows or weakens
+# all of them; an eviction means memory is already full. Each is over every node.
+locals {
+  valkey_alarms = var.enable_all_alarms ? {
+    cpu = {
+      metric = "EngineCPUUtilization", stat = "Maximum", combine = "MAX", threshold = 80
+      what   = "Valkey's engine CPU is over 80% on a node — it's single-threaded, so requests to it queue."
+    }
+    memory = {
+      metric = "DatabaseMemoryUsagePercentage", stat = "Maximum", combine = "MAX", threshold = 80
+      what   = "Valkey memory is over 80% on a node — next it evicts keys (rate-limit counters, cached authz)."
+    }
+    evictions = {
+      metric = "Evictions", stat = "Sum", combine = "SUM", threshold = 0
+      what   = "Valkey evicted keys: its memory is full. Limits and cached authz are being lost; size the nodes up (TF-04)."
+    }
+  } : {}
 }
 
-# Captures 100% of traces where X-Ray detects an error/fault response.
-# Priority 1 means it is evaluated before the default rule.
-resource "aws_xray_sampling_rule" "errors" {
-  count          = var.enable_xray_error_rule ? 1 : 0
-  rule_name      = "${var.app_name}-errors-${var.environment}"
-  priority       = 1
-  version        = 1
-  reservoir_size = 5
-  fixed_rate     = 1.0
-  host           = "*"
-  http_method    = "*"
-  url_path       = "*"
-  service_name   = "*"
-  service_type   = "*"
-  resource_arn   = "*"
+resource "aws_cloudwatch_metric_alarm" "valkey" {
+  for_each            = local.valkey_alarms
+  alarm_name          = "${var.app_name}-valkey-${each.key}-${var.environment}"
+  alarm_description   = each.value.what
+  evaluation_periods  = 5
+  datapoints_to_alarm = each.key == "evictions" ? 1 : 3
+  threshold           = each.value.threshold
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "all"
+    expression  = "${each.value.combine}(METRICS())"
+    label       = "${each.value.metric} (all nodes)"
+    return_data = true
+  }
+
+  dynamic "metric_query" {
+    for_each = local.redis_member_ids
+    content {
+      id = "node${metric_query.key}"
+      metric {
+        namespace   = "AWS/ElastiCache"
+        metric_name = each.value.metric
+        stat        = each.value.stat
+        period      = 60
+        dimensions = {
+          CacheClusterId = metric_query.value
+        }
+      }
+    }
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
 
   tags = {
-    Name = "${var.app_name}-xray-errors-${var.environment}"
+    Name = "${var.app_name}-valkey-${each.key}-${var.environment}"
   }
 }
 
 # ---------------------------------------------------------------------------
 # CloudWatch dashboard — enable_dashboard (prod, optional stg)
-# Template file lives alongside this module as dashboard.json.tpl.
+#
+# Built from the runtime list, so a new service appears without editing it:
+# CPU and memory per runtime, requests and 5XX per HTTP service, the job and
+# outbox metrics, event-queue age and Valkey connections. (X-Ray sampling is the
+# collector's tail sampling now, otel_collector.tf, so there are no sampling rules.)
 # ---------------------------------------------------------------------------
+
+locals {
+  dashboard_runtimes = sort(keys(local.services))
+  dashboard_widgets = [
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "CPU by runtime", region = var.aws_region, stat = "Average", period = 300
+        metrics = [for k in local.dashboard_runtimes : ["AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.backend.name, "ServiceName", module.service[k].service_name, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Memory by runtime", region = var.aws_region, stat = "Average", period = 300
+        metrics = [for k in local.dashboard_runtimes : ["AWS/ECS", "MemoryUtilization", "ClusterName", aws_ecs_cluster.backend.name, "ServiceName", module.service[k].service_name, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Requests per target", region = var.aws_region, stat = "Sum", period = 60
+        metrics = [for k in sort(keys(local.http_services)) : ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", module.alb.target_group_arn_suffixes[k], "LoadBalancer", module.alb.arn_suffix, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "5XX by service", region = var.aws_region, stat = "Sum", period = 60
+        metrics = [for k in sort(keys(local.http_services)) : ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "TargetGroup", module.alb.target_group_arn_suffixes[k], "LoadBalancer", module.alb.arn_suffix, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Pending generation jobs", region = var.aws_region, stat = "Maximum", period = 60
+        metrics = [for s in local.generating_services : ["Superpower/${s}", "PendingJobCount", "Environment", var.environment, { label = s }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Oldest unpublished event (s)", region = var.aws_region, stat = "Maximum", period = 60
+        metrics = [for s in local.worker_services : ["Superpower/${s}", "OldestUnpublishedOutboxAgeSeconds", "Environment", var.environment, { label = s }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Oldest event waiting in each queue (s)", region = var.aws_region, stat = "Maximum", period = 300
+        metrics = [for s in sort(keys(module.events.queue_urls)) : ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", "${var.app_name}-${var.environment}-${s}-events", { label = s }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Valkey connections", region = var.aws_region, stat = "Maximum", period = 300
+        metrics = [for id in local.redis_member_ids : ["AWS/ElastiCache", "CurrConnections", "CacheClusterId", id]]
+      }
+    },
+  ]
+}
 
 resource "aws_cloudwatch_dashboard" "main" {
   count = var.enable_dashboard ? 1 : 0
-  # Region-qualified: CloudWatch dashboard names are account-global, so one
-  # name per env would make every region's apply overwrite the same dashboard.
+  # Region-qualified: dashboard names are account-global.
   dashboard_name = "${var.app_name}-${var.environment}-${var.aws_region}"
+  dashboard_body = jsonencode({ widgets = local.dashboard_widgets })
+}
 
-  dashboard_body = templatefile("${path.module}/dashboard.json.tpl", {
-    region              = var.aws_region
-    cluster_name        = aws_ecs_cluster.backend.name
-    api_service_name    = module.service["backend"].service_name
-    auth_service_name   = module.service["auth"].service_name
-    admin_service_name  = module.service["admin"].service_name
-    worker_service_name = module.service["worker"].service_name
-    alb_arn_suffix      = module.alb.arn_suffix
-    tg_arn_suffix       = module.alb.target_group_arn_suffixes["backend"]
-    auth_tg_arn_suffix  = module.alb.target_group_arn_suffixes["auth"]
-    admin_tg_arn_suffix = module.alb.target_group_arn_suffixes["admin"]
-    redis_member_ids    = local.redis_member_ids
-    environment         = var.environment
-  })
+# An account deletion older than 24 hours: a service hasn't confirmed it (10.3). The
+# auth-worker logs `auth.deletion.stuck` for each one every 10 minutes; this counts those
+# lines. The credentials are kept until every service confirms, so the account can't be
+# signed into meanwhile, and the deletion resumes once the stuck service catches up.
+# The relay sets aside an outbox row SNS could never take (common.events.relay), so the
+# rows behind it still go; that event is lost until someone looks, so it alarms.
+resource "aws_cloudwatch_log_metric_filter" "outbox_set_aside" {
+  for_each = local.outbox_alarms
+
+  name           = "${var.app_name}-${each.key}-outbox-set-aside-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["${each.key}-worker"].name
+  pattern        = "\"outbox.row.set_aside\""
+
+  metric_transformation {
+    name          = "SetAsideOutboxRows"
+    namespace     = "Superpower/${each.key}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "outbox_set_aside" {
+  for_each = local.outbox_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-outbox-set-aside-${var.environment}"
+  alarm_description   = "${each.key}'s relay set aside an event SNS could never take (too large or unreadable). The ${each.key}-worker log line names the event id; the row stays in its outbox with set_aside_reason."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = aws_cloudwatch_log_metric_filter.outbox_set_aside[each.key].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+resource "aws_cloudwatch_log_metric_filter" "deletion_stuck" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  name           = "${var.app_name}-auth-deletion-stuck-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["auth-worker"].name
+  pattern        = "\"auth.deletion.stuck\""
+
+  metric_transformation {
+    name          = "StuckDeletions"
+    namespace     = "Superpower/auth"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "deletion_stuck" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-auth-deletion-stuck-${var.environment}"
+  alarm_description   = "An account deletion is older than 24 hours: a service hasn't sent user.data_deleted. The auth-worker log line names the user id and the services it's waiting for."
+  namespace           = "Superpower/auth"
+  metric_name         = aws_cloudwatch_log_metric_filter.deletion_stuck[0].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 900
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# ---------------------------------------------------------------------------
+# Generation and runtime alarms — enable_all_alarms (stg, prod)
+# (production-readiness review: OBS-02, JOB-02, JOB-03, OBS-03)
+# ---------------------------------------------------------------------------
+
+locals {
+  # A due job waiting this long: no worker is taking jobs (down, stuck or switched off).
+  pending_age_alarm_seconds = 300
+  # Failed generations in 15 minutes over this: the LLM provider failing, or a bug. A
+  # job fails only after its retries (common.generation.jobs), so each one is a person
+  # who saw an error.
+  failed_jobs_alarm_per_15_minutes = 2
+  all_runtime_alarms               = { for k, s in local.services : k => s if var.enable_all_alarms }
+}
+
+# OBS-02: the longest a due job has waited (published by each circle's leader).
+resource "aws_cloudwatch_metric_alarm" "pending_age" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-jobs-waiting-${var.environment}"
+  alarm_description   = "A ${each.key} generation job has waited over ${local.pending_age_alarm_seconds} s for a worker: check the ${each.key}-worker tasks, the processing-stuck alarm, and the generation switch (generation_switch.tf)."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "OldestPendingJobAgeSeconds"
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = local.pending_age_alarm_seconds
+  comparison_operator = "GreaterThanThreshold"
+  # pending_jobs_missing alarms on the metric stopping.
+  treat_missing_data = "notBreaching"
+  dimensions         = { Environment = var.environment }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-jobs-waiting-${var.environment}"
+  }
+}
+
+# JOB-02: each job a worker gives up on logs `<circle>.job id=… outcome=failed`.
+resource "aws_cloudwatch_log_metric_filter" "failed_jobs" {
+  for_each = local.generating_alarms
+
+  name           = "${var.app_name}-${each.key}-failed-jobs-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["${each.key}-worker"].name
+  pattern        = "\"outcome=failed\""
+
+  metric_transformation {
+    name          = "FailedJobs"
+    namespace     = "Superpower/${each.key}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "failed_jobs" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-failed-jobs-${var.environment}"
+  alarm_description   = "Over ${local.failed_jobs_alarm_per_15_minutes} ${each.key} generations failed in 15 minutes (after their retries). The ${each.key}-worker log has each job's id and error; llm_call lines show the provider's outcome."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = aws_cloudwatch_log_metric_filter.failed_jobs[each.key].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 900
+  evaluation_periods  = 1
+  threshold           = local.failed_jobs_alarm_per_15_minutes
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-failed-jobs-${var.environment}"
+  }
+}
+
+# JOB-03: LLM tokens per circle, from each llm_call log line (common.generation.llm),
+# in every environment, so the dashboard and cost reports have them too.
+locals {
+  llm_token_metrics = {
+    for pair in setproduct(local.generating_services, ["input", "output"]) :
+    "${pair[0]}-${pair[1]}" => { service = pair[0], kind = pair[1] }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "llm_tokens" {
+  for_each = local.llm_token_metrics
+
+  name           = "${var.app_name}-${each.key}-llm-tokens-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["${each.value.service}-worker"].name
+  pattern        = "{ $.llm_call.${each.value.kind}_tokens > 0 }"
+
+  metric_transformation {
+    name      = "Llm${title(each.value.kind)}Tokens"
+    namespace = "Superpower/${each.value.service}"
+    value     = "$.llm_call.${each.value.kind}_tokens"
+    unit      = "Count"
+  }
+}
+
+# Every circle's tokens together, per hour: spend running away (a loop, abuse, a
+# prompt grown huge). The fix is the generation switch, then the cause.
+resource "aws_cloudwatch_metric_alarm" "llm_tokens" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-llm-tokens-${var.environment}"
+  alarm_description   = "Over ${var.llm_tokens_alarm_per_hour} LLM tokens (input and output, every circle) in an hour. To stop spend at once, set the generation switch to false (generation_switch.tf); then look for the cause in the workers' llm_call lines."
+  evaluation_periods  = 1
+  threshold           = var.llm_tokens_alarm_per_hour
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "total"
+    expression  = "SUM(METRICS())"
+    label       = "LLM tokens (all circles)"
+    return_data = true
+  }
+
+  dynamic "metric_query" {
+    for_each = local.llm_token_metrics
+    content {
+      id = replace("t_${metric_query.key}", "-", "_")
+      metric {
+        namespace   = "Superpower/${metric_query.value.service}"
+        metric_name = aws_cloudwatch_log_metric_filter.llm_tokens[metric_query.key].metric_transformation[0].name
+        stat        = "Sum"
+        period      = 3600
+      }
+    }
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-llm-tokens-${var.environment}"
+  }
+}
+
+# OBS-03: a runtime with no task running. ECS publishes CPUUtilization each minute
+# while any task runs; when none does, the metric stops and missing counts as
+# breaching. A free metric, so it works without Container Insights.
+resource "aws_cloudwatch_metric_alarm" "no_tasks" {
+  for_each = local.all_runtime_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-no-tasks-${var.environment}"
+  alarm_description   = "${each.value.display_name} has no running task for 3 minutes — ECS can't start it (check the service's events and its last task's stopped reason) or it was scaled to 0."
+  namespace           = "AWS/ECS"
+  metric_name         = "CPUUtilization"
+  statistic           = "SampleCount"
+  period              = 60
+  evaluation_periods  = 3
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.backend.name
+    ServiceName = module.service[each.key].service_name
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-no-tasks-${var.environment}"
+  }
+}
+
+# APP-04: a runtime that can't reach Valkey falls back to counting its rate limits,
+# login throttle and LLM limit per task (as many times looser as there are tasks) and
+# asks auth for every authz check. Each fallback logs a line with a top-level
+# valkey_degraded field (common.valkey.degraded); every runtime but the collector
+# counts them into one metric, in every environment.
+locals {
+  valkey_clients = { for k, s in local.services : k => s if s.kind != "collector" }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "valkey_degraded" {
+  for_each = local.valkey_clients
+
+  name           = "${var.app_name}-${each.key}-valkey-degraded-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service[each.key].name
+  pattern        = "{ $.valkey_degraded = * }"
+
+  metric_transformation {
+    name          = "ValkeyDegraded"
+    namespace     = "Superpower/valkey"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Two 5-minute periods in a row, so one blip (a failover, a reconnect) doesn't alarm.
+# While Valkey stays unreachable, each limiter logs again every 30 s per task.
+resource "aws_cloudwatch_metric_alarm" "valkey_degraded" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-valkey-degraded-${var.environment}"
+  alarm_description   = "Runtimes can't reach Valkey for 10 minutes: rate limits, the login throttle and the LLM hourly limit are counted per task (looser by the number of tasks) and authz checks go to auth. Check the Valkey alarms and the services' 'Valkey unreachable' log lines (the valkey_degraded field names what fell back)."
+  namespace           = "Superpower/valkey"
+  metric_name         = "ValkeyDegraded"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-valkey-degraded-${var.environment}"
+  }
+}
+
+# DB-03: indexes are built in the background, once per release (common.index_builds),
+# so a failed build or a missing index no longer stops a task; it logs a line with a
+# top-level index_problem field ("failed" or "missing") instead. The same runtimes
+# count them into one metric, in every environment.
+resource "aws_cloudwatch_log_metric_filter" "index_problems" {
+  for_each = local.valkey_clients
+
+  name           = "${var.app_name}-${each.key}-index-problems-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service[each.key].name
+  pattern        = "{ $.index_problem = * }"
+
+  metric_transformation {
+    name          = "IndexProblems"
+    namespace     = "Superpower/mongo"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Any: a build that failed (an option conflict, a duplicate key on a new unique index)
+# or an index still missing after it means queries run unindexed, or a unique rule isn't
+# enforced, until it's fixed.
+resource "aws_cloudwatch_metric_alarm" "index_problems" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-index-problems-${var.environment}"
+  alarm_description   = "A release's MongoDB index build failed, or an index is missing after it. The services keep serving. Their log lines with an index_problem field name the service, the release and the index; the index_builds collection in that service's database has the build's status and error. Fix the cause (for example drop the conflicting index), then restart the service (restart-live-backend): the next start retries the build."
+  namespace           = "Superpower/mongo"
+  metric_name         = "IndexProblems"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-index-problems-${var.environment}"
+  }
+}
+
+# AUTH-02: a refresh token used again after its 30-second window is taken as stolen; auth
+# revokes the family and logs the account out everywhere, with a top-level
+# security_event field on that log line.
+resource "aws_cloudwatch_log_metric_filter" "security_events" {
+  name           = "${var.app_name}-auth-security-events-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["auth"].name
+  pattern        = "{ $.security_event = * }"
+
+  metric_transformation {
+    name          = "SecurityEvents"
+    namespace     = "Superpower/auth"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "security_events" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-auth-security-events-${var.environment}"
+  alarm_description   = "auth logged a security event: a refresh token reused after its window (taken as stolen; the account was logged out everywhere). The auth log lines with a security_event field name the account (sub) and the event."
+  namespace           = "Superpower/auth"
+  metric_name         = aws_cloudwatch_log_metric_filter.security_events.metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Name = "${var.app_name}-auth-security-events-${var.environment}"
+  }
 }

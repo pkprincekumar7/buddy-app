@@ -77,6 +77,30 @@ run "prod_address_plan_and_names" {
     condition     = output.private_subnet_ids == [for k in ["1", "2", "3"] : aws_subnet.private[k].id]
     error_message = "private_subnet_ids is ordered AZ 1 to 3."
   }
+  assert {
+    condition     = aws_internet_gateway.igw.vpc_id == aws_vpc.main.id && aws_internet_gateway.igw.tags.Name == "superpower-backend-igw-prod"
+    error_message = "The internet gateway must be attached to the VPC and named after the app and environment."
+  }
+  assert {
+    condition     = aws_route_table.public.vpc_id == aws_vpc.main.id && aws_route_table.public.tags.Name == "superpower-backend-public-rt-prod"
+    error_message = "The single public route table must belong to the VPC and be named after the app and environment."
+  }
+  assert {
+    condition     = aws_route.internet.route_table_id == aws_route_table.public.id && aws_route.internet.destination_cidr_block == "0.0.0.0/0" && aws_route.internet.gateway_id == aws_internet_gateway.igw.id
+    error_message = "The public route table must send 0.0.0.0/0 to the internet gateway."
+  }
+  assert {
+    condition     = length(aws_route_table_association.public) == 3 && alltrue([for k in ["1", "2", "3"] : aws_route_table_association.public[k].subnet_id == aws_subnet.public[k].id && aws_route_table_association.public[k].route_table_id == aws_route_table.public.id])
+    error_message = "Every public subnet must be associated with the public route table."
+  }
+  assert {
+    condition     = length(aws_eip.nat) == 3 && alltrue([for e in aws_eip.nat : e.domain == "vpc"]) && aws_eip.nat[1].tags.Name == "superpower-nat-eip-2-prod" && aws_nat_gateway.nat[*].allocation_id == aws_eip.nat[*].id
+    error_message = "Each NAT gateway must get its own VPC Elastic IP, numbered from 1."
+  }
+  assert {
+    condition     = length(aws_route_table_association.private) == 3 && alltrue([for k in ["1", "2", "3"] : aws_route_table_association.private[k].subnet_id == aws_subnet.private[k].id && aws_route_table_association.private[k].route_table_id == aws_route_table.private[k].id])
+    error_message = "Each private subnet must be associated with its own AZ's private route table."
+  }
 }
 
 run "stg_two_nats_share_az2" {
@@ -133,4 +157,14 @@ run "rejects_a_non_slash_16" {
   }
 
   expect_failures = [var.vpc_cidr]
+}
+
+run "rejects_four_nat_gateways" {
+  command = plan
+
+  variables {
+    nat_gateway_count = 4
+  }
+
+  expect_failures = [var.nat_gateway_count]
 }

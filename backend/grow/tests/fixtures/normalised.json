@@ -1,0 +1,299 @@
+[
+  [
+    {
+      "id": "life_ambition_gq1",
+      "question": "What does Aarav do when question 1 happens?",
+      "hint": "Think of a recent day 1."
+    },
+    {
+      "id": "life_ambition_gq2",
+      "question": "What does Aarav do when question 2 happens?",
+      "hint": "Think of a recent day 2."
+    },
+    {
+      "id": "life_ambition_gq3",
+      "question": "What does Aarav do when question 3 happens?",
+      "hint": "Think of a recent day 3."
+    },
+    {
+      "id": "life_ambition_gq4",
+      "question": "What does Aarav do when question 4 happens?",
+      "hint": "Think of a recent day 4."
+    },
+    {
+      "id": "life_ambition_gq5",
+      "question": "What does Aarav do when question 5 happens?",
+      "hint": "Think of a recent day 5."
+    }
+  ],
+  [
+    {
+      "id": "self_care_gq1",
+      "question": "word word word word word word word word word word word word word word word word word word word word word word…",
+      "hint": "h h h h h h h h h h h h h h…"
+    },
+    {
+      "id": "self_care_gq2",
+      "question": "What does Aarav do when question 2 happens?",
+      "hint": "Think of a recent day 2."
+    },
+    {
+      "id": "self_care_gq3",
+      "question": "What does Aarav do when question 3 happens?",
+      "hint": "Think of a recent day 3."
+    },
+    {
+      "id": "self_care_gq4",
+      "question": "What does Aarav do when question 4 happens?",
+      "hint": "Think of a recent day 4."
+    },
+    {
+      "id": "self_care_gq5",
+      "question": "What does Aarav do when question 5 happens?",
+      "hint": "Think of a recent day 5."
+    }
+  ],
+  [
+    {
+      "id": "self_care_gq1",
+      "question": "Q?",
+      "hint": ""
+    },
+    {
+      "id": "self_care_gq2",
+      "question": "What does Aarav do when question 2 happens?",
+      "hint": "Think of a recent day 2."
+    },
+    {
+      "id": "self_care_gq3",
+      "question": "What does Aarav do when question 3 happens?",
+      "hint": "Think of a recent day 3."
+    },
+    {
+      "id": "self_care_gq4",
+      "question": "What does Aarav do when question 4 happens?",
+      "hint": "Think of a recent day 4."
+    },
+    {
+      "id": "self_care_gq5",
+      "question": "What does Aarav do when question 5 happens?",
+      "hint": "Think of a recent day 5."
+    }
+  ],
+  null,
+  null,
+  null,
+  null,
+  null,
+  [
+    {
+      "a": {
+        "id": "life_ambition_gr1a",
+        "text": "Build a thing number 0",
+        "tag": "maker",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr1b",
+        "text": "Tell a story number 0",
+        "tag": "teller",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr2a",
+        "text": "Build a thing number 1",
+        "tag": "teller",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr2b",
+        "text": "Tell a story number 1",
+        "tag": "leader",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr3a",
+        "text": "Build a thing number 2",
+        "tag": "leader",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr3b",
+        "text": "Tell a story number 2",
+        "tag": "explorer",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr4a",
+        "text": "Build a thing number 3",
+        "tag": "explorer",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr4b",
+        "text": "Tell a story number 3",
+        "tag": "thinker",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr5a",
+        "text": "Build a thing number 4",
+        "tag": "thinker",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr5b",
+        "text": "Tell a story number 4",
+        "tag": "helper",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr6a",
+        "text": "Build a thing number 5",
+        "tag": "helper",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr6b",
+        "text": "Tell a story number 5",
+        "tag": "maker",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    }
+  ],
+  [
+    {
+      "a": {
+        "id": "life_ambition_gr1a",
+        "text": "Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly…",
+        "tag": "maker",
+        "star": "A very long st",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr1b",
+        "text": "Lead the team",
+        "tag": "leader",
+        "star": "Lead",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr2a",
+        "text": "Build a thing number 1",
+        "tag": "teller",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr2b",
+        "text": "Tell a story number 1",
+        "tag": "leader",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr3a",
+        "text": "Build a thing number 2",
+        "tag": "leader",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr3b",
+        "text": "Tell a story number 2",
+        "tag": "explorer",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr4a",
+        "text": "Build a thing number 3",
+        "tag": "explorer",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr4b",
+        "text": "Tell a story number 3",
+        "tag": "thinker",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr5a",
+        "text": "Build a thing number 4",
+        "tag": "thinker",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr5b",
+        "text": "Tell a story number 4",
+        "tag": "helper",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    },
+    {
+      "a": {
+        "id": "life_ambition_gr6a",
+        "text": "Build a thing number 5",
+        "tag": "helper",
+        "star": "Star",
+        "icon": "rocket"
+      },
+      "b": {
+        "id": "life_ambition_gr6b",
+        "text": "Tell a story number 5",
+        "tag": "maker",
+        "star": "Tell",
+        "icon": "spark"
+      }
+    }
+  ],
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  [],
+  [
+    {
+      "title": "Bare array",
+      "detail": "d"
+    }
+  ],
+  []
+]

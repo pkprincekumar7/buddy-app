@@ -19,6 +19,7 @@ mkdir -p "$FAKE/bin" "$FAKE/ssm"
 cat > "$FAKE/bin/aws" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE/calls"
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
 arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "$2"; return; }; shift; done; }
 case "$1 $2" in
   "ssm get-parameter")
@@ -42,11 +43,100 @@ case "$1 $2" in
       total=$(wc -l < "$st"); [ "$n" -gt "$total" ] && n=$total
       sed -n "${n}p" "$st"
     else echo "arn:aws:ecs:ap-south-1:1:task-definition/live:7"; fi ;;
-  "ecs update-service") echo '{"serviceName":"x"}' ;;
+  "ecs update-service")
+    if [ -n "${FAKE_NO_DEPLOYMENT:-}" ]; then echo '{"serviceName":"x","deployment":null}'
+    else echo '{"serviceName":"x","status":"ACTIVE","desiredCount":2,"deployment":"ecs-svc/new"}'; fi ;;
+  "ecr get-login-password") echo "fake-ecr-token" ;;
+  # ECR: one file per tag, $FAKE/ecr/<repo with / as _>/<tag>, holding the manifest;
+  # the digest is its SHA-256, so two tags on one manifest share a digest.
+  "ecr describe-images"|"ecr batch-get-image"|"ecr put-image")
+    dir="$FAKE/ecr/$(arg --repository-name "$@" | tr '/' '_')"
+    tag="$(arg --image-ids "$@" | sed 's/^imageTag=//')"
+    case "$2" in
+      describe-images)
+        ids="$(arg --image-ids "$@")"
+        if [[ "$ids" == imageDigest=* ]]; then  # every tag on that digest, as JSON
+          want="${ids#imageDigest=}"; tags='[]'
+          for f in "$dir"/*; do
+            [ -f "$f" ] && [ "sha256:$(sha256 < "$f")" = "$want" ] && tags=$(jq -c --arg t "$(basename "$f")" '. + [$t]' <<<"$tags")
+          done
+          [ "$tags" != '[]' ] || { echo "ImageNotFoundException" >&2; exit 254; }
+          echo "$tags"; exit 0
+        fi
+        [ -f "$dir/$tag" ] || { echo "ImageNotFoundException" >&2; exit 254; }
+        echo "sha256:$(sha256 < "$dir/$tag")" ;;
+      batch-get-image)
+        if [ -f "$dir/$tag" ]; then jq -cn --rawfile m "$dir/$tag" '{manifest: $m, media: "application/vnd.oci.image.manifest.v1+json"}'
+        else echo '{"manifest": null, "media": null}'; fi ;;
+      put-image)
+        new="$(arg --image-tag "$@")"
+        [ -f "$dir/$new" ] && { echo "ImageTagAlreadyExistsException" >&2; exit 254; }
+        m="$(arg --image-manifest "$@")"
+        case "$m" in file://*) cat "${m#file://}" > "$dir/$new" ;; *) printf '%s' "$m" > "$dir/$new" ;; esac ;;
+    esac ;;
   *) echo "fake aws: unexpected call: $*" >&2; exit 1 ;;
 esac
 EOF
 chmod +x "$FAKE/bin/aws"
+
+# -- fake crane: auth login and copy, against the fake ECR above -------------------
+# copy finds the source manifest by digest; FAKE_CRANE_REWRITE makes it store another
+# manifest (a copy that changed the digest).
+cat > "$FAKE/bin/crane" <<'EOF'
+#!/usr/bin/env bash
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
+case "$1 $2" in
+  "auth login") echo "crane auth login $3 $4 $5 $6 password=$(cat)" >> "$FAKE/calls" ;;
+  digest*)
+    repo="${2%:*}"; repo="${repo#*/}"; f="$FAKE/ecr/$(tr '/' '_' <<<"$repo")/${2##*:}"
+    [ -f "$f" ] && echo "sha256:$(sha256 < "$f")" || { echo "MANIFEST_UNKNOWN" >&2; exit 1; } ;;
+  copy*)
+    echo "crane $*" >> "$FAKE/calls"
+    src="$2" dst="$3"
+    if [[ "$src" != *@* ]]; then  # tag to tag: a signature or attestation
+      sr="${src%:*}"; sr="${sr#*/}"; dr="${dst%:*}"; dr="${dr#*/}"
+      mkdir -p "$FAKE/ecr/$(tr '/' '_' <<<"$dr")"
+      cp "$FAKE/ecr/$(tr '/' '_' <<<"$sr")/${src##*:}" "$FAKE/ecr/$(tr '/' '_' <<<"$dr")/${dst##*:}"; exit $?
+    fi
+    srepo="${src%@*}"; srepo="${srepo#*/}"; digest="${src##*@}"
+    drepo="${dst%:*}"; drepo="${drepo#*/}"; tag="${dst##*:}"
+    for f in "$FAKE/ecr/$(tr '/' '_' <<<"$srepo")"/*; do
+      [ "sha256:$(sha256 < "$f")" = "$digest" ] || continue
+      mkdir -p "$FAKE/ecr/$(tr '/' '_' <<<"$drepo")"
+      if [ -n "${FAKE_CRANE_REWRITE:-}" ]; then echo "rewritten" > "$FAKE/ecr/$(tr '/' '_' <<<"$drepo")/$tag"
+      else cp "$f" "$FAKE/ecr/$(tr '/' '_' <<<"$drepo")/$tag"; fi
+      exit 0
+    done
+    echo "fake crane: $src not found" >&2; exit 1 ;;
+  *) echo "fake crane: unexpected call: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE/bin/crane"
+
+# -- fake cosign: a signature is the sha256-<hex>.sig tag in the fake ECR, holding the
+# signer's identity (FAKE_SIGNER, else this repo's deploy workflow); .att likewise.
+cat > "$FAKE/bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+echo "cosign $*" >> "$FAKE/calls"
+arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "$2"; return; }; shift; done; }
+ref="${*: -1}"; repo="${ref%@*}"; repo="${repo#*/}"; hex="${ref##*@sha256:}"
+dir="$FAKE/ecr/$(tr '/' '_' <<<"$repo")"
+signer="${FAKE_SIGNER:-https://github.com/acme/buddy-app/.github/workflows/deploy-live-backend.yml@refs/heads/main}"
+check() {  # check FILE: present, signed by an identity the regexp allows, by GitHub's issuer
+  [ -f "$1" ] && grep -Eq -- "$(arg --certificate-identity-regexp "$@")" "$1" \
+    && [ "$(arg --certificate-oidc-issuer "$@")" = "https://token.actions.githubusercontent.com" ] \
+    || { echo "Error: no matching signatures"; exit 1; }
+}
+case "$1" in
+  verify) check "$dir/sha256-$hex.sig" "$@" ;;
+  verify-attestation) check "$dir/sha256-$hex.att" "$@" ;;
+  sign) mkdir -p "$dir"; printf '%s' "$signer" > "$dir/sha256-$hex.sig" ;;
+  attest) mkdir -p "$dir"; { printf '%s\n' "$signer"; cat "$(arg --predicate "$@")"; } > "$dir/sha256-$hex.att" ;;
+  *) echo "fake cosign: unexpected call: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$FAKE/bin/cosign"
+export GITHUB_REPOSITORY="acme/buddy-app"
 export PATH="$FAKE/bin:$PATH"
 
 # shellcheck source=scripts/ecs-services.sh
@@ -61,9 +151,14 @@ check() { local name="$1" got="$2" want="$3"; [ "$got" = "$want" ] && ok "$name"
 BASE="/superpower/prod/backend/ap-south-1"
 MANIFEST='[{"name":"backend","service":"superpower-backend-prod","family":"superpower-backend-prod","container":"backend"},{"name":"worker","service":"superpower-worker-prod","family":"superpower-worker-prod","container":"worker"},{"name":"reports","service":"superpower-reports-prod","family":"superpower-reports-prod","container":"reports"}]'
 echo "$MANIFEST" > "$FAKE/ssm/$(tr '/' '_' <<<"$BASE/ecs_services")"
-STABLE='{"deployments":[{"rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
-ROLLING='{"deployments":[{"rolloutState":"IN_PROGRESS"},{"rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":1,"desiredCount":2}'
-FAILED='{"deployments":[{"rolloutState":"FAILED"}],"runningCount":1,"pendingCount":0,"desiredCount":2}'
+# ecs-svc/new is the deployment update-service starts; ecs-svc/old the one it replaces.
+STABLE='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
+ROLLING='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"IN_PROGRESS"},{"id":"ecs-svc/old","status":"ACTIVE","rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":1,"desiredCount":2}'
+FAILED='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"FAILED"}],"runningCount":1,"pendingCount":0,"desiredCount":2}'
+# The circuit breaker's rollback: a new PRIMARY of the old revision, the failed one behind it,
+# then the rollback alone, every task running (what used to pass as a success).
+ROLLING_BACK='{"deployments":[{"id":"ecs-svc/rollback","status":"PRIMARY","rolloutState":"IN_PROGRESS"},{"id":"ecs-svc/new","status":"ACTIVE","rolloutState":"FAILED"}],"runningCount":1,"pendingCount":1,"desiredCount":2}'
+ROLLED_BACK='{"deployments":[{"id":"ecs-svc/rollback","status":"PRIMARY","rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
 reset_polls() { rm -f "$FAKE"/polls-* "$FAKE"/states-* "$FAKE/calls"; }
 
 # -- resolve_services ----------------------------------------------------------
@@ -75,6 +170,17 @@ if out=$(resolve_services "$BASE" "backend,nope" 2>&1); then fail "unknown name 
 if out=$(resolve_services "$BASE" " , " 2>&1); then fail "empty selection is an error"; else ok "empty selection is an error"; fi
 if out=$(resolve_services "/superpower/dev/backend/eu-west-1" all 2>&1); then fail "missing manifest is an error"; else
   [[ "$out" == *"ecs_services not found in SSM"* ]] && ok "missing manifest is an error that says to apply Terraform" || fail "missing manifest message" "$out"; fi
+
+# -- image_runtimes / image_services / repository_for ----------------------------
+SPLIT='[{"name":"otel-collector","image_service":"","ecr_repository_url":""},{"name":"users","image_service":"users","ecr_repository_url":"1.dkr.ecr/superpower/prod/users"},{"name":"users-worker","image_service":"users","ecr_repository_url":"1.dkr.ecr/superpower/prod/users"},{"name":"shared","image_service":"shared","ecr_repository_url":"1.dkr.ecr/superpower/prod/shared"}]'
+check "all leaves out the collector's pinned image" "$(image_runtimes "$SPLIT" all | jq -r '[.[].name] | join(",")')" "users,users-worker,shared"
+if out=$(image_runtimes "$(jq -c '.[:2]' <<<"$SPLIT")" "otel-collector,users" 2>&1); then fail "naming the collector is an error"; else
+  [[ "$out" == *"otel-collector runs an image Terraform pins"* ]] && ok "naming the collector says to change it in Terraform" || fail "collector message" "$out"; fi
+if image_runtimes "$(jq -c '.[:1]' <<<"$SPLIT")" all >/dev/null 2>&1; then fail "nothing to build is an error"; else ok "nothing to build is an error"; fi
+check "one image per service, in order: a worker shares its service's" "$(image_services "$SPLIT" | jq -r 'join(",")')" "users,shared"
+check "a service's repository comes from the manifest" "$(repository_for "$SPLIT" shared)" "1.dkr.ecr/superpower/prod/shared"
+if out=$(repository_for "$SPLIT" grow 2>&1); then fail "an unknown image service is an error"; else
+  [[ "$out" == *"no ECR repository for 'grow'"* ]] && ok "an unknown image service is an error" || fail "unknown repository message" "$out"; fi
 
 # -- register_with_image -------------------------------------------------------
 cat > "$FAKE/td-superpower-backend-prod.json" <<'EOF'
@@ -92,18 +198,135 @@ if out=$(register_with_image superpower-backend-prod nope repo:new 2>&1); then f
 
 # -- live_image ----------------------------------------------------------------
 cp "$FAKE/td-superpower-backend-prod.json" "$FAKE/td-live.json"
+LIVE='{"deployments":[{"id":"ecs-svc/new","status":"PRIMARY","rolloutState":"COMPLETED","taskDefinition":"arn:td:7"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
+reset_polls; printf '%s\n' "$LIVE" > "$FAKE/states"
 check "live image of a container" "$(live_image cluster superpower-backend-prod backend)" "repo:old"
+grep -q -- '--task-definition arn:td:7' "$FAKE/calls" && ok "read from the completed deployment's task definition" || fail "reads the completed deployment's task definition"
 if live_image cluster superpower-backend-prod nope >/dev/null 2>&1; then fail "live image of a missing container is an error"; else ok "live image of a missing container is an error"; fi
+# CI-14: only a finished rollout is promoted.
+for state in ROLLING FAILED ROLLING_BACK; do
+  reset_polls; printf '%s\n' "${!state}" > "$FAKE/states"
+  if out=$(live_image cluster superpower-backend-prod backend 2>&1); then fail "a $state source is refused"; else
+    [[ "$out" == *"isn't settled on one completed deployment"* ]] && ok "a $state source is refused" || fail "$state message" "$out"; fi
+done
+reset_polls; printf '%s\n' '{"deployments":[]}' > "$FAKE/states"
+if out=$(live_image cluster superpower-backend-prod backend 2>&1); then fail "no deployment is refused"; else
+  [[ "$out" == *"(now: none)"* ]] && ok "no deployment is refused, saying so" || fail "no deployment message" "$out"; fi
+
+# -- same_release --------------------------------------------------------------
+mkdir -p "$WORK/rel/promote-images-ap-south-1" "$WORK/rel/promote-images-eu-west-1"
+A="$WORK/rel/promote-images-ap-south-1/images.json"; E="$WORK/rel/promote-images-eu-west-1/images.json"
+echo '[{"name":"users","image":"1.dkr.ecr.ap-south-1.amazonaws.com/sp/users:abc","image_service":"users"},{"name":"shared","image":"1.dkr.ecr.ap-south-1.amazonaws.com/sp/shared:abc","image_service":"shared"}]' > "$A"
+echo '[{"name":"shared","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/shared:abc","image_service":"shared"},{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:abc","image_service":"users"}]' > "$E"
+same_release "$A" "$E" && ok "the same tags in every region pass (registry and order aside)" || fail "matching regions pass"
+same_release "$A" && ok "one region passes" || fail "one region passes"
+echo '[{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:def","image_service":"users"},{"name":"shared","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/shared:abc","image_service":"shared"}]' > "$E"
+if out=$(same_release "$A" "$E" 2>&1); then fail "a different tag is refused"; else
+  [[ "$out" == *"promote-images-eu-west-1: shared=abc, users=def"* ]] && ok "a different tag is refused, naming each region's tags" || fail "different tag message" "$out"; fi
+echo '[{"name":"users","image":"1.dkr.ecr.eu-west-1.amazonaws.com/sp/users:abc","image_service":"users"}]' > "$E"
+if same_release "$A" "$E" >/dev/null 2>&1; then fail "a missing service is refused"; else ok "a service missing in one region is refused"; fi
+
+# -- the scanned marker (CI-03) ---------------------------------------------------
+R="$FAKE/ecr/sp_dev_users"; mkdir -p "$R"
+echo '{"schemaVersion":2,"layers":["a"]}' > "$R/20261102-abc"
+echo '{"schemaVersion":2,"layers":["b"]}' > "$R/20261101-old"
+[[ "$(image_digest ap-south-1 sp/dev/users 20261102-abc)" == sha256:* ]] && ok "a tag's digest" || fail "a tag's digest"
+check "a missing tag has no digest" "$(image_digest ap-south-1 sp/dev/users nope)" ""
+is_scanned ap-south-1 sp/dev/users 20261102-abc && fail "an unmarked image isn't scanned" || ok "an unmarked image isn't scanned"
+mark_scanned ap-south-1 sp/dev/users 20261102-abc && ok "marking an image" || fail "marking an image"
+check "the marker is the same image" "$(image_digest ap-south-1 sp/dev/users 20261102-abc-scanned)" "$(image_digest ap-south-1 sp/dev/users 20261102-abc)"
+is_scanned ap-south-1 sp/dev/users 20261102-abc && ok "a marked image is scanned" || fail "a marked image is scanned"
+mark_scanned ap-south-1 sp/dev/users 20261102-abc && ok "marking again is a no-op (tags are immutable)" || fail "marking again"
+# A marker on another image (say a hand-pushed tag) doesn't count.
+cp "$R/20261102-abc" "$R/20261101-old-scanned"
+is_scanned ap-south-1 sp/dev/users 20261101-old && fail "a marker on a different image is refused" || ok "a marker on a different image doesn't count"
+if out=$(mark_scanned ap-south-1 sp/dev/users nope 2>&1); then fail "marking a missing tag is an error"; else
+  [[ "$out" == *"sp/dev/users:nope isn't in ECR"* ]] && ok "marking a missing tag is an error" || fail "missing tag message" "$out"; fi
+
+# -- copying by digest (CI-09) ------------------------------------------------------
+reset_polls
+ecr_login ap-south-1 1.dkr.ecr.ap-south-1.amazonaws.com 2.dkr.ecr.ap-south-1.amazonaws.com 1.dkr.ecr.ap-south-1.amazonaws.com
+check "one login per distinct registry, the token on stdin" "$(grep -c '^crane auth login' "$FAKE/calls")" "2"
+grep -q '^crane auth login 2.dkr.ecr.ap-south-1.amazonaws.com -u AWS --password-stdin password=fake-ecr-token' "$FAKE/calls" \
+  && ok "the ECR token reaches crane through stdin" || fail "login call" "$(cat "$FAKE/calls")"
+SRC_DIGEST="$(image_digest ap-south-1 sp/dev/users 20261102-abc)"
+SRC="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$SRC_DIGEST"
+DST="2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users"
+copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 20261102-abc >/dev/null && ok "copying an image" || fail "copying an image"
+check "the target tag is the source digest" "$(image_digest ap-south-1 sp/prod/users 20261102-abc)" "$SRC_DIGEST"
+reset_polls
+out=$(copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 20261102-abc)
+[[ "$out" == *"already $SRC_DIGEST in the target"* ]] && ! grep -q '^crane copy' "$FAKE/calls" \
+  && ok "copying again is a no-op" || fail "copying again" "$out"
+OLD_SRC="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$(image_digest ap-south-1 sp/dev/users 20261101-old)"
+if out=$(copy_image ap-south-1 "$OLD_SRC" "$DST" sp/prod/users 20261102-abc 2>&1); then fail "a tag holding another image is refused"; else
+  [[ "$out" == *"another build of the same tag"* ]] && ok "a tag holding another image is refused" || fail "tag clash message" "$out"; fi
+if out=$(FAKE_CRANE_REWRITE=1 copy_image ap-south-1 "$SRC" "$DST" sp/prod/users 20261103-new 2>&1); then fail "a copy that changed the digest is refused"; else
+  [[ "$out" == *"was copied as sha256:"* ]] && ok "a copy that changed the digest is refused" || fail "digest change message" "$out"; fi
+if out=$(copy_image ap-south-1 "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users:20261102-abc" "$DST" sp/prod/users x 2>&1); then fail "a source by tag is refused"; else
+  [[ "$out" == *"isn't pinned to a digest"* ]] && ok "a source by tag, not digest, is refused" || fail "tag source message" "$out"; fi
+
+# -- signing (CI-03) ----------------------------------------------------------------
+check "the signer is this repo's deploy workflow, dots escaped" "$(GITHUB_REPOSITORY=acme/my.app signer_identity)" \
+  '^https://github\.com/acme/my\.app/\.github/workflows/deploy-live-backend\.yml@refs/(heads|tags)/.+$'
+REF="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$(image_digest ap-south-1 sp/dev/users 20261102-abc)"
+if out=$(verify_signature "$REF" 2>&1); then fail "an unsigned image is refused"; else
+  [[ "$out" == *"has no valid signature"* ]] && ok "an unsigned image is refused" || fail "unsigned message" "$out"; fi
+reset_polls
+out=$(sign_image "$REF") && [[ "$out" == "Signed $REF." ]] && verify_signature "$REF" \
+  && ok "signing an image makes it verify" || fail "signing" "$out"
+reset_polls
+out=$(sign_image "$REF")
+[[ "$out" == *"already signed"* ]] && ! grep -q '^cosign sign' "$FAKE/calls" \
+  && ok "a signed image isn't signed again (immutable tags)" || fail "re-sign" "$out"
+OTHER="1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users@$(image_digest ap-south-1 sp/dev/users 20261101-old)"
+FAKE_SIGNER="https://github.com/acme/buddy-app/.github/workflows/other.yml@refs/heads/main" cosign sign --yes "$OTHER"
+verify_signature "$OTHER" 2>/dev/null && fail "a signature from another workflow is refused" || ok "a signature from another workflow is refused"
+FAKE_SIGNER="https://github.com/evil/buddy-app/.github/workflows/deploy-live-backend.yml@refs/heads/main" cosign sign --yes "$OTHER"
+verify_signature "$OTHER" 2>/dev/null && fail "a signature from another repo is refused" || ok "a signature from another repo is refused"
+if verify_signature "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users:20261102-abc" 2>/dev/null; then fail "a ref by tag is refused"; else ok "a ref by tag, not digest, is refused"; fi
+echo '{"bomFormat":"CycloneDX"}' > "$WORK/sbom.json"
+check "an SBOM attestation" "$(attest_sbom "$REF" "$WORK/sbom.json")" "Attested the SBOM of $REF."
+check "attesting again is a no-op" "$(attest_sbom "$REF" "$WORK/sbom.json")" "$REF already has its SBOM attestation."
+DIGEST="${REF##*@}"
+copy_signatures "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users" "2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users" "$DIGEST" \
+  && [ -f "$FAKE/ecr/sp_prod_users/sha256-${DIGEST#sha256:}.sig" ] && [ -f "$FAKE/ecr/sp_prod_users/sha256-${DIGEST#sha256:}.att" ] \
+  && ok "promote copies the signature and the attestation" || fail "copy_signatures"
+check "the copied signature verifies in the target" "$(verify_signature "2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users@$DIGEST" && echo yes)" "yes"
+UNSIGNED="$(image_digest ap-south-1 sp/dev/users 20261102-abc-scanned)"
+echo '{"schemaVersion":2,"layers":["c"]}' > "$R/20261103-new"
+NEW="$(image_digest ap-south-1 sp/dev/users 20261103-new)"
+if out=$(copy_signatures "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users" "2.dkr.ecr.ap-south-1.amazonaws.com/sp/prod/users" "$NEW" 2>&1); then fail "promoting an unsigned image fails"; else
+  [[ "$out" == *"has no signature"* ]] && ok "promoting an unsigned image fails" || fail "unsigned promote message" "$out"; fi
+check "a digest's release tag, not its -scanned marker" "$(tag_for_digest ap-south-1 sp/dev/users "$UNSIGNED")" "20261102-abc"
+if tag_for_digest ap-south-1 sp/dev/users "sha256:$(printf '0%.0s' {1..64})" 2>/dev/null; then fail "an unknown digest has no tag"; else ok "an unknown digest has no release tag"; fi
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"
-wait_stable cluster svc 5 0 >/dev/null && check "waits through a rollout until stable" "$(cat "$FAKE/polls-svc")" "2" || fail "waits through a rollout until stable"
+wait_stable cluster svc ecs-svc/new 5 0 >/dev/null && check "waits through a rollout until stable" "$(cat "$FAKE/polls-svc")" "2" || fail "waits through a rollout until stable"
 reset_polls; printf '%s\n' "$FAILED" > "$FAKE/states"
-if out=$(wait_stable cluster svc 5 0 2>&1); then fail "FAILED rollout is an error"; else
+if out=$(wait_stable cluster svc ecs-svc/new 5 0 2>&1); then fail "FAILED rollout is an error"; else
   [[ "$out" == *"rollout FAILED"* ]] && ok "FAILED rollout fails at once" || fail "FAILED message" "$out"; fi
+reset_polls; printf '%s\n' "$ROLLING_BACK" > "$FAKE/states"
+if out=$(wait_stable cluster svc ecs-svc/new 5 0 2>&1); then fail "a rollback in progress is an error"; else
+  [[ "$out" == *"rollout FAILED"* ]] && check "a failed deployment behind the rollback fails at once" "$(cat "$FAKE/polls-svc")" "1" || fail "rollback message" "$out"; fi
+reset_polls; printf '%s\n' "$ROLLED_BACK" > "$FAKE/states"
+if out=$(wait_stable cluster svc ecs-svc/new 5 0 2>&1); then fail "a finished rollback is an error, not a success"; else
+  [[ "$out" == *"deployment ecs-svc/new is no longer listed"* ]] && ok "a finished rollback (old revision, all tasks running) is an error" || fail "rolled-back message" "$out"; fi
 reset_polls; printf '%s\n' "$ROLLING" > "$FAKE/states"
-if out=$(wait_stable cluster svc 3 0 2>&1); then fail "timeout is an error"; else
+if out=$(wait_stable cluster svc ecs-svc/new 3 0 2>&1); then fail "timeout is an error"; else
   [[ "$out" == *"did not stabilise"* ]] && check "gives up after ATTEMPTS polls" "$(cat "$FAKE/polls-svc")" "3" || fail "timeout message" "$out"; fi
+
+# -- roll_out ------------------------------------------------------------------
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
+roll_out cluster svc arn:td:99 >/dev/null && grep -q -- '--service svc --task-definition arn:td:99' "$FAKE/calls" \
+  && ok "roll_out points the service at the new revision" || fail "roll_out with a task definition"
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
+roll_out cluster svc >/dev/null && grep -q -- '--service svc --force-new-deployment' "$FAKE/calls" \
+  && ok "roll_out without one forces a new deployment (restart)" || fail "roll_out without a task definition"
+reset_polls
+if out=$(FAKE_NO_DEPLOYMENT=1 roll_out cluster svc arn:td:99 2>&1); then fail "no deployment id is an error"; else
+  [[ "$out" == *"returned no PRIMARY deployment"* ]] && ok "no deployment id is an error" || fail "no deployment message" "$out"; fi
 
 # -- deploy_image --------------------------------------------------------------
 for s in worker reports; do
@@ -134,6 +357,21 @@ if out=$(deploy_image cluster "$ALL" image_for 2>&1); then fail "a failed rollou
   [[ "$out" == *"rollout failed for: worker."* && "$out" == *"service=worker"* && "$out" == *"Rolled out: backend reports"* ]] \
     && ok "the failure names the failed service and how to re-run it" || fail "failure summary" "$out"
 fi
+
+# CI-12: a part-way failure says the environment runs mixed images, in the log and the summary.
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"; printf '%s\n' "$FAILED" > "$FAKE/states-superpower-worker-prod"
+export GITHUB_STEP_SUMMARY="$WORK/summary.md"; : > "$GITHUB_STEP_SUMMARY"
+out=$(deploy_image cluster "$ALL" image_for 2>&1) || true
+[[ "$out" == *"::warning title=Mixed images::"*"backend, reports on the new image, worker still on the previous one"* ]] \
+  && ok "a mixed-image warning annotation" || fail "mixed-image warning" "$out"
+summary=$(cat "$GITHUB_STEP_SUMMARY")
+[[ "$summary" == *"### ⚠️ Mixed images"* && "$summary" == *"| backend | new |"* && "$summary" == *"| worker | previous (rolled back by ECS) |"* && "$summary" == *"\`service=worker\`"* ]] \
+  && ok "the run summary lists each service's image and the re-run" || fail "mixed-image summary" "$summary"
+reset_polls; printf '%s\n' "$FAILED" > "$FAKE/states"; : > "$GITHUB_STEP_SUMMARY"
+out=$(deploy_image cluster "$ALL" image_for 2>&1) || true
+[[ "$out" != *"Mixed images"* && ! -s "$GITHUB_STEP_SUMMARY" ]] \
+  && ok "every service failing isn't mixed: all on the previous image" || fail "all-failed isn't mixed" "$out"
+unset GITHUB_STEP_SUMMARY
 
 reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
 broken_image() { [ "$(jq -r .name <<<"$1")" = "reports" ] && return 1; echo "repo:x"; }

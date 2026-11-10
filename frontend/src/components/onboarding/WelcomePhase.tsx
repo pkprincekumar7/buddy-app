@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { MessageSquare, Sparkles, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { api } from '@/api/client';
+import { account, firstName as firstNameOf, type Profile } from '@/api/account';
 
 const FEATURES = [
   { icon: MessageSquare, text: 'Quick chat' },
@@ -12,14 +12,14 @@ const FEATURES = [
 interface WelcomePhaseProps {
   onContinue: () => void;
   isAuthenticated?: boolean;
-  user?: { full_name?: string; email?: string } | null;
+  user?: { profile?: Profile | null; email?: string } | null;
 }
 
 export default function WelcomePhase({ onContinue, isAuthenticated, user }: WelcomePhaseProps) {
-  const firstName = user?.full_name?.split(' ')[0] ?? 'there';
+  const firstName = firstNameOf(user) ?? 'there';
 
   const handleGoogleLogin = () => {
-    void api.auth.redirectToLogin();
+    void account.redirectToLogin();
   };
 
   return (

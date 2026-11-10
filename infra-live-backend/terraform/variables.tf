@@ -1,10 +1,17 @@
 variable "aws_region" {
-  description = "AWS region to deploy resources. This module is applied once per region as an independent stack (its state key already includes {region} — see provider.tf); each region needs its own ACM cert, uploads bucket, and logging bucket, resolved via GitHub Environment Secrets in terraform-live-backend.yml."
+  description = "AWS region to deploy resources. This module is applied once per region as an independent stack (its state key already includes {region} — see provider.tf); each region needs its own ACM cert, uploads bucket, and logging bucket, each this region's entry of the ACM_CERTIFICATE_ARNS, UPLOADS_BUCKET_NAMES and REGIONAL_LOGGING_BUCKET_NAMES GitHub environment variables (terraform-live-backend.yml)."
   type        = string
 
   validation {
-    condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.aws_region)
-    error_message = "aws_region must be one of: ap-south-1, eu-west-1, us-east-1."
+    condition     = contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), var.aws_region)
+    error_message = "aws_region must be one of shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
+  }
+
+  # An environment in routing.json's served_from runs in that region only (prod until the
+  # Atlas Global Cluster: production-readiness review, DEC-01 A); nothing routes elsewhere.
+  validation {
+    condition     = lookup(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {}), var.environment, var.aws_region) == var.aws_region
+    error_message = "${var.environment} is served from one region only (shared/routing.json served_from, DEC-01): its backend can't be applied in ${var.aws_region}."
   }
 }
 
@@ -46,8 +53,8 @@ variable "vpc_cidrs" {
   }
 
   validation {
-    condition     = alltrue([for r in keys(var.vpc_cidrs) : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
-    error_message = "vpc_cidrs keys may only be: ap-south-1, eu-west-1, us-east-1."
+    condition     = alltrue([for r in keys(var.vpc_cidrs) : contains(keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions), r)])
+    error_message = "vpc_cidrs keys may only be shared/routing.json's regions: ${join(", ", keys(jsondecode(file("${path.module}/../../shared/routing.json")).regions))}."
   }
 
   validation {
@@ -72,12 +79,6 @@ variable "nat_gateway_count" {
     condition     = contains([1, 2, 3], var.nat_gateway_count)
     error_message = "nat_gateway_count must be 1, 2, or 3."
   }
-}
-
-variable "redis_auth_token" {
-  description = "AUTH token for ElastiCache Redis. Must be 16–128 printable ASCII chars (no spaces, quotes, @, or /). Injected via TF_VAR_redis_auth_token from GitHub Environment Secrets."
-  type        = string
-  sensitive   = true
 }
 
 variable "origin_verify_secret" {
@@ -140,11 +141,6 @@ variable "assets_bucket_name" {
 
 # -- Database ------------------------------------------------------------------
 
-variable "mongodb_db_name" {
-  description = "MongoDB database name (passed to backend as MONGODB_DB_NAME); include the environment suffix, e.g. superpower-dev"
-  type        = string
-}
-
 # -- ElastiCache ---------------------------------------------------------------
 
 variable "elasticache_node_type" {
@@ -154,19 +150,72 @@ variable "elasticache_node_type" {
 
 # -- ECS / Fargate -------------------------------------------------------------
 
-variable "task_cpu" {
-  description = "Fargate task CPU units (256 = 0.25 vCPU, 512 = 0.5 vCPU, 1024 = 1 vCPU)"
-  type        = number
+variable "runtime_sizes" {
+  description = <<-EOT
+    Task size and count per runtime tier (docs/auth-users-split.md, 15.3). Every
+    runtime in services.tf uses one tier:
+      http              — the HTTP services except auth (users, children, the circles, shared)
+      auth              — auth's HTTP service (bcrypt makes it CPU-bound)
+      worker            — auth, users, children and onboarding workers
+      generating-worker — discover, grow, transform and release workers (LLM jobs)
+      collector         — the OpenTelemetry collector
+    desired_count is the initial count (deploys and autoscaling own it after);
+    min_capacity / max_capacity bound autoscaling.
+  EOT
+  type = map(object({
+    cpu           = number
+    memory        = number
+    desired_count = number
+    min_capacity  = number
+    max_capacity  = number
+  }))
+
+  validation {
+    condition     = length(setsubtract(["http", "auth", "worker", "generating-worker", "collector"], keys(var.runtime_sizes))) == 0
+    error_message = "runtime_sizes needs every tier: http, auth, worker, generating-worker, collector."
+  }
+  validation {
+    condition = alltrue([
+      for t in values(var.runtime_sizes) : t.min_capacity >= 1 && t.min_capacity <= t.desired_count && t.desired_count <= t.max_capacity
+    ])
+    error_message = "Each tier needs 1 <= min_capacity <= desired_count <= max_capacity (a consumer always keeps one task polling, 15.5)."
+  }
 }
 
-variable "task_memory" {
-  description = "Fargate task memory in MiB"
-  type        = number
+variable "otel_collector_image" {
+  description = "The OpenTelemetry collector's image (AWS Distro for OpenTelemetry), pinned. It reads its configuration from AOT_CONFIG_CONTENT (otel_collector.tf)."
+  type        = string
+  default     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0@sha256:cdd2092033efbad8f4289eb53c2d729fdc2167b5395d71c175628f7eb1eb78aa"
 }
 
-variable "desired_count" {
-  description = "Number of ECS tasks to run"
+variable "worker_spot" {
+  description = "How the workers spread over Fargate Spot (production-readiness review, TF-03): the first on_demand_base tasks of each worker on demand, then spot_weight Spot tasks for each further on-demand one. spot_weight = 0: on demand only. Spot tasks can be stopped with 2 minutes' notice; a worker finishes the job in hand on SIGTERM (APP-06) and an unfinished one is claimed again (JOB-01). HTTP services stay on demand."
+  type = object({
+    on_demand_base = number
+    spot_weight    = number
+  })
+  default = { on_demand_base = 1, spot_weight = 3 }
+
+  validation {
+    condition     = var.worker_spot.on_demand_base >= 0 && var.worker_spot.spot_weight >= 0 && var.worker_spot.spot_weight <= 1000
+    error_message = "worker_spot: on_demand_base and spot_weight must be 0 or more (spot_weight at most 1000)."
+  }
+}
+
+variable "mongodb_connection_budget" {
+  description = "MongoDB connections this region's tasks may open at most (TF-03, DB-02): the Atlas cluster's connection limit (M0: 500, M10: 1500, M20/M30: 3000), or 70% of it for headroom as prod does (DB-01), divided between the regions that share the cluster. Every Mongo runtime's peak task count (its max_capacity, or a deploy's surge if larger) times (mongodb_max_pool_size + 6 monitoring connections, 2 per replica-set member) must fit; the plan fails otherwise."
   type        = number
+
+  validation {
+    condition     = var.mongodb_connection_budget >= 1
+    error_message = "mongodb_connection_budget must be positive."
+  }
+}
+
+variable "mongodb_max_pool_size" {
+  description = "MongoDB connections per task (MONGODB_MAX_POOL_SIZE). Every task's pool, plus its monitoring connections, counts toward the Atlas cluster's limit: mongodb_connection_budget checks the total (15.3, TF-03)."
+  type        = number
+  default     = 5
 }
 
 variable "enable_execute_command" {
@@ -191,15 +240,17 @@ variable "gemini_model" {
 
 variable "llm_timeout_seconds" {
   type = number
+
+  # A stopping worker gets this + 30 s to finish its LLM call (services.tf, stop_timeout),
+  # and Fargate allows at most 120 s.
+  validation {
+    condition     = var.llm_timeout_seconds >= 10 && var.llm_timeout_seconds <= 90
+    error_message = "llm_timeout_seconds must be 10–90: a stopping worker gets it + 30 s, and Fargate's stop timeout is at most 120 s."
+  }
 }
 
 variable "llm_hourly_limit" {
   type = number
-}
-
-variable "cors_origins" {
-  description = "Allowed CORS origins for the backend API (comma-separated list of URLs)"
-  type        = string
 }
 
 variable "jwt_key_id" {
@@ -209,12 +260,12 @@ variable "jwt_key_id" {
 }
 
 variable "jwt_public_keys" {
-  description = "Map of JWT key ID → RSA public key PEM, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). The API service (APP_COMPONENT=api) has no private key and verifies tokens with these keys ONLY, so it must include jwt_key_id's key; outgoing keys stay listed during a rotation. Public keys only — not a secret."
+  description = "Map of JWT key ID → RSA public key PEM, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). Every service but auth has no private key and verifies tokens with these keys only, so it must include jwt_key_id's key; outgoing keys stay listed during a rotation. Public keys only — not a secret."
   type        = map(string)
 
   validation {
     condition     = contains(keys(var.jwt_public_keys), var.jwt_key_id)
-    error_message = "jwt_public_keys (the JWT_PUBLIC_KEYS secret) must contain the current signing key, jwt_key_id — the API service verifies with these keys only. See docs/jwt-keys.md."
+    error_message = "jwt_public_keys (the JWT_PUBLIC_KEYS secret) must contain the current signing key, jwt_key_id — every service but auth verifies with these keys only. See docs/jwt-keys.md."
   }
 }
 
@@ -232,134 +283,8 @@ variable "uploads_url_ttl_seconds" {
 }
 
 variable "cookie_domain" {
-  description = "Cookie domain for session cookies (public CloudFront FQDN, derived in workflow)"
+  description = "The public CloudFront FQDN (derived in the workflow): the web app's origin (PUBLIC_ORIGINS, the uploads bucket's CORS)"
   type        = string
-}
-
-# -- Worker ECS ---------------------------------------------------------------
-
-variable "worker_task_cpu" {
-  description = "Fargate task CPU units for the worker service"
-  type        = number
-  default     = 512
-}
-
-variable "worker_task_memory" {
-  description = "Fargate task memory in MiB for the worker service"
-  type        = number
-  default     = 1024
-}
-
-variable "worker_desired_count" {
-  description = "Initial desired count for the worker ECS service (managed by autoscaling after first deploy)"
-  type        = number
-  default     = 1
-}
-
-variable "worker_concurrency" {
-  description = "Number of parallel LLM job slots per worker task (WORKER_CONCURRENCY env var)"
-  type        = number
-  default     = 5
-}
-
-variable "worker_poll_interval_seconds" {
-  description = "Idle poll interval in seconds for the worker (WORKER_POLL_INTERVAL_SECONDS env var)"
-  type        = number
-  default     = 2
-}
-
-# -- Autoscaling ---------------------------------------------------------------
-
-variable "api_min_capacity" {
-  description = "Minimum ECS task count for the API service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "api_max_capacity" {
-  description = "Maximum ECS task count for the API service autoscaling target"
-  type        = number
-  default     = 10
-}
-
-variable "worker_min_capacity" {
-  description = "Minimum ECS task count for the worker service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "worker_max_capacity" {
-  description = "Maximum ECS task count for the worker service autoscaling target"
-  type        = number
-  default     = 5
-}
-
-# -- Auth ECS (APP_COMPONENT=auth: /api/v1/auth/* and DELETE /api/v1/user/me) --
-# Login and register run bcrypt (cost 12), so auth is CPU-bound: it scales on
-# CPU, and its sizing is separate from the API's.
-
-variable "auth_task_cpu" {
-  description = "Fargate task CPU units for the auth service"
-  type        = number
-  default     = 512
-}
-
-variable "auth_task_memory" {
-  description = "Fargate task memory in MiB for the auth service"
-  type        = number
-  default     = 1024
-}
-
-variable "auth_desired_count" {
-  description = "Initial desired count for the auth ECS service (managed by autoscaling after first deploy)"
-  type        = number
-  default     = 1
-}
-
-variable "auth_min_capacity" {
-  description = "Minimum ECS task count for the auth service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "auth_max_capacity" {
-  description = "Maximum ECS task count for the auth service autoscaling target"
-  type        = number
-  default     = 4
-}
-
-# -- Admin ECS (APP_COMPONENT=admin: /api/v1/admin/*) ------------------------
-# Low traffic, scaled on CPU and memory. 256/512 is enough with the ADOT
-# sidecar off; with it on, 512/1024 is the floor (modules/ecs-service).
-
-variable "admin_task_cpu" {
-  description = "Fargate task CPU units for the admin service"
-  type        = number
-  default     = 512
-}
-
-variable "admin_task_memory" {
-  description = "Fargate task memory in MiB for the admin service"
-  type        = number
-  default     = 1024
-}
-
-variable "admin_desired_count" {
-  description = "Initial desired count for the admin ECS service (managed by autoscaling after first deploy)"
-  type        = number
-  default     = 1
-}
-
-variable "admin_min_capacity" {
-  description = "Minimum ECS task count for the admin service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "admin_max_capacity" {
-  description = "Maximum ECS task count for the admin service autoscaling target"
-  type        = number
-  default     = 2
 }
 
 # -- S3 (managed externally — Terraform configures, does not create) ----------
@@ -412,7 +337,7 @@ variable "enable_basic_alarms" {
 }
 
 variable "enable_all_alarms" {
-  description = "Create full set of ECS, Redis, and ALB alerting alarms (superset of enable_basic_alarms). true only on prod."
+  description = "Create full set of ECS, Redis, and ALB alerting alarms (superset of enable_basic_alarms). true on stg and prod."
   type        = bool
   default     = false
 }
@@ -423,14 +348,8 @@ variable "enable_dashboard" {
   default     = false
 }
 
-variable "enable_xray_error_rule" {
-  description = "Add a second X-Ray sampling rule that captures 100%% of error traces. true only on prod."
-  type        = bool
-  default     = false
-}
-
 variable "xray_default_sampling_rate" {
-  description = "Fixed sampling rate for the default X-Ray rule. 0.05 (5%%) for dev/sbx/stg, 0.01 (1%%) for prod."
+  description = "Share of ordinary traces the OpenTelemetry collector keeps (tail sampling, otel_collector.tf); every error and slow trace is kept regardless. 0.05 (5%%) for dev/sbx/stg, 0.01 (1%%) for prod."
   type        = number
   default     = 0.05
 }
@@ -444,13 +363,13 @@ variable "enable_container_insights" {
 # -- Security ------------------------------------------------------------------
 
 variable "enable_guardduty" {
-  description = "Provision GuardDuty detector with ECS Runtime Monitoring in this backend region. false on dev/sbx, true on stg/prod."
+  description = "Provision GuardDuty detector with ECS Runtime Monitoring in this backend region, created and destroyed with the environment (its own AWS account). false on dev/sbx, true on stg/prod. Environments sharing an account: only one may set it (docs/environments.md, 5)."
   type        = bool
   default     = true
 }
 
 variable "enable_cloudtrail" {
-  description = "Provision CloudTrail regional trail in this backend region. false on dev/sbx, true on stg/prod."
+  description = "Provision CloudTrail regional trail in this backend region, created and destroyed with the environment (its own AWS account; CloudTrail Event history covers the gaps). false on dev/sbx, true on stg/prod."
   type        = bool
   default     = true
 }
@@ -461,11 +380,51 @@ variable "enable_alb_access_logs" {
   default     = false
 }
 
-# -- ADOT sidecar --------------------------------------------------------------
+variable "llm_tokens_alarm_per_hour" {
+  description = "Alarm when every circle's LLM tokens (input and output) in an hour pass this (JOB-03). Set it a few times above the busiest normal hour."
+  type        = number
+  default     = 5000000
 
-variable "enable_adot_sidecar" {
-  description = "Attach the ADOT collector sidecar (256 CPU / 512 MiB) to every service's task definition. Off everywhere: the collector only forwards what the app sends it (OTLP, X-Ray segments, StatsD), and the backend isn't instrumented. Turn it on only after adding OpenTelemetry to the app, and prefer a shared collector (docs/auth-users-split.md 15.5). modules/ecs-service refuses the sidecar on tasks under 512 / 1024."
-  type        = bool
-  default     = false
+  validation {
+    condition     = var.llm_tokens_alarm_per_hour > 0
+    error_message = "llm_tokens_alarm_per_hour must be positive."
+  }
 }
 
+# The AWS accounts promote-live-backend copies this environment's images to, when
+# they're other accounts (production-readiness review, CI-09): each gets pull on every
+# service repository. Empty (the default): no repository policy; same-account promotes
+# need none.
+variable "ecr_pull_account_ids" {
+  description = "AWS account IDs allowed to pull this environment's service images (promote targets in other accounts)."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for id in var.ecr_pull_account_ids : can(regex("^[0-9]{12}$", id))])
+    error_message = "ecr_pull_account_ids must be 12-digit AWS account IDs."
+  }
+}
+
+variable "repository" {
+  description = "The GitHub repository (owner/name) this stack is applied from, for the Repo default tag (L2). The workflows pass github.repository."
+  type        = string
+  default     = ""
+}
+
+variable "atlas_project_id" {
+  description = "The Atlas project holding this environment's M10 cluster. Set (stg, prod): Terraform creates the PrivateLink endpoint to it (atlas.tf, DEC-02) and needs MONGODB_ATLAS_PUBLIC_KEY / MONGODB_ATLAS_PRIVATE_KEY. Empty (dev, sbx on M0): no private endpoint; the public connection string is used."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.atlas_project_id == "" || can(regex("^[0-9a-f]{24}$", var.atlas_project_id))
+    error_message = "atlas_project_id must be empty or a 24-character Atlas project ID."
+  }
+
+  # Served from one region (routing.json served_from) means one cluster reached privately.
+  validation {
+    condition     = var.atlas_project_id != "" || !contains(keys(lookup(jsondecode(file("${path.module}/../../shared/routing.json")), "served_from", {})), var.environment)
+    error_message = "${var.environment} reaches its Atlas cluster through PrivateLink (DEC-02): set atlas_project_id (the ATLAS_PROJECT_ID variable)."
+  }
+}

@@ -14,6 +14,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.28"
     }
+    # The Atlas side of the PrivateLink endpoint in stg and prod (atlas.tf, DEC-02).
+    mongodbatlas = {
+      source  = "mongodb/mongodbatlas"
+      version = "2.20.1"
+    }
   }
 }
 
@@ -25,6 +30,10 @@ provider "aws" {
       Project     = var.app_name
       Environment = var.environment
       ManagedBy   = "terraform"
+      # Where the code is, and how sensitive this stack's data is: children's profiles and parents' accounts (PII)
+      # (production-readiness review, L2).
+      Repo               = var.repository
+      DataClassification = "confidential"
     }
   }
 }
@@ -41,6 +50,10 @@ provider "aws" {
       Project     = var.app_name
       Environment = var.environment
       ManagedBy   = "terraform"
+      # Where the code is, and how sensitive this stack's data is: children's profiles and parents' accounts (PII)
+      # (production-readiness review, L2).
+      Repo               = var.repository
+      DataClassification = "confidential"
     }
   }
 }
