@@ -156,6 +156,14 @@ Every ECS **service** has `ignore_changes = [task_definition, desired_count]`. T
 therefore registers the new revision but never switches a service to it. The revision stays idle
 until the next deploy.
 
+### `terraform-live-backend` (destroy)
+
+Terraform deregisters only the revision in its state, and each deploy registers more outside it.
+So after `terraform destroy`, the **Delete task definitions** step (`delete_task_definitions` in
+`scripts/ecs-services.sh`) deregisters every remaining revision of the region's
+`<app>-*-<env>` families and deletes them (a deregistered revision stays listed until it's
+deleted). The next apply starts each family again, at the next revision number.
+
 ### `deploy-live-backend`
 
 A `resolve` job lists the selected runtimes and the images they need: one per service, since a

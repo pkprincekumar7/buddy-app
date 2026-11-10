@@ -529,3 +529,16 @@ jobs:
           set -euo pipefail
           source ../../scripts/service-token-keys.sh
           delete_service_token_keys "$APP_NAME" "$ENVIRONMENT" "$REGION"
+
+      # And its task definitions: Terraform deregisters only the revision in its state, and
+      # every deploy registers more outside it (scripts/ecs-services.sh).
+      - name: Delete task definitions
+        if: inputs.action == 'destroy'
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGION: ${{ matrix.aws_region }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/ecs-services.sh
+          delete_task_definitions "$APP_NAME" "$ENVIRONMENT" "$REGION"

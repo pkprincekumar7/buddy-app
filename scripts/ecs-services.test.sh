@@ -74,6 +74,34 @@ case "$1 $2" in
         m="$(arg --image-manifest "$@")"
         case "$m" in file://*) cat "${m#file://}" > "$dir/$new" ;; *) printf '%s' "$m" > "$dir/$new" ;; esac ;;
     esac ;;
+  # Task definitions for delete_task_definitions: $FAKE/tds/<family>/<revision> holding
+  # ACTIVE or INACTIVE (or DELETE_IN_PROGRESS once deleted).
+  "ecs list-task-definition-families")
+    pre="$(arg --family-prefix "$@")"
+    find "$FAKE/tds" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep "^$pre" | sort | jq -Rnc '[inputs]' ;;
+  "ecs list-task-definitions")
+    fam="$(arg --family-prefix "$@")" want="$(arg --status "$@")"
+    for f in "$FAKE/tds/$fam"/*; do
+      [ -f "$f" ] && [ "$(cat "$f")" = "$want" ] && echo "arn:aws:ecs:ap-south-1:1:task-definition/$fam:$(basename "$f")"
+    done | jq -Rnc '[inputs]' ;;
+  "ecs deregister-task-definition")
+    a="$(arg --task-definition "$@")"; a="${a##*/}"; echo INACTIVE > "$FAKE/tds/${a%:*}/${a##*:}"; echo '{}' ;;
+  "ecs delete-task-definitions")
+    shift 2; fails='[]'; n=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --task-definitions) shift
+          while [ $# -gt 0 ] && [[ "$1" != --* ]]; do
+            n=$((n + 1)); a="${1##*/}"; f="$FAKE/tds/${a%:*}/${a##*:}"
+            if [ -n "${FAKE_DELETE_FAILS:-}" ]; then fails=$(jq -c --arg a "$1" '. + [{arn: $a, reason: "TASK_DEFINITION_IN_USE"}]' <<<"$fails")
+            else echo DELETE_IN_PROGRESS > "$f"; fi
+            shift
+          done ;;
+        *) shift ;;
+      esac
+    done
+    echo "$n" >> "$FAKE/delete-batches"
+    echo "$fails" ;;
   *) echo "fake aws: unexpected call: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -377,6 +405,30 @@ reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
 broken_image() { [ "$(jq -r .name <<<"$1")" = "reports" ] && return 1; echo "repo:x"; }
 if out=$(deploy_image cluster "$ALL" broken_image 2>&1); then fail "an IMAGE_FOR failure fails the deploy"; else
   [[ "$out" == *"rollout failed for: reports."* ]] && check "an IMAGE_FOR failure skips only that service" "$(updated)" "superpower-backend-prod,superpower-worker-prod" || fail "IMAGE_FOR failure" "$out"
+fi
+
+# -- delete_task_definitions (after a destroy) ------------------------------------------
+tds() {  # tds FAMILY STATUS REVISION...
+  local fam="$1" st="$2"; shift 2; mkdir -p "$FAKE/tds/$fam"
+  for r in "$@"; do echo "$st" > "$FAKE/tds/$fam/$r"; done
+}
+left() { grep -rlv DELETE_IN_PROGRESS "$FAKE/tds" | sed "s|$FAKE/tds/||" | sort | paste -sd, -; }
+rm -rf "$FAKE/tds" "$FAKE/delete-batches"
+tds superpower-auth-dev ACTIVE 3 4
+tds superpower-auth-dev INACTIVE 1 2
+tds superpower-auth-worker-dev ACTIVE $(seq 1 12)
+tds superpower-auth-sbx ACTIVE 1        # another environment
+tds other-auth-dev ACTIVE 1             # another app
+out=$(delete_task_definitions superpower dev ap-south-1)
+check "every revision of the env's families goes, active or not" "$(left)" "other-auth-dev/1,superpower-auth-sbx/1"
+check "it says how many" "$out" "Deleted 16 task definition revision(s) in 2 superpower-*-dev families (ap-south-1)."
+check "deletes ten at a time at most" "$(paste -sd, - < "$FAKE/delete-batches")" "4,10,2"
+check "nothing left: a no-op" "$(delete_task_definitions superpower dev ap-south-1)" "Deleted 0 task definition revision(s) in 2 superpower-*-dev families (ap-south-1)."
+
+rm -rf "$FAKE/tds"; tds superpower-auth-dev INACTIVE 1
+if out=$(FAKE_DELETE_FAILS=1 delete_task_definitions superpower dev ap-south-1 2>&1); then fail "a refused delete fails"; else
+  [[ "$out" == *"could not delete task definition(s): arn:aws:ecs:ap-south-1:1:task-definition/superpower-auth-dev:1: TASK_DEFINITION_IN_USE"* ]] \
+    && ok "a refused delete fails, naming the revision and the reason" || fail "refused delete" "$out"
 fi
 
 echo
