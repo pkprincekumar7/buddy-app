@@ -33,6 +33,8 @@ resource "aws_ssm_parameter" "ecs_cluster_name" {
 # name = the workflows' `service` input; container = whose image a deploy swaps;
 # image_service / ecr_repository_url = which service's image it runs (a worker
 # runs its service's image; the collector has none).
+# Advanced tier: 18 runtimes come to just over Standard's 4 KB limit (Advanced
+# allows 8 KB, about $0.05 a month per region).
 resource "aws_ssm_parameter" "ecs_services" {
   #checkov:skip=CKV2_AWS_34:Non-secret infrastructure config value (ECS service names) — encryption not required; SecureString adds cost and IAM complexity without security benefit
   provider = aws.ssm
@@ -40,6 +42,7 @@ resource "aws_ssm_parameter" "ecs_services" {
   name  = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/ecs_services"
   value = jsonencode(local.ecs_services_manifest)
   type  = "String"
+  tier  = "Advanced"
 
   tags = { Name = "${var.app_name}-backend-ecs-services-${var.environment}-${var.aws_region}" }
 }

@@ -384,6 +384,10 @@ run "prod_stack_wiring" {
     error_message = "ecs_services lists every runtime in deploy_order (the collector first) — what the deploy/restart/promote workflows read."
   }
   assert {
+    condition     = aws_ssm_parameter.ecs_services.tier == "Advanced"
+    error_message = "ecs_services is over Standard's 4 KB limit with every runtime listed, so it is an Advanced parameter (8 KB)."
+  }
+  assert {
     condition = jsondecode(aws_ssm_parameter.ecs_services.value)[2] == {
       name = "auth-worker", service = "superpower-auth-worker-prod", family = "superpower-auth-worker-prod", container = "auth-worker", image_service = "auth", ecr_repository_url = aws_ecr_repository.service["auth"].repository_url
     } && jsondecode(aws_ssm_parameter.ecs_services.value)[0].image_service == "" && jsondecode(aws_ssm_parameter.ecs_services.value)[0].ecr_repository_url == ""
