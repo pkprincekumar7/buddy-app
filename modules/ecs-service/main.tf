@@ -211,4 +211,11 @@ resource "aws_service_discovery_service" "this" {
   tags = {
     Name = "${var.app_name}-${var.role}-discovery-${var.environment}"
   }
+
+  # AWS stores failure_threshold = 1 in that block, but the provider doesn't read it
+  # back as computed, so every plan saw 1 → null and replaced the service (the block
+  # forces a new one), which fails while the service's tasks are registered.
+  lifecycle {
+    ignore_changes = [health_check_custom_config]
+  }
 }
