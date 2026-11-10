@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 #
-# Shared helpers for the deploy / restart / promote backend workflows (TF-01).
+# Shared helpers for the deploy / restart / promote backend workflows (TF-01), and the
+# task-definition clean-up after a destroy (terraform-live-backend).
 # Source it:  source scripts/ecs-services.sh
 #
 # The list of ECS services comes from the SSM parameter terraform-live-backend
@@ -474,4 +475,43 @@ mixed_images_notice() {
     echo
     echo "Fix the failure, then re-run this workflow with \`service=${left_behind}\`."
   } >> "$GITHUB_STEP_SUMMARY"
+}
+
+# -- after a destroy -----------------------------------------------------------
+# delete_task_definitions APP ENV REGION: every revision of the stack's task-definition
+# families (<app>-<runtime>-<env>) in REGION, once the services are gone. Terraform
+# deregisters only the revision in its state; each deploy registers more outside it
+# (register_with_image), and a deregistered revision stays listed until it's deleted.
+# So: deregister the ACTIVE ones, then delete every INACTIVE one, ten per call (the
+# API's limit). A destroy leaves nothing behind (production-readiness review, SEC-01).
+delete_task_definitions() {
+  local app="$1" env="$2" region="$3" listing families family arn batch out failures
+  local -a arns
+  local count=0 nfamilies=0
+  listing=$(aws ecs list-task-definition-families --region "$region" --family-prefix "$app-" \
+    --status ALL --query 'families' --output json) || return 1
+  families=$(jq -r --arg s "-$env" '.[] | select(endswith($s))' <<<"$listing") || return 1
+  while IFS= read -r family; do
+    [ -n "$family" ] || continue
+    nfamilies=$((nfamilies + 1))
+    while IFS= read -r arn; do
+      [ -n "$arn" ] || continue
+      aws ecs deregister-task-definition --region "$region" --task-definition "$arn" >/dev/null || return 1
+    done < <(aws ecs list-task-definitions --region "$region" --family-prefix "$family" \
+      --status ACTIVE --query 'taskDefinitionArns' --output json | jq -r '.[]')
+    while IFS= read -r batch; do
+      [ -n "$batch" ] || continue
+      read -ra arns <<<"$batch"
+      out=$(aws ecs delete-task-definitions --region "$region" --task-definitions "${arns[@]}" \
+        --query 'failures' --output json) || return 1
+      failures=$(jq -r 'map("\(.arn): \(.reason)") | join("; ")' <<<"$out")
+      if [ -n "$failures" ]; then
+        echo "ERROR: could not delete task definition(s): $failures" >&2
+        return 1
+      fi
+      count=$((count + ${#arns[@]}))
+    done < <(aws ecs list-task-definitions --region "$region" --family-prefix "$family" \
+      --status INACTIVE --query 'taskDefinitionArns' --output json | jq -r '_nwise(10) | join(" ")')
+  done <<<"$families"
+  echo "Deleted $count task definition revision(s) in $nfamilies $app-*-$env famil$([ "$nfamilies" = 1 ] && echo y || echo ies) ($region)."
 }
