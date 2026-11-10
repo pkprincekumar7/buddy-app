@@ -1181,8 +1181,13 @@ export default function PersonalityJourney() {
   const releaseCompleted = Boolean(child?.progress.release);
   const connectVisited = Boolean(child?.progress.connect);
 
+  // The splash stays up (on its last frame) until the profile opens: hiding it first would
+  // show the hub's circles while `viewed` is recorded. That's awaited before navigating, so
+  // the profile's Grow button finds Discover done. Once only, however often onReady fires.
+  const leavingForProfileRef = useRef(false);
   const handleDiscoverSplashReady = useCallback(() => {
-    setShowDiscoverSplash(false);
+    if (leavingForProfileRef.current) return;
+    leavingForProfileRef.current = true;
     void (async () => {
       if (childId && !discoverCompleted) {
         setDiscoverViewed(true);
