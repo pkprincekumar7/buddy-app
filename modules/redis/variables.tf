@@ -81,12 +81,6 @@ variable "rbac_services" {
   }
 }
 
-variable "include_default_user" {
-  description = "Add a disabled user named \"default\" to the RBAC user group, for engines that require one in every group. It can't sign in or run anything."
-  type        = bool
-  default     = true
-}
-
 variable "engine_version" {
   description = "Valkey engine version (major.minor, e.g. \"8.0\"). The parameter group family is derived from the major version."
   type        = string

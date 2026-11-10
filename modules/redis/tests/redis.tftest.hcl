@@ -132,14 +132,10 @@ run "rbac_users_per_service" {
     error_message = "A generating service also shares the hourly LLM limit."
   }
   assert {
-    condition     = aws_elasticache_user.default[0].user_name == "default" && aws_elasticache_user.default[0].access_string == "off -@all"
-    error_message = "The default user is disabled and can run nothing."
-  }
-  assert {
     condition = toset(aws_elasticache_user_group.this[0].user_ids) == toset([
-      "superpower-prod-auth", "superpower-prod-users", "superpower-prod-grow", "superpower-prod-default",
+      "superpower-prod-auth", "superpower-prod-users", "superpower-prod-grow",
     ]) && aws_elasticache_user_group.this[0].engine == "valkey"
-    error_message = "The user group holds every service's user and the disabled default."
+    error_message = "The user group holds every service's user, and no \"default\" user."
   }
   assert {
     condition     = keys(output.rbac_user_names) == ["auth", "grow", "users"] && output.rbac_user_names["grow"] == "superpower-prod-grow" && length(output.rbac_access_strings) == 3
@@ -147,26 +143,11 @@ run "rbac_users_per_service" {
   }
 }
 
-run "rbac_without_the_default_user" {
-  command = apply
-
-  variables {
-    auth_token           = null
-    rbac_services        = { users = {} }
-    include_default_user = false
-  }
-
-  assert {
-    condition     = length(aws_elasticache_user.default) == 0 && aws_elasticache_user_group.this[0].user_ids == toset(["superpower-prod-users"])
-    error_message = "No default user when the engine doesn't need one."
-  }
-}
-
 run "the_token_style_has_no_rbac_resources" {
   command = plan
 
   assert {
-    condition     = length(aws_elasticache_user.service) == 0 && length(aws_elasticache_user_group.this) == 0 && length(aws_elasticache_user.default) == 0
+    condition     = length(aws_elasticache_user.service) == 0 && length(aws_elasticache_user_group.this) == 0
     error_message = "With auth_token there are no users or user group."
   }
 }
