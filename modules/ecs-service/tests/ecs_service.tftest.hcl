@@ -350,7 +350,7 @@ run "registered_service_with_an_internal_port" {
     error_message = "Multivalue answers with a 10-second TTL, so a stopped task drops out quickly."
   }
   assert {
-    condition     = one(aws_service_discovery_service.this[0].dns_config).namespace_id == "ns-superpower-prod" && length(aws_service_discovery_service.this[0].health_check_custom_config) == 1
+    condition     = one(aws_service_discovery_service.this[0].dns_config).namespace_id == "ns-superpower-prod" && length(aws_service_discovery_service.this[0].health_check_custom_config) == 1 && aws_service_discovery_service.this[0].force_destroy
     error_message = "In the environment's namespace, with health reported by ECS (the container health check)."
   }
   assert {

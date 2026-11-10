@@ -189,6 +189,11 @@ resource "aws_service_discovery_service" "this" {
 
   name = coalesce(var.service_discovery.name, var.role)
 
+  # ECS deregisters a stopped task's instance in the background, so when the ECS
+  # service and this are destroyed together, instances can still be registered
+  # (ResourceInUse). Delete them too: they belong to tasks that are already gone.
+  force_destroy = true
+
   dns_config {
     namespace_id   = var.service_discovery.namespace_id
     routing_policy = "MULTIVALUE"
