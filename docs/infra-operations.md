@@ -485,33 +485,45 @@ EMAIL=admin@example.com   # the first admin's address
 (`ensure_collections`), so don't create any of them in Atlas by hand.
 
 **2. Allow-list the email.** An entry's `_id` is the HMAC-SHA256 of the lower-cased email,
-keyed with auth's `EMAIL_HMAC_PEPPER`; the plain email never matches. Compute it from the
-secret without printing the pepper:
+keyed with auth's `EMAIL_HMAC_PEPPER`; the plain email never matches. This prints the whole
+document, ready to paste, without printing the pepper (during a pepper rotation, a JSON map of
+versions, it uses the highest version, as auth does):
 
 ```bash
-KEY=$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$APP/$ENV/auth-secrets" \
+aws secretsmanager get-secret-value --region "$REGION" --secret-id "$APP/$ENV/auth-secrets" \
   --query SecretString --output text \
   | EMAIL="$EMAIL" python3 -c 'import hmac,hashlib,json,os,sys
-p = json.loads(sys.stdin.read())["EMAIL_HMAC_PEPPER"].strip()
-if p.startswith("{"): v = json.loads(p); n = max(v, key=int); p = v[n]; print(n, end=" ")
-else: print(1, end=" ")
-print(hmac.new(p.encode(), os.environ["EMAIL"].strip().lower().encode(), hashlib.sha256).hexdigest())')
-echo "key_version ${KEY%% *}, _id ${KEY#* }"
+p = json.loads(sys.stdin.read())["EMAIL_HMAC_PEPPER"].strip(); v = 1
+if p.startswith("{"): m = json.loads(p); v = max(m, key=int); p = m[v]; v = int(v)
+e = os.environ["EMAIL"].strip().lower(); local, _, domain = e.partition("@")
+print("{\n  _id: \"%s\",\n  key_version: NumberInt(%d),\n  email_hint: \"%s***@%s\",\n  added_by: \"00000000-0000-4000-8000-000000000000\",\n  created_at: new Date()\n}"
+      % (hmac.new(p.encode(), e.encode(), hashlib.sha256).hexdigest(), v, local[:1], domain))'
 ```
 
-During a pepper rotation (a JSON map of versions) this uses the highest version, as auth does.
-Then, in Atlas Data Explorer (or `mongosh` with an admin user), insert into database `auth`,
-collection `allowed_emails`, matching its validator:
+It prints, with your own key:
 
 ```js
 {
-  _id: "<_id from above>",
-  key_version: 1,                                   // the key_version from above
-  email_hint: "a***@example.com",                   // first character, ***, the domain
-  added_by: "00000000-0000-4000-8000-000000000000", // the placeholder auth.seed uses
+  _id: "<64 lower-case hex characters>",
+  key_version: NumberInt(1),
+  email_hint: "a***@example.com",
+  added_by: "00000000-0000-4000-8000-000000000000",
   created_at: new Date()
 }
 ```
+
+In Atlas Data Explorer, open database `auth`, collection **`allowed_emails`** (the breadcrumb
+reads `auth.allowed_emails`), then **Insert Document**, switch to the `{}` view and paste it.
+Validator errors and what they mean:
+
+- **A `required` list with `email`, `password_hash`, `role`, ...** — the insert went to the
+  `auth` collection (the accounts), not `allowed_emails`.
+- **`created_at` "type did not match", considered type `object`** — the date was pasted as
+  Extended JSON (`{"$date": ...}`), which this insert box keeps as a plain object. Use
+  `new Date()`.
+- **`key_version` type mismatch** — a bare `1` is a double in shell syntax; the validator wants
+  an int, so keep `NumberInt(...)`.
+- **`_id` pattern mismatch** — the key must be exactly 64 characters, `0-9a-f` only.
 
 **3. Register** `$EMAIL` on the environment's site (password, or Google if that origin is an
 authorized JavaScript origin of the OAuth client), and sign in.
