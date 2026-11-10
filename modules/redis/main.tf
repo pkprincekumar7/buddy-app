@@ -172,34 +172,14 @@ resource "aws_elasticache_user" "service" {
   }
 }
 
-# A disabled "default" user: some engines require one in every user group. "off"
-# means it can't sign in, and -@all that it could run nothing if it did.
-resource "aws_elasticache_user" "default" {
-  count = local.rbac && var.include_default_user ? 1 : 0
-
-  engine        = "valkey"
-  user_id       = "${var.app_name}-${var.environment}-default"
-  user_name     = "default"
-  access_string = "off -@all"
-
-  authentication_mode {
-    type = "no-password-required"
-  }
-
-  tags = {
-    Name = "${var.app_name}-${var.environment}-default"
-  }
-}
-
+# Only the services' users: unlike Redis OSS, a Valkey user group needs no "default" user
+# (and Valkey refuses the password-less one Redis OSS used for it).
 resource "aws_elasticache_user_group" "this" {
   count = local.rbac ? 1 : 0
 
   engine        = "valkey"
   user_group_id = "${var.app_name}-backend-valkey-users-${var.environment}"
-  user_ids = concat(
-    [for u in aws_elasticache_user.service : u.user_id],
-    [for u in aws_elasticache_user.default : u.user_id],
-  )
+  user_ids      = [for u in aws_elasticache_user.service : u.user_id]
 
   tags = {
     Name = "${var.app_name}-backend-valkey-users-${var.environment}"
