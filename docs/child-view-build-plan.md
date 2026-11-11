@@ -229,8 +229,8 @@ What exists today:
     - Mobile [Home.tsx](../frontend-app/src/screens/Home.tsx): the `SHOW_CHILDREN_SECTION`
       constant and section, the "FEATURE HIDDEN" comments, the same imports, and the
       `iconLeftSm` style.
-    - `ChildCard.tsx` in both apps, now unused: deleted. Deleting a child stays available
-      through Start Over.
+    - `ChildCard.tsx` in both apps, now unused: deleted. Deleting a child moves to the menu's ×
+      (0.2); Start Over in the header still deletes the child that's open.
     - The hero button: no children → "Start Your Journey" (unchanged); one child → "Continue
       Your Journey" for that child; several → one "Continue with <name>" button per child. The
       destination is the same as the menu's (0.2). That's a change for a child who has finished
@@ -249,11 +249,26 @@ What exists today:
     - **"+ Add Child"** below the list: `navigate('/Onboarding', { state: { forceNew: true } })`
       and close the menu. At 10 children it's disabled, with "Maximum of 10 children" under it;
       the server's `child_limit` message still covers a race.
+    - **A delete button (×) on each child row**, at the row's end, separate from the row's tap
+      area and at least 44 px square, labelled "Delete <name>" for screen readers.
+      - It opens a confirmation dialog (`AlertDialog` on web, `@/components/ui/dialog` on mobile)
+        naming the child: "Delete Aarav? Their profile, chat, results and plan are deleted for
+        good. This can't be undone." Buttons: "Cancel" (focused) and "Delete", in the
+        destructive style. There's no restore endpoint, so there's no undo toast either.
+      - It calls `DELETE /api/v1/children/{id}` through a `useDeleteChild()` hook, generalised
+        from `useStartOver` (which keeps working on top of it): a 404 counts as done, other
+        errors show a toast and keep the row; on success the `['children']` query is
+        invalidated.
+      - Deleting the child whose page is open navigates to Home; deleting another child stays
+        where it is. The menu stays open on the updated list.
+      - Hidden in child view (1.2), with the rest of the Children group.
     - The list loads with the menu (no extra request when it's cached) and shows a short error
       row with "Try again" if it fails. Admins don't see the group.
   - **Needs:** 0.3 (so a new child shows straight away).
   - **Check:** menu tests for both apps: no children, several, the current one highlighted, a
-    child still setting up, the limit, Add Child's navigation and its `forceNew` state.
+    child still setting up, the limit, Add Child's navigation and its `forceNew` state; delete:
+    cancel does nothing, confirm calls the API and drops the row, deleting the open child goes
+    Home, a failure keeps the row and shows a toast, a 404 counts as done.
 - [ ] **0.3 Keep the children list fresh, and the add flow tidy.**
   - **Delivers:**
     - Onboarding (both apps): after `children.create`, `children.update` and the photo upload,
