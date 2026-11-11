@@ -11,6 +11,9 @@
 # an equally valid routing target.
 # ---------------------------------------------------------------------------
 
+# terraform-live-backend destroy reads this data source from the edge state to refuse
+# a region the edge still routes to (check_destroy_order in scripts/workflow-inputs.sh):
+# renaming it means updating edge_routes_to there.
 data "aws_ssm_parameter" "alb_internal_fqdn" {
   for_each = toset(var.backend_regions)
 

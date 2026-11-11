@@ -1,0 +1,316 @@
+[
+  {
+    "name": "Aarav",
+    "answer": {
+      "dominant_style": "Thinker",
+      "personality_category": "adventurers",
+      "secondary_styles": [
+        {
+          "personality_style": "Creative",
+          "prominence": 78
+        },
+        {
+          "personality_style": "Playful",
+          "prominence": 55
+        }
+      ],
+      "personalized_traits": [
+        "Curious",
+        "Observant",
+        "Kind",
+        "Patient"
+      ],
+      "personalized_description": "Aarav notices the small things and asks why, turning their curiosity into careful thinking.",
+      "personalized_growth_areas": [
+        "Sharing ideas aloud",
+        "Trying before perfect",
+        "Joining group play",
+        "Naming feelings"
+      ],
+      "role_models": [
+        {
+          "name": "Marie Curie",
+          "caption": "never stopped asking why"
+        },
+        {
+          "name": "Albert Einstein",
+          "caption": "wondered about everything"
+        }
+      ],
+      "strength_summary_bullets": [
+        "Asks thoughtful questions",
+        "Notices details",
+        "Patient with puzzles",
+        "Kind to friends",
+        "Loves drawing",
+        "Calm under pressure"
+      ],
+      "trait_scores": [
+        {
+          "label": "Curiosity",
+          "score": 92
+        },
+        {
+          "label": "Focus Power",
+          "score": 81
+        },
+        {
+          "label": "Creativity",
+          "score": 74
+        },
+        {
+          "label": "Social Energy",
+          "score": 48
+        }
+      ],
+      "child_quote": "  I want to know how everything works!  ",
+      "parent_note": "Your child thrives when given time to explore; ask open questions at dinner."
+    }
+  },
+  {
+    "name": "  ",
+    "answer": {
+      "dominant_style": "Thinker",
+      "personality_category": "adventurers",
+      "secondary_styles": [
+        {
+          "personality_style": "Creative",
+          "prominence": 78
+        },
+        {
+          "personality_style": "Playful",
+          "prominence": 55
+        }
+      ],
+      "personalized_traits": [
+        "Curious",
+        "Observant",
+        "Kind",
+        "Patient"
+      ],
+      "personalized_description": "{childName} loves their sketchbook. They draw every day!",
+      "personalized_growth_areas": [
+        "Sharing ideas aloud",
+        "Trying before perfect",
+        "Joining group play",
+        "Naming feelings"
+      ],
+      "role_models": [
+        {
+          "name": "Marie Curie",
+          "caption": "never stopped asking why"
+        },
+        {
+          "name": "Albert Einstein",
+          "caption": "wondered about everything"
+        }
+      ],
+      "strength_summary_bullets": [
+        "Asks thoughtful questions",
+        "Notices details",
+        "Patient with puzzles",
+        "Kind to friends",
+        "Loves drawing",
+        "Calm under pressure"
+      ],
+      "trait_scores": [
+        {
+          "label": "Curiosity",
+          "score": 92
+        },
+        {
+          "label": "Focus Power",
+          "score": 81
+        },
+        {
+          "label": "Creativity",
+          "score": 74
+        },
+        {
+          "label": "Social Energy",
+          "score": 48
+        }
+      ],
+      "child_quote": "  I want to know how everything works!  ",
+      "parent_note": "Your child thrives when given time to explore; ask open questions at dinner."
+    }
+  },
+  {
+    "name": null,
+    "answer": {
+      "dominant_style": "Thinker",
+      "personality_category": "adventurers",
+      "secondary_styles": [
+        {
+          "personality_style": "Creative",
+          "prominence": 78
+        },
+        {
+          "personality_style": "Playful",
+          "prominence": 55
+        }
+      ],
+      "personalized_traits": [
+        "Curious",
+        "Observant",
+        "Kind",
+        "Patient"
+      ],
+      "personalized_description": "Their {childName} is a bright explorer who loves building elaborate block towers and asking questions about how everything around the house actually works and why it is the way it is today and tomorrow too",
+      "personalized_growth_areas": [
+        "Sharing ideas aloud",
+        "Trying before perfect",
+        "Joining group play",
+        "Naming feelings"
+      ],
+      "role_models": [
+        {
+          "name": "Marie Curie",
+          "caption": "never stopped asking why"
+        },
+        {
+          "name": "Albert Einstein",
+          "caption": "wondered about everything"
+        }
+      ],
+      "strength_summary_bullets": [
+        "Asks thoughtful questions",
+        "Notices details",
+        "Patient with puzzles",
+        "Kind to friends",
+        "Loves drawing",
+        "Calm under pressure"
+      ],
+      "trait_scores": [
+        {
+          "label": "Curiosity",
+          "score": 92
+        },
+        {
+          "label": "Focus Power",
+          "score": 81
+        },
+        {
+          "label": "Creativity",
+          "score": 74
+        },
+        {
+          "label": "Social Energy",
+          "score": 48
+        }
+      ],
+      "child_quote": "  I want to know how everything works!  ",
+      "parent_note": "Your child thrives when given time to explore; ask open questions at dinner."
+    }
+  },
+  {
+    "name": "Mira",
+    "answer": {
+      "dominant_style": "Wizard",
+      "personality_category": "sorcerers",
+      "secondary_styles": [
+        {
+          "personality_style": "Creative",
+          "prominence": 10
+        },
+        {
+          "personality_style": "Creative",
+          "prominence": 50
+        },
+        {
+          "personality_style": "Outgoing",
+          "prominence": 120
+        }
+      ],
+      "personalized_traits": [],
+      "personalized_description": "   ",
+      "personalized_growth_areas": "not a list",
+      "strength_summary_bullets": null,
+      "trait_scores": [
+        {
+          "label": "",
+          "score": 5
+        },
+        {
+          "score": 9
+        },
+        {
+          "label": "Grit",
+          "score": "61"
+        },
+        "oops",
+        {
+          "label": 7
+        },
+        {
+          "label": "Odd",
+          "score": "abc"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Zoe",
+    "answer": {
+      "dominant_style": "Playful",
+      "secondary_styles": [
+        {
+          "personality_style": "Playful",
+          "prominence": 80
+        },
+        {
+          "personality_style": "Thinker"
+        },
+        {
+          "personality_style": "Restless",
+          "prominence": 90
+        }
+      ],
+      "personalized_traits": [
+        3,
+        null,
+        "",
+        "Kind",
+        true,
+        2.5,
+        3.0
+      ],
+      "personalized_description": "No punctuation here but quite a lot of words about Zoe and what makes her laugh so hard",
+      "child_quote": 42,
+      "parent_note": null
+    }
+  },
+  {
+    "name": "Kai",
+    "answer": {}
+  },
+  {
+    "name": "Lena",
+    "answer": {
+      "dominant_style": "Playful",
+      "secondary_styles": [
+        "not an object",
+        {
+          "personality_style": "Thinker",
+          "prominence": 80
+        }
+      ]
+    }
+  },
+  {
+    "name": "Ravi",
+    "answer": {
+      "dominant_style": "Outgoing",
+      "secondary_styles": [
+        {
+          "personality_style": "Thinker",
+          "prominence": 80
+        },
+        {
+          "personality_style": "Thinker",
+          "prominence": 50
+        }
+      ]
+    }
+  }
+]

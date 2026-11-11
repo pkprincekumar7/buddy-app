@@ -32,3 +32,8 @@ output "https_listener_arn" {
   description = "HTTPS listener ARN."
   value       = aws_lb_listener.https.arn
 }
+
+output "idle_timeout_seconds" {
+  description = "The ALB's idle timeout; the services keep idle connections 5 s longer (TF-03)."
+  value       = aws_lb.this.idle_timeout
+}

@@ -1,26 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { ApiError } from './errors';
-import { locationHint } from '@/lib/locationHint';
-import type {
-  UserRecord,
-  ChildRecord,
-  PreferencesRecord,
-  ObservationsRecord,
-  NinetyDayPlanRecord,
-  CompletedGrowthAreasRecord,
-  EnqueueJobPayload,
-  EnqueueJobResponse,
-  JobStatusRecord,
-  AdminUserRecord,
-  AllowedEmailRecord,
-  AllowedEmailsPage,
-  AdminUsersPage,
-} from '@/types/api';
 import { env } from '@/lib/env';
 import { DeviceEventEmitter } from 'react-native';
 
 // ---------------------------------------------------------------------------
-// Token store — AsyncStorage-backed manual cookie jar for React Native.
+// Token store — the iOS Keychain / Android Keystore (expo-secure-store), a manual
+// cookie jar for React Native. Not AsyncStorage: that is plain files, readable from a
+// rooted device or an unencrypted backup, and the refresh token is a long-lived login.
 //
 // The JS fetch polyfill in React Native has no cookie jar: Set-Cookie response
 // headers are silently discarded and credentials: 'include' is a no-op.
@@ -34,26 +21,63 @@ import { DeviceEventEmitter } from 'react-native';
 //      and storing the new token pair.
 // ---------------------------------------------------------------------------
 
-const ACCESS_KEY = 'superpower:access_token';
-const REFRESH_KEY = 'superpower:refresh_token';
+// SecureStore keys allow only letters, digits, ".", "-" and "_".
+export const ACCESS_KEY = 'superpower.access_token';
+export const REFRESH_KEY = 'superpower.refresh_token';
 
-const tokenStore = {
+// Only while the device is unlocked, and never restored onto another device from a backup.
+const SECURE: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
+// Once per app start, before the store is used:
+// - A fresh install forgets any tokens. The iOS Keychain outlives an uninstall, while
+//   AsyncStorage (the app's own files) doesn't, so a missing INSTALLED_KEY means this
+//   install never signed in, and a Keychain pair from before belongs to whoever used the
+//   app last. Without this, reinstalling would sign straight back into their account.
+// - Builds before the move kept the tokens in AsyncStorage. They're deleted, not moved:
+//   a plaintext copy must not stay behind, and signing in once more is the whole cost.
+const INSTALLED_KEY = 'superpower:installed';
+const PLAINTEXT_KEYS = ['superpower:access_token', 'superpower:refresh_token'];
+let prepared: Promise<void> | null = null;
+function prepare(): Promise<void> {
+  prepared ??= (async () => {
+    await AsyncStorage.removeMany(PLAINTEXT_KEYS);
+    if ((await AsyncStorage.getItem(INSTALLED_KEY)) === null) {
+      await Promise.all([
+        SecureStore.deleteItemAsync(ACCESS_KEY, SECURE),
+        SecureStore.deleteItemAsync(REFRESH_KEY, SECURE),
+      ]);
+      await AsyncStorage.setItem(INSTALLED_KEY, '1');
+    }
+  })().catch((err: unknown) => {
+    prepared = null; // tried again on the next use
+    throw err; // never hand out a pair this install may not own
+  });
+  return prepared;
+}
+
+/** Also used by api/services.ts, the generated clients' fetch. */
+export const tokenStore = {
   async getAccess(): Promise<string | null> {
-    return AsyncStorage.getItem(ACCESS_KEY);
+    await prepare();
+    return SecureStore.getItemAsync(ACCESS_KEY, SECURE);
   },
   async getRefresh(): Promise<string | null> {
-    return AsyncStorage.getItem(REFRESH_KEY);
+    await prepare();
+    return SecureStore.getItemAsync(REFRESH_KEY, SECURE);
   },
   async set(access: string, refresh: string): Promise<void> {
+    await prepare(); // after a fresh install's clean-up, never wiped by it
     await Promise.all([
-      AsyncStorage.setItem(ACCESS_KEY, access),
-      AsyncStorage.setItem(REFRESH_KEY, refresh),
+      SecureStore.setItemAsync(ACCESS_KEY, access, SECURE),
+      SecureStore.setItemAsync(REFRESH_KEY, refresh, SECURE),
     ]);
   },
   async clear(): Promise<void> {
     await Promise.all([
-      AsyncStorage.removeItem(ACCESS_KEY),
-      AsyncStorage.removeItem(REFRESH_KEY),
+      SecureStore.deleteItemAsync(ACCESS_KEY, SECURE),
+      SecureStore.deleteItemAsync(REFRESH_KEY, SECURE),
     ]);
   },
 };
@@ -65,34 +89,42 @@ function joinApi(path: string): string {
 }
 
 let refreshPromise: Promise<void> | null = null;
-let _redirectingToLogin = false;
 
-function ensureRefreshed(): Promise<void> {
+/** One refresh at a time, shared by every caller (and by api/services.ts). */
+export function ensureRefreshed(): Promise<void> {
   refreshPromise ??= refreshTokenPair().finally(() => {
     refreshPromise = null;
   });
   return refreshPromise;
 }
 
-type RequestBody = Record<string, unknown> | FormData | undefined;
-
 // A failed refresh is normally a plain expired session (401, generic message).
-// A locked account fails with 403 and a specific reason (see backend's
-// refresh_tokens) — resolved once here so every caller that reacts to a failed
-// refresh (the request() retry below, and AuthContext's silent-refresh timer)
-// surfaces the same status/message instead of each re-deriving it.
+// A locked account fails with 403 and a specific reason (see auth's
+// _refuse_refresh and _rejected: {"code": "account_locked", "msg": ...}) — resolved
+// once here so every caller that reacts to a failed refresh (serviceFetch's retry,
+// and AuthContext's silent-refresh timer) surfaces the same status/message instead
+// of each re-deriving it.
 export function resolveAuthExpiry(err: unknown): {
   status: 401 | 403;
   message: string;
 } {
-  if (
-    err instanceof ApiError &&
-    err.status === 403 &&
-    typeof err.detail === 'string'
-  ) {
-    return { status: 403, message: err.detail };
+  if (err instanceof ApiError && err.status === 403) {
+    if (err.code === 'account_locked' && typeof err.detail !== 'string') {
+      const msg = err.detail.msg;
+      if (typeof msg === 'string') return { status: 403, message: msg };
+    }
+    if (typeof err.detail === 'string') {
+      return { status: 403, message: err.detail };
+    }
   }
   return { status: 401, message: 'Session expired' };
+}
+
+/** Only a refresh the auth service refused (401/403) ends the session: a network error,
+ *  a 5xx or a 429 from the refresh limit leaves the user signed in (as the silent-refresh
+ *  timer in AuthContext does). */
+export function isSessionEnded(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403);
 }
 
 /** Event name AuthContext listens on — RN's stand-in for the web's window CustomEvent. */
@@ -105,97 +137,8 @@ export function dispatchAuthExpired(status: number, message: string): void {
   );
 }
 
-async function request(
-  path: string,
-  {
-    method = 'GET',
-    body,
-    headers: extraHeaders,
-  }: {
-    method?: string;
-    body?: RequestBody;
-    headers?: Record<string, string>;
-  } = {},
-  _retry = false,
-): Promise<unknown> {
-  const headers: Record<string, string> = { ...extraHeaders };
-  if (!(body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  // RN fetch has no cookie jar — send the stored access token as a Bearer header.
-  const accessToken = await tokenStore.getAccess();
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
-  const res = await fetch(joinApi(path), {
-    method,
-    headers,
-    credentials: 'include',
-    body:
-      body === undefined
-        ? undefined
-        : body instanceof FormData
-        ? body
-        : JSON.stringify(body),
-  });
-
-  if (res.status === 401 && !_retry) {
-    try {
-      await ensureRefreshed();
-      return await request(path, { method, body, headers: extraHeaders }, true);
-    } catch (err) {
-      const { status, message } = resolveAuthExpiry(err);
-      dispatchAuthExpired(status, message);
-      throw new ApiError(status, message);
-    }
-  }
-
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const text = await res.text();
-      if (text) {
-        try {
-          const json: unknown = JSON.parse(text);
-          if (json !== null && typeof json === 'object' && 'detail' in json) {
-            const d = (json as Record<string, unknown>)['detail'];
-            if (typeof d === 'string') {
-              detail = d;
-            } else if (d !== null && typeof d === 'object') {
-              throw new ApiError(res.status, d as Record<string, unknown>);
-            } else {
-              detail = text;
-            }
-          } else {
-            detail = text;
-          }
-        } catch (inner) {
-          if (inner instanceof ApiError) throw inner;
-          detail = text;
-        }
-      }
-    } catch (outer) {
-      if (outer instanceof ApiError) throw outer;
-      /* ignore network/parse errors — fall through to default detail */
-    }
-    throw new ApiError(res.status, detail);
-  }
-
-  const ct = res.headers.get('content-type');
-  if (ct?.includes('application/json')) {
-    const text = await res.text();
-    if (!text) return undefined;
-    const json = JSON.parse(text) as unknown;
-    await captureTokens(json);
-    return json;
-  }
-  return undefined;
-}
-
 /** Login / register / refresh / google return the token pair in the body as well as cookies. */
-async function captureTokens(json: unknown): Promise<void> {
+export async function captureTokens(json: unknown): Promise<void> {
   if (json === null || typeof json !== 'object') return;
   const { access_token, refresh_token } = json as Record<string, unknown>;
   if (typeof access_token === 'string' && typeof refresh_token === 'string') {
@@ -223,388 +166,55 @@ async function refreshTokenPair(): Promise<void> {
       credentials: 'include',
       signal: controller.signal,
     });
+  } catch (err) {
+    // Not an AbortError: callers read that as "the screen went away" and stop silently,
+    // which would leave a generation spinning. A timed-out refresh is a plain failure.
+    if (controller.signal.aborted)
+      throw new Error('The session refresh timed out.');
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
 
   if (!res.ok) {
-    let detail: string = 'Refresh failed';
+    let detail: string | Record<string, unknown> = 'Refresh failed';
     try {
       const j = (await res.json()) as { detail?: unknown };
       if (typeof j.detail === 'string') detail = j.detail;
+      else if (
+        j.detail !== null &&
+        typeof j.detail === 'object' &&
+        !Array.isArray(j.detail)
+      ) {
+        // e.g. {"code": "account_locked", "msg": ...}: kept whole for resolveAuthExpiry.
+        detail = j.detail as Record<string, unknown>;
+      }
     } catch {
       /* non-JSON body */
     }
-    await tokenStore.clear();
+    // Only a refused refresh spends the pair: a 5xx, a 429 or a timeout keeps it, so the
+    // next attempt can still refresh.
+    if (res.status === 401 || res.status === 403) await tokenStore.clear();
     throw new ApiError(res.status, detail);
   }
+  let body: unknown;
   try {
-    await captureTokens(await res.json());
+    body = await res.json();
   } catch {
-    /* empty body */
+    return; /* empty body */
   }
+  // Not caught: the server has already rotated the pair, so a failed save (a locked
+  // device, a Keystore error) must fail this refresh rather than keep the old refresh
+  // token, whose next use would look like reuse and revoke the session.
+  await captureTokens(body);
 }
 
 export const api = {
   auth: {
-    async isAuthenticated(): Promise<boolean> {
-      try {
-        await request('/auth/me');
-        return true;
-      } catch {
-        return false;
-      }
-    },
-
-    async me(): Promise<UserRecord> {
-      return request('/auth/me') as Promise<UserRecord>;
-    },
-
-    async logout(): Promise<void> {
-      try {
-        await request('/auth/logout', { method: 'POST' }, true);
-      } catch {
-        /* server-side session cleared best-effort; proceed regardless */
-      }
-      await tokenStore.clear();
-    },
-
-    async redirectToLogin(): Promise<void> {
-      if (_redirectingToLogin) return;
-      _redirectingToLogin = true;
-      await api.auth.logout();
-      // AuthContext reacts to this by dropping the session, which swaps the
-      // root navigator back to the Login screen.
-      dispatchAuthExpired(401, 'Session expired');
-      _redirectingToLogin = false;
-    },
-
-    async register(
-      email: string,
-      password: string,
-      full_name: string,
-      country_code: string,
-    ): Promise<void> {
-      // X-Client-Location is a best-effort routing hint only — see
-      // @/lib/locationHint and the Lambda@Edge that reads it. The account's
-      // real `location` field is always computed server-side from
-      // country_code below, regardless of which region processes this call.
-      const hint = locationHint(country_code);
-      await request('/auth/register', {
-        method: 'POST',
-        body: {
-          email,
-          password,
-          full_name: full_name || 'Parent',
-          country_code,
-        },
-        headers: hint ? { 'X-Client-Location': hint } : undefined,
-      });
-    },
-
-    async login(email: string, password: string): Promise<void> {
-      await request('/auth/login', {
-        method: 'POST',
-        body: { email, password },
-      });
-    },
-
-    async google(id_token: string, country_code?: string): Promise<void> {
-      await request('/auth/google', {
-        method: 'POST',
-        body: country_code ? { id_token, country_code } : { id_token },
-      });
-    },
-
-    async deleteAccount(confirmEmail: string): Promise<void> {
-      await request('/user/me', {
-        method: 'DELETE',
-        body: { confirm_email: confirmEmail },
-      });
-    },
-
+    // The sign-in calls moved to api/account.ts (build plan 7.2); the refresh stays here,
+    // shared by request() and the generated clients.
     async silentRefresh(): Promise<void> {
-      return refreshTokenPair();
-    },
-  },
-
-  integrations: {
-    Core: {
-      InvokeLLM: ({
-        prompt,
-        response_json_schema,
-      }: {
-        prompt: string;
-        response_json_schema?: Record<string, unknown>;
-      }): Promise<unknown> =>
-        request('/llm/invoke', {
-          method: 'POST',
-          body: { prompt, response_json_schema },
-        }),
-    },
-  },
-
-  audio: {
-    transcribe(uri: string): Promise<unknown> {
-      // Derive the file extension from the actual URI so the backend receives the
-      // correct filename regardless of platform. Android records as .mp4 while iOS
-      // records as .m4a — both are MPEG-4 audio but the extension matters for the
-      // backend's allowlist check and for Whisper's file-type detection.
-      const rawExt =
-        uri.split('?')[0]?.split('.').pop()?.toLowerCase() ?? 'mp4';
-      const ext = ['m4a', 'mp4', 'wav', 'mp3', 'webm', 'ogg'].includes(rawExt)
-        ? rawExt
-        : 'mp4';
-      const mimeMap: Record<string, string> = {
-        m4a: 'audio/mp4',
-        mp4: 'audio/mp4',
-        wav: 'audio/wav',
-        mp3: 'audio/mpeg',
-        webm: 'audio/webm',
-        ogg: 'audio/ogg',
-      };
-      const form = new FormData();
-      // RN FormData uses { uri, name, type } instead of Blob
-      form.append('audio', {
-        uri,
-        name: `recording.${ext}`,
-        type: mimeMap[ext],
-      } as unknown as Blob);
-      return request('/audio/transcribe', { method: 'POST', body: form });
-    },
-  },
-
-  preferences: {
-    get: (): Promise<PreferencesRecord> =>
-      request('/user/preferences') as Promise<PreferencesRecord>,
-    patch: (body: Record<string, unknown>): Promise<PreferencesRecord> =>
-      request('/user/preferences', {
-        method: 'PATCH',
-        body,
-      }) as Promise<PreferencesRecord>,
-  },
-
-  completedGrowthAreas: {
-    list: (childId: string): Promise<CompletedGrowthAreasRecord> =>
-      request(
-        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
-      ) as Promise<CompletedGrowthAreasRecord>,
-    append: (childId: string, body: Record<string, unknown>): Promise<void> =>
-      request(
-        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
-        {
-          method: 'POST',
-          body,
-        },
-      ) as Promise<void>,
-    clear: (childId: string): Promise<void> =>
-      request(
-        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
-        {
-          method: 'DELETE',
-        },
-      ) as Promise<void>,
-  },
-
-  observations: {
-    get: (childId: string): Promise<ObservationsRecord> =>
-      request(
-        `/user/observations?child_id=${encodeURIComponent(childId)}`,
-      ) as Promise<ObservationsRecord>,
-    patch: (
-      childId: string,
-      body: Record<string, unknown>,
-    ): Promise<ObservationsRecord> =>
-      request(`/user/observations?child_id=${encodeURIComponent(childId)}`, {
-        method: 'PATCH',
-        body,
-      }) as Promise<ObservationsRecord>,
-  },
-
-  ninetyDayPlan: {
-    get: (childId: string): Promise<NinetyDayPlanRecord> =>
-      request(
-        `/user/ninety-day-plan?child_id=${encodeURIComponent(childId)}`,
-      ) as Promise<NinetyDayPlanRecord>,
-    patch: (
-      childId: string,
-      body: Record<string, unknown>,
-    ): Promise<NinetyDayPlanRecord> =>
-      request(`/user/ninety-day-plan?child_id=${encodeURIComponent(childId)}`, {
-        method: 'PATCH',
-        body,
-      }) as Promise<NinetyDayPlanRecord>,
-    /** Uploads a photo directly to S3 for the given field, returning the public URL to persist. */
-    uploadPhoto: async (
-      childId: string,
-      fieldKey: string,
-      /** Local file URI from expo-image-picker. */
-      photoUri: string,
-      contentType: string = 'image/jpeg',
-    ): Promise<{ photo_url: string }> => {
-      const photo = await (await fetch(photoUri)).blob();
-      const { upload_url, photo_url } = (await request(
-        `/user/ninety-day-plan/photo-presign?child_id=${encodeURIComponent(
-          childId,
-        )}`,
-        {
-          method: 'POST',
-          body: { field_key: fieldKey, content_type: contentType },
-        },
-      )) as { upload_url: string; photo_url: string };
-      // Upload directly to S3 — must include the same Content-Type the presigned
-      // URL was signed with, or S3 will reject the request (signature mismatch).
-      const s3Res = await fetch(upload_url, {
-        method: 'PUT',
-        body: photo,
-        headers: { 'Content-Type': contentType },
-      });
-      if (!s3Res.ok) {
-        throw new Error(
-          `S3 upload failed: ${s3Res.status} ${s3Res.statusText}`,
-        );
-      }
-      return { photo_url };
-    },
-  },
-
-  jobs: {
-    enqueue: (payload: EnqueueJobPayload): Promise<EnqueueJobResponse> =>
-      request('/jobs', {
-        method: 'POST',
-        body: payload as unknown as Record<string, unknown>,
-      }) as Promise<EnqueueJobResponse>,
-    poll: (jobId: string): Promise<JobStatusRecord> =>
-      request(`/jobs/${encodeURIComponent(jobId)}`) as Promise<JobStatusRecord>,
-  },
-
-  admin: {
-    listAllowedEmails(skip = 0, limit = 20): Promise<AllowedEmailsPage> {
-      return request(
-        `/admin/allowed-emails?skip=${skip}&limit=${limit}`,
-      ) as Promise<AllowedEmailsPage>;
-    },
-    getAllowedEmail(email: string): Promise<AllowedEmailRecord> {
-      return request(
-        `/admin/allowed-emails/${encodeURIComponent(email)}`,
-      ) as Promise<AllowedEmailRecord>;
-    },
-    addAllowedEmail(email: string): Promise<AllowedEmailRecord> {
-      return request('/admin/allowed-emails', {
-        method: 'POST',
-        body: { email },
-      }) as Promise<AllowedEmailRecord>;
-    },
-    removeAllowedEmail(email: string): Promise<void> {
-      return request(`/admin/allowed-emails/${encodeURIComponent(email)}`, {
-        method: 'DELETE',
-      }) as Promise<void>;
-    },
-    getUserByEmail(email: string): Promise<AdminUserRecord> {
-      return request(
-        `/admin/users/by-email/${encodeURIComponent(email)}`,
-      ) as Promise<AdminUserRecord>;
-    },
-    listUsers(skip = 0, limit = 20): Promise<AdminUsersPage> {
-      return request(
-        `/admin/users?skip=${skip}&limit=${limit}`,
-      ) as Promise<AdminUsersPage>;
-    },
-    lockUser(userId: string, location: string): Promise<AdminUserRecord> {
-      return request(
-        `/admin/users/${encodeURIComponent(
-          userId,
-        )}/lock?location=${encodeURIComponent(location)}`,
-        { method: 'PATCH' },
-      ) as Promise<AdminUserRecord>;
-    },
-    unlockUser(userId: string, location: string): Promise<AdminUserRecord> {
-      return request(
-        `/admin/users/${encodeURIComponent(
-          userId,
-        )}/unlock?location=${encodeURIComponent(location)}`,
-        { method: 'PATCH' },
-      ) as Promise<AdminUserRecord>;
-    },
-  },
-
-  entities: {
-    Child: {
-      async list(
-        sort = '-created_date',
-        limit?: number,
-      ): Promise<ChildRecord[]> {
-        // RN's URLSearchParams polyfill is incomplete — build the query by hand.
-        const q = [
-          sort ? `sort=${encodeURIComponent(sort)}` : '',
-          limit != null ? `limit=${limit}` : '',
-        ]
-          .filter(Boolean)
-          .join('&');
-        return request(`/children${q ? `?${q}` : ''}`) as Promise<
-          ChildRecord[]
-        >;
-      },
-      get: (id: string): Promise<ChildRecord> =>
-        request(`/children/${encodeURIComponent(id)}`) as Promise<ChildRecord>,
-      create: (payload: Record<string, unknown>): Promise<ChildRecord> =>
-        request('/children', {
-          method: 'POST',
-          body: payload,
-        }) as Promise<ChildRecord>,
-      update: (
-        id: string,
-        patch: Record<string, unknown>,
-      ): Promise<ChildRecord> =>
-        request(`/children/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: patch,
-        }) as Promise<ChildRecord>,
-      delete: (id: string): Promise<void> =>
-        request(`/children/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        }) as Promise<void>,
-      // One-way (false→true) Personality Journey progression flags, gated on
-      // the previous step in the chain already being true. PATCH /children/{id}
-      // silently ignores these fields — this is the only way to set them
-      // (see backend/app/routers/children.py).
-      markProgress: (
-        id: string,
-        flag:
-          | 'onboarding_profile_completed'
-          | 'discover_completed'
-          | 'transform_visited'
-          | 'release_visited'
-          | 'connect_visited',
-      ): Promise<ChildRecord> =>
-        request(`/children/${encodeURIComponent(id)}/progress/${flag}`, {
-          method: 'POST',
-        }) as Promise<ChildRecord>,
-      /** `photoUri` is a local file URI from expo-image-picker. */
-      uploadAvatar: async (
-        id: string,
-        photoUri: string,
-        contentType: string = 'image/jpeg',
-      ): Promise<{ avatar_url: string }> => {
-        const photo = await (await fetch(photoUri)).blob();
-        const { upload_url, avatar_url } = (await request(
-          `/children/${encodeURIComponent(id)}/avatar/presign`,
-          { method: 'POST', body: { content_type: contentType } },
-        )) as { upload_url: string; avatar_url: string };
-        // Upload directly to S3 — must include the same Content-Type the presigned
-        // URL was signed with, or S3 will reject the request (signature mismatch).
-        const s3Res = await fetch(upload_url, {
-          method: 'PUT',
-          body: photo,
-          headers: { 'Content-Type': contentType },
-        });
-        if (!s3Res.ok) {
-          throw new Error(
-            `S3 upload failed: ${s3Res.status} ${s3Res.statusText}`,
-          );
-        }
-        return { avatar_url };
-      },
+      return ensureRefreshed(); // never alongside a request-triggered refresh
     },
   },
 };

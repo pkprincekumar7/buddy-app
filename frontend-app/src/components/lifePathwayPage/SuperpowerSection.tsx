@@ -119,9 +119,9 @@ export default function SuperpowerSection({
               marginTop: 18,
             }}
           >
-            {traits.map(trait => (
+            {traits.map((trait, i) => (
               <View
-                key={trait}
+                key={`${i}-${trait}`}
                 style={{
                   paddingVertical: 7,
                   paddingHorizontal: 14,

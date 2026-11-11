@@ -1,0 +1,54 @@
+# The services' runtime packages, for the local venv (check.sh) and CI's backend jobs: common's
+# tests, mypy, the tools, scripts/e2e, and scripts/local-aws-setup.py.
+# Exactly the union of every backend/<service>/requirements.txt (without buddy-common, which runs
+# from source here via pytest's pythonpath); tools/tests/test_dev_requirements.py fails when a
+# service's pins change and this file doesn't. Each service's own file is the source of truth.
+anthropic==0.49.0
+bcrypt==4.2.1
+boto3==1.35.49
+cryptography==50.0.0
+email-validator==2.2.0
+fastapi==0.136.1
+google-auth[requests]==2.62.0
+google-genai==2.32.0
+httpx==0.28.1
+jsonschema==4.25.1
+limits==5.8.0
+openai==1.68.2
+opentelemetry-api==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-botocore==0.66b1
+opentelemetry-instrumentation-fastapi==0.66b1
+opentelemetry-instrumentation-httpx==0.66b1
+opentelemetry-instrumentation-pymongo==0.66b1
+opentelemetry-instrumentation-redis==0.66b1
+opentelemetry-sdk==1.45.1
+pydantic-settings==2.7.1
+PyJWT==2.15.1
+pymongo==4.18.3
+python-dotenv>=1.2.2
+python-multipart==0.0.31
+redis==5.2.1
+requests>=2.33.0
+starlette>=1.3.1
+urllib3>=2.8.0
+uvicorn[standard]==0.34.0
+
+# ---- why the CVE floors (every service carries them) ----------------------------
+# starlette: GHSA-7f5h-v6xp-fcq8 (Range header DoS) + GHSA-2c2j-9gv5-cj73 (upload event-loop
+# block) + PYSEC-2026-161 + CVE-2026-54283 (form limits ignored for
+# application/x-www-form-urlencoded, DoS). fastapi<0.133.0 capped starlette<0.51.0, so the fix
+# needed fastapi>=0.133.0; 0.136.1 is used.
+# urllib3: GHSA-qccp-gfcp-xxvc + GHSA-mf9v-mfxr-j63j (redirect header leak, Brotli
+# decompression bomb), CVE-2026-97687 (HTTPS proxy TLS config override), CVE-2026-97689 (chunk
+# parser memory DoS). Pulled in by the openai / anthropic / google-auth SDKs.
+# requests: GHSA-gc5v-m9x4-r6x2 (predictable temp file in extract_zipped_paths). Not exploitable
+# via current code paths; pinned for defence in depth. Pulled in by google-auth[requests].
+# python-dotenv: GHSA-mf9w-mj56-hr94 (symlink follow in set_key/unset_key). Not called at
+# runtime; only affects local .env writes (auth.seed).
+#
+# ---- disputed / no-fix advisories ----------------------------------------------
+# PyJWT PYSEC-2025-183: "weak encryption", DISPUTED by the PyJWT maintainers. The finding is
+# that callers may supply short HMAC keys; the library doesn't enforce a minimum length. Not
+# applicable: tokens are RS256 with a 2048-bit RSA key pair. No fixed version exists; pip-audit
+# ignores it (scripts/audit-backend-services.sh).

@@ -52,6 +52,7 @@ export default function WhatsAppModal({
 
   return (
     <ModalBackdrop
+      title="Share on WhatsApp"
       gradient="radial-gradient(ellipse at 50% 40%,rgb(var(--constellation-overlay-rgb) / .72),rgb(var(--constellation-void-rgb) / .94) 72%)"
       onClose={onClose}
     >

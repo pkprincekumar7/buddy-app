@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router';
 import { Eye, Trash2, CheckCircle, Clock } from 'lucide-react';
-import type { ChildRecord } from '@/types/api';
+import type { Child } from '@/api/children';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -17,15 +17,16 @@ import { useStartOver } from '@/hooks/useStartOver';
 import { cn } from '@/lib/utils';
 
 interface ChildCardProps {
-  child: ChildRecord;
+  child: Child;
 }
 
 export default function ChildCard({ child }: ChildCardProps) {
   const navigate = useNavigate();
   const { doStartOver, isStartingOver } = useStartOver(child.id);
 
-  const displayName = child.name ?? 'Unnamed child';
-  const completed = !!child.onboarding_completed;
+  const displayName = child.name;
+  // The onboarding chat is done (build plan 7.4: `progress.conversation`).
+  const completed = child.progress.conversation;
   // Shared by both status-badge spans below — one shown on mobile, one on
   // sm+ — so the completed/in-progress styling can't drift between them.
   const statusBadgeClass = completed
@@ -46,8 +47,9 @@ export default function ChildCard({ child }: ChildCardProps) {
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">{displayName}</p>
               <p className="text-xs text-muted-foreground">
-                {[child.age && `Age ${child.age}`, child.school].filter(Boolean).join(' · ') ||
-                  'No details yet'}
+                {[child.age !== null && `Age ${child.age}`, child.school]
+                  .filter(Boolean)
+                  .join(' · ') || 'No details yet'}
               </p>
               {/* Status badge — shown below name on small screens, hidden on sm+ (shown inline there) */}
               <span

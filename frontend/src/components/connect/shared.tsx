@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { Dialog, DialogPortal, DialogTitle } from '@/components/ui/dialog';
 
 /**
  * Multiplies a design-time pixel value by `--cx-type-scale`, which is 1 on phones
@@ -407,45 +409,59 @@ export function ToastBanner({ message }: { message: string }) {
 
 export function ModalBackdrop({
   gradient,
+  title,
   onClose,
   children,
 }: {
   gradient: string;
+  /** Accessible name for the dialog (visually hidden). */
+  title: string;
   onClose: () => void;
   children: ReactNode;
 }) {
+  // Radix Dialog supplies focus move/trap/restore, Escape and the accessible
+  // name; the motion divs keep the original backdrop + entrance visuals.
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
-      role="presentation"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 26,
-        background: gradient,
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
     >
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 8 }}
-        transition={{ duration: 0.3, ease: 'easeOut' }}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        style={{ position: 'relative', width: '100%', maxHeight: '100%', overflow: 'auto' }}
-      >
-        {children}
-      </motion.div>
-    </motion.div>
+      <DialogPortal>
+        <DialogPrimitive.Overlay asChild>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 50,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 26,
+              background: gradient,
+            }}
+          >
+            <DialogPrimitive.Content asChild aria-describedby={undefined}>
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                style={{ position: 'relative', width: '100%', maxHeight: '100%', overflow: 'auto' }}
+              >
+                <DialogTitle className="sr-only">{title}</DialogTitle>
+                {children}
+              </motion.div>
+            </DialogPrimitive.Content>
+          </motion.div>
+        </DialogPrimitive.Overlay>
+      </DialogPortal>
+    </Dialog>
   );
 }
 

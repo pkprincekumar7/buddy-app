@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '@/api/client';
-import { jobProgressMessage, useJob } from '@/hooks/useJob';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError } from '@/api/errors';
+import {
+  grow,
+  GROW_ERRORS,
+  runGrowGeneration,
+  type GrowKind,
+  type GrowthAreaDoc,
+} from '@/api/grow';
+import { toast } from 'sonner';
+import { isAbort } from '@/api/polling';
+import { jobProgressMessage } from '@/lib/jobProgress';
 import { normalizeGeneratedQuestions, normalizeGeneratedRounds } from '@/lib/growthAreaData';
 import type { GameRound, GrowthArea, Question } from '@/lib/growthAreaData';
-import {
-  buildGrowthChildRoundsPrompt,
-  buildGrowthParentQuestionsPrompt,
-  growthChildRoundsSchema,
-  growthParentQuestionsSchema,
-} from '@/lib/growthQuestionsPrompt';
-import type { GrowthQuestionsContext, QAPair } from '@/lib/growthQuestionsPrompt';
-import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import type { ChildRecord, CompletedArea, EnqueueJobPayload, JobType } from '@/types/api';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
+import { httpErrorMessage } from '@/lib/apiError';
 
 /**
  * Content state of one stage for the area currently open.
@@ -41,8 +43,8 @@ export interface UseGrowthAreaQuestionsResult {
   child: StageState;
   /** Start (or no-op on) generation of the parent's reflections for an area. */
   ensureParent: (area: GrowthArea) => void;
-  /** Start (or no-op on) generation of the child's rounds, grounded in the answers. */
-  ensureChild: (area: GrowthArea, qa: QAPair[]) => void;
+  /** Start (or no-op on) generation of the child's rounds, grounded in the saved answers. */
+  ensureChild: (area: GrowthArea) => void;
   /** Cached questions for any area, for callers building prompt context. */
   questionsFor: (areaId: string) => Question[] | null;
   /** Cached rounds for any area, for callers resolving saved picks. */
@@ -51,14 +53,12 @@ export interface UseGrowthAreaQuestionsResult {
 
 interface UseGrowthAreaQuestionsOptions {
   childId: string | undefined;
-  /** Child record — the prompt context (profile, questionnaire, personality). */
-  child: Record<string, unknown> | null;
   /**
    * The child's growth_areas documents, as already loaded by the page. Seeds the
    * cache: each area's stored question sets sit on its own document, next to the
    * answers and picks that reference them.
    */
-  areas: CompletedArea[];
+  areas: GrowthAreaDoc[];
   /** The area whose sheet is open, or null when none is. Drives which status is reported. */
   area: GrowthArea | null;
   /** Gate generation until the page is actually visible (splash finished, data loaded). */
@@ -67,37 +67,24 @@ interface UseGrowthAreaQuestionsOptions {
 
 type Stage = 'parent' | 'child';
 
-const JOB_TYPE: Record<Stage, JobType> = {
-  parent: 'generate_growth_parent_questions',
-  child: 'generate_growth_child_rounds',
-};
+const KIND: Record<Stage, GrowKind> = { parent: 'parent_questions', child: 'child_rounds' };
 
 /**
  * Lazily generates and caches both Growth Areas question sets, one area at a
  * time, as the parent works through the map.
  *
- * The two stages are separate jobs run in sequence, because the child's rounds
- * are grounded in the answers the parent has just given. Each stage therefore
- * gets its own useJob instance: independent polling, independent retry, and a
- * write-back allowlist that keeps one stage out of the other's field.
+ * The two stages are separate generations run in sequence, because grow grounds the
+ * child's rounds in the answers the parent has just saved. Grow builds the prompts and
+ * writes the results to the area's document (build plan 7.6); this hook asks for a
+ * `kind`, polls the job, and reads the area back. It creates the area too, when the
+ * parent's questions are generated for it the first time.
  *
- * Two constraints shape the rest:
- *
- *   1. `children.active_jobs` holds a single slot per job type, and the enqueue
- *      route caps in-flight jobs at 2 per (user, child, type). A parent who opens
- *      three areas in a row would blow that cap, so each stage runs one job at a
- *      time and remembers the latest request to pick up when the current settles.
- *   2. For the same reason `activeJobs` is deliberately passed as undefined to
- *      useJob: its server-sync effect would otherwise repoint polling at whichever
- *      job_id landed in the shared slot last, which for same-type sequential jobs
- *      is not necessarily the one we are waiting on. The durable record of this
- *      work is the growth_areas document, not active_jobs, so the only thing given
- *      up is resuming across a mid-flight page reload — which re-enqueues instead,
- *      and the orphaned job writes the same field harmlessly.
+ * Each stage runs one generation at a time and remembers the latest request, to pick
+ * up when the current one settles: a parent who opens three areas in a row gets them
+ * one after the other, without a pile of jobs counting against the hourly limit.
  */
 export function useGrowthAreaQuestions({
   childId,
-  child,
   areas,
   area,
   enabled,
@@ -116,12 +103,10 @@ export function useGrowthAreaQuestions({
   // The request to run once the current one settles, so an area opened while
   // another is generating still gets its turn without exceeding the in-flight cap.
   const pendingRef = useRef<Record<Stage, (() => void) | null>>({ parent: null, child: null });
-  // The last payload sent per stage, so retry() can re-send it without the caller
-  // having to rebuild the prompt context.
-  const lastPayloadRef = useRef<Record<Stage, EnqueueJobPayload | null>>({
-    parent: null,
-    child: null,
-  });
+  // The area each stage last ran for, so retry() can run it again.
+  const lastAreaRef = useRef<Record<Stage, GrowthArea | null>>({ parent: null, child: null });
+  // Stops polling when the page goes away.
+  const abortRef = useUnmountSignal();
   // Which area each stage is working on, and which is waiting its turn. Both in
   // state rather than alongside the refs above, because status is derived from
   // them during render and has to change the moment either does — a queued area
@@ -135,11 +120,8 @@ export function useGrowthAreaQuestions({
     child: null,
   });
 
-  // Own elapsed clock per stage, rather than useJob's. useJob resets its
-  // elapsedMs when the *job id* changes, which only happens once the enqueue POST
-  // returns — so for those few hundred milliseconds it still reports the previous
-  // stage's elapsed time, long enough to flash a "taking longer than usual" note
-  // the instant a parent moves on.
+  // Own elapsed clock per stage, started when the stage is asked for, so a parent who
+  // moves on never sees the previous stage's "taking longer than usual" note.
   const startedAtRef = useRef<Record<Stage, number>>({ parent: 0, child: 0 });
   const [elapsedMs, setElapsedMs] = useState<Record<Stage, number>>({ parent: 0, child: 0 });
 
@@ -190,9 +172,9 @@ export function useGrowthAreaQuestions({
   /**
    * Read the stage's freshly written field off the area's document and merge it.
    *
-   * The worker stores raw provider output, so an unusable payload only shows up
-   * here — which is why a null normalisation is treated exactly like a job
-   * failure rather than caching an empty set the sheet cannot render.
+   * Grow stores it normalised already; normalising again is harmless, and a null
+   * result is treated exactly like a job failure rather than caching an empty set
+   * the sheet cannot render.
    */
   const handleCompleted = useCallback(
     async (stage: Stage) => {
@@ -202,8 +184,8 @@ export function useGrowthAreaQuestions({
         return;
       }
       try {
-        const fresh = await api.completedGrowthAreas.list(childId);
-        const doc = (fresh.areas ?? []).find((a) => a.area_id === finished);
+        const fresh = await grow.list(childId);
+        const doc = fresh.find((a) => a.area_id === finished);
         if (stage === 'parent') {
           const questions = normalizeGeneratedQuestions(doc?.parent_questions, finished);
           if (!questions) {
@@ -228,61 +210,14 @@ export function useGrowthAreaQuestions({
     [childId, settle, markFailed],
   );
 
-  const onParentCompleted = useCallback(() => handleCompleted('parent'), [handleCompleted]);
-  const onChildCompleted = useCallback(() => handleCompleted('child'), [handleCompleted]);
-
-  const parentJob = useJob({
-    activeJobs: undefined,
-    jobType: JOB_TYPE.parent,
-    onCompleted: onParentCompleted,
-  });
-  const childJob = useJob({
-    activeJobs: undefined,
-    jobType: JOB_TYPE.child,
-    onCompleted: onChildCompleted,
-  });
-
-  // Free the slot on failure so a later area still gets its turn, and remember
-  // which area it was so its sheet stops waiting and offers a retry.
-  useEffect(() => {
-    const id = inFlightRef.current.parent;
-    if (parentJob.isFailed && id) markFailed('parent', id);
-  }, [parentJob.isFailed, markFailed]);
-
-  useEffect(() => {
-    const id = inFlightRef.current.child;
-    if (childJob.isFailed && id) markFailed('child', id);
-  }, [childJob.isFailed, markFailed]);
-
-  /** Prompt context shared by both stages, derived from the child record. */
-  const baseContext = useMemo((): Omit<GrowthQuestionsContext, 'area'> => {
-    const c = (child ?? {}) as ChildRecord;
-    const vm = c.personality?.view_model;
-    const profile = onboardingProfileFromViewModel(vm);
-    const rawTraits = vm?.profile?.traits;
-    return {
-      childName: typeof c.name === 'string' ? c.name : null,
-      childGender: typeof c.gender === 'string' ? c.gender : null,
-      childData: c,
-      archetype: profile?.personality_type ?? null,
-      personalityNarrative: profile?.summary ?? null,
-      traits: Array.isArray(rawTraits) ? rawTraits.map((v) => String(v)).filter(Boolean) : [],
-    };
-  }, [child]);
-
-  const enqueueStage = useCallback(
-    (
-      stage: Stage,
-      areaId: string,
-      payload: EnqueueJobPayload,
-      send: (payload: EnqueueJobPayload) => Promise<void>,
-      /** Runs before the enqueue; a rejection fails the stage without a job. */
-      prepare?: () => Promise<void>,
-    ) => {
+  const runStage = useCallback(
+    (stage: Stage, target: GrowthArea) => {
+      if (!childId) return;
+      const areaId = target.id;
       // Claimed synchronously, before any awaiting below, so a second call for
       // the same stage queues behind this one instead of racing it.
       inFlightRef.current[stage] = areaId;
-      lastPayloadRef.current[stage] = payload;
+      lastAreaRef.current[stage] = target;
       startedAtRef.current[stage] = Date.now();
       setElapsedMs((prev) => ({ ...prev, [stage]: 0 }));
       setGenerating((prev) => ({ ...prev, [stage]: areaId }));
@@ -294,50 +229,24 @@ export function useGrowthAreaQuestions({
       });
       void (async () => {
         try {
-          await prepare?.();
-          await send(payload);
-        } catch {
+          const outcome = await runGrowGeneration(childId, areaId, KIND[stage], {
+            // Creates the area with its name on the first question set.
+            ...(stage === 'parent' ? { areaName: target.name } : {}),
+            signal: abortRef.current.signal,
+          });
+          if (outcome === 'completed') await handleCompleted(stage);
+          else markFailed(stage, areaId);
+        } catch (err) {
+          if (isAbort(err)) return;
+          console.warn(`[useGrowthAreaQuestions] ${stage} generation failed:`, err);
+          // The hourly limit gets its own word; the stage still offers "Try again".
+          if (err instanceof ApiError && err.code === 'llm_limit')
+            toast.error(httpErrorMessage(err, { codeMessages: GROW_ERRORS }));
           markFailed(stage, areaId);
         }
       })();
     },
-    [markFailed],
-  );
-
-  /**
-   * Make sure the area has a document before the worker writes questions into it.
-   *
-   * The write-back upserts, and its $setOnInsert carries only _id and created_at —
-   * so a worker-created document would have no `status`, which both this page and
-   * the Life Pathway page read as "completed" (a deliberate allowance for
-   * pre-status legacy documents). The parent would get a checkmark on an area they
-   * had merely clicked.
-   *
-   * Only ever creates when the area has no document at all. Creating
-   * unconditionally would be destructive: append always writes `answers`, so
-   * passing {} would erase the reflections of an area that already had some.
-   *
-   * `areas` is a snapshot from page load and goes stale the moment this creates
-   * something, so a session-local record of what it has already created backs it
-   * up. Without that, a second call in the same session sees a list that predates
-   * its own write and creates again — over the top of real answers.
-   */
-  const createdRef = useRef<Set<string>>(new Set());
-  const ensureAreaDoc = useCallback(
-    async (target: GrowthArea) => {
-      if (!childId) return;
-      if (createdRef.current.has(target.id)) return;
-      if (areas.some((a) => a.area_id === target.id)) return;
-      createdRef.current.add(target.id);
-      await api.completedGrowthAreas.append(childId, {
-        area_id: target.id,
-        area_name: target.name,
-        answers: {},
-        status: 'in_progress',
-        step: 'activity_summary',
-      });
-    },
-    [childId, areas],
+    [abortRef, childId, handleCompleted, markFailed],
   );
 
   const ensureParent = useCallback(
@@ -351,27 +260,7 @@ export function useGrowthAreaQuestions({
         // Re-checked on drain: the queued area may have been generated, or
         // already be running, by the time the slot frees up.
         if (questionCache[areaId] || inFlightRef.current.parent) return;
-        enqueueStage(
-          'parent',
-          areaId,
-          {
-            type: JOB_TYPE.parent,
-            child_id: childId,
-            payload: {
-              prompt: buildGrowthParentQuestionsPrompt({ ...baseContext, area: target }),
-              response_json_schema: growthParentQuestionsSchema(),
-            },
-            write_back: {
-              collection: 'growth_areas',
-              // area_id scopes the write to this area's document; child_id,
-              // user_id and location are injected by the enqueue route.
-              filter: { area_id: areaId },
-              field: 'parent_questions',
-            },
-          },
-          parentJob.enqueue,
-          () => ensureAreaDoc(target),
-        );
+        runStage('parent', target);
       };
       if (inFlightRef.current.parent) {
         pendingRef.current.parent = run;
@@ -380,20 +269,11 @@ export function useGrowthAreaQuestions({
       }
       run();
     },
-    [
-      enabled,
-      childId,
-      questionCache,
-      failed.parent,
-      baseContext,
-      enqueueStage,
-      parentJob.enqueue,
-      ensureAreaDoc,
-    ],
+    [enabled, childId, questionCache, failed.parent, runStage],
   );
 
   const ensureChild = useCallback(
-    (target: GrowthArea, qa: QAPair[]) => {
+    (target: GrowthArea) => {
       if (!enabled || !childId) return;
       const areaId = target.id;
       if (roundCache[areaId]) return;
@@ -401,28 +281,8 @@ export function useGrowthAreaQuestions({
       if (failed.child[areaId]) return;
       const run = () => {
         if (roundCache[areaId] || inFlightRef.current.child) return;
-        enqueueStage(
-          'child',
-          areaId,
-          {
-            type: JOB_TYPE.child,
-            child_id: childId,
-            payload: {
-              prompt: buildGrowthChildRoundsPrompt({ ...baseContext, area: target, qa }),
-              response_json_schema: growthChildRoundsSchema(areaId),
-            },
-            write_back: {
-              collection: 'growth_areas',
-              filter: { area_id: areaId },
-              field: 'child_rounds',
-            },
-          },
-          childJob.enqueue,
-          // Deliberately no ensureAreaDoc: every route into stage two runs after
-          // the answers have been written, so the document already exists — and
-          // calling it here would be actively harmful, since append rewrites
-          // `answers` and the {} it would send erases the parent's reflections.
-        );
+        // Grow grounds the rounds in the answers already saved on the area.
+        runStage('child', target);
       };
       if (inFlightRef.current.child) {
         pendingRef.current.child = run;
@@ -431,17 +291,16 @@ export function useGrowthAreaQuestions({
       }
       run();
     },
-    [enabled, childId, roundCache, failed.child, baseContext, enqueueStage, childJob.enqueue],
+    [enabled, childId, roundCache, failed.child, runStage],
   );
 
   const retryStage = useCallback(
     (stage: Stage) => {
-      const areaId = area?.id;
-      const payload = lastPayloadRef.current[stage];
-      if (!areaId || !payload || inFlightRef.current[stage]) return;
-      enqueueStage(stage, areaId, payload, stage === 'parent' ? parentJob.retry : childJob.retry);
+      const target = lastAreaRef.current[stage];
+      if (!area || target?.id !== area.id || inFlightRef.current[stage]) return;
+      runStage(stage, target);
     },
-    [area?.id, enqueueStage, parentJob.retry, childJob.retry],
+    [area, runStage],
   );
 
   const retryParent = useCallback(() => retryStage('parent'), [retryStage]);
@@ -476,7 +335,7 @@ export function useGrowthAreaQuestions({
       // elapsed time of its own yet.
       progressMessage:
         status === 'loading' && areaId === generating[stage]
-          ? jobProgressMessage(elapsedMs[stage], JOB_TYPE[stage])
+          ? jobProgressMessage(elapsedMs[stage], KIND[stage])
           : '',
       retry: stage === 'parent' ? retryParent : retryChild,
     };
@@ -500,7 +359,7 @@ export function useGrowthAreaQuestions({
 /** Gap-filling merge of one stage's stored payloads into a cache. */
 function mergeStored<T>(
   prev: Record<string, T[]>,
-  areas: CompletedArea[],
+  areas: GrowthAreaDoc[],
   field: 'parent_questions' | 'child_rounds',
   normalize: (raw: unknown, areaId: string) => T[] | null,
 ): Record<string, T[]> {

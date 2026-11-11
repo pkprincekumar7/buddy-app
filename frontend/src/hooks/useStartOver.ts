@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { api } from '@/api/client';
+import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 
 export function useStartOver(childId: string | undefined) {
@@ -14,8 +14,7 @@ export function useStartOver(childId: string | undefined) {
     if (isStartingOver || !childId) return;
     setIsStartingOver(true);
     try {
-      await api.entities.Child.delete(childId);
-      await api.preferences.patch({ last_visited_path: '/Home' }).catch(() => {});
+      await children.remove(childId);
       void queryClient.invalidateQueries({ queryKey: ['children'] });
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {

@@ -14,7 +14,6 @@ const FOOTER_FADE = fadeIn(0.8, 1.2, 'ease');
 
 interface DimensionCirclesScreenProps {
   childName: string;
-  mergedData: Record<string, unknown>;
   onConnect: () => void;
   onDiscover: () => void;
   onGoHome: () => void;

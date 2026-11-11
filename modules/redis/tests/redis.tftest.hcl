@@ -35,9 +35,31 @@ run "prod_replicated_and_encrypted" {
     error_message = "Valkey 8.0 with the valkey8 parameter group (name carries the family)."
   }
   assert {
+    condition     = anytrue([for p in aws_elasticache_parameter_group.this.parameter : p.name == "maxmemory-policy" && p.value == "noeviction"])
+    error_message = "A full Valkey refuses writes rather than evicting counters and locks (TF-04)."
+  }
+  assert {
     condition     = aws_vpc_security_group_ingress_rule.from_client["ecs"].from_port == 6379 && aws_vpc_security_group_ingress_rule.from_client["ecs"].referenced_security_group_id == "sg-api"
     error_message = "Only the client SG may reach 6379."
   }
+  assert {
+    condition     = aws_elasticache_subnet_group.this.name == "superpower-backend-redis-subnet-group-prod" && toset(aws_elasticache_subnet_group.this.subnet_ids) == toset(["subnet-a", "subnet-b", "subnet-c"]) && aws_elasticache_replication_group.this.subnet_group_name == aws_elasticache_subnet_group.this.name
+    error_message = "The cache subnet group must span the given private subnets and be the one the replication group uses."
+  }
+  assert {
+    condition     = aws_security_group.this.name == "superpower-backend-elasticache-sg-prod" && aws_security_group.this.vpc_id == "vpc-1" && aws_elasticache_replication_group.this.security_group_ids == toset([aws_security_group.this.id]) && aws_vpc_security_group_ingress_rule.from_client["ecs"].security_group_id == aws_security_group.this.id
+    error_message = "The Redis security group must live in the given VPC, be the replication group's only SG and carry the client ingress rules."
+  }
+}
+
+run "replica_count_is_at_most_two" {
+  command = plan
+
+  variables {
+    replica_count = 3
+  }
+
+  expect_failures = [var.replica_count]
 }
 
 run "multi_az_needs_a_replica" {
@@ -71,4 +93,116 @@ run "engine_version_must_be_major_minor" {
   }
 
   expect_failures = [var.engine_version]
+}
+
+# ── RBAC: one IAM user per service (docs/auth-users-split.md, 9.3, 15.1) ──────
+
+run "rbac_users_per_service" {
+  command = apply
+
+  variables {
+    auth_token = null
+    rbac_services = {
+      auth  = { writes_authz = true }
+      users = {}
+      grow  = { llm_limit = true }
+    }
+  }
+
+  assert {
+    condition     = aws_elasticache_replication_group.this.auth_token == null && length(aws_elasticache_replication_group.this.user_group_ids) == 1
+    error_message = "RBAC replaces the shared AUTH token."
+  }
+  assert {
+    condition = alltrue([
+      for k, u in aws_elasticache_user.service : u.user_id == "superpower-prod-${k}" && u.user_name == u.user_id && u.engine == "valkey" && one(u.authentication_mode).type == "iam"
+    ])
+    error_message = "IAM authentication needs user ID = user name: <app>-<env>-<service>."
+  }
+  assert {
+    condition     = aws_elasticache_user.service["users"].access_string == "on ~LIMITS:LIMITER/users/* ~leader:users:* %R~authz:* -@all +@read +@write +@scripting +@connection -@dangerous"
+    error_message = "A service reads authz:* only, and uses its own rate-limit and leader keys."
+  }
+  assert {
+    condition     = aws_elasticache_user.service["auth"].access_string == "on ~LIMITS:LIMITER/auth/* ~leader:auth:* ~authz:* -@all +@read +@write +@scripting +@connection -@dangerous"
+    error_message = "Only auth writes authz:* (9.3)."
+  }
+  assert {
+    condition     = aws_elasticache_user.service["grow"].access_string == "on ~LIMITS:LIMITER/grow/* ~leader:grow:* %R~authz:* ~llm:hourly:* -@all +@read +@write +@scripting +@connection -@dangerous"
+    error_message = "A generating service also shares the hourly LLM limit."
+  }
+  assert {
+    condition = toset(aws_elasticache_user_group.this[0].user_ids) == toset([
+      "superpower-prod-auth", "superpower-prod-users", "superpower-prod-grow",
+    ]) && aws_elasticache_user_group.this[0].engine == "valkey"
+    error_message = "The user group holds every service's user, and no \"default\" user."
+  }
+  assert {
+    condition     = keys(output.rbac_user_names) == ["auth", "grow", "users"] && output.rbac_user_names["grow"] == "superpower-prod-grow" && length(output.rbac_access_strings) == 3
+    error_message = "The user names and access strings are exposed for the task roles and the services' settings."
+  }
+}
+
+run "the_token_style_has_no_rbac_resources" {
+  command = plan
+
+  assert {
+    condition     = length(aws_elasticache_user.service) == 0 && length(aws_elasticache_user_group.this) == 0
+    error_message = "With auth_token there are no users or user group."
+  }
+}
+
+run "token_and_rbac_together_are_refused" {
+  command = plan
+
+  variables {
+    rbac_services = { users = {} }
+  }
+
+  expect_failures = [aws_elasticache_replication_group.this]
+}
+
+run "neither_token_nor_rbac_is_refused" {
+  command = plan
+
+  variables {
+    auth_token = null
+  }
+
+  expect_failures = [aws_elasticache_replication_group.this]
+}
+
+run "only_auth_writes_authz" {
+  command = plan
+
+  variables {
+    auth_token    = null
+    rbac_services = { grow = { writes_authz = true } }
+  }
+
+  expect_failures = [var.rbac_services]
+}
+
+run "rbac_service_names_are_checked" {
+  command = plan
+
+  variables {
+    auth_token    = null
+    rbac_services = { "Grow_Service" = {} }
+  }
+
+  expect_failures = [var.rbac_services]
+}
+
+run "rbac_user_ids_over_40_characters_are_refused" {
+  command = plan
+
+  variables {
+    app_name      = "superpower-learning-platform"
+    auth_token    = null
+    rbac_services = { notifications = {} }
+  }
+
+  # "superpower-learning-platform-prod-notifications" is 47 characters.
+  expect_failures = [aws_elasticache_user.service]
 }

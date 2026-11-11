@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/discover.personality_finalised.v1.json",
+  "title": "discover.personality_finalised v1",
+  "description": "The personality is ready. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The child's parent (optional, added 2026-10-26): lets a consumer keep its copy before it has a child_access copy."
+    },
+    "traits": {
+      "type": [
+        "array",
+        "object",
+        "string",
+        "null"
+      ]
+    },
+    "strengths": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "traits",
+    "strengths"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "user_id": "3f6c2a1e-8b7d-4c5e-9f10-2a3b4c5d6e7f",
+      "traits": {
+        "summary": "Curious and creative"
+      },
+      "strengths": [
+        "curious"
+      ]
+    }
+  ]
+}

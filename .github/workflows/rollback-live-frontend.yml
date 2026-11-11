@@ -1,0 +1,174 @@
+name: Rollback Live Frontend
+run-name: Rollback Live Frontend (${{ inputs.environment }}, ${{ inputs.git_sha || 'previous release' }})
+
+# Puts a release this environment already served back live, with no rebuild
+# (production-readiness review, CI-07, fix 4). Every deploy and promote keeps its
+# build's unhashed files (index.html, manifest, fonts, sounds) under releases/<sha>/
+# in the frontend bucket, for the last RELEASES_KEPT builds, and pruning keeps the
+# hashed chunks those releases use (scripts/frontend-publish.sh). A rollback copies
+# one release back over the root, invalidates those files and records the SHA as
+# deployed, so a later promote from here promotes what's live.
+#
+# Every environment, prod included: it restores that environment's own earlier build
+# (built with its own VITE_* values), never a fresh one (CI-03).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to roll back"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - sbx
+          - stg
+          - prod
+      git_sha:
+        description: "Commit to restore (40 characters). Empty: the release before the one live now."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+# The deploy and promote workflows' group: a rollback never overlaps them.
+concurrency:
+  group: deploy-live-frontend-superpower-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # Checks the free-text git_sha before any environment's secrets are loaded (SEC-07).
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          GIT_SHA:     ${{ inputs.git_sha }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          check_optional_sha "$GIT_SHA"
+
+  rollback:
+    name: Rollback Live Frontend
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate required secrets and variables
+        env:
+          ROLE_ARN:    ${{ vars.ROLE_ARN }}
+          APP_NAME:    ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        with:
+          role-to-assume: ${{ vars.ROLE_ARN }}
+          role-session-name: rollback-live-frontend-${{ inputs.environment }}
+          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
+          aws-region: us-east-1
+
+      # The bucket, the distribution and the deployed SHA, as terraform-live-edge and
+      # the last deploy or promote wrote them.
+      - name: Resolve the target and the release
+        id: target
+        env:
+          APP_NAME:    ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          GIT_SHA:     ${{ inputs.git_sha }}
+        run: |
+          set -euo pipefail
+          source scripts/frontend-publish.sh
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+          S3_BUCKET=$(get_ssm "/${APP_NAME}/${ENVIRONMENT}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${APP_NAME}/${ENVIRONMENT}/edge/cloudfront_distribution_id")
+          LIVE_SHA=$(get_ssm "/${APP_NAME}/${ENVIRONMENT}/edge/deployed_git_sha")
+          if [ -z "$S3_BUCKET" ] || [ -z "$CF_DIST_ID" ]; then
+            echo "ERROR: the frontend bucket or distribution isn't in SSM for env=${ENVIRONMENT}. Run terraform-live-edge (apply) first."
+            exit 1
+          fi
+          TARGET="${GIT_SHA:-$(previous_release "$S3_BUCKET" "$LIVE_SHA")}"
+          if [ "$TARGET" = "$LIVE_SHA" ]; then
+            echo "ERROR: ${TARGET} is already live in ${ENVIRONMENT}."
+            exit 1
+          fi
+          echo "Rolling ${ENVIRONMENT} back from ${LIVE_SHA:-unknown} to ${TARGET}."
+          echo "Saved releases (newest first):"
+          saved_releases "$S3_BUCKET" | sed 's/^/  /'
+          {
+            echo "s3_bucket=$S3_BUCKET"
+            echo "cf_dist_id=$CF_DIST_ID"
+            echo "sha=$TARGET"
+          } >> "$GITHUB_OUTPUT"
+
+      # The release's files back over the root, after checking every chunk it uses is
+      # still in the bucket; then the same invalidation a deploy makes.
+      - name: Restore the release
+        id: restore
+        env:
+          S3_BUCKET:  ${{ steps.target.outputs.s3_bucket }}
+          CF_DIST_ID: ${{ steps.target.outputs.cf_dist_id }}
+          GIT_SHA:    ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          source scripts/frontend-publish.sh
+          restore_release "$S3_BUCKET" "$GIT_SHA" restored
+          publish_unhashed restored "$S3_BUCKET"
+          INVALIDATION_ID=$(invalidate "$CF_DIST_ID" restored)
+          echo "Invalidation ID: $INVALIDATION_ID"
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for invalidation to complete
+        env:
+          CF_DIST_ID:      ${{ steps.target.outputs.cf_dist_id }}
+          INVALIDATION_ID: ${{ steps.restore.outputs.invalidation_id }}
+        run: |
+          aws cloudfront wait invalidation-completed --distribution-id "$CF_DIST_ID" --id "$INVALIDATION_ID"
+          echo "CloudFront cache invalidation complete."
+
+      # What promote-live-frontend reads: the rolled-back SHA is what's live now.
+      - name: Record deployed git SHA
+        env:
+          APP_NAME:    ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          GIT_SHA:     ${{ steps.target.outputs.sha }}
+        run: |
+          aws ssm put-parameter \
+            --region us-east-1 \
+            --name "/${APP_NAME}/${ENVIRONMENT}/edge/deployed_git_sha" \
+            --value "${GIT_SHA}" \
+            --type String \
+            --overwrite
+          echo "Recorded deployed git SHA: ${GIT_SHA}"
+          echo "### Rolled ${ENVIRONMENT} back to ${GIT_SHA}" >> "$GITHUB_STEP_SUMMARY"

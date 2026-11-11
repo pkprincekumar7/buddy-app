@@ -24,16 +24,17 @@ import { env } from './src/lib/env';
 import { color, fonts } from './src/theme';
 
 // Configure Google Sign-In once at app startup.
-// On iOS, iosClientId is required by the native module even though the Sign-In
-// button is hidden on iOS — without it the configure() call rejects and crashes.
-GoogleSignin.configure({
-  webClientId: env.GOOGLE_CLIENT_ID,
-  ...(Platform.OS === 'ios' && {
-    iosClientId:
-      env.IOS_CLIENT_ID ||
-      '491922250866-oj7n68jvo5faorv0aedoc6ps5inn4k93.apps.googleusercontent.com',
-  }),
-});
+// On iOS the native module needs iosClientId, or configure() fails. The ID comes
+// only from .env (IOS_CLIENT_ID, written per environment by build-ios-ipa.yml):
+// no fallback is compiled in, so a build never carries another environment's ID.
+// The Sign-In button is hidden on iOS, so an iOS build without the ID skips
+// configure: nothing there calls signIn, and AuthContext ignores signOut errors.
+if (Platform.OS !== 'ios' || env.IOS_CLIENT_ID) {
+  GoogleSignin.configure({
+    webClientId: env.GOOGLE_CLIENT_ID,
+    ...(Platform.OS === 'ios' ? { iosClientId: env.IOS_CLIENT_ID } : {}),
+  });
+}
 
 // The web's @font-face faces (frontend/public/fonts), converted to TTF.
 const FONT_FILES = {

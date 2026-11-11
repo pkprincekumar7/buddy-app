@@ -43,6 +43,7 @@ export const PAGE_NAMES = [
   'GrowthAreas',
   'Observations',
   'Connect',
+  'AccountSettings',
   'Admin',
   'Login',
   'Register',

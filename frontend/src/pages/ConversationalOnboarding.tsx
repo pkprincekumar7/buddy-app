@@ -2,37 +2,33 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { onboarding, answersFrom, ONBOARDING_ERRORS } from '@/api/onboarding';
+import { settlePersonality } from '@/api/discover';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import PageLoader from '@/components/shared/PageLoader';
-import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
-import { mergeChildDraft } from '@/lib/onboardingHelpers';
-import {
-  adaptAiPersonalityToViewModel,
-  PERSONALITY_TYPE_KEYS,
-} from '@/components/shared/PersonalityAnalysis';
-import { stripViewModelImages } from '@/lib/avatarUtils';
-import { personalityLlmSchema } from '@/lib/llmSchemas';
-import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
-import { useJob } from '@/hooks/useJob';
+import { httpErrorMessage } from '@/lib/apiError';
 import { Button } from '@/components/ui/button';
-import type { EnqueueJobPayload } from '@/types/api';
+
+// The conversational onboarding (build plan 7.5): the chat keeps the answers until the
+// end, then this page saves all seven in one PUT and goes on to the Personality Journey.
+// Discover starts the personality by itself; the chat's thank-you screen stays up until it
+// is ready, so the hub opens on the result instead of a second loading screen.
 
 export default function ConversationalOnboarding() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
-  const childDataRef = useRef<Record<string, unknown> | null>(null);
-  const [hasPersonality, setHasPersonality] = useState(false);
+  // What the chat resumed from (the child's fields, and any saved answers).
+  const draftRef = useRef<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
-  // Holds the freshly-fetched child record so useJob can pick up active_jobs.
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
-  // True once handleComplete has kicked off personality analysis.
-  const processingRef = useRef(false);
-  const [jobFailed, setJobFailed] = useState(false);
-  const jobPayloadRef = useRef<EnqueueJobPayload | null>(null);
+  // The answers being saved, kept for "Try again" after a failed save.
+  const pendingRef = useRef<Record<string, unknown> | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
   const bootKey = 0;
+  // Stops waiting for the personality if the parent leaves the page.
+  const unmountSignal = useUnmountSignal();
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -48,24 +44,11 @@ export default function ConversationalOnboarding() {
 
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
-        if (cancelled) return;
-
-        if (!child) {
-          void navigate('/Home', { replace: true });
-          return;
-        }
-
-        // Preload existing data — no auto-redirect forward even if personality is ready.
-        const viewModel = child.personality?.view_model;
-        const personalityReady = !!(viewModel?.type && viewModel?.profile);
-        setHasPersonality(personalityReady);
-        const normalized = normalizeOnboardingChildDataBlob(child);
-        if (normalized) {
-          childDataRef.current = mergeChildDraft(normalized);
-        }
+        const draft = await onboarding.draft(childId);
+        if (!cancelled) draftRef.current = draft;
       } catch (err) {
         console.warn('[ConversationalOnboarding] Hydration failed:', err);
+        if (!cancelled) void navigate('/Home', { replace: true });
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -76,123 +59,48 @@ export default function ConversationalOnboarding() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
-  const finalizePersonality = useCallback(async () => {
-    if (!childId) return;
-    try {
-      const child = await api.entities.Child.get(childId);
-      const personality = child?.personality;
-      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as
-        | Record<string, unknown>
-        | undefined;
-      const merged = childDataRef.current;
-
-      if (pendingVm && merged) {
-        const adapted = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
-        await api.entities.Child.update(childId, {
-          personality: { source: 'llm', view_model: stripViewModelImages(adapted) },
-          onboarding_phase: 3,
-          onboarding_completed: true,
-        });
-      } else {
-        // No pending vm — still mark journey complete
-        await api.entities.Child.update(childId, {
-          onboarding_phase: 3,
-          onboarding_completed: true,
-        });
-      }
-    } catch (err) {
-      console.warn('[ConversationalOnboarding] Failed to finalize personality:', err);
-      setJobFailed(true);
-      return;
-    }
-    void navigate(`/PersonalityJourney/${childId}`);
-  }, [childId, navigate]);
-
-  const job = useJob({
-    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
-    jobType: 'generate_personality_analysis',
-    onCompleted: finalizePersonality,
-  });
-
-  const { enqueue: enqueueJob, retry: retryJob } = job;
-
-  // On job failure show the inline error screen instead of navigating away.
-  useEffect(() => {
-    if (job.isFailed && processingRef.current) {
-      setJobFailed(true);
-    }
-  }, [job.isFailed]);
-
-  const handleRetry = useCallback(async () => {
-    if (!jobPayloadRef.current) return;
-    setJobFailed(false);
-    processingRef.current = true;
-    try {
-      await retryJob(jobPayloadRef.current);
-    } catch (err) {
-      console.warn('[ConversationalOnboarding] Retry failed:', err);
-      setJobFailed(true);
-    }
-  }, [retryJob]);
-
-  const handleComplete = useCallback(
-    async (conversationData: Record<string, unknown>) => {
-      const mergedDraft = mergeChildDraft({ ...(childDataRef.current ?? {}), ...conversationData });
-      childDataRef.current = mergedDraft;
-
-      try {
-        if (childId) {
-          await api.entities.Child.update(childId, {
-            ...mergedDraft,
-            onboarding_phase: 2,
-            onboarding_completed: false,
-            ...(!hasPersonality && { personality: null }),
-          });
-        }
-      } catch (err) {
-        console.warn('[ConversationalOnboarding] Could not save chatbot data:', err);
-      }
-
-      // If personality already exists, no analysis job needed — go straight through.
-      if (hasPersonality) {
-        void navigate(`/PersonalityJourney/${childId}`);
+  const save = useCallback(
+    async (collected: Record<string, unknown>) => {
+      if (!childId) return;
+      pendingRef.current = collected;
+      setSaveError(null);
+      const answers = answersFrom(collected);
+      if (!answers) {
+        setSaveError('Some answers are missing. Please go through the chat again.');
         return;
       }
-
-      // Kick off personality analysis job; navigation happens via useJob onCompleted.
       try {
-        const freshChild = await api.entities.Child.get(childId!);
-        setChildData(freshChild);
-
-        const activeJobId = (freshChild as Record<string, Record<string, string>>)?.active_jobs
-          ?.generate_personality_analysis;
-
-        const payload: EnqueueJobPayload = {
-          type: 'generate_personality_analysis',
-          child_id: childId!,
-          payload: {
-            prompt: buildPersonalityAnalysisPrompt({
-              childData: mergedDraft,
-              personalityTypeKeys: PERSONALITY_TYPE_KEYS,
-            }),
-            response_json_schema: personalityLlmSchema(),
-          },
-          write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
-        };
-        jobPayloadRef.current = payload;
-        processingRef.current = true;
-
-        if (!activeJobId) {
-          await enqueueJob(payload);
-        }
-        // else: useJob picks up activeJobId via setChildData and polls automatically.
+        await onboarding.save(childId, answers);
       } catch (err) {
-        console.warn('[ConversationalOnboarding] Could not start personality job:', err);
-        processingRef.current = false;
-        setJobFailed(true);
+        console.warn('[ConversationalOnboarding] Could not save the answers:', err);
+        setSaveError(
+          httpErrorMessage(err as Error, {
+            codeMessages: ONBOARDING_ERRORS,
+            fallback: "We couldn't save your answers. Please try again.",
+          }),
+        );
+        return;
       }
+      // Wait here, on the thank-you screen, for discover to finish the personality.
+      // Whatever happens (it failed, it's slow, the network dropped), go on to the hub:
+      // it shows a failure with Try again, and keeps waiting for a slow one.
+      const signal = unmountSignal.current.signal;
+      try {
+        await settlePersonality(childId, { signal, timeoutMs: 3 * 60_000 });
+      } catch (err) {
+        if (signal.aborted) return;
+        console.warn('[ConversationalOnboarding] Personality not ready yet:', err);
+      }
+      if (signal.aborted) return;
+      void navigate(`/PersonalityJourney/${childId}`);
     },
-    [childId, hasPersonality, navigate, enqueueJob],
+    [childId, navigate, unmountSignal],
+  );
+
+  const handleComplete = useCallback(
+    (conversationData: Record<string, unknown>) =>
+      save({ ...draftRef.current, ...conversationData }),
+    [save],
   );
 
   return (
@@ -215,17 +123,15 @@ export default function ConversationalOnboarding() {
                 activeChildId={childId}
                 resumeHydrationReady={hydrated}
                 onComplete={handleComplete}
-                onContinueToPersonality={() => {
-                  void handleComplete({});
-                }}
+                onContinueToPersonality={() => handleComplete({})}
               />
             </div>
 
-            {/* Error overlay — fades in over the loading screen when the analysis job fails */}
+            {/* Error overlay — fades in over the loading screen when the save fails */}
             <AnimatePresence>
-              {jobFailed && (
+              {saveError !== null && (
                 <motion.div
-                  key="job-error"
+                  key="save-error"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -236,10 +142,12 @@ export default function ConversationalOnboarding() {
                   <p className="w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl">
                     Something went wrong
                   </p>
-                  <p className="text-center text-base text-white/60">
-                    We couldn&apos;t create your child&apos;s profile. Please try again.
-                  </p>
-                  <Button onClick={() => void handleRetry()} size="lg" className="mt-4">
+                  <p className="text-center text-base text-white/60">{saveError}</p>
+                  <Button
+                    onClick={() => void save(pendingRef.current ?? draftRef.current)}
+                    size="lg"
+                    className="mt-4"
+                  >
                     Try again
                   </Button>
                 </motion.div>

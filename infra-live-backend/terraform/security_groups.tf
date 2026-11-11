@@ -3,10 +3,12 @@
 # The ALB's lives in ../../modules/alb, Redis's in ../../modules/redis and the
 # VPC endpoints' in ../../modules/network (TF-01).
 #
-# Unrestricted egress via NAT for LLM APIs and MongoDB Atlas. In stg/prod, AWS
+# Unrestricted egress via NAT for LLM APIs, and MongoDB Atlas in dev/sbx (stg and prod reach
+# their cluster through the PrivateLink endpoint instead, atlas.tf, DEC-02). In stg/prod, AWS
 # service traffic (ECR, Secrets Manager, CloudWatch, X-Ray) routes via VPC
 # Interface Endpoints before reaching NAT; in dev/sbx all of it goes through
-# NAT. Inbound: only the HTTP service, only from the ALB, only on its port.
+# NAT. Inbound: an HTTP service's port only from the ALB, and a registered
+# runtime's internal port only from internal-callers (service_discovery.tf).
 # ---------------------------------------------------------------------------
 
 #trivy:ignore:AVD-AWS-0104
@@ -15,8 +17,8 @@ resource "aws_security_group" "service" {
   #checkov:skip=CKV2_AWS_5:Attached to each ECS service via module.service[*]'s security_group_ids (and to Redis/endpoint rules); checkov's graph check doesn't follow module inputs — tests/stack.tftest.hcl asserts the attachment
   for_each = local.services
 
-  name        = "${var.app_name}-${try(each.value.security_group.name, null) != null ? each.value.security_group.name : "${each.key}-sg"}-${var.environment}"
-  description = try(each.value.security_group.description, null) != null ? each.value.security_group.description : "${each.value.display_name} tasks: ${each.value.http != null ? "port ${each.value.http.port} from the ALB" : "no inbound"}; unrestricted egress via NAT"
+  name        = "${var.app_name}-${each.key}-sg-${var.environment}"
+  description = "${each.value.display_name} tasks: ${each.value.http != null ? "port ${each.value.http.port} from the ALB" : "no ALB"}${each.value.internal_port != null ? ", ${each.value.internal_port} from internal callers" : ""}; unrestricted egress via NAT"
   vpc_id      = module.network.vpc_id
 
   egress {
@@ -28,7 +30,7 @@ resource "aws_security_group" "service" {
   }
 
   tags = {
-    Name = "${var.app_name}-${try(each.value.security_group.name, null) != null ? each.value.security_group.name : "${each.key}-sg"}-${var.environment}"
+    Name = "${var.app_name}-${each.key}-sg-${var.environment}"
   }
 }
 

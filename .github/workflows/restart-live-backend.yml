@@ -6,7 +6,7 @@ on:
     inputs:
       # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "Services to restart: all, or a comma-separated list of: auth, admin, backend, worker (e.g. backend,worker). Restarted in parallel."
+        description: "Services to restart: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, shared (e.g. users,users-worker). Restarted in parallel."
         required: true
         default: "all"
         type: string
@@ -20,23 +20,14 @@ on:
           - sbx
           - stg
           - prod
-      # workflow_dispatch has no native multi-select input, so every valid
-      # non-empty combination of the 3 supported regions is enumerated below
-      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
-      # region means hand-adding its combinations here too (2^n - 1 total).
-      # Each selected region runs as its own parallel matrix instance.
+      # Free text, checked against shared/routing.json's regions and turned into a
+      # JSON array in the first job (TF-01): adding a region is one line in that file,
+      # with no list of every combination to keep here.
       aws_regions:
-        description: "AWS region(s) — each runs as a separate parallel job"
+        description: "AWS region(s), comma-separated, e.g. ap-south-1 or ap-south-1,eu-west-1 (supported: shared/routing.json's regions)"
         required: true
-        type: choice
-        options:
-          - '["ap-south-1"]'
-          - '["eu-west-1"]'
-          - '["us-east-1"]'
-          - '["ap-south-1","eu-west-1"]'
-          - '["ap-south-1","us-east-1"]'
-          - '["eu-west-1","us-east-1"]'
-          - '["ap-south-1","eu-west-1","us-east-1"]'
+        type: string
+        default: "ap-south-1"
 
 permissions:
   id-token: write
@@ -44,8 +35,8 @@ permissions:
 
 # Locked per environment (not per service or region): one run at a time per
 # environment across deploy, promote and restart, which share this namespace.
-# Not per service: `service` is free text, so "all", "backend" and
-# "worker, backend" would be different locks over the same ECS services.
+# Not per service: `service` is free text, so "all", "users" and
+# "users-worker, users" would be different locks over the same ECS services.
 concurrency:
   group: deploy-live-backend-superpower-${{ inputs.environment }}
   cancel-in-progress: false
@@ -54,6 +45,29 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # Checks the inputs before any environment's secrets are loaded (SEC-07), and turns the
+  # typed regions into the JSON array the later jobs read (TF-01).
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      regions: ${{ steps.check.outputs.regions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        id: check
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGIONS:     ${{ inputs.aws_regions }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
+
   # -------------------------------------------------------------------------
   # Turn inputs.service into the list of service names to restart, from the
   # ecs_services list in SSM (terraform-live-backend, services.tf) — so the
@@ -62,31 +76,34 @@ jobs:
   # -------------------------------------------------------------------------
   resolve:
     name: Resolve services
+    needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: ${{ inputs.environment }}
     outputs:
       services: ${{ steps.list.outputs.services }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Validate required secrets and variables
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.1
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: restart-live-backend-${{ inputs.environment }}
@@ -95,34 +112,37 @@ jobs:
       - name: List services
         id: list
         env:
-          FIRST_REGION: ${{ fromJson(inputs.aws_regions)[0] }}
+          FIRST_REGION: ${{ fromJson(needs.validate.outputs.regions)[0] }}
           SELECTION: ${{ inputs.service }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           source scripts/ecs-services.sh
-          SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
+          SERVICES=$(resolve_services "/${APP_NAME}/${ENVIRONMENT}/backend/$FIRST_REGION" "$SELECTION")
           echo "services=$(jq -c '[.[].name]' <<<"$SERVICES")" >> "$GITHUB_OUTPUT"
           echo "Restarting: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
 
   restart:
     name: Restart Live Backend (${{ matrix.service }}, ${{ matrix.aws_region }})
-    needs: resolve
+    needs: [validate, resolve]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # One parallel instance per selected region × service. fail-fast: false —
     # an in-flight rollout must never be cancelled just because another
     # instance failed.
     strategy:
       fail-fast: false
       matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
         service: ${{ fromJson(needs.resolve.outputs.services) }}
     environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.1
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: restart-live-backend-${{ inputs.environment }}
@@ -150,10 +170,5 @@ jobs:
           echo "Cluster: $CLUSTER"
           echo "Service ($SERVICE_NAME): $SERVICE"
 
-          aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --force-new-deployment \
-            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-            --output json | cat
-          wait_stable "$CLUSTER" "$SERVICE"
+          # No task definition: --force-new-deployment, then wait for that deployment.
+          roll_out "$CLUSTER" "$SERVICE"

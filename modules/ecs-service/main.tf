@@ -14,6 +14,11 @@
 locals {
   family = "${var.app_name}-${var.role}-${var.environment}"
 
+  # The public port (the ALB's target), then the internal one (Cloud Map, 13.2).
+  port_mappings = [
+    for port in [var.container.port, var.internal_port] : { containerPort = port, protocol = "tcp" } if port != null
+  ]
+
   # Optional parts are merged in, not set to null, so the task definition
   # JSON has no `"command": null`-style keys (they'd show up as a diff).
   main_container = merge(
@@ -33,8 +38,9 @@ locals {
       }
     },
     var.container.command != null ? { command = var.container.command } : {},
-    var.container.port != null ? { portMappings = [{ containerPort = var.container.port, protocol = "tcp" }] } : {},
+    length(local.port_mappings) > 0 ? { portMappings = local.port_mappings } : {},
     var.container.health_check != null ? { healthCheck = var.container.health_check } : {},
+    var.container.stop_timeout != null ? { stopTimeout = var.container.stop_timeout } : {},
   )
 
   # ADOT collector sidecar — exports X-Ray traces and CloudWatch metrics.
@@ -49,7 +55,7 @@ locals {
 
   adot_sidecar = {
     name      = "aws-otel-collector"
-    image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0"
+    image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0@sha256:cdd2092033efbad8f4289eb53c2d729fdc2167b5395d71c175628f7eb1eb78aa"
     essential = false
     command   = ["--config=/etc/ecs/ecs-default-config.yaml"]
     cpu       = local.adot_cpu
@@ -99,7 +105,21 @@ resource "aws_ecs_service" "this" {
   cluster         = var.cluster_id
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  # A capacity provider strategy and a launch type are exclusive (TF-03).
+  launch_type = length(var.capacity_provider_strategy) == 0 ? "FARGATE" : null
+
+  dynamic "capacity_provider_strategy" {
+    for_each = var.capacity_provider_strategy
+    content {
+      capacity_provider = capacity_provider_strategy.value.capacity_provider
+      weight            = capacity_provider_strategy.value.weight
+      base              = capacity_provider_strategy.value.base
+    }
+  }
+
+  # Bounds the extra tasks a deploy starts; the minimum stays 100% healthy (TF-03).
+  deployment_maximum_percent         = var.deployment_maximum_percent
+  deployment_minimum_healthy_percent = 100
 
   enable_execute_command = var.enable_execute_command
 
@@ -120,6 +140,15 @@ resource "aws_ecs_service" "this" {
 
   health_check_grace_period_seconds = var.health_check_grace_period_seconds
 
+  # ECS registers each task's IP when it starts and deregisters it when it starts
+  # stopping (13.2).
+  dynamic "service_registries" {
+    for_each = var.service_discovery != null ? [1] : []
+    content {
+      registry_arn = aws_service_discovery_service.this[0].arn
+    }
+  }
+
   deployment_circuit_breaker {
     enable   = true
     rollback = true
@@ -129,11 +158,64 @@ resource "aws_ecs_service" "this" {
     type = "ECS"
   }
 
-  lifecycle {
-    ignore_changes = [task_definition, desired_count]
-  }
-
   tags = {
     Name = "${var.app_name}-${var.role}-service-${var.environment}"
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+
+    precondition {
+      condition     = var.service_discovery == null || var.internal_port != null
+      error_message = "${local.family}: service_discovery registers the internal API, so it needs internal_port (8001, or 4318 for the collector)."
+    }
+    precondition {
+      condition     = var.deployment_maximum_percent == 200 || floor(var.desired_count * var.deployment_maximum_percent / 100) > var.desired_count
+      error_message = "${local.family}: deployment_maximum_percent ${var.deployment_maximum_percent} leaves no room for an extra task at desired_count ${var.desired_count}, so a deploy could never start one. Use 200, or a desired count of at least 2."
+    }
+    precondition {
+      condition     = var.internal_port == null || var.internal_port != var.container.port
+      error_message = "${local.family}: internal_port must differ from the container's public port."
+    }
+  }
+}
+
+# Cloud Map service for this ECS service (13.2): multivalue A records, so each
+# lookup returns up to 8 task IPs and the client picks one at random. ECS reports
+# each task's health from its container health check, so an unhealthy or
+# stopping task isn't answered.
+resource "aws_service_discovery_service" "this" {
+  count = var.service_discovery != null ? 1 : 0
+
+  name = coalesce(var.service_discovery.name, var.role)
+
+  # ECS deregisters a stopped task's instance in the background, so when the ECS
+  # service and this are destroyed together, instances can still be registered
+  # (ResourceInUse). Delete them too: they belong to tasks that are already gone.
+  force_destroy = true
+
+  dns_config {
+    namespace_id   = var.service_discovery.namespace_id
+    routing_policy = "MULTIVALUE"
+
+    dns_records {
+      type = "A"
+      ttl  = var.service_discovery.dns_ttl
+    }
+  }
+
+  # ECS reports health from the container health check (failure_threshold is
+  # deprecated: AWS always uses 1).
+  health_check_custom_config {}
+
+  tags = {
+    Name = "${var.app_name}-${var.role}-discovery-${var.environment}"
+  }
+
+  # AWS stores failure_threshold = 1 in that block, but the provider doesn't read it
+  # back as computed, so every plan saw 1 → null and replaced the service (the block
+  # forces a new one), which fails while the service's tasks are registered.
+  lifecycle {
+    ignore_changes = [health_check_custom_config]
   }
 }

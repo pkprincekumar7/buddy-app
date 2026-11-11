@@ -1,33 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { api } from '@/api/client';
-import { ApiError } from '@/api/errors';
-import { useJob } from '@/hooks/useJob';
+import { isAbort } from '@/api/polling';
 import {
-  buildNinetyDayPlanPrompt,
-  buildNinetyDayTrackerPrompt,
-  ninetyDayPlanSchema,
-  ninetyDayTrackerSchema,
-} from '@/lib/ninetyDayPlanPrompt';
+  runTransformGeneration,
+  transform,
+  TRANSFORM_ERRORS,
+  type PlanPatch,
+  type PlanPhoto,
+  type TransformDoc,
+  type TransformKind,
+} from '@/api/transform';
+import { httpErrorMessage } from '@/lib/apiError';
 import { FB_TAGS, type FeedbackTag } from '@/lib/startJourneyPlans';
-import type { ChildRecord, NinetyDayPlanRecord } from '@/types/api';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 
-export interface ActivityFeedback {
+// A type, not an interface, so it fits the patch's `feedback` map (an index signature).
+export type ActivityFeedback = {
   tag?: FeedbackTag | null;
   note?: string;
-}
-
-export interface PersonalityProfile {
-  personality_type?: string;
-  summary?: string;
-  top_strengths?: unknown[];
-}
+};
 
 interface UseNinetyDayPlanOptions {
   childId: string | undefined;
-  childData: ChildRecord | null;
-  profile: PersonalityProfile | null;
 }
+
+/** A photo on a plan item: its S3 key once uploaded (none while a local preview). */
+interface PhotoItem {
+  key?: string;
+  url: string;
+}
+
+type GenerationState = 'idle' | 'running' | 'failed';
 
 const PATCH_DEBOUNCE_MS = 600;
 
@@ -47,41 +50,42 @@ function normalizeFeedback(raw: unknown): Record<string, ActivityFeedback> {
   return out;
 }
 
-/** Coerces a stored document's photos map into the shape photoFiles keeps
- * locally — defensive against anything malformed, same reasoning as
- * normalizeFeedback above. */
-function hydratePhotos(raw: unknown): Record<string, { url: string }[]> {
-  if (!raw || typeof raw !== 'object') return {};
-  const out: Record<string, { url: string }[]> = {};
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (!Array.isArray(value)) continue;
-    const urls = value.filter((v): v is string => typeof v === 'string');
-    if (urls.length) out[key] = urls.map((url) => ({ url }));
+/** The stored photos (key and a short-lived URL each) as photoFiles keeps them. */
+function hydratePhotos(raw: Record<string, PlanPhoto[]>): Record<string, PhotoItem[]> {
+  const out: Record<string, PhotoItem[]> = {};
+  for (const [key, photos] of Object.entries(raw)) {
+    const items = photos.map((photo) => ({ key: photo.key, url: photo.url ?? '' }));
+    if (items.length) out[key] = items;
   }
   return out;
 }
 
-/** The inverse — only ever persists real uploaded URLs, never a transient
- * blob: preview that's still mid-upload (or failed and got rolled back). */
-function toPhotosPayload(files: Record<string, { url: string }[]>): Record<string, string[]> {
+/** The inverse: the keys to save, never a local preview that's still mid-upload (or
+ * failed and got rolled back). A key sent replaces that key's list (build plan 7.7). */
+function toPhotosPayload(files: Record<string, PhotoItem[]>): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const [key, items] of Object.entries(files)) {
-    const urls = items.map((item) => item.url).filter((url) => !url.startsWith('blob:'));
-    if (urls.length) out[key] = urls;
+    out[key] = items.flatMap((item) => (item.key ? [item.key] : []));
   }
   return out;
 }
 
 /**
  * Owns the "Start {name}'s 90 days" flow end to end: fetches/generates/persists
- * the plan + tracker document (backed by `GET/PATCH /user/ninety-day-plan`,
- * plus the generate_ninety_day_plan / generate_event_tracker LLM jobs), and
- * every mutating callback the Dashboard/Tracker steps use — replaces the old
- * unpersisted useNinetyDayProgress.
+ * the plan + tracker (backed by `GET/PATCH …/transform`, plus transform's `plan` and
+ * `event_tracker` generations, whose prompts transform builds from the saved `ask` and
+ * event — build plan 7.7), and every mutating callback the Dashboard/Tracker steps use.
  */
-export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPlanOptions) {
-  const [doc, setDoc] = useState<NinetyDayPlanRecord | null>(null);
+export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
+  const [doc, setDoc] = useState<TransformDoc | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(true);
+  // The load failed: local state is empty, not the parent's, so nothing may be
+  // saved or generated from it — each PATCH field replaces the stored one, and an
+  // empty map sent from here would wipe what the parent already saved.
+  const [loadError, setLoadError] = useState<unknown>(null);
+  // Mirrors "a load succeeded for this child" for the callbacks, free of render timing.
+  const loadedRef = useRef(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [ask, setAsk] = useState('');
   const [monthIdx, setMonthIdx] = useState(0);
@@ -91,7 +95,9 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
   const [actCt, setActCt] = useState<Record<string, number>>({});
   const [fb, setFb] = useState<Record<string, ActivityFeedback>>({});
   const [fbDraft, setFbDraft] = useState<Record<string, string>>({});
-  const [photoFiles, setPhotoFiles] = useState<Record<string, { url: string }[]>>({});
+  const [photoFiles, setPhotoFiles] = useState<Record<string, PhotoItem[]>>({});
+  const [planState, setPlanState] = useState<GenerationState>('idle');
+  const [trackerState, setTrackerState] = useState<GenerationState>('idle');
 
   const [evName, setEvName] = useState('');
   const [evDate, setEvDate] = useState('');
@@ -107,27 +113,36 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
   useEffect(() => {
     if (!childId) return;
     let cancelled = false;
+    loadedRef.current = false;
     setLoadingDoc(true);
-    api.ninetyDayPlan
+    setLoadError(null);
+    transform
       .get(childId)
       .then((fetched) => {
         if (cancelled) return;
+        loadedRef.current = true;
         setDoc(fetched);
-        setAsk(typeof fetched.ask === 'string' ? fetched.ask : '');
-        setApplied(fetched.applied ?? {});
-        setActIn(fetched.act_inputs ?? {});
-        setActCt(fetched.act_counts ?? {});
+        setAsk(fetched.ask ?? '');
+        setApplied(fetched.applied);
+        setActIn(fetched.act_inputs);
+        setActCt(fetched.act_counts);
         setFb(normalizeFeedback(fetched.feedback));
         setPhotoFiles(hydratePhotos(fetched.photos));
         setEvName(fetched.event_name ?? '');
         setEvDate(fetched.event_date ?? '');
-        setEvSet(fetched.event_set ?? false);
-        setTrDone(fetched.track_done ?? {});
-        setTrIn(fetched.track_inputs ?? {});
-        setTrSit(fetched.track_sittings ?? {});
+        setEvSet(fetched.event_set);
+        setTrDone(fetched.track_done);
+        setTrIn(fetched.track_inputs);
+        setTrSit(fetched.track_sittings);
+        // A generation still running (another device, or a reload mid-run): join it.
+        if (fetched.generating.includes('plan')) setResume((prev) => [...prev, 'plan']);
+        if (fetched.generating.includes('event_tracker'))
+          setResume((prev) => [...prev, 'event_tracker']);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.warn('[useNinetyDayPlan] Could not load the saved plan:', err);
+        setLoadError(err ?? new Error('load failed'));
       })
       .finally(() => {
         if (!cancelled) setLoadingDoc(false);
@@ -135,106 +150,122 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
     return () => {
       cancelled = true;
     };
-  }, [childId]);
+  }, [childId, reloadKey]);
+
+  /** Loads the saved plan again, after a failed load. */
+  const reload = useCallback(() => setReloadKey((n) => n + 1), []);
 
   // Debounced, best-effort persistence — merges every scheduled patch into one
   // pending buffer so a burst of quick taps/keystrokes becomes one write.
-  const pendingPatchRef = useRef<Record<string, unknown>>({});
+  const pendingPatchRef = useRef<PlanPatch>({});
   const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flushPatch = useCallback(() => {
-    if (!childId) return;
+  const flushPatch = useCallback(async (): Promise<boolean> => {
+    if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
+    patchTimerRef.current = null;
+    if (!childId) return false;
     const body = pendingPatchRef.current;
     pendingPatchRef.current = {};
-    if (Object.keys(body).length === 0) return;
-    api.ninetyDayPlan.patch(childId, body).catch((err) => {
+    if (Object.keys(body).length === 0) return true;
+    try {
+      await transform.patch(childId, body);
+      return true;
+    } catch (err) {
       console.error('[useNinetyDayPlan] Failed to save progress:', err);
-      toast.error('Could not save your progress. Please try again.');
-    });
+      toast.error(
+        httpErrorMessage(err as Error, {
+          codeMessages: TRANSFORM_ERRORS,
+          fallback: 'Could not save your progress. Please try again.',
+        }),
+      );
+      return false;
+    }
   }, [childId]);
 
   const schedulePatch = useCallback(
-    (partial: Record<string, unknown>) => {
+    (partial: PlanPatch) => {
+      // Never save over the stored document from state that wasn't loaded from it.
+      if (!loadedRef.current) return;
       pendingPatchRef.current = { ...pendingPatchRef.current, ...partial };
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
-      patchTimerRef.current = setTimeout(flushPatch, PATCH_DEBOUNCE_MS);
+      patchTimerRef.current = setTimeout(() => void flushPatch(), PATCH_DEBOUNCE_MS);
     },
     [flushPatch],
   );
 
   useEffect(
     () => () => {
-      if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
-      flushPatch();
+      void flushPatch();
     },
     [flushPatch],
   );
 
-  // ─── Plan generation ─────────────────────────────────────────────────────
+  // ─── Plan and tracker generation ─────────────────────────────────────────
 
-  const refetchDoc = useCallback(() => {
-    if (!childId) return;
-    return api.ninetyDayPlan.get(childId).then(setDoc);
-  }, [childId]);
+  // Stops polling when the flow goes away.
+  const abortRef = useUnmountSignal();
+  // Generations found running on load, to join.
+  const [resume, setResume] = useState<TransformKind[]>([]);
 
-  const planJob = useJob({
-    activeJobs: childData?.active_jobs,
-    jobType: 'generate_ninety_day_plan',
-    onCompleted: refetchDoc,
-  });
+  /**
+   * Saves whatever is pending (transform builds the prompt from the saved `ask` and
+   * event), runs the generation, then reads the plan back.
+   */
+  const runGeneration = useCallback(
+    async (kind: 'plan' | 'event_tracker') => {
+      if (!childId || !loadedRef.current) return;
+      const setState = kind === 'plan' ? setPlanState : setTrackerState;
+      setState('running');
+      try {
+        if (!(await flushPatch())) {
+          setState('failed');
+          return;
+        }
+        const outcome = await runTransformGeneration(childId, kind, {
+          signal: abortRef.current.signal,
+        });
+        if (outcome === 'completed') {
+          setDoc(await transform.get(childId));
+          setState('idle');
+        } else {
+          setState('failed');
+        }
+      } catch (err) {
+        if (isAbort(err)) return;
+        console.error(`[useNinetyDayPlan] ${kind} generation failed:`, err);
+        toast.error(
+          httpErrorMessage(err as Error, {
+            codeMessages: TRANSFORM_ERRORS,
+            fallback: 'Could not build the plan. Please try again.',
+          }),
+        );
+        setState('failed');
+      }
+    },
+    [abortRef, childId, flushPatch],
+  );
+
+  useEffect(() => {
+    if (resume.length === 0) return;
+    for (const kind of resume) {
+      if (kind === 'plan' || kind === 'event_tracker') void runGeneration(kind);
+    }
+    setResume([]);
+  }, [resume, runGeneration]);
 
   const generatePlan = useCallback(
     (askText: string) => {
-      if (!childId) return;
-      const prompt = buildNinetyDayPlanPrompt({
-        childName: typeof childData?.name === 'string' ? childData.name : null,
-        age: childData?.age ?? null,
-        gender: typeof childData?.gender === 'string' ? childData.gender : null,
-        ask: askText,
-        archetype: profile?.personality_type ?? null,
-        personalityNarrative: profile?.summary ?? null,
-        strengths: Array.isArray(profile?.top_strengths)
-          ? profile.top_strengths.map((v) => String(v)).filter(Boolean)
-          : null,
-      });
-      void planJob.enqueue({
-        type: 'generate_ninety_day_plan',
-        child_id: childId,
-        payload: { prompt, response_json_schema: ninetyDayPlanSchema() },
-        write_back: { collection: 'ninety_day_plans', filter: {}, field: 'plan' },
-      });
+      // The plan is built around the parent's words: make sure they're the saved ones.
+      schedulePatch({ ask: askText });
+      void runGeneration('plan');
     },
-    [childId, childData, profile, planJob],
+    [schedulePatch, runGeneration],
   );
 
-  // ─── Tracker generation ──────────────────────────────────────────────────
-
-  const trackerJob = useJob({
-    activeJobs: childData?.active_jobs,
-    jobType: 'generate_event_tracker',
-    onCompleted: refetchDoc,
-  });
-
-  const generateTrackSteps = useCallback(
-    (eventName: string, eventDate: string, interestLabel: string) => {
-      if (!childId) return;
-      const prompt = buildNinetyDayTrackerPrompt({
-        childName: typeof childData?.name === 'string' ? childData.name : null,
-        age: childData?.age ?? null,
-        gender: typeof childData?.gender === 'string' ? childData.gender : null,
-        interestLabel,
-        eventName,
-        eventDate,
-      });
-      void trackerJob.enqueue({
-        type: 'generate_event_tracker',
-        child_id: childId,
-        payload: { prompt, response_json_schema: ninetyDayTrackerSchema() },
-        write_back: { collection: 'ninety_day_plans', filter: {}, field: 'track_steps' },
-      });
-    },
-    [childId, childData, trackerJob],
-  );
+  /** The tracker, built around the saved Day-90 event and the same `ask`. */
+  const generateTrackSteps = useCallback(() => {
+    void runGeneration('event_tracker');
+  }, [runGeneration]);
 
   // ─── Local-state callbacks — each also schedules a save ─────────────────
 
@@ -318,7 +349,7 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
 
   const addPhotos = useCallback(
     (key: string, files: FileList | null) => {
-      if (!files || files.length === 0 || !childId) return;
+      if (!files || files.length === 0 || !childId || !loadedRef.current) return;
       const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
       if (imageFiles.length === 0) {
         // Silent no-op otherwise — e.g. a HEIC photo some browsers report
@@ -334,13 +365,15 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
         const localUrl = URL.createObjectURL(file);
         setPhotoFiles((prev) => ({ ...prev, [key]: [...(prev[key] ?? []), { url: localUrl }] }));
 
-        api.ninetyDayPlan
-          .uploadPhoto(childId, key, file)
-          .then(({ photo_url }) => {
+        transform
+          .uploadPhoto(childId, key, file, file.type)
+          .then((uploaded) => {
             setPhotoFiles((prev) => {
               const next = {
                 ...prev,
-                [key]: (prev[key] ?? []).map((p) => (p.url === localUrl ? { url: photo_url } : p)),
+                [key]: (prev[key] ?? []).map((p) =>
+                  p.url === localUrl ? { key: uploaded.key, url: uploaded.url ?? '' } : p,
+                ),
               };
               schedulePatch({ photos: toPhotosPayload(next) });
               return next;
@@ -352,9 +385,13 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
             // rejects) needs a different message — "try again" is actively
             // wrong when retrying the same file will fail identically.
             toast.error(
-              err instanceof ApiError && err.status === 415
-                ? 'That photo format isn’t supported. Try a JPEG, PNG, WEBP or GIF instead.'
-                : 'Could not upload the photo. Please try again.',
+              httpErrorMessage(err as Error, {
+                codeMessages: TRANSFORM_ERRORS,
+                statusMessages: {
+                  415: 'That photo format isn’t supported. Try a JPEG, PNG, WEBP or GIF instead.',
+                },
+                fallback: 'Could not upload the photo. Please try again.',
+              }),
             );
             setPhotoFiles((prev) => ({
               ...prev,
@@ -458,14 +495,18 @@ export function useNinetyDayPlan({ childId, childData, profile }: UseNinetyDayPl
   return {
     doc,
     loadingDoc,
+    /** The saved plan couldn't be loaded; saving and generation are off until `reload` succeeds. */
+    loadError,
+    loadFailed: loadError !== null,
+    reload,
     hasPlan: !!doc?.plan,
     hasTrackSteps: !!doc?.track_steps,
     generatePlan,
-    isGeneratingPlan: planJob.isLoading,
-    planFailed: planJob.isFailed,
+    isGeneratingPlan: planState === 'running',
+    planFailed: planState === 'failed',
     generateTrackSteps,
-    isGeneratingTrackSteps: trackerJob.isLoading,
-    trackerFailed: trackerJob.isFailed,
+    isGeneratingTrackSteps: trackerState === 'running',
+    trackerFailed: trackerState === 'failed',
 
     ask,
     setAsk: setAskAndSave,

@@ -1,7 +1,7 @@
 # aws_region and environment are supplied via workflow inputs (TF_VAR_*)
 
-# app_name, mongodb_db_name, domain_name, hosted_zone_id, acm_certificate_arn,
-# assets_bucket_name, subdomain_internal, cookie_domain, cors_origins,
+# app_name, domain_name, hosted_zone_id, acm_certificate_arn,
+# assets_bucket_name, subdomain_internal, cookie_domain,
 # openai_model, anthropic_model, gemini_model
 # are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
 
@@ -22,11 +22,15 @@ elasticache_node_type     = "cache.t4g.small"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 
-# ECS — API. One uvicorn process per task (backend/Dockerfile), so ~1 vCPU is
-# all it can use: scale out with more tasks, not bigger ones (TF-03).
-task_cpu      = 1024
-task_memory   = 2048
-desired_count = 2 # = api_min_capacity; only used on the first apply
+# ECS — one uvicorn process per task, so scale out with more tasks, not bigger
+# ones (TF-03). Auth is bcrypt-bound and keeps two (docs/auth-users-split.md, 15.3).
+runtime_sizes = {
+  "http"              = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
+  "auth"              = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
+  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 3 }
+  "generating-worker" = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
+  "collector"         = { cpu = 256, memory = 512, desired_count = 2, min_capacity = 2, max_capacity = 2 }
+}
 
 # Application
 llm_timeout_seconds = 60
@@ -37,46 +41,19 @@ llm_hourly_limit    = 100
 # an acceptable trade-off. Disabled in prod via prod.tfvars.
 enable_execute_command = true
 
-# Worker ECS
-# One asyncio process, I/O-bound on LLM calls — same sizing reasoning as the API.
-worker_task_cpu              = 1024
-worker_task_memory           = 2048
-worker_desired_count         = 1
-worker_concurrency           = 3
-worker_poll_interval_seconds = 3
-
-# Auth ECS (login/register are bcrypt-bound — scales on CPU)
-auth_task_cpu      = 512
-auth_task_memory   = 1024
-auth_desired_count = 2 # = auth_min_capacity
-
-# Admin ECS (/api/v1/admin/* — low traffic)
-admin_task_cpu      = 512
-admin_task_memory   = 1024
-admin_desired_count = 1
-
-# Autoscaling
-api_min_capacity    = 2
-api_max_capacity    = 10
-worker_min_capacity = 1
-worker_max_capacity = 5
-auth_min_capacity   = 2
-auth_max_capacity   = 4
-admin_min_capacity  = 1
-admin_max_capacity  = 2
-
-# Observability — stg: 30-day retention, ALB alarms only, no dashboard, no email alerts
+# Observability — stg: 30-day retention, every alarm, emailed (OBS-01): a problem shows
+# up here before prod. Needs the stg GitHub environment's OPS_EMAIL variable; confirm
+# the subscription email SNS sends after the first apply. No dashboard.
 log_retention_days         = 30
 enable_basic_alarms        = true
-enable_all_alarms          = false
+enable_all_alarms          = true
 enable_dashboard           = false
-enable_xray_error_rule     = false
 xray_default_sampling_rate = 0.05
-enable_ops_email           = false
+enable_ops_email           = true
 
 # Security — GuardDuty and CloudTrail enabled on stg
-# regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name
-# GitHub secret (REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1) — do not set here
+# regional_logging_bucket_name comes from this region's entry of the
+# REGIONAL_LOGGING_BUCKET_NAMES GitHub environment variable — do not set here
 enable_guardduty  = true
 enable_cloudtrail = true
 
@@ -84,14 +61,18 @@ enable_cloudtrail = true
 # (see enable_alb_access_logs's own description); shares the same bucket
 enable_alb_access_logs = true
 
-# ADOT sidecar — off. The backend has no OpenTelemetry/X-Ray instrumentation,
-# so a collector would receive nothing, and ECS already publishes per-service
-# CPU/memory metrics (AWS/ECS). The app now gets the whole task
-# (the sidecar reserved 256 CPU / 512 MiB of it); task size, and so cost, are
-# unchanged. Tracing plan: docs/auth-users-split.md section 15.5.
-enable_adot_sidecar = false
-
 # Container Insights — off. Only a few testers use this environment, and
 # autoscaling, alarms and the dashboard use the free AWS/ECS metrics, so it
 # would only add ~$34/month of task-level metrics nobody reads.
 enable_container_insights = false
+
+# Accounts promote-live-backend copies this environment's images to: prod's (one AWS
+# account per environment, CI-09). Uncomment with their 12-digit account IDs once known;
+# the target's deploy role also needs ECR pull on these repositories (docs/environments.md, 4).
+# ecr_pull_account_ids = ["111111111111"]
+
+# stg runs on Atlas M10 (2026-11-05: Atlas's Test Failover needs M10 or above, DB-05), which
+# allows 1500 connections per cluster, for every region together. The budget is 70% of that
+# (1050), the same headroom as prod (DB-01), and this is one region's share (TF-03). At peak
+# (76 tasks, pool 5 + 6 monitoring each) the tasks open 836.
+mongodb_connection_budget = 1050

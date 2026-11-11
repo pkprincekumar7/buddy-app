@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { account } from '@/api/account';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { COUNTRIES } from '@/lib/countries';
@@ -10,7 +10,10 @@ import { httpErrorMessage } from '@/lib/apiError';
 
 export default function Register() {
   const { checkAppState } = useAuth();
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [address, setAddress] = useState(['', '', '']);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -21,8 +24,8 @@ export default function Register() {
   const onSubmit = async (ev: FormEvent<HTMLFormElement>) => {
     ev.preventDefault();
     setError('');
-    if (!fullName.trim()) {
-      setError('Please enter your full name.');
+    if (!firstName.trim()) {
+      setError('Please enter your first name.');
       return;
     }
     if (!countryCode) {
@@ -38,17 +41,32 @@ export default function Register() {
       setError('Password must be at least 8 characters.');
       return;
     }
+    // The server's limit: bcrypt reads 72 bytes of UTF-8, so more would be ignored.
+    if (new TextEncoder().encode(password).length > 72) {
+      setError('Password must be at most 72 characters (fewer with accents or emoji).');
+      return;
+    }
     setBusy(true);
     try {
-      await api.auth.register(email.trim(), password, fullName.trim(), countryCode);
+      const optional = (value: string) => value.trim() || null;
+      await account.register(email.trim(), password, countryCode, {
+        first_name: firstName.trim(),
+        middle_name: optional(middleName),
+        last_name: optional(lastName),
+        address_line_one: optional(address[0] ?? ''),
+        address_line_two: optional(address[1] ?? ''),
+        address_line_three: optional(address[2] ?? ''),
+      });
       await checkAppState({ withLoading: false });
     } catch (e) {
       setError(
         httpErrorMessage(e as Error | undefined, {
           fallback: 'Registration failed.',
-          statusMessages: {
-            409: 'This email is already registered.',
-            403: 'This email address is not authorized to register. Please contact support.',
+          codeMessages: {
+            email_taken: 'This email is already registered.',
+            registration_closed:
+              'This email address is not authorized to register. Please contact support.',
+            registration_unavailable: 'Registration is briefly unavailable. Please try again.',
           },
         }),
       );
@@ -77,20 +95,50 @@ export default function Register() {
           className="space-y-4"
         >
           <div>
-            <Label htmlFor="reg-name" className="mb-1 block text-foreground">
-              Full name
+            <Label htmlFor="reg-first-name" className="mb-1 block text-foreground">
+              First name
             </Label>
             <input
-              id="reg-name"
+              id="reg-first-name"
               type="text"
-              autoComplete="name"
-              placeholder="e.g. Sarah Johnson"
+              autoComplete="given-name"
+              placeholder="e.g. Sarah"
               required
-              maxLength={255}
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
+              maxLength={100}
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
               className="form-input"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="reg-middle-name" className="mb-1 block text-foreground">
+                Middle name <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <input
+                id="reg-middle-name"
+                type="text"
+                autoComplete="additional-name"
+                maxLength={100}
+                value={middleName}
+                onChange={(e) => setMiddleName(e.target.value)}
+                className="form-input"
+              />
+            </div>
+            <div>
+              <Label htmlFor="reg-last-name" className="mb-1 block text-foreground">
+                Last name <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <input
+                id="reg-last-name"
+                type="text"
+                autoComplete="family-name"
+                maxLength={100}
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                className="form-input"
+              />
+            </div>
           </div>
           <div>
             <Label htmlFor="reg-email" className="mb-1 block text-foreground">
@@ -130,6 +178,25 @@ export default function Register() {
               Determines where your data is stored to comply with local privacy laws.
             </p>
           </div>
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-sm text-foreground">
+              Address <span className="text-muted-foreground">(optional)</span>
+            </legend>
+            {address.map((line, index) => (
+              <input
+                key={index}
+                aria-label={`Address line ${index + 1}`}
+                type="text"
+                autoComplete={`address-line${index + 1}`}
+                maxLength={200}
+                value={line}
+                onChange={(e) =>
+                  setAddress((lines) => lines.map((l, i) => (i === index ? e.target.value : l)))
+                }
+                className="form-input"
+              />
+            ))}
+          </fieldset>
           <div>
             <Label htmlFor="reg-password" className="mb-1 block text-foreground">
               Password

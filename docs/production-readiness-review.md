@@ -1,6 +1,9 @@
 # Production Readiness Review — Terraform & GitHub Actions
 
-> **Status:** Findings only — nothing in this document has been fixed yet.
+> **Updated 2026-11-09 (v10):** the doc was re-checked against the code; the tracker, the 🔄 notes and the line references reflect it (see the revision history). **v9 (2026-11-06)** recorded the fixes and decisions of 2026-11-01 to 2026-11-06. **v8 (2026-11-01)** checked every finding against the code after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
+> Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
+
+> **Status (2026-11-09):** of the 86 tracked findings, 57 are done, 18 partly done, 8 open and 3 moot; DR-01, CI-02, CI-05, SEC-04, SEC-08, SEC-09, MOB-01 and TF-02 are open but deferred, and CI-01 is partly done with its branch rule deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -13,6 +16,10 @@
 | v3 | 2026-10-18 | Full backend code review (`backend/app/**`, `worker.py`, tests) to check the plan against the application. Corrected APP-01/02/03/04/05/06/07/08, EDGE-01 (DB prerequisite), EDGE-04, EDGE-05, WAF-01 (real per-endpoint body sizes), SEC-05, TF-03, OBS-\*, DR-01, Appendix A (see "v3 correction" notes). Added the [Backend application](#backend-application-v3) section (DB-\*, JOB-\*, AUTH-\*, PRIV-\*, new APP-\*, SEC-10, OBS-04). |
 | v4 | 2026-10-18 | Aligned with the **actual database plan**: **near term, Atlas M10/M20 replica set in ap-south-1 only; future, M30+ Global Cluster.** Rewrote DB-01 as a staged plan. Added DEC-01 (multi-region compute while the DB is single-region) and DEC-02 (private connectivity to the DB). Raised NET-01 (conditional on DEC-01) and moved DB-02's connection budget into Phase 0. EDGE-01 deferred to the Global Cluster stage. Updated TF-03 (capacity capped by the DB), DR-01/DR-02, PRIV-03, Phase 0 and the dependencies. |
 | v5 | 2026-10-18 | Five-way verification pass (edge/security, pipelines, backend, infra/DB, internal consistency) against code and installed library versions. Fixed fixes that would have broken things: the PRIV-01 `errors()` kwargs, the EDGE-04 `aud` rollout order, uvicorn `--forwarded-allow-ips`, the CI-02 plan job without an environment, the SEC-05 same-stack secret, the CSP missing `blob:`, Fargate tmpfs, and the CI-04/SEC-07 grep commands. Corrected line numbers (TF-02, EDGE-05 schemas), counts (seven dropdowns, `check.yml` timeouts, approvals), the DB-02 connection math (per-node, surge) and the DB-01 index description. Added pitfalls (DEC-01 routing, JOB-02 attempts, AUTH-02 tombstones, JOB-06 write skew, TF-03 Spot replacement, Atlas CIDR immutability). Rebuilt the phase table so each item has one home, and added Phase 7 for the Global Cluster. Missing acceptance criteria added. |
+| v6–v7 | 2026-10-19 – 2026-10-23 | Implementation notes inline (marked **v6**/**v7**) as findings were fixed: EDGE-04, EDGE-05, APP-02, NET-01, TF-01, TF-03, TF-04, CI-12, L21. |
+| v8 | 2026-11-01 | Re-checked every finding against the code after the backend split (nine services, `backend/common`, per-service workers, SNS/SQS events, Valkey with IAM auth) and the removal of the monolith. Rewrote the verdict, architecture, "What's done well" and the tracker; added a **Current code** note to every finding and a status column to the low-severity table; marked finished items in the implementation order and Appendix A. New issues found: the service-token private keys are in Terraform state (SEC-01), and FastAPI's default 422 response echoes the submitted value, passwords included (PRIV-01, fixed the same day in `backend/common/validation.py`). |
+| v9 | 2026-11-02 – 2026-11-06 | Implementation and owner decisions, each recorded in its finding's 🔄 note: image signing, SBOM attestations and digest-pinned rollouts (CI-03), registry-to-registry promote (CI-09), every image pinned by digest (CI-04), service-token keys out of Terraform state (SEC-01), PrivateLink to Atlas M10 for stg and prod, both served from ap-south-1 (DB-01, DEC-01, DEC-02), Atlas connection budget, Spot workers and deploy surge (TF-03), the data-residency matrix (PRIV-03), and the one-admin, one-account-per-environment operating model (CI-08, DR-02). |
+| v10 | 2026-11-07 – 2026-11-09 | Re-checked the doc against the code. Corrected: TF-04's `maxmemory-policy = noeviction` was never set (now set in `modules/redis`, with a test); SEC-03's "a forged event can't touch prod" (it can, until fix 2); stg is served from ap-south-1 too (DEC-01, JOB-08); APP-01, APP-02, DB-01, NET-01, DR-01, AUTH-07, SEC-01 and OBS-01 notes aligned with the code and the operating model. Recorded: the pinned `zlib1g` exception in `backend/Dockerfile` (CI-03, CI-04), download retries (CI-04), the SARIF `suppressions` filter and the CodeQL fixes, including auth's UUIDv4 account-id path parameter (CI-08). Refreshed stale line references. |
 
 ---
 
@@ -33,12 +40,12 @@ Plan first, show me the plan, then implement.
 
 Rules for whoever implements these:
 
-- Line numbers were correct on 2026-10-18 — **re-locate by searching for the quoted code**, don't trust line numbers blindly.
+- Line numbers were correct on 2026-10-18 — **re-locate by searching for the quoted code**, don't trust line numbers blindly. Each finding's **Current code** note gives its 2026-11-01 locations; anything under `backend/app/` or `backend/worker.py` no longer exists.
 - Read the **"⚠️ Pitfalls"** notes before implementing. Several obvious-looking fixes break things (Lambda@Edge limits, CloudFront origin-group rules, PyJWT `aud` handling, EventBridge→Lambda retry semantics).
 - Keep the existing code style: heavy explanatory comments, `#checkov:skip=` with a justification, `default_tags` for tagging.
 - After any Terraform change: `terraform fmt -recursive`, `terraform validate`, `tflint` for that stack.
 - After any Lambda@Edge change: run `infra-live-edge/functions/jwt-validator-lambda.test.js` and add tests for the new behaviour.
-- After any backend change: `pytest` with the 99% coverage gate (`check.sh`).
+- After any backend change: `pytest` with the 99% coverage gate (`check.sh`). `check.sh` points `MONGODB_TEST_URI` and `REDIS_URL` at the ports the compose `mongo` and `valkey` publish when they aren't set, so `docker compose up -d mongo valkey` is enough for the live tests.
 - Update the matching doc in `docs/` (`ci-cd.md`, `infra-operations.md`, `jwt-keys.md`, `infra-architecture-multi-region.md`, `environments.md`) when behaviour changes. See DOC-01 for drift that already exists.
 - Mark a finding `✅ Done` in the tracker table when complete.
 
@@ -46,164 +53,172 @@ Rules for whoever implements these:
 
 ## Overall verdict
 
-**Solid foundation; not yet ready for large-scale, multi-region production.**
+**Close to ready for a first production launch in one region; not yet for multi-region production** (v10, 2026-11-09).
 
-The code is careful, well commented, and every scanner suppression has a reason. What stands in the way:
+Most findings are now fixed in code (57 done, 18 partly done). What's left is mostly things that can only be checked against a running environment, a few owner steps, and items the owner deferred.
 
-- **Single points of failure:** one region serves every login, and the only database is single-region in ap-south-1 (DB-01).
-- **Weak secret and identity handling:** the OIDC trust is documented as a wildcard on an admin role, the origin secret sits in the Lambda code, and the mobile builds are debug-signed and publicly downloadable.
-- **Pipelines can reach prod from any branch with no plan review.** Deploy waits can report a rolled-back deploy as success, and rollouts hit every region at once.
-- **Application-level gaps:** IP rate limits can be spoofed, and the WAF blocks audio uploads.
-- **No reuse across stacks:** the stacks are copy-pasted rather than modular.
-- **The database is the biggest blocker:** every region uses **one free-tier (M0) MongoDB Atlas cluster in ap-south-1**, with no SLA, no backups and a 500-connection cap (DB-01).
-  - The **near-term plan (v4)** is an **M10/M20 replica set, still only in ap-south-1**. That fixes backups, the SLA and features.
-  - The database stays **single-region**, so an ap-south-1 outage is a total outage, and eu-west-1/us-east-1 backends pay about 120–250 ms per DB round trip.
-  - M10/M20 CPU and connection limits cap how far the app can scale (DB-02, TF-03).
-  - True multi-region availability and residency arrive only with the future **M30+ Global Cluster** (DB-01 Stage 2; see DEC-01).
-- **Backend gaps (v3):**
-  - plaintext passwords and children's data in logs (PRIV-01);
-  - account deletion that leaves data behind, which the worker can even recreate (PRIV-02);
-  - jobs that can run twice and overwrite each other (JOB-01);
-  - an LLM job path that bypasses cost controls (JOB-03);
-  - blocking calls on a single-process event loop (AUTH-01, APP-05).
+Done since the backend split, among others:
+- **Images:** scanned, signed with cosign (keyless) and SBOM-attested in the deploy; every rollout checks the signature and runs the image by digest; prod gets only images promoted from stg, copied by digest (CI-03, CI-04, CI-09).
+- **Database:** stg and prod each have one Atlas M10 in ap-south-1, reached through PrivateLink made by Terraform, and both are served from ap-south-1 only; peak connections are budgeted to 70% of M10 (DB-01, DEC-01, DEC-02, TF-03).
+- **Secrets:** no private key in Terraform state (SEC-01, the service-token keys); per-key secret fills (SEC-05).
+- **Backend:** cookie sessions with refresh rotation (AUTH-02, AUTH-05), LLM spend metrics, alarms and a kill switch (JOB-02, JOB-03), presigned upload size limits (APP-07), moving-window rate limits with IPv6 /64 buckets (APP-01, APP-11).
 
-As it stands it suits a **small/medium production load in one primary region**, and only after the database tier is upgraded.
+What still stands in the way:
+- **Checks in a deployed stg** ([stg-first-deploy.md](stg-first-deploy.md)): edge 404s and secret rotation (EDGE-02, EDGE-03), the viewer-IP header (APP-01), index builds and an Atlas failover and restore (DB-01, DB-03, DB-05), PrivateLink in use (DEC-02), a failed deploy reported as failed (CI-11), the scheduler (SCH-01), and the load tests (TF-03, TF-04).
+- **Owner steps outside the repo:** provisioning the Atlas clusters and their backups, AI-provider data agreements, the privacy policy and transfer basis (PRIV-03), and the IAM restriction on the deployed-SHA parameter (CI-10).
+- **Deferred by the owner,** worth revisiting before prod: prod destroy protection (DR-01), prod applies only from `main` (CI-01), per-environment OIDC trust and a narrower deploy role (SEC-04), release-signed mobile builds (MOB-01), plus CI-02, CI-05, SEC-08, SEC-09, TF-02 and parts of WAF-01 and CI-13.
+- **Optional hardening with a small AWS cost:** flow logs, a KMS key for the alert topic, a monitoring endpoint, ECR enhanced scanning (L10, L11, L17, L19), and CloudFront logs and an uptime canary (OBS-01).
+
+As it stands it suits **dev and stg** now, and **prod in ap-south-1** once the stg checks pass and the deferred prod-safety items are settled. Multi-region prod waits for the Atlas Global Cluster (DB-01 Stage 2).
 
 ### Current architecture
 
 ```
-              ┌──────────── CloudFront + WAF + Lambda@Edge (JWT, origin-request) ───────────┐
- Users ──────►│  /*  → S3 (SPA)   /uploads/* → S3 (by location)   /app-assets/* → S3          │
-              │  /api/* → Lambda@Edge picks the regional ALB from the JWT/location            │
-              └──────────────┬──────────────────────────────────┬─────────────────────────────┘
-   login/google/health/hint-less refresh ─┘ (ALWAYS backend_regions[0])  └── per-location region
-                     ▼                                                       ▼
-   ALB → ECS API (FastAPI, 1 uvicorn proc) ─► Redis (rate limits, lock)   ALB → ECS API … (×N regions)
-         ECS Worker (polls Mongo `jobs`) ─────────────┐
-                     └──── MongoDB Atlas — ONE replica set in ap-south-1 for ALL regions ┘
-                           today: M0 free tier (no backups) → near term: M10/M20 (backups, PITR)
-                           → future: M30+ Global Cluster (one zone per region)
-                           users, children, sessions, jobs; ~120–250 ms from eu-west-1/us-east-1
+              ┌──────── CloudFront + WAF + Lambda@Edge (JWT check, origin pick) ────────┐
+ Users ──────►│  /*  → S3 (SPA, spa-rewrite function)     /app-assets/* → S3              │
+              │  /api/* → the regional ALB picked from the JWT/location (stg, prod: ap-south-1) │
+              └───────┬───────────────────────────────────────────────────┬─────────────┘
+  login/google/health/hint-less refresh → bootstrap_region                 per-location region
+                      ▼                                                    ▼
+   ALB (path rules) ─► 9 HTTP services on ECS                              ALB … (×N regions)
+                       auth, users, children, onboarding, discover,
+                       grow, transform, release, shared
+                       (common.serve: public app :8000, internal app :8001)
+                     ─► 8 workers (<service>-worker): SQS events, outbox relay,
+                       generation jobs (discover, grow, transform, release)
+                     ─► OpenTelemetry collector
+     Valkey (IAM auth, a user per service): login throttles, rate and LLM limits, authz:{sub} cache
+     SNS/SQS: events between services        S3 uploads: presigned POST (5 MB cap) and GET (no CloudFront origin)
+     MongoDB Atlas, ap-south-1, one database per service (stg, prod: through PrivateLink)
+       dev/sbx: M0 · stg: M10 · prod: M10 (auto-scaling to M30) → future: M30+ Global Cluster
 ```
 
 ### What's done well (keep these)
 
 - Private subnets for ECS, and VPC endpoints (an S3 gateway endpoint everywhere, interface endpoints in stg/prod). Prod has one NAT gateway per AZ, and the `min()` NAT indexing is correct for counts 1–3.
-- The ALB accepts only the CloudFront prefix list **and** requires the `X-Origin-Verify` header; the default listener action is 403. The ElastiCache security group allows the API tasks only.
-- Redis has at-rest and in-transit encryption (`transit_encryption_mode = "required"`) plus an AUTH token, and runs multi-AZ in prod.
-- The container runs as a non-root user (`backend/Dockerfile:42-45`), and task secrets come from Secrets Manager rather than plain env vars.
-- ECR has `IMMUTABLE` tags, scan-on-push and a lifecycle policy.
-- ECS has a deployment circuit breaker with automatic rollback. The worker autoscales on queue depth (`PendingJobCount`), and scale-in is owned by a single policy so the two policies don't fight.
-- JWTs already carry a `type` claim (`access`/`refresh`), `exp` and `kid` (`backend/app/auth_utils.py:58,73,94`), and the backend rejects refresh tokens used as access tokens (`backend/app/deps.py:43`). Upload keys end in `uuid4()`, so they can't be guessed.
+- The ALB accepts only the CloudFront prefix list **and** requires the `X-Origin-Verify` header; the default listener action is 403. The ElastiCache security group admits only the service tasks' security groups (`modules/redis/main.tf`).
+- Valkey has at-rest and in-transit encryption (`transit_encryption_mode = "required"`), IAM-authenticated RBAC users (one per service), and a replica across AZs with automatic failover in prod.
+- Each container runs as a non-root user (`backend/Dockerfile:103`, `USER appuser`), and task secrets come from Secrets Manager rather than plain env vars.
+- ECR (one repository per service) has `IMMUTABLE` tags, scan-on-push and a lifecycle policy.
+- ECS has a deployment circuit breaker with automatic rollback. Each generating service's worker autoscales on its queue depth (`PendingJobCount`), and scale-in is owned by a single policy so the two policies don't fight.
+- JWTs carry `type`, `exp`, `iat`, `iss`, `aud` and `kid`. Every service requires them (`backend/common/authz.py:56`), picks the key by `kid`, and rejects anything but an access token (`authz.py:256`). Upload keys end in `uuid4()`, so they can't be guessed.
 - Lambda@Edge routing rewrites the Host header, and `shared/routing.json` is the single source of truth for edge, CloudFront and WAF. Routing fails closed with no silent default region.
 - OAC is scoped to the distribution ARN. Viewer TLS is `TLSv1.2_2021`, and security headers and CSP are strong.
-- State uses S3 native locking (`use_lockfile = true`). Variables have strict validation, including blocking scheduler schedules in prod (`infra-live-scheduler/terraform/variables.tf:67-69`), and prod never receives a stop schedule (`scheduler.tf:109-112`).
-- The scheduler always dispatches against the default branch (`scheduler.tf:83`).
-- Sensitive variables are already marked `sensitive = true` (`redis_auth_token`, `origin_verify_secret`, `github_pat`), and only the **text** plan is uploaded as an artifact, never the binary.
-- GitHub to AWS uses OIDC, with no long-lived keys. Promotion moves the **same image** forward.
-- CI scanning is broad: checkov, trivy, gitleaks (checksum-verified), semgrep, bandit, CodeQL, Nuclei, Spectral and SBOM. Every `continue-on-error` scanner is counted by its job's final "fail if any check failed" step, and there is a 99% coverage gate.
+- State uses S3 native locking (`use_lockfile = true`), with committed provider lock files read with `-lockfile=readonly`. Variables have strict validation, including blocking scheduler schedules in prod (`infra-live-scheduler/terraform/variables.tf:77-79`), and prod never receives a stop schedule (`scheduler.tf:111-114`).
+- The scheduler always dispatches against the default branch (`scheduler.tf:85`).
+- Sensitive variables are marked `sensitive = true` (`origin_verify_secret`, `github_pat`), and only the **text** plan is uploaded as an artifact, never the binary.
+- GitHub to AWS uses OIDC, with no long-lived keys. Promotion moves the **same image** forward, by digest, with its signature, and every rollout checks that signature (CI-03).
+- CI scanning is broad:
+  - checkov, gitleaks (checksum-verified), semgrep, bandit and CodeQL;
+  - trivy, Dockle and an SBOM for every service image;
+  - Spectral on each service's spec, and Nuclei against the compose stack (CI only).
+- Every `continue-on-error` scanner is counted by its job's final "fail if any check failed" step. Every service has its own 99% coverage gate, with its live Mongo and Valkey tests required.
 
-> v2 correction: v1 credited "per-environment + per-region concurrency groups". Terraform workflows lock per environment and region, but backend deploy/promote/restart lock per **environment + service**, which is flawed (see CI-12).
+> v2 correction: v1 credited "per-environment + per-region concurrency groups". Terraform workflows lock per environment and region, but backend deploy/promote/restart locked per **environment + service**, which is flawed (see CI-12). **v8:** they now lock per environment.
 
 ---
 
 ## Finding tracker
 
+Status as of 2026-11-09 (v10), checked against the current code.
+
 | ID | Severity | Area | Title | Status |
 |----|----------|------|-------|--------|
-| EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 open |
+| EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 waits for the Global Cluster |
 | EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | 🟡 Code done; rotation runbook not yet exercised (rotate once after deploy) |
 | EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
-| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
+| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud`; JWKS not planned (owner's decision, 2026-11-09) |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
-| SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | ⬜ Open |
-| SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ⬜ Open |
-| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open |
-| SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open |
-| SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | ⬜ Open |
-| SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ⬜ Open |
-| SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ⬜ Open |
-| SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open |
-| SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
-| APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | ⬜ Open |
-| APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
-| APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | ⬜ Open |
-| APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ⬜ Open |
-| APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ⬜ Open |
-| APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ⬜ Open |
-| APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | ⬜ Open |
-| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | 🟡 Photos limited to the child's own uploads (EDGE-05); CSP `img-src` not tightened |
-| APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ⬜ Open |
-| APP-10 | 🟠 High | App | Child documents can grow without bound | ⬜ Open |
-| APP-11 | 🟢 Low | App | Misc backend hygiene | ⬜ Open |
-| DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | ⬜ Open |
-| DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ⬜ Open |
-| DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ⬜ Open |
-| DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ⬜ Open |
-| DB-03 | 🟡 Medium | Database | Index creation at startup in every task | ⬜ Open |
-| DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ⬜ Open |
-| DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | ⬜ Open |
-| JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ⬜ Open |
-| JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | ⬜ Open |
-| JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | ⬜ Open |
-| JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ⬜ Open |
-| JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ⬜ Open |
-| JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ⬜ Open |
-| JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ⬜ Open |
-| JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⬜ Open |
-| AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | ⬜ Open |
-| AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | ⬜ Open |
-| AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ⬜ Open |
-| AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | ⬜ Open |
-| AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ⬜ Open |
-| AUTH-06 | 🟡 Medium | Auth | Session-cleanup task can die silently; runs in every region | ⬜ Open |
-| AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ⬜ Open |
-| PRIV-01 | 🟠 High | Privacy | Plaintext passwords and child PII written to logs | ⬜ Open |
-| PRIV-02 | 🟠 High | Privacy | Deletion incomplete; worker recreates data; no 30-day purge | ⬜ Open |
-| PRIV-03 | 🟡 Medium | Privacy | Children's voice/PII sent to LLM providers out of region | ⬜ Open |
-| PRIV-04 | 🟢 Low | Privacy | Soft-deleted child's data still readable | ⬜ Open |
-| SEC-10 | 🟠 High | Security | API task role can overwrite the public APK | ⬜ Open |
-| OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | ⬜ Open |
-| MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open |
-| DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open |
-| DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
-| OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | ⬜ Open |
-| OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ⬜ Open |
-| OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ⬜ Open |
-| NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
-| TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
-| TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
-| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Fix 1 done for API and worker (1 vCPU / 2 GB, desired = min); load test, max counts and fixes 2–9 open |
-| TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open |
-| TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
-| TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ⬜ Open |
-| WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | ⬜ Open |
-| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | ⬜ Open |
-| CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open |
-| CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open |
-| CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
-| CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ⬜ Open |
-| CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open |
-| CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ⬜ Open |
-| CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ⬜ Open |
-| CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
-| CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ⬜ Open |
-| CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | ⬜ Open |
-| CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | ⬜ Open |
-| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
-| CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | ⬜ Open |
-| CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ⬜ Open |
-| CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
-| CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ⬜ Open |
-| CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | ⬜ Open |
-| DOC-01 | 🟢 Low | Docs | Documentation drift | ⬜ Open |
-| LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | ⬜ Open |
+| SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth; service-token private keys made outside Terraform (SSM, never in state); open: the scheduler PAT in state (a Secrets Manager value Terraform writes), state bucket hardening (CMK, IAM on state keys) and the origin-verify secret in state (ALB rule, CloudFront header) |
+| SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ✅ Done in code — `Authorization`/`Cookie` redacted, BLOCK/COUNT only, WAF logs expire after 90 days (`waf_log_retention_days`); seeing `REDACTED` needs a prod apply |
+| SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ✅ Done — fine-grained token (this repo, Actions read and write); the dispatch is built in the Lambda from the stack (the invoke picks only `apply`/`destroy`), and there is no prod scheduler; the role trust is scoped to this account's schedule group |
+| SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
+| SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | ✅ Done — reads fail closed, only `REPLACE_ME` keys are filled; the Redis parts are moot (IAM auth) |
+| SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ✅ Done — secrets on the Terraform plan/apply steps only, `terraform_wrapper: false` |
+| SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ✅ Done — no expression in any `run:`; reusable workflows validate inputs in a first job |
+| SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open · ⏸ Deferred |
+| SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open · ⏸ Deferred |
+| APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | 🟡 Code done (`CloudFront-Viewer-Address`; IPv6 counted per /64); forwarding unverified in a deployed env |
+| APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (the per-env key check is superseded by the per-environment `iss`/`aud`) |
+| APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | ✅ Done — LLM calls run in worker jobs (no 504 path), SDK retries off, one time budget per call across fallbacks, Gemini on async `google-genai` |
+| APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ✅ Done — Valkey retried after 30 s; `ValkeyDegraded` metric and alarm |
+| APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ✅ Done (rate limits and the login throttle count through `limits.aio`) |
+| APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ✅ Done (workers finish the job in hand on SIGTERM, get `llm_timeout_seconds` + 30 s to stop, and have a heartbeat health check) |
+| APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | ✅ Done — presigned POST whose policy caps the size at 5 MB, plus the after-upload check, orphan sweep and deletes |
+| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | ✅ Done — photos are the child's own upload keys (EDGE-05); CSP `img-src` limited to self, data:, blob: and the uploads buckets |
+| APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ✅ Done (1 MiB body cap in every service) |
+| APP-10 | 🟠 High | App | Child documents can grow without bound | ✅ Done (strict child model, bounded fields, 64 KB caps) |
+| APP-11 | 🟢 Low | App | Misc backend hygiene | ✅ Done — a–d, f, g done (moving-window limits, APK `latest.json` pointer); e moot |
+| DB-01 | 🔴 Critical | Database | M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later | 🟡 Decided: prod (and stg) on M10, auto-scaling to M30; prod's connection budget 1050 (70%) with max counts to fit; provisioning, backups/PITR and a test restore pending; dev/sbx on M0 by design |
+| DEC-01 | 🟠 Decision | Architecture | Multi-region compute while the DB is single-region | ✅ Done — Option A: stg and prod served from ap-south-1 (`served_from` in routing.json, enforced by the edge, the workers and Terraform); dev/sbx multi-region |
+| DEC-02 | 🟠 Decision | Network | Private connectivity from backends to the ap-south-1 DB | ✅ Done in code — PrivateLink in ap-south-1 for stg and prod, both halves in Terraform (Atlas provider); dev/sbx (M0) public with the NAT-IP allowlist |
+| DB-02 | 🟠 High | Database | Mongo poll load, non-indexed claim, client defaults | ✅ Done (claim reads an index in order, jittered idle poll, 30 s socket timeout; connection budget with DB-01) |
+| DB-03 | 🟡 Medium | Database | Index creation at startup in every task | 🟡 Code done (indexes built in the background once per release, others verify, `index-problems` alarm); acceptance needs a deployed env |
+| DB-04 | 🟡 Medium | Database | Unindexed per-user deletes | ✅ Done |
+| DB-05 | 🟡 Medium | Database | Atlas failover behaviour unspecified/untested | 🟡 Code done (startup retries through an election, about 60 s, buddy-common 0.27.0; failover runbook); the stg Test Failover needs a deployed env |
+| JOB-01 | 🟠 High | Jobs | Lease shorter than LLM budget; no fencing → double runs | ✅ Done (10-min lease, `claim_id` fence) |
+| JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | ✅ Done (attempts counted at claim, SDK retries off, failed-jobs alarm per circle) |
+| JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | ✅ Done (hourly limit, output caps, LLM token metrics with an hourly alarm, SSM kill switch) |
+| JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ✅ Done — next provider on a failure, per-provider breaker, Gemini on the async `google-genai` SDK |
+| JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ✅ Done (status routes 300/min; clients back off to 5 s and retry a 429) |
+| JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
+| JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
+| JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⚪ Moot — DEC-01 is A: stg's and prod's one region handles every location; only dev/sbx are region-scoped |
+| AUTH-01 | 🟠 High | Auth | Google token verification blocks the event loop | ✅ Done (certs cached per Google's max-age, 5 s timeout, own thread pool) |
+| AUTH-02 | 🟠 High | Auth | Refresh tokens: no atomic consume, no reuse detection | ✅ Done — atomic claim, one refreshable branch per family, reuse revokes the family and alarms |
+| AUTH-03 | 🟡 Medium | Auth | Account unlock revives pre-lock sessions; no admin audit | ✅ Done |
+| AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | ✅ Done (per-account backoff across IPs, bcrypt on its own pool, 72-byte cut made explicit) |
+| AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ✅ Done — tokens in the body for the mobile app only, host-only cookies, cross-site cookie writes refused |
+| AUTH-06 | 🟡 Medium | Auth | Session-cleanup task can die silently; runs in every region | ⚪ Moot (sessions expire by TTL index; the cleanup task is gone) |
+| AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ✅ Done (unsafe stg/prod settings stop every runtime at startup, exit 1) |
+| PRIV-01 | 🟠 High | Privacy | Plaintext passwords and child PII written to logs | ✅ Done (not logged; 422s carry no submitted values, `backend/common/validation.py`) |
+| PRIV-02 | 🟠 High | Privacy | Deletion incomplete; worker recreates data; no 30-day purge | ✅ Done (deletion across services, tombstones, 30-day purge) |
+| PRIV-03 | 🟡 Medium | Privacy | Children's voice/PII sent to LLM providers out of region | 🟡 Residency matrix written (`docs/data-residency.md`), routing docs corrected, prompts server-built without contact details; provider agreements, transfer basis and privacy policy are the owner's |
+| PRIV-04 | 🟢 Low | Privacy | Soft-deleted child's data still readable | ✅ Done |
+| SEC-10 | 🟠 High | Security | API task role can overwrite the public APK | ✅ Done (only `shared` reads the APK prefix; no role can write assets) |
+| OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | ✅ Done — one access line per request (hashed user), request id carried into jobs and events |
+| MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open · ⏸ Deferred |
+| DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
+| DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⚪ Moot — one AWS account per environment, so account services belong to one environment; the Atlas allowlist is updated by hand after each apply (owner's choice) |
+| OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | 🟡 stg alerts too; ALB 5xx rate and p95, Valkey, CloudFront 5xx added (email, AWS-only); CloudFront logs, canary, push, relative healthy-hosts threshold, Valkey `ReplicationLag` and Lambda@Edge log retention open |
+| OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ✅ Done (pending count is due jobs only; `OldestPendingJobAgeSeconds` with an alarm) |
+| OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ✅ Done (no-running-task alarm for every runtime, worker health checks) |
+| NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (an Atlas CIDR is only needed if cross-region VPC peering is ever chosen; stg/prod use PrivateLink) |
+| TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | ✅ Done — modules, lock files, per-region variables, edge providers; region inputs are free text checked against `shared/routing.json`, which Terraform's validations read too (no `edge-origin` module: nothing left for it) |
+| TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open · ⏸ Deferred |
+| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Code done: deploy surge 150%, Spot workers, keep-alive and graceful shutdown, Atlas connection budget (prod max counts lowered to fit M10; stg on M10 too); the load test open |
+| TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0, right-sized nodes and an explicit `maxmemory-policy = noeviction` (`modules/redis`, with a module test) done; the working-set load test open |
+| TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ✅ Done — HTTPS-only deny on all five bucket policies (uploads added); the buckets stay manual by the owner's choice, since they must outlive a destroy |
+| TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
+| WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (body rule), rate rule scoped to `/api/` and raised; the rest ⏸ deferred (auth-route rule, version pins, count-mode switch) |
+| SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | 🟡 Code done (timeout, no async retries, log group, failure alarm and destination, duplicate check); acceptance needs an applied env; fix 5 done with SEC-03 |
+| CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | 🟡 prod gets only what stg had: code by promotion (CI-03), infrastructure only a commit stg applied first (2026-11-09); the `main`-only branch rule ⏸ deferred |
+| CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open · ⏸ Deferred |
+| CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ✅ Done — no direct prod deploy; scanned, signed (cosign keyless) and SBOM-attested images; verified before every rollout and run by digest; promote copies image and signature by digest |
+| CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ✅ Done — actions SHA-pinned, downloaded binaries and the Gradle wrapper hash-pinned, every image (base, local, CI, the collector) pinned by digest, Dependabot for all but the CI copies |
+| CI-05 | 🟠 High | Pipelines | All regions deployed at once; no canary/bake | ⬜ Open · ⏸ Deferred |
+| CI-06 | 🟡 Medium | Pipelines | Polling and register-TD scripts duplicated | ✅ Done (one tested `scripts/ecs-services.sh`, with the CI-11 fix) |
+| CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ✅ Done — old chunks kept, unhashed-only invalidation, the last 10 releases kept, `rollback-live-frontend` with no rebuild |
+| CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ✅ Done — SARIF from semgrep, checkov and trivy uploaded; checkov scans every root; no required-checks ruleset, by the owner's choice (one maintainer) |
+| CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ✅ Done — `crane copy` by digest, registry to registry; target digest checked; no tarballs; signatures and SBOM attestations copied with the image (`copy_signatures`) |
+| CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
+| CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
+| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | ✅ Done — lock per environment; a part-way failure is a `Mixed images` warning and run-summary table with the re-run (no automatic rollback) |
+| CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | 🟡 Build (`npm ci --ignore-scripts`) before credentials; the two-job split (drops `id-token` from the build) ⏸ deferred |
+| CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ✅ Done — only a single COMPLETED deployment is promoted; source regions must match |
+| CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ✅ Done — `terraform validate` on every stack and module; tflint with the AWS ruleset |
+| CI-16 | 🟢 Low | Pipelines | No job timeouts; queued runs silently cancelled | ✅ Done — every job in every workflow has a timeout; recovery runbook |
+| CI-17 | 🟢 Low | Pipelines | Misc CI hygiene (retire DB cache, skipped plans, DAST health, perms) | ✅ Done — a–e done (weekly retire.js refresh, CodeQL v4 + weekly run, partial-plan warning, review comment), f moot; g not needed (one admin, no approvers) |
+| DOC-01 | 🟢 Low | Docs | Documentation drift | ✅ Done — every listed drift fixed or checked; the `AdministratorAccess` wording stays with SEC-04 (deferred) |
+| LOW-\* | 🟢 Low | Various | Small fixes (see [Low-severity items](#low-severity-items)) | 🟡 L1, L2 (Repo, DataClassification), L3, L4, L5, L6, L7, L8, L9, L14, L15, L18, L20, L21 done; L16 moot; L13 no action; L12 on hold for stg; L10, L11, L17, L19 open |
 
 ---
 
 ## Edge (CloudFront, Lambda@Edge)
 
 ### EDGE-01 — Login/google/health depend on a single region 🔴 (v4: ⏸ deferred to DB-01 Stage 2)
+
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. Stage 1 is done: a per-run `bootstrap_region` input (`infra-live-edge/terraform/variables.tf:71-80`). The lines quoted below are now `cloudfront.tf:23` and `:86`. Stage 2 waits for the Global Cluster.
 
 **Where:** `infra-live-edge/terraform/cloudfront.tf:26` (`bootstrap_region = var.backend_regions[0]`) and `:92` (`domain_name = local.regional_alb_fqdns[local.bootstrap_region]`). Failover is disabled via the checkov skip at `:46`. Authenticated traffic fails closed per region at `infra-live-edge/functions/jwt-validator-lambda.js.tpl:318-323`.
 
@@ -246,6 +261,8 @@ As it stands it suits a **small/medium production load in one primary region**, 
 
 ### EDGE-02 — Origin-verify secret is plaintext in Lambda@Edge code 🔴
 
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. The secret is no longer in the template: `cloudfront.tf:28,95-101`, with header-copy tests in `jwt-validator-lambda.test.js:366-383`. The rotation runbook is in `docs/infra-operations.md` and hasn't been exercised yet.
+
 **Where:**
 - `infra-live-edge/terraform/lambda_edge.tf:37` passes `origin_verify_secret` into `templatefile`.
 - `jwt-validator-lambda.js.tpl:100` holds `const ORIGIN_VERIFY_SECRET = ${jsonencode(origin_verify_secret)}`.
@@ -274,6 +291,8 @@ As it stands it suits a **small/medium production load in one primary region**, 
 ---
 
 ### EDGE-03 — 404s rewritten to 200 + `index.html` distribution-wide 🔴
+
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. The rewrite is now the `spa_rewrite` CloudFront Function on the SPA behaviour only (`cloudfront.tf:35-40`); `:195-198` only caches 404s. The acceptance checks need a deployed environment.
 
 **Where:** `infra-live-edge/terraform/cloudfront.tf:209-214`
 
@@ -318,6 +337,12 @@ custom_error_response {
 
 ### EDGE-04 — Edge JWT validation gaps 🟡 (v2: lowered from High)
 
+> 🔄 **Current code (2026-11-01):** ✅ Done, as the v6 note says: `jwt-validator-lambda.js.tpl:78` (keys built once), `:208-245` (alg, kid, iss, aud, exp, leeway), `:390` (type). On the backend, `backend/common/authz.py:56,240-251` replaces the deleted `backend/app/auth_utils.py` and `deps.py`.
+
+> 🔄 **2026-11-09:** every acceptance criterion is met. The edge tests (`jwt-validator-lambda.test.js`, the `EDGE-04:` cases) cover no `exp`, a refresh token, a bad `alg`, no or unknown `kid`, the leeway, `nbf`, and `iss`/`aud`. The backend's `test_bad_tokens_are_401` (`backend/common/tests/test_authz.py`) now also covers a token with no `exp`, `type`, `iss` or `aud`, next to no or unknown `kid`, expired, and a refresh token. Fix 5 is done too (`DEFAULT_KID` and `jwt_key_id` are gone).
+>
+> **Fix 4, a JWKS: not planned (owner's decision, 2026-11-09).** Rotation stays a Terraform apply: several `kid`s are accepted at once (APP-02), so a rotation logs nobody out, and with one admin rotations are rare and planned. A JWKS would make Lambda@Edge fetch keys from auth in the bootstrap region on every cold start at every edge location: added latency, and a failure mode with no good answer (refuse every token, an outage, or accept unchecked ones). Worth revisiting only if many independent verifiers appear or keys must rotate automatically.
+
 **Where:** `jwt-validator-lambda.js.tpl:165-199` (`verifyJwt`), `:170` (`const kid = header.kid || DEFAULT_KID`), `:194` (`if (payload.exp && now > payload.exp)`), `:300-316` (authenticated-path check).
 
 > v2 correction: the backend already issues `type`, `exp` and `kid` on every token (`backend/app/auth_utils.py:58,73,94`) and rejects non-access tokens (`deps.py:43`). `limiter.py:51` only uses `type` to choose the rate-limit bucket; a non-access token falls back to the IP bucket. A refresh token used as Bearer **passes the edge but is rejected by the backend**, so this is wasted capacity, not an auth bypass. Browsers send the refresh cookie only under `/api/v1/auth/` (`auth_utils.py:137`).
@@ -353,7 +378,7 @@ custom_error_response {
    3. After the longest token lifetime (24 h), switch to `audience=`/`issuer=`.
 
    v5 correction: v3/v4 said to pass `audience=` first. In PyJWT 2.15, `decode(audience=...)` on a token **without** `aud` raises `MissingRequiredClaimError`, so that order causes the global 401.
-4. **Longer term:** a JWKS (see APP-02) so rotation needs no redeploy.
+4. **Longer term:** a JWKS (see APP-02) so rotation needs no redeploy. *(Not planned, 2026-11-09: see the note above.)*
 5. Once a missing `kid` is rejected, remove the dead `DEFAULT_KID` and `jwt_key_id` template variable (`tpl:60`). This also resolves L15's `${jwt_key_id}`.
 
 ⚠️ **Pitfall:** PyJWT raises `InvalidAudienceError` when a token carries `aud` and `decode()` is called without `audience=`. Issuing `aud` before the decoders are updated produces a **global 401**.
@@ -374,6 +399,8 @@ custom_error_response {
 ---
 
 ### EDGE-05 — `/uploads/*` (child photos) is public and edge-cached 🟠
+
+> 🔄 **Current code (2026-11-01):** ✅ Done (v6 note): presigned GET URLs from `presign_get`, `backend/common/uploads.py:216-222`, and CloudFront no longer has an uploads origin (`cloudfront.tf:71-75`). The `backend/app/services/s3_uploads.py`, `children.py` and `users.py` paths below are deleted.
 
 **Where:** `infra-live-edge/terraform/cloudfront.tf:149-171` (the comment calls these "semi-public"). Permanent CDN URLs are built by `build_public_url` (`backend/app/services/s3_uploads.py:37-44`) and returned at `children.py:569` / `users.py:567`.
 
@@ -421,6 +448,14 @@ custom_error_response {
 
 ### SEC-01 — Secrets stored in Terraform state 🟠
 
+> 🔄 **Current code (2026-11-05):** 🟡 Partial. Valkey uses IAM auth (`modules/redis/main.tf`), so the Redis AUTH token is gone. **The service-token private keys are now out of state:** `scripts/service-token-keys.sh` makes each Ed25519 pair with OpenSSL outside Terraform (private key through a 0600 temp file, never an argument or the log) into SSM, `<service>/service_token/<kid>/{private,public}`. `terraform-live-backend` runs it before every plan (creating only what's missing) and deletes the pairs after a destroy. Terraform reads only the public keys (`data.aws_ssm_parameter`) and builds the private parameter's ARN for `INTERNAL_SIGNING_KEY` and the execution role, so no private key is in state or a plan; `tls_private_key` and the tls provider are gone. Kid versions moved to `service-token-versions.json`, read by both. `service-token-keys.test.sh` (22 tests) covers create, re-run, a half-written pair, rotation, errors and destroy. **Still open:** the scheduler PAT in state (`infra-live-scheduler/terraform/secrets.tf`), which belongs with SEC-03 (deferred).
+>
+> 🔄 **v10 (2026-11-09):** the PAT isn't the only open part. Also open:
+> - **Fix 1, state bucket hardening:** no customer-managed KMS key and no IAM limit on the state keys; `docs/environments.md` only asks for versioning.
+> - **The origin-verify secret is still in state,** through the ALB listener rule (`alb.tf:24`, `origin_verify_values`) and the CloudFront `custom_header` (`infra-live-edge/terraform/cloudfront.tf:99-100`). As fix 2 says, it relies on fix 1.
+>
+> Moot (IAM auth, no Redis token): fix 2's Redis bullet and fix 3 (SEC-05's Redis token).
+
 **Where:**
 - Redis token: `infra-live-backend/terraform/elasticache.tf:78`, passed via `terraform-live-backend.yml:287-291`.
 - Origin secret: `alb.tf:118` and the edge stack; passed via `terraform-live-backend.yml:94` and `terraform-live-edge.yml:103`.
@@ -445,6 +480,8 @@ custom_error_response {
 
 ### SEC-02 — WAF logs capture tokens and cookies 🟠
 
+> 🔄 **Current code (2026-11-05):** ✅ Done in code. `aws_wafv2_web_acl_logging_configuration.main` (`infra-live-edge/terraform/waf_logging.tf`) redacts the `authorization` and `cookie` headers and keeps only `BLOCK`, `COUNT` and `EXCLUDED_AS_COUNT` requests. **The log bucket now expires them:** `aws_s3_bucket_lifecycle_configuration.global_logging` deletes `waf-logs/` and `waf-logs-errors/` objects after `waf_log_retention_days` (default 90) and aborts incomplete uploads after 7 days, on the manually created bucket, which stays. It's the bucket's whole lifecycle configuration, so any other rule goes there too (`docs/environments.md`). CloudTrail logs keep no expiry. Logging is still prod-only (`enable_waf_logging`); the acceptance check (`REDACTED` in a record) needs a prod apply.
+
 **Where:** `infra-live-edge/terraform/waf_logging.tf:82-87` has no `redacted_fields` and no `logging_filter`. Logging is prod-only. (`X-Origin-Verify` isn't exposed, because it's added after WAF.)
 
 **Fix:**
@@ -458,7 +495,19 @@ custom_error_response {
 
 ### SEC-03 — Scheduler: broad classic PAT and raw-event dispatch 🟠
 
-**Where:** `infra-live-scheduler/terraform/secrets.tf` (PAT), `infra-live-scheduler/lambda/dispatcher.py:26`, `infra-live-scheduler/terraform/scheduler.tf:23-30` (trust policy).
+> 🔄 **Current code (2026-11-06):** 🟡 Partial; the rest still ⏸ deferred (owner's decision, 2026-11-02). **Fix 1, the token, is decided:** `GIT_ACTIONS_PAT` is a fine-grained token for this repository only, with Actions: Read and write and nothing else, which covers both the run listing and the dispatch. The docs and code comments now say so (`docs/environments.md`, `docs/ci-cd.md`, `docs/stg-first-deploy.md`, `terraform-live-scheduler.yml`, `infra-live-scheduler/terraform/secrets.tf` and `variables.tf`). **The owner created it on 2026-11-06** and saved it as the `GIT_ACTIONS_PAT` environment secret; each environment's Secrets Manager copy picks it up on its next `terraform-live-scheduler` apply. **Still open, deferred:** fix 2 (`dispatcher.py` still forwards the raw invoke event as the payload), fix 3 (no `aws:SourceAccount`/`aws:SourceArn` on the scheduler's role trust) and fix 4 (the IAM audit).
+>
+> 🔄 **v10 correction (2026-11-09):** an earlier version of this note said the scheduler can't run prod, so a forged event can't touch prod. That is wrong. `infra-live-scheduler/terraform/variables.tf:77-79` only refuses `schedule_enabled` for a **prod scheduler stack**. The dev/stg dispatcher Lambda forwards the raw invoke event as the dispatch body (`infra-live-scheduler/lambda/dispatcher.py:77`, `data=json.dumps(event)`) to `terraform-live-all.yml`, whose `environment` choice includes `prod` (`:44-53`), and the token (Actions: Read and write) can dispatch it. With CI-01 also deferred, anyone allowed to invoke the function could send `{"inputs": {"environment": "prod", "action": "destroy"}}` and it would reach prod. Fix 2 (a server-built payload) is the control for this, and it is deferred.
+>
+> ✅ **Done 2026-11-09 (owner's decision to finish it):**
+> - **Fix 2:** the invoke event chooses only the action. `infra-live-scheduler/lambda/dispatcher.py` (`build_dispatch`) accepts exactly `{"action": "apply"}` or `{"action": "destroy"}` and builds the rest from the stack: the ref, the environment and the regions are the function's `DISPATCH_REF`, `DISPATCH_ENVIRONMENT` and `DISPATCH_BACKEND_REGIONS` (`terraform/lambda.tf`). Anything else, and any function configured for prod, is refused before the token is read; the failure alarm sees it. The schedules send only the action (`scheduler.tf`).
+> - **No prod scheduler:** `variables.tf` accepts dev, sbx and stg only, `terraform-live-scheduler.yml` no longer offers prod, and `tfvars/prod.tfvars` and its test are gone. A dev scheduler can only start or stop dev.
+> - **Fix 3:** the scheduler role's trust requires `aws:SourceAccount` (this account) and `aws:SourceArn` (this stack's schedule group).
+> - **Fix 4:** no longer needed. Whoever can invoke the function can only start or stop that stack's own non-prod environment from the default branch, which is what the schedule does anyway.
+> - **Tests:** `lambda/test_dispatcher.py` (12: a forged prod destroy, an event naming its own environment or ref, unknown actions and a prod-configured function are all refused without reading the token or calling GitHub); `tests/envs/*.tftest.hcl` check the function's dispatch settings, the action-only inputs, the scoped trust, and that prod is refused. checkov and tflint pass.
+> - **Owner steps:** apply `terraform-live-scheduler` in each scheduled environment (it also loads the new token into Secrets Manager), then revoke the old classic token. If a prod scheduler stack was ever applied, destroy it before this change reaches `main` (the workflow can't select prod afterwards).
+
+**Where:** `infra-live-scheduler/terraform/secrets.tf` (PAT), `infra-live-scheduler/lambda/dispatcher.py:26` (v10: now `:77`), `infra-live-scheduler/terraform/scheduler.tf:23-30` (trust policy).
 
 **Problems:**
 - A classic `repo` + `workflow` PAT can push code to every repo the owner can reach.
@@ -478,6 +527,8 @@ custom_error_response {
 ---
 
 ### SEC-04 — OIDC trust documented as `repo:…:*` with AdministratorAccess 🔴 (new in v2)
+
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. The wildcard trust is still documented at `docs/ci-cd.md:221-222`, `frontend-app/README.md:942` and `docs/environments.md:155` (and `:171`).
 
 **Where:**
 - `docs/ci-cd.md:168` (`repo:YOUR_GITHUB_ORG/buddy-app:*`) and `:169` (AdministratorAccess).
@@ -500,6 +551,8 @@ custom_error_response {
 ---
 
 ### SEC-05 — Secrets init step can overwrite rotated secrets 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-04):** ✅ Done. Fix 1: `scripts/fill-service-secrets.sh` fails on any read error. Fix 2: only keys still `REPLACE_ME` are filled (`secret_json`); every other key keeps its value and needs no GitHub value, and a secret with nothing to fill isn't written. `fill-service-secrets.test.sh` covers it (15 tests: one placeholder among rotated keys, a later optional key, a removed GitHub value). Fixes 3–5 (the Redis token) are moot: Valkey uses IAM auth, with no token. The workflow and `secrets.tf` lines below are stale.
 
 **Where:** `.github/workflows/terraform-live-backend.yml:373-376`, and `infra-live-backend/terraform/secrets.tf:51-67`.
 
@@ -530,6 +583,8 @@ custom_error_response {
 
 ### SEC-06 — Secrets exposed job-wide to every step 🟡 (new in v2)
 
+> 🔄 **Current code (2026-11-02):** ✅ Done. No job- or workflow-level `env:` holds a secret. `TF_VAR_origin_verify_secret(_next)` are set on the backend and edge `terraform plan` and `plan -destroy` steps only (their applies use the saved plan), and `TF_VAR_github_pat` on the scheduler's plan, apply, plan-destroy and destroy steps (it applies without a saved plan). The rotation warning reads `ORIGIN_VERIFY_SECRET_NEXT` in its script, since a step's `if:` can't read secrets. `GITHUB_ENV` carries non-secret values only, and every `setup-terraform` has `terraform_wrapper: false`. Rules in `docs/ci-cd.md` ("Rules every workflow follows").
+
 **Where:** Terraform workflows set `TF_VAR_*` secrets in job-level `env:` (e.g. `terraform-live-backend.yml:85-99`) and through `GITHUB_ENV` (`:196-302`).
 
 **Problem:** Every later step, including third-party actions such as `setup-terraform` and `upload-artifact`, can read the Redis token, origin secret and PAT. This compounds CI-04.
@@ -544,6 +599,8 @@ custom_error_response {
 ---
 
 ### SEC-07 — `${{ }}` interpolated directly into `run:` 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-02):** ✅ Done. No `run:` script in any of the 14 workflows (v10 count) contains `${{ }}`: every value (inputs, `vars.*`, `matrix.*`, step outcomes) is mapped in the step's `env:` and used quoted, including `-var-file="tfvars/${ENVIRONMENT}.tfvars"`; `github.sha` and `github.repository_owner` use the runner's `GITHUB_*` variables. The five reusable workflows (`terraform-live-backend`, `-edge`, `-frontend`, `deploy-live-backend`, `-frontend`) start with a `validate` job without `environment:` that checks `environment`, `action`, the regions against `shared/routing.json` and the edge's `bootstrap_region` (`scripts/workflow-inputs.sh`, 30 tests in `workflow-inputs.test.sh`, run by `check.sh` and `check.yml`). **v10:** there are now six reusable workflows; the sixth, `terraform-live-all.yml` (`workflow_call` at `:74`), validates its regions in its `regions` job (`:112`, `scripts/workflow-inputs.sh`). Checked with a YAML scan of every `run:` (no expressions) and actionlint (no new findings); zizmor wasn't run locally. The "Where" list below is the pre-fix state.
 
 **Where (representative; fix every occurrence):**
 - `terraform-live-edge.yml:144,171,216,222` (`echo '${{ inputs.backend_regions }}'`)
@@ -571,6 +628,8 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### SEC-08 — GuardDuty Runtime Monitoring doesn't cover Fargate 🟠 (new in v2)
 
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-02): to do later, not before the next releases. ⬜ Open. Neither `infra-live-backend/terraform/security.tf:26-31` nor `infra-live-edge/terraform/security.tf:35` enables `ECS_FARGATE_AGENT_MANAGEMENT`.
+
 **Where:** `infra-live-backend/terraform/security.tf:26-31`, and the same pattern in the edge stack's us-east-1 detector.
 
 **Problem:** `RUNTIME_MONITORING` is enabled without `additional_configuration { name = "ECS_FARGATE_AGENT_MANAGEMENT", status = "ENABLED" }`. No GuardDuty agent is injected into the Fargate tasks, so the runtime coverage that `docs/aws-cost-estimate.md` budgets for **doesn't exist**.
@@ -584,6 +643,10 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 ---
 
 ### SEC-09 — CloudTrail design 🟡 (new in v2)
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
+
+> 🔄 **Current code (2026-11-01):** ⬜ Open. `is_multi_region_trail = false` (backend `security.tf:53`, edge `security.tf:52`), and `s3.tf:129-150` (the backend CloudTrail bucket statements) has no `SourceArn`; nor has the edge's `infra-live-edge/terraform/waf_logging.tf:145-160`.
 
 **Where:**
 - `infra-live-backend/terraform/security.tf:53` (`is_multi_region_trail = false`) plus the edge stack's us-east-1 trail.
@@ -605,6 +668,10 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 ## Application issues that affect infra
 
 ### APP-01 — IP rate limits use the spoofable leftmost `X-Forwarded-For` 🟠 (new in v2)
+
+> 🔄 **Current code (2026-11-05):** 🟡 Partial. The client IP comes from `CloudFront-Viewer-Address`, port stripped (`backend/common/audit.py`, used by `backend/common/limiter.py`); the leftmost-XFF code is gone. **IPv6 is now counted per /64** (`client_key`, buddy-common 0.31.0): rotating addresses inside one /64 doesn't reset the per-IP limits or the login throttle, an IPv4-mapped address counts as its IPv4 one, and the audit log keeps the full address. Still to check in a deployed environment: whether the origin request policy forwards that header (otherwise the limiter falls back to the ALB's IP).
+>
+> 🔄 **v10 (2026-11-09):** the code took the alternative in fix 3: `source_ip` reads `CloudFront-Viewer-Address` and strips the port with `rsplit(":", 1)` (`backend/common/audit.py:77-78`), else the peer address. No `X-Forwarded-For` handling is left. So fixes 1, 2 and 5 (`TRUSTED_PROXY_HOPS`, `xff_header_processing_mode`, `_get_client_ip`, `tests/test_limiter.py`) are superseded, and the uvicorn pitfalls below no longer apply. Fix 4 (IPv6 /64) is done. The acceptance criteria are rewritten below.
 
 **Where:** `backend/app/limiter.py:17-25` (`return forwarded.split(",")[0].strip()`).
 
@@ -628,12 +695,19 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 - Per-IP limits are per region's Redis (EDGE-01).
 
 **Acceptance criteria:**
-- A request with a forged `X-Forwarded-For: 1.2.3.4` is still limited by its real IP, both on AWS (2 hops) and in compose (1 hop).
-- A header with too few entries falls back to the peer address.
+- ~~A request with a forged `X-Forwarded-For: 1.2.3.4` is still limited by its real IP, both on AWS (2 hops) and in compose (1 hop).~~
+- ~~A header with too few entries falls back to the peer address.~~
+
+v10 acceptance (the `CloudFront-Viewer-Address` design):
+- A forged `X-Forwarded-For` has no effect on the limiter key.
+- In a deployed environment the limiter keys on the `CloudFront-Viewer-Address` IP, not the ALB peer.
+- A request without that header falls back to the peer address.
 
 ---
 
 ### APP-02 — JWT key rotation logs everyone out 🟠 (new in v2)
+
+> 🔄 **Current code (2026-11-01):** ✅ Done (see the tracker): the key is picked by `kid`, and an unknown `kid` gives a 401 (`backend/common/authz.py:85-86,238-240`). `JWT_PUBLIC_KEYS` is read at `:91-108`. The `backend/app/*` paths below are deleted. The per-environment key check in the pipeline isn't done; v10: it is superseded by the per-environment `iss`/`aud` every service requires (`authz.py:56`).
 
 **Where:**
 - `backend/app/auth_utils.py:104,120` decode with a single `settings.jwt_public_key`.
@@ -646,23 +720,25 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 - Backend gets `JWT_PUBLIC_KEYS` (a `kid` → PEM map, e.g. a JSON secret) and selects the key by the token's `kid` header at **all three** decode sites: `auth_utils.py:104,120` **and** `limiter.py:44`. If the limiter isn't updated, users with old-`kid` tokens silently drop into IP buckets.
 - Sign with the current key only.
 - Keep the old public key until the maximum refresh lifetime (24 h) has passed.
-- Align the edge's key map with it (the same JWKS source; EDGE-04 #4).
+- Align the edge's key map with it (the same `kid` → PEM map; a JWKS source is not planned, EDGE-04 #4).
 - Reject an **unknown `kid`** with 401; never fall back to a default key.
 - Cache the parsed key objects (see EDGE-04 #2).
 - Update `docs/jwt-keys.md`. Note that the backend currently has **no** `JWT_PUBLIC_KEYS` setting at all; `jwt-keys.md:13` lists it as edge-only.
 
 ⚠️ **Pitfalls:**
 - Login tokens are minted in the **bootstrap region** (`local.bootstrap_region`: the `bootstrap_region` input, or the first of `backend_regions` when `auto`; EDGE-01 interim) and verified in the **home region**. The `kid` → key map must be identical in **every** region. Switch the signer to the new key only after every region (backend and edge) holds the new public key.
-- Confirm that dev, stg and prod use **different** key pairs. With no `iss`/`aud`, the key is the only thing stopping a dev token from working in prod.
+- Confirm that dev, stg and prod use **different** key pairs. With no `iss`/`aud`, the key is the only thing stopping a dev token from working in prod. **v10:** no longer true. Every service requires `iss` and `aud` (`_REQUIRED_CLAIMS`, `backend/common/authz.py:56`), and the issuer is per environment (`JWT_ISSUER = <app>-<env>`, `infra-live-backend/terraform/services.tf:94`), so a dev token fails in prod even if the keys matched.
 
 **Acceptance criteria:**
 - A test signs with `kid=v1`, rotates to v2, and the v1 token still validates until v1 is removed.
 - An unknown `kid` → 401.
-- The keys differ per environment (checked in the deploy pipeline).
+- ~~The keys differ per environment (checked in the deploy pipeline).~~ Superseded (v10): the per-environment `iss` checked by every service (`backend/common/authz.py:56`) keeps one environment's tokens out of another.
 
 ---
 
 ### APP-03 — LLM calls >60 s return 504 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-05):** ✅ Done. There's no synchronous `/llm/invoke` any more: LLM calls run inside worker jobs (for example `backend/discover/app/generation.py:132`), so the 504 path is gone. `deregistration_delay` is `llm_timeout + 30` (`alb.tf:43`). SDK retries are now off (JOB-02). **Fix 2 is done (buddy-common 0.30.0):** one `invoke()` has one budget, `LLM_TIMEOUT_SECONDS`, across every fallback provider. Each provider gets what's left, and an `asyncio.timeout` ends the call there even when the SDK's per-read timeout wouldn't. So the longest call is what the worker's stop timeout and the ALB drain already allow (`+ 30 s`); before, a fallback could run up to 3 × 65 s. **Fix 5 is done:** Gemini runs on the async `google-genai` 2.32.0 client (`client.aio`, no `retry_options`, so no SDK retries), like OpenAI and Anthropic. A timed-out Gemini call is now cancelled instead of holding a thread, so its thread pool is gone, and a `MAX_TOKENS` stop is refused as a cut-off answer, as the other two do. `google-genai` needs httpx ≥ 0.28.1 and google-auth ≥ 2.56, so every service now pins httpx 0.28.1 and auth pins google-auth 2.62.0. All nine services' tests pass at 100% coverage, and pip-audit finds nothing. Fixes 3 and 6 were settled with the worker move (no HTTP path waits on an LLM).
 
 **Where:**
 - `infra-live-backend/terraform/tfvars/prod.tfvars:29` (`llm_timeout_seconds = 90`) and `backend/app/routers/llm.py:54` (synchronous `/llm/invoke`).
@@ -692,6 +768,8 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-04 — LLM limiter's Redis init latch is permanent 🟡 (new in v2; corrected in v3)
 
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.24.0). The latch is fixed: every Valkey user retries Valkey after 30 s (`backend/common/generation/llm_limit.py`, `backend/common/limiter.py`, `backend/auth/app/throttle.py`), and `common/tests/test_ops.py` brings Valkey back and sees the limits counted there again. Every fallback's log line now has a top-level `valkey_degraded` field (`common.valkey.degraded`) naming what fell back: `rate_limits`, `llm_limit`, `login_throttle` or `authz_cache`. In the backend stack, a log metric filter on every runtime but the collector counts those lines into one metric, `Superpower/valkey` `ValkeyDegraded`, in every environment. The `valkey-degraded` alarm (where `enable_all_alarms`, so stg and prod) fires on two 5-minute periods in a row with any, so a single failover blip doesn't alarm. Tests: the four fallback tests assert the field, and the stack test asserts the filters and the alarm. The socket timeout stays 2 s: with the 30-second back-off, only the first request after Valkey goes away waits for it.
+
 > v3 correction: v2 blamed slowapi. slowapi actually **recovers on its own**: `extension.py:599-605` re-probes with 2ⁿ-second backoff and clears `_storage_dead`. The middleware probes on non-decorated requests for `limiter`, and the decorated `refresh`/`logout` routes recover `user_limiter`. The `_hit()` latch is only temporary.
 
 **Where:** `backend/app/llm_rate_limiter.py:82-116` (`_get_redis()` with `_redis_init_attempted`).
@@ -711,6 +789,13 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 ---
 
 ### APP-05 — Sync Redis calls block the asyncio event loop 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-01):** ✅ Done (buddy-common 0.20.0).
+> - `RateLimits` (`backend/common/limiter.py`) and auth's `LoginThrottle` (`backend/auth/app/throttle.py`) now count through `limits.aio`, on redis-py's asyncio client (`implementation="redispy"`, same 2 s timeouts and IAM sign-in). A slow or unreachable Valkey holds up only the request being counted, not the event loop.
+> - The API is `await limits.allow(…)` and `await throttle.is_blocked(…)`. The rename is on purpose: a call left un-awaited would have been a coroutine, always truthy, and would silently let every request through. Every caller in the nine services was updated.
+> - The keys (`LIMITS:LIMITER/<prefix>/…`) and the Valkey commands (`EVALSHA`, `INCRBY`, `EXPIRE`) are unchanged, so the RBAC users need nothing new.
+> - `common/tests/test_ops.py` checks that the loop keeps running other work while Valkey takes 0.2 s to answer. On the local stack, both the per-IP login limit and the login throttle counted in Valkey and answered 429.
+> - The other Valkey users, the authz cache and the LLM hourly limit, already used the async client.
 
 **Where:**
 - `backend/app/limiter.py:145-157`: the async dependency calls the **sync** redis client (2 s socket timeout).
@@ -732,6 +817,16 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-06 — Worker has no graceful shutdown 🟡 (new in v2)
 
+> 🔄 **Current code (2026-11-01):** ✅ Done.
+> - **Shutdown:** each `backend/<service>/worker.py` stops on SIGTERM after the job in hand and closes its clients. `WORKER_CONCURRENCY` and `claim_token` don't exist; jobs fence with `claim_id` (JOB-01).
+> - **Stop timeout:** workers get `stopTimeout = min(llm_timeout_seconds + 30, 120)`, set in `infra-live-backend/terraform/services.tf` through a new `container.stop_timeout` in `modules/ecs-service` (validated to 2–120). That's 90 s in dev, sbx and stg and 120 s in prod: enough for an LLM call and the consumer's 20 s long poll, where ECS's default 30 s would kill a job mid-call. `llm_timeout_seconds` is now validated to 10–90, so the 120 s cap always covers it. HTTP services keep the default: the ALB drains them first (`deregistration_delay`).
+> - **Health check:** workers have one now. `common/heartbeat.py` touches `<temp dir>/worker-heartbeat` every 15 s, and the container is unhealthy once the file is 60 s old.
+> - **Checked:**
+>   - module and stack `terraform test` (worker `stopTimeout` and health check; HTTP and collector unchanged; 121 refused);
+>   - `common/tests/test_heartbeat.py` and every worker service's suite;
+>   - on the local stack, the health check exits 0 in the grow, users and auth workers and 1 on a stale file;
+>   - an idle worker stops cleanly on SIGTERM in 9 s.
+
 **Where:** `backend/worker.py` has no SIGTERM handler. The worker task definition has no `stopTimeout` (default 30 s; the Fargate maximum is 120 s).
 
 **Problem:** On every scale-in and deploy, up to `WORKER_CONCURRENCY` (5) in-flight jobs are abandoned. They're re-claimed after about 5 minutes, and the LLM calls are paid for twice.
@@ -751,6 +846,14 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 ---
 
 ### APP-07 — No upload size cap; orphaned objects never deleted 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-03):** ✅ Done (buddy-common 0.29.0).
+> - **S3 enforces the size.** Photos go up as a presigned **POST** (`Uploads.presign_post`, `backend/common/uploads.py`). Its signed policy pins the exact key and `Content-Type` and sets `content-length-range` to 1 byte–5 MB, so S3 refuses a bigger file, another key or another type. The presign routes (`POST /children/{id}/avatar/presign`, `POST /children/{id}/transform/photos/presign`) return `upload_url` and `upload_fields`.
+> - **Clients.** Both apps send the fields, then the file, as a multipart form (`src/api/uploads.ts`). On a device, the mobile app sends the picked file by its URI as `{uri, name, type}`, the part React Native's `FormData` reads; Blobs are measured only for the 5 MB check before upload. The e2e journey scripts upload the same way.
+> - **CORS.** The uploads buckets' CORS allows `POST` instead of `PUT` (`infra-live-backend/terraform/s3.tf`, asserted by the stack test), and so does the local Moto setup (`scripts/local-aws-setup.py`).
+> - **Defence in depth.** The size and type are still checked after upload (`verify_uploaded`, which deletes a refused object). Orphans are swept, replaced photos deleted, and a child's purge removes its objects, as before.
+> - **Tests.** The `common` test uploads by form to a real Moto server and checks the signed policy's three conditions. Moto doesn't enforce `content-length-range` (an oversized POST was accepted there), so the 11 MB refusal itself is S3's, unproven until a deployed environment. The service tests assert the fields; the mobile tests check the fields come first and the file last, and the URI file part.
+> - **Not checked:** an upload from a real device (React Native's form encoding of a `{uri}` part), and the local full journey, which wasn't run (it makes real LLM calls).
 
 **Where:** `backend/app/routers/children.py:557`, `users.py:551` (presigned **PUT**), `infra-live-backend/terraform/s3.tf` (lifecycle has no expiry of orphans).
 
@@ -780,6 +883,13 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### APP-08 — Any HTTPS URL accepted as a child's photo 🟡 (new in v2)
 
+> 🔄 **Current code (2026-11-03):** ✅ Done.
+> - **Keys only.** A photo is stored as an upload **key**, checked against this child and kind (`backend/common/uploads.py`, EDGE-05). An external, `http:` or `data:` URL isn't a key, so `PATCH /children/{id}` and the plan's photos refuse it with 422. The schema paths below are deleted.
+> - **CSP.** CloudFront's `img-src` (`infra-live-edge/terraform/response_headers.tf`) is now `'self' data: blob:` plus each active region's uploads bucket (the presigned photo URLs), the same list `connect-src` uses, instead of any `https:` host. A URL elsewhere, such as a tracking pixel, isn't loaded.
+>   - That covers every image the web app shows: `/app-assets/*` (self), generated avatars and FileReader previews (`data:`), a picked photo's preview (`blob:`), and the presigned photos. It doesn't show Google profile photos.
+>   - The nginx copies of the CSP (`frontend/nginx.conf`, `.template`) gained `blob:` too.
+> - **Checked:** `terraform validate` and tflint on the edge stack, which has no tests of its own. The CSP itself is only exercised in a deployed environment.
+
 **Where:** `backend/app/schemas/children.py:126-130,194` (checks HTTPS only), combined with the CSP `img-src https:` (`infra-live-edge/terraform/response_headers.tf:88-89`).
 
 **Problem:**
@@ -795,6 +905,8 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 ---
 
 ### APP-09 — No request-body size limit; uploads spooled before auth 🟠 (new in v3)
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. `backend/common/body_limit.py:20,30-60` caps every service's request body at 1 MiB (or the service's `MAX_BODY_BYTES`), applied in `backend/common/serve.py:114-122`.
 
 **Where:** `backend/app/routers/audio.py:45,60`, `backend/app/main.py` (no body-size middleware).
 
@@ -818,6 +930,8 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### APP-10 — Child documents can grow without bound 🟠 (new in v3)
 
+> 🔄 **Current code (2026-11-01):** ✅ Done. The child model rejects extra fields and bounds every field (`backend/children/app/main.py:231-260`), with 64 KB BSON caps in `transform/app/store.py:25` and `grow/app/main.py:489`. `visited_tabs`, the extras and `active_jobs` no longer live on the child.
+
 **Where:** `backend/app/schemas/children.py:111-119,148-158,180-187,216-226`, `children.py:334` (`$addToSet` on `visited_tabs`).
 
 **Problem:**
@@ -840,6 +954,8 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 ---
 
 ### APP-11 — Misc backend hygiene 🟢 (new in v3)
+
+> 🔄 **Current code (2026-11-05):** ✅ Done. Done earlier: (a), (c), (d), (g); (e) is moot. **(b)** The rate limits and the login throttle now use `MovingWindowRateLimiter` (the last N seconds, not the clock window), so a limit can't be spent twice across a window edge; the same Valkey keys and Lua access, so the RBAC rules are unchanged. **(f)** `build-android-apk` writes `app-assets/applications/android/latest.json` after each upload and keeps only the newest 5 APKs; `/downloads/apk` reads that one object (a bad pointer is a 503, none a 404) instead of listing every build.
 
 | # | Where | Issue | Fix |
 |---|-------|-------|-----|
@@ -871,6 +987,18 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 ### DB-01 — M0 → M10/M20 (ap-south-1) now → M30+ Global Cluster later 🔴
 
+> 🔄 **Current code (2026-11-05):** 🟡 Decided, not provisioned. **Stage 1 is M10 for prod** (the owner's choice), in ap-south-1, with compute auto-scaling up to M30 for CPU and RAM. stg is M10 too (for DB-05's Test Failover); dev and sbx stay on M0 by design.
+> - **Connections:** prod's `mongodb_connection_budget` is 1050, 70% of M10's 1500 (this item's acceptance rule), and its max counts are lowered to fit: 93 tasks, 1023 connections at peak. The plan fails if they could exceed it (TF-03). Moving to M20 (3000, so 2100) is how prod grows past that; auto-scaling doesn't add connections.
+> - **Atlas settings, in the console** (`docs/infra-operations.md`, "Atlas clusters"): Cloud Backup with continuous PITR, snapshot copy to a second region, storage auto-scaling, termination protection, and a timed test restore before go-live (practised on stg first, `docs/stg-first-deploy.md`).
+> - **Already in place:** a database and a `MONGODB_URI` per service (`services.tf`), the user's own per service.
+> - **Still open:** provisioning those clusters and their settings, and the test restore. Private connectivity is DEC-02 (done in code: PrivateLink). Runbook Step 0 no longer applies: email ownership lives in auth's `email_index` collection, with no unique `(location, email)` index.
+>
+> 🔄 **v10 (2026-11-09):** how the Stage 1 fix steps below read against today's code and operating model (one AWS account per environment, full apply/destroy, no data migrations):
+> - **Step 4 (Atlas AWS CIDR at creation):** stg and prod use PrivateLink (`infra-live-backend/terraform/atlas.tf:2-14`), where the Atlas project CIDR doesn't matter. It is only needed if cross-region VPC peering is ever chosen (NET-01).
+> - **Step 5 (users `api`/`worker`/`migrations`):** superseded. Each service has its own database user and `MONGODB_URI` (`MONGODB_URIS` in `terraform-live-backend.yml`). What's left is to verify least-privilege roles and TLS on the new clusters.
+> - **Step 7 (runbook Step 0, the index drop):** superseded for Stage 1. `backend/database.py` and `backend/worker.py` (cited in "Problem" below) are deleted, and email ownership is auth's `email_index` collection. Shard-key-compatible indexes and `location` in filters stay Stage 2 (Global Cluster) concerns.
+> - **Step 8 (migrate data from M0):** doesn't apply. There are no data migrations, and dev/sbx stay on M0 by design. Instead: create the M10 clusters fresh, set `MONGODB_URIS` (each service's `MONGODB_URI`) and `ATLAS_PROJECT_ID`, then apply.
+
 **Where:** `GLOBAL_ROUTING_MONGO.md:13-16`, `GLOBAL_ROUTING_MONGO_ATLAS.md`, `docs/infra-architecture-multi-region.md` (Phase 0 "not started").
 
 **Problem (today):**
@@ -895,7 +1023,7 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 **Fix — Stage 1 (now):**
 1. Create the **M10 or M20** cluster in ap-south-1. Choose M20 if a load test (or the projected user count) shows M10 CPU or RAM saturating; the working set should fit in RAM.
 2. Enable **compute auto-scaling** with a floor of M10/M20 and a ceiling of **M30**, so **sustained** growth scales the tier. Auto-scaling reacts over tens of minutes with a rolling resize, so it doesn't absorb spikes. M30's connection limit equals M20's (about 3,000), so the M30 ceiling adds CPU and RAM but no connection headroom. Enable storage auto-scaling.
-3. Enable **Cloud Backup with continuous PITR**, and set **snapshot distribution (copy) to a second region** (e.g. eu-west-1), so backups survive an ap-south-1 outage. Do a test restore and record the RTO.
+3. Enable **Cloud Backup with continuous PITR**, and set **snapshot distribution (copy) to a second region** (ap-south-2 keeps it in India; e.g. eu-west-1 moves it to the EU, see `docs/data-residency.md`), so backups survive an ap-south-1 outage. Do a test restore and record the RTO.
 4. **Private connectivity** (see DEC-02):
    - ap-south-1: **PrivateLink** (or VPC peering) from the backend VPC.
    - eu-west-1/us-east-1 (**only if DEC-01 = B**): cross-region VPC peering or a Transit Gateway path. This **requires NET-01** (unique CIDRs) first.
@@ -919,14 +1047,18 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
   - Private connectivity from ap-south-1 is in use.
   - p95 Mongo latency from ap-south-1 tasks is < 10 ms.
   - Peak connections at maximum ECS scale stay ≤ 70% of the tier limit.
-  - Per-service DB users (`api`, `worker`, `migrations`) exist, and each service uses its own `MONGODB_URI`.
-  - Runbook Step 0 is done: unique indexes are compatible with the shard key, and worker filters include `location`.
-  - Atlas termination protection is on; the M0 cluster is decommissioned after the migration.
+  - Each service has its own database user and `MONGODB_URI`; least-privilege roles and TLS are verified on the new clusters (v10; replaces the `api`/`worker`/`migrations` users).
+  - ~~Runbook Step 0 is done: unique indexes are compatible with the shard key, and worker filters include `location`.~~ Superseded for Stage 1 (v10); a Stage 2 (Global Cluster) concern.
+  - Atlas termination protection is on. (v10: the stg and prod M10 clusters are created fresh, with no migration from M0; dev/sbx stay on M0 by design.)
 - **Stage 2:** each region's p95 Mongo latency is < 10 ms for its own locations.
 
 ---
 
 ### DEC-01 — Multi-region compute while the DB is single-region 🟠 (decision, new in v4)
+
+> 🔄 **Current code (2026-11-05):** ✅ Decided and done: **Option A**, the owner's choice. `shared/routing.json` gained `served_from: {"prod": "ap-south-1"}` (the per-environment override the pitfalls below asked for). The edge routes every prod location to ap-south-1 (`infra-live-edge/terraform/routing.tf`; checked: prod maps all six locations there, stg keeps eu-west-1 and us-east-1). `locations_for_region` gives prod's ap-south-1 every location and refuses any other prod region (buddy-common 0.34.0). Terraform refuses prod's backend outside ap-south-1 and an edge `backend_regions` other than `["ap-south-1"]`, with a stack test. dev, sbx and stg keep the three-region map. Recorded in `docs/infra-architecture-multi-region.md`. Leaving it: remove prod from `served_from` once the Global Cluster exists.
+>
+> 🔄 **v10 (2026-11-09):** stg is served from ap-south-1 too: `shared/routing.json` has `"served_from": {"stg": "ap-south-1", "prod": "ap-south-1"}` (generated into `backend/common/regions_data.py:13`), since stg also has one M10 in ap-south-1 reached by PrivateLink. So stg and prod are served from ap-south-1; dev and sbx stay multi-region. The "stg keeps eu-west-1 and us-east-1" above is out of date.
 
 **Context:** The edge routes users to eu-west-1/us-east-1 backends by location, but in Stage 1 every DB round trip from those regions goes to ap-south-1 (about 120–250 ms each). An API request typically makes several Mongo calls: auth/user lookup, the child lookup, then the read or write. So a European user served from eu-west-1 can be **slower** than if served directly from ap-south-1. Their data also physically lives in India either way.
 
@@ -946,11 +1078,13 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 
 **Acceptance criteria:**
 - The decision is recorded in `docs/infra-architecture-multi-region.md`, and the routing configuration matches it.
-- If A: prod `backend_regions = ["ap-south-1"]`, prod routing maps every location to ap-south-1, and dev/stg routing is unchanged.
+- If A: prod `backend_regions = ["ap-south-1"]`, prod routing maps every location to ap-south-1, and dev/stg routing is unchanged. (v10: stg is served from ap-south-1 too; read "dev/sbx routing is unchanged".)
 
 ---
 
 ### DEC-02 — Private connectivity from backends to the ap-south-1 DB 🟠 (decision, new in v4)
+
+> 🔄 **Current code (2026-11-05):** ✅ Decided and done in code: **PrivateLink in ap-south-1**, made end to end by Terraform (the owner's choice). stg and prod each have one M10 cluster there and are served from that region only (`shared/routing.json` `served_from`, now including stg). `infra-live-backend/terraform/atlas.tf` creates Atlas's endpoint service (MongoDB Atlas provider 2.20.1, locked), the AWS interface endpoint in the private subnets (ports 1024–65535 from the service tasks only), and Atlas's acceptance of it, so a full destroy and re-apply needs no console step and no IP access list. `atlas_project_id` (the `ATLAS_PROJECT_ID` variable) is required wherever `served_from` applies; the project-scoped key comes from `MONGODB_ATLAS_PUBLIC_KEY` / `_PRIVATE_KEY`, on the plan and apply steps only. dev and sbx (M0, which has no PrivateLink) keep the public endpoint and the NAT-IP allowlist, accepted by the owner. Stack tests cover the endpoint, its security group, dev having none, and prod refusing an empty project. **Still to see:** the endpoint `Available` and tasks connecting, at the first stg apply (`docs/stg-first-deploy.md`).
 
 **Context:** Atlas private endpoints (PrivateLink) are regional, created in the cluster's region. A single-region cluster in ap-south-1 can be reached privately from **ap-south-1** with PrivateLink or VPC peering. The other regions need one of:
 
@@ -970,6 +1104,16 @@ Today both presigns are **PUT**, with a 300 s expiry and a signed `ContentType` 
 ---
 
 ### DB-02 — Mongo poll load, non-indexed claim, client defaults 🟠
+
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.22.0).
+> - **Claim index:** the claim's `(location, status, retry_after)` index is now `(location, status, created_at)` (`backend/common/models.py`). The claim (`common/generation/jobs.py`, `claim_filter` + `CLAIM_SORT`) reads it in order and stops at the oldest due job, instead of sorting every due job in memory. Measured locally with 3,000 jobs (about 600 due): 609 keys / 602 documents read before, 6 / 6 after, with the same job returned. `location` stays first, as the Global Cluster plan needs. A live-Mongo test fails if `explain()` ever shows a `SORT` stage again.
+> - **Poll jitter:** an idle worker waits `jobs.idle_wait(poll)`, 2 s ± 25%, so workers started together don't poll together. Used by discover, grow, transform and release.
+> - **Socket timeout:** `ServiceSettings.mongo_client` sets `socketTimeoutMS=30000` alongside pool size 5, `appname` and the 5 s server selection. It's deliberately not the client-wide `timeoutMS`, which would end the outbox relay's change streams. Retries and write concern stay in the Atlas connection string.
+> - **Checked:**
+>   - every suite;
+>   - on the rebuilt local stack, all four services' `jobs` have the new index, and the full journey completed all 9 generation jobs.
+>
+> Local databases also keep the old index until reset (harmless); environments created from now on get only the new one. The connection budget moves to DB-01 with the prod cluster tier.
 
 **Where:** `backend/worker.py:76,110-141,546`, `backend/app/main.py:131`, `backend/app/database.py:103`.
 
@@ -1023,6 +1167,16 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DB-03 — Index creation at startup in every task 🟡
 
+> 🔄 **Current code (2026-11-02):** 🟡 Code done (buddy-common 0.25.0); the acceptance check needs a deployed environment. The leader-locked background option, not a migration task:
+> - **Startup makes only the collections.** Every service's `Runtime.prepare()` now hands its `ensure_*` functions to `common.index_builds.prepare_database`. That creates the collections and validators at once (still needed before serving), but each `create_index` is only recorded.
+> - **One build per release.** With a release (`GIT_SHA`, set in every image), a background task claims `index_builds/<service>:<release>` in the service's database, so once across every task and region, and runs one `createIndexes` per collection. Every other task waits for that build, then only checks the indexes exist (`list_indexes`). A restart or a promote of the same image builds nothing.
+> - **Recovery.** A build left running for 30 minutes is taken over, and a failed one is retried by the next start, so `restart-live-backend` is the retry.
+> - **Nothing stops a task.** A failed build (an option conflict, duplicates under a new unique index) or a missing index is logged with a top-level `index_problem` field, and the task keeps serving. Each runtime's log metric filter feeds `Superpower/mongo` `IndexProblems`, and the `index-problems` alarm (stg, prod) fires on any.
+> - **Locally and in tests** (no `GIT_SHA`) the indexes are built at once, as before.
+> - **Tests:** 16 (v10 recount; test functions) in `common/tests/test_index_builds.py`, against a real Mongo: one builder among five concurrent starts, a re-start skipping, a failure logged then retried after the fix, a missing index, a stale takeover, a follower's wait and time-out, a failing check. Plus the stack test, and all nine services' suites at 100% coverage.
+> - **Runbook:** `docs/infra-operations.md` ("MongoDB indexes: built once per release").
+> - **Not done:** proving the acceptance criterion (a new index on a 10M-document collection deploys with no task restarts) needs a deployed environment with that much data. Until a new index is built, queries that need it run unindexed, and a new unique rule isn't enforced.
+
 **Where:** `backend/app/main.py:133` (`init_indexes()` in lifespan, unguarded). The worker never ensures indexes.
 
 **Problem:**
@@ -1040,6 +1194,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DB-04 — Unindexed per-user deletes 🟡
 
+> 🔄 **Current code (2026-11-01):** ✅ Done. Every per-user collection has a `(location, user_id, …)` index (`backend/common/models.py:209,245`, `grow/app/store.py:107`, `children/app/store.py:75-77`).
+
 **Where:** `backend/app/database.py:38-52,81-95`, `backend/app/routers/auth.py:719-722`.
 
 **Problem:**
@@ -1054,6 +1210,13 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### DB-05 — Atlas failover behaviour unspecified/untested 🟡
+
+> 🔄 **Current code (2026-11-03):** 🟡 Code done (buddy-common 0.27.0); the failover test needs a deployed environment.
+> - **Startup retries.** Every service's startup (`prepare()` → `common.index_builds.prepare_database`) retries the collection step on a connection or "not primary" error: `ConnectionFailure`, which covers `NotPrimaryError`, `AutoReconnect` and `ServerSelectionTimeoutError`, plus the stepping-down server codes and the `RetryableWriteError` label. It waits 1, 2, 4, 8 and 16 s, about 60 s, inside the task's health-check allowance (about 150 s) and the load balancer's 90 s grace. A task starting during an election no longer exits and gets restarted in a loop. Any other error still stops it at once, and a failed startup exits 1 (`common.serve`).
+> - **Writes.** Deletes run in transactions and are re-run by events. pymongo retries a single write once, and a request in flight during an election can fail.
+> - **Runbook.** `docs/infra-operations.md` ("MongoDB indexes" section) has the expected behaviour and the release step: run Atlas *Test Failover* on stg while the services run.
+> - **Tests:** an election ridden out (three "not primary" errors, then ready), the 60 s limit, a non-transient error raised at once, which errors count as transient, and `prepare_database` retrying its collection step.
+> - **Still open:** the stg failover test itself (the acceptance criterion).
 
 **Where:** `backend/app/main.py:102` (`delete_many`), `update_many` call sites, `backend/worker.py:568` (startup ping → `sys.exit`).
 
@@ -1072,6 +1235,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### JOB-01 — Lease shorter than the LLM budget; no fencing → double runs 🟠
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. The lease is 10 minutes, fenced by `claim_id`. A worker that loses its claim stops, and a cancelled job's `failed` state can't be overwritten by a late worker (`backend/common/generation/jobs.py:43` `STALE_CLAIM_AFTER`, `:243-257` `claim_filter`, `:259-285` `claim_next`).
 
 **Where:** `backend/worker.py:104` (5-minute stale threshold), `:168,196,223,245,312,375,411` (follow-up updates filter on `{"job_id": ...}` only), `:487` (docstring claims "atomic, no race").
 
@@ -1092,6 +1257,10 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### JOB-02 — Retries multiply LLM cost; poison jobs; no DLQ 🟠
+
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Retries:** attempts are counted at claim time, `exhausted()` stops retries, and failed jobs are kept 7 days by TTL (`common/generation/jobs.py`). The SDKs' own retries are off (`common/generation/llm.py`), so a job makes at most one provider call per attempt.
+> - **Failed-jobs alarm:** every job a worker gives up on logs `<circle>.job … outcome=failed`. A log metric filter per generating worker (`FailedJobs`, `infra-live-backend/terraform/cloudwatch.tf`) counts them, and `failed_jobs` alarms on more than 2 in 15 minutes (stg, prod).
 
 **Where:** `backend/worker.py:132-136`, `backend/app/database.py:142` (TTL on finished jobs).
 
@@ -1118,6 +1287,17 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-03 — Job path bypasses LLM cost controls 🟠
 
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Already there:** the hourly limit at job start, server-built prompts, a provider the client can't choose, and every provider capped at 4,096 output tokens.
+> - **Token metrics:** each `llm_call` log line now carries a top-level `llm_call` field (circle, provider, model, tokens, outcome). Log metric filters sum `LlmInputTokens` and `LlmOutputTokens` per circle in every environment.
+> - **Spend alarm:** `llm_tokens` alarms when all circles together pass `llm_tokens_alarm_per_hour` (default 5M) in an hour (stg, prod).
+> - **Kill switch:** an SSM parameter per backend stack, `/<app>/<env>/backend/<region>/llm_generation_enabled` (`generation_switch.tf`, read by `common/generation/switch.py` about once a minute). Setting it to `false` pauses generation with no deploy: new starts get `503 generation_paused`, and workers stop claiming. Terraform never resets it. The runbook is in `docs/infra-operations.md` ("Pausing LLM generation").
+> - **Checked:**
+>   - unit tests for the switch;
+>   - 503 and paused-worker tests in all four services;
+>   - against Moto's SSM, `false` takes effect at the next minute's read, and an unreadable parameter keeps the last value;
+>   - the full journey logged a top-level `llm_call` record for every call.
+
 **Where:** `backend/app/routers/jobs.py:120-140` (`enqueue_job`: route limit `30/minute`; an in-flight cap of 2 per **(user, child, type)** at `:223-244`; but **no** call to `llm_rate_limiter.enforce`), `backend/app/schemas/jobs.py:168-180` (32k-char client prompt; `provider: str | None` at `:170`), `backend/app/services/llm_service.py:142,180` (no output-token cap for OpenAI/Gemini).
 
 **Problems:**
@@ -1142,6 +1322,13 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-04 — No LLM provider fallback 🟡
 
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.26.0; `backend/common/generation/llm.py`).
+> - **Fallback.** `LlmClient.invoke` tries every configured provider in `PRIORITY` order (OpenAI, Anthropic, Gemini) until one answers. Each attempt logs its own `llm_call` line, with a new `attempt` field (2 or more means a fallback). A provider asked for by name gets no fallback.
+> - **Breaker.** A provider whose call errored or timed out is skipped for `BREAKER_SECONDS` (60 s, per task), so later calls don't wait on it. An unusable answer (empty, cut off, not JSON) falls back too but doesn't trip it. If every breaker is open, all providers are tried in order rather than none.
+> - **Gemini off the shared threads.** Gemini now runs on the async `google-genai` SDK (APP-03, buddy-common 0.30.0), so it uses no threads at all and a timed-out call is cancelled. Before that, its synchronous SDK had its own pool of at most 8 threads.
+> - **Tests:** an OpenAI 503 answered by Anthropic, then OpenAI skipped until the breaker closes; a bad answer falling back without tripping it; every provider failing; no fallback when one is named; Gemini's own threads, since replaced by the async client (APP-03). `common` is at 100% coverage.
+> - **Cost:** a fallback is one more LLM call for that attempt, at most one per configured provider.
+
 **Where:** `backend/app/services/llm_service.py:105` (`resolve_provider` picks the first configured provider), `:189` (Gemini sync call via `to_thread` on the shared default pool).
 
 **Problem:**
@@ -1158,6 +1345,12 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-05 — Job polling collides with the per-user rate limit 🟡
 
+> 🔄 **Current code (2026-11-01):** ✅ Done, in two parts.
+> - **Server:** the four job-status routes (`GET …/generation/{job_id}` in discover, grow, transform and release) allow 300 polls a minute per user, up from 60. Each poll is one indexed read, and app builds already installed keep polling every 2 s, so the server has to absorb them. `grow/tests/test_grow.py` checks that five jobs polled every 2 s for a minute (150 polls) get no 429, and that a much faster client still does.
+> - **Clients** (`frontend/src/api/polling.ts` and `frontend-app/src/api/polling.ts`, used by `runJob` and discover's `settlePersonality`): polls start at 2 s and slow by half each time, up to 5 s (`slower`). A 429 on a poll waits the longest interval and polls again instead of failing the generation; any other error still fails it. Covered by `frontend-app/src/__tests__/polling.test.ts`.
+>
+> A batch or streaming status endpoint wasn't needed.
+
 **Where:** `frontend/src/hooks/useJob.ts:5` (polls every 3 s, so 20 requests/min per job), `backend/app/routers/jobs.py:283` (`60/minute` per user).
 
 **Problem:** Three or more concurrent jobs or tabs hit 429. Each poll also costs 2 Mongo reads.
@@ -1172,6 +1365,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### JOB-06 — Enqueue not idempotent; in-process lock only 🟡
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. `start_job` takes the target's lock in a transaction, and a duplicate start returns the running job (`backend/common/generation/jobs.py:6-9`, `start_job` at `:110-223`). This works across tasks without an `Idempotency-Key` header.
 
 **Where:** `backend/app/routers/jobs.py:84,229` (an in-process `asyncio.Lock` enforces the in-flight cap).
 
@@ -1189,6 +1384,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-07 — `worker.py` untested and outside the coverage gate 🟢
 
+> 🔄 **Current code (2026-11-01):** ✅ Done. `backend/worker.py` is gone. Each service's worker is inside its 99% coverage gate (`check.yml`, `--cov=$SERVICE`), for example `grow/tests/test_grow_worker.py` and `common/tests/test_generation_jobs.py`.
+
 **Where:** `check.sh:169` and `check.yml:116` measure `--cov=app` only; there's no `tests/test_worker.py`. The only worker test is the index-use check (`tests/test_mongo_integration.py:280`).
 
 **Fix:**
@@ -1202,6 +1399,10 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-08 — Region-scoped workers have no failover 🟢
 
+> 🔄 **Current code (2026-11-05):** ⚪ Moot for prod: DEC-01 is A, so prod's one region (ap-south-1) handles every location and there's no other region to fail over to. dev, sbx and stg still have region-scoped workers with no drain mode; that's accepted outside prod. Revisit with DB-01 Stage 2.
+>
+> 🔄 **v10 (2026-11-09):** stg is served from ap-south-1 too (DEC-01), so only dev and sbx have region-scoped workers. `WORKER_SCOPE_TO_REGION` (`ecs.tf:233` below) no longer exists; scoping is `common.regions.locations_for_region` (`backend/common/regions.py:31`).
+
 **Where:** `infra-live-backend/terraform/ecs.tf:233` (`WORKER_SCOPE_TO_REGION=true`).
 
 **Problem:** If one region's workers are down, that region's jobs wait until the 30-minute deadline fails them, even when the database is reachable.
@@ -1213,6 +1414,14 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### AUTH-01 — Google token verification blocks the event loop 🟠
+
+> 🔄 **Current code (2026-11-01):** ✅ Done, in `backend/auth/app/google.py`. No new dependency was needed.
+> - **Cache and timeout:** `CachedCertsRequest`, a subclass of google-auth's requests transport, keeps one `requests.Session`, waits at most 5 s for Google (google-auth's default is 120 s), and caches a successful GET for its `Cache-Control: max-age`, capped at a day. Google currently sends about 6.5–7 h; `no-store`, `no-cache`, errors and non-GETs aren't cached.
+> - **Own pool:** `verify_google_token` runs on its own 4-thread pool, so a slow Google can't take the default pool's threads that bcrypt uses for password logins.
+> - **Unchanged:** the `aud`, `iss`, expiry and `email_verified` checks.
+> - **Checked:**
+>   - `auth/tests/test_auth_google_certs.py` (one fetch per max-age, the 5 s timeout, what isn't cached, the cap, the pool);
+>   - in the rebuilt auth container, against Google's real certs endpoint: one fetch, then served from the cache; an invalid token refused (400 on `/api/v1/auth/google`).
 
 **Where:** `backend/app/routers/auth.py:497` calls the **sync** `verify_google_token` (`backend/app/services/google_auth.py:33-38`) inside an async route.
 
@@ -1235,6 +1444,14 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-02 — Refresh tokens: no atomic consume, no reuse detection 🟠
 
+> 🔄 **Current code (2026-11-02):** ✅ Done (`backend/auth/app/main.py`, `refresh` and `_Claim`).
+> - **Atomic claim.** A refresh claims its token with one `findOneAndUpdate` (`rotated_at` null → now). Of refreshes racing on one token, exactly one goes on to mint.
+> - **One branch per family.** A second refresh within the 30 s window (another tab, or the mobile app retrying after a lost response) retires the first one's successor if it hasn't been used, and gets the new pair; the replaced pair can no longer refresh. If the successor has been used, it gets `409 refresh_superseded`, and its cookies are left alone. Every successor link is conditional, and a refresh that loses it deletes the session it just made. So a family never has two sessions that can refresh, the security property the criterion is after. A literal "the second refresh fails" would instead sign out a second tab or a mobile retry, so the second refresh gets a pair, but only one pair can ever refresh again.
+> - **Crash recovery.** A claim whose successor isn't recorded within 2 s (that refresh stopped part-way) is taken over by the next refresh. Two takeovers can't both win.
+> - **Reuse.** A reuse after the window still revokes the family and logs the account out everywhere. Its log line now has `security_event: "refresh_token_reuse"`, which a log metric filter on auth counts (`Superpower/auth` `SecurityEvents`); the `auth-security-events` alarm (stg, prod) fires on any.
+> - **Clients.** The web app treats a `409` from refresh as "another tab refreshed first" and carries on with the cookies it now has. In both apps, the timed silent refresh goes through the same one-at-a-time path as request-triggered ones.
+> - **Tests:** a second refresh replacing the first's session; six parallel refreshes leaving exactly one session and one pair that can refresh (10 repeat runs); a `409` after the successor was used, with no cookies set; a stopped claim taken over; a lost link deleting its session; two takeovers with one winner; the reuse's security event. auth is at 100% coverage, and the stack test asserts the filter and alarm.
+
 **Where:** `backend/app/routers/auth.py:403-451` (`find_one` session → insert the new one → `delete_one` the old one).
 
 **Problem:**
@@ -1254,6 +1471,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### AUTH-03 — Account unlock revives pre-lock sessions; no admin audit 🟡
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. Locking deletes the sessions, unlock keeps `tokens_revoked_at`, and every admin action is audited (`backend/auth/app/admin.py`: `_apply` revokes and deletes sessions at `:188,195`, `lock_account` `:302-316`, `unlock_account` `:327-340`).
 
 **Where:** `backend/app/routers/admin.py:287-290` (lock sets `tokens_revoked_at` but doesn't delete sessions), `:315-318` (unlock sets `tokens_revoked_at = None`), and the comment at `:312-314`.
 
@@ -1275,6 +1494,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-04 — Brute force only per-IP; bcrypt cost and 72-byte truncation 🟡
 
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Per-account backoff** (`backend/auth/app/throttle.py`): on top of 5 failures per (email, IP), 10 failures for one email in 15 minutes, from any IPs, slow its logins to one attempt a minute until the window ends. It's a backoff, not a lockout, so nobody can lock the owner out on purpose.
+> - **Own pool:** bcrypt runs on its own bounded thread pool (`tokens._bcrypt_pool`, 2–4 threads), not the default one.
+> - **72 bytes:** hashing and checking cut the UTF-8 password at 72 bytes themselves (`BCRYPT_MAX_BYTES`), exactly as bcrypt 4.x did silently. Every existing hash still matches, long passwords included, and bcrypt 5.x (which raises past 72) won't break login. Registration refuses passwords over 72 bytes; both apps' forms check the same.
+> - **Checked:**
+>   - `auth/tests/test_auth_passwords.py`: an old long-password hash, a simulated bcrypt 5, bytes versus characters, the pool, the register limit, 20 failures from 20 IPs;
+>   - auth's suite at 100%;
+>   - on the local stack, a 73-byte password gets a 422 and the account-deletion e2e passes.
+
 **Where:** slowapi route limits (login 10/min, register and google 5/min, per IP), `backend/app/auth_utils.py` (bcrypt, default 12 rounds), `requirements.txt` (bcrypt 4.2.1).
 
 **Problems:**
@@ -1294,6 +1522,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### AUTH-05 — Refresh token returned to web JS; cookie scope; no Origin check 🟡
+
+> 🔄 **Current code (2026-11-02):** ✅ Done (buddy-common 0.26.0).
+> - **No tokens in a browser's body.** Register, login, Google and refresh return `access_token`/`refresh_token` only to a client that isn't a browser (`common.origin.is_browser_request`: no `Origin` and no `Sec-Fetch-*`, headers a page's script can't remove). That's the mobile app, which reads them from the body. A browser gets `null`s and the HttpOnly cookies, so injected script can't read the refresh token. There's no new client header to forge, and installed app builds keep working.
+> - **Host-only, prefixed cookies.** The cookies no longer set `Domain=` (`COOKIE_DOMAIN` is gone), so other subdomains never receive them. Deployed, their names are `__Host-access_token` and `__Secure-refresh_token` (`backend/common/cookies.py`). Browsers accept those only with `Secure` (and, for `__Host-`, `Path=/` and no `Domain`), so a sibling subdomain can't set or overwrite them, and a bare-named cookie it plants is never read. That covers auth, `common.authz` and the Lambda@Edge validator. Locally (`APP_ENV=local`, plain HTTP, where prefixed cookies are dropped) the names are bare, and outside local auth refuses to start with `COOKIE_SECURE=false`.
+> - **Origin check.** Every service's public app (`common.serve`) now has `OriginCheckMiddleware`. A `POST`/`PUT`/`PATCH`/`DELETE` carrying the session cookies is refused (`403 cross_site_request`) when its `Origin` isn't in `PUBLIC_ORIGINS`, or, without `Origin`, when `Sec-Fetch-Site` shows another site.
+>   - A request with neither header can't come from a browser page, so it passes. That matters because React Native keeps a cookie jar, so the mobile app may send the cookies too.
+>   - Cookies are parsed as Starlette parses them: a stricter parser stopped at a malformed cookie planted first and missed the session cookie, a bypass caught while testing.
+>   - `PUBLIC_ORIGINS` (`https://<cookie_domain>`) is set on every runtime by `services.tf`, and stg and prod refuse to start without it.
+> - **Tests:** `common/tests/test_origin.py` (16) and `test_cookies.py`; `common.authz` reading only the prefixed access cookie when deployed; in auth a browser login and refresh with no tokens in the body, host-only cookies, the prefixed names with `Secure` and their paths, and a cross-site refresh refused while our own origin's passes; and in the edge validator's tests (41), the prefixed names, with a bare-named cookie ignored. CloudFront's `/api/*` behaviour forwards all viewer headers (AllViewerExceptHostHeader), so `Origin` and `Sec-Fetch-*` reach the services. Local runs (no `PUBLIC_ORIGINS`) don't check.
 
 **Where:** `backend/app/routers/auth.py:296,354,452,654` (`AuthTokenResponse` returns both tokens in the body for **all** clients), `backend/app/auth_utils.py:137,150` (cookies with `Domain=cookie_domain`).
 
@@ -1317,6 +1554,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-06 — Session-cleanup task can die silently; runs in every region 🟡
 
+> 🔄 **Current code (2026-11-01):** ⚪ Moot. Sessions expire through a TTL index (`backend/auth/app/store.py:169`), and the cleanup task is gone. The reaper that exists now is a different job (stale registrations).
+
 **Where:** `backend/app/main.py:68-125` (the lock `r.set` at `:85-88` is **outside** the `try`).
 
 **Problems:**
@@ -1338,6 +1577,13 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-07 — No fail-fast config validation for stg/prod 🟡
 
+> 🔄 **Current code (2026-11-01):** ✅ Done (buddy-common 0.19.0). In `stg` and `prod` (`STRICT_ENVS`), a runtime with unsafe settings stops at startup:
+> - **Every runtime** (`ServiceSettings.unsafe_settings`, `backend/common/settings_base.py`): `REDIS_URL` must be set and use TLS (`rediss://`), `REDIS_USERNAME` must be set (IAM sign-in), and `AWS_ENDPOINT_URL` must be unset (no local emulator). v10: also `AWS_ENDPOINT_URL_S3` must be unset and `PUBLIC_ORIGINS` must be set (`backend/common/settings_base.py:132-135`).
+> - **auth** (`AuthSettings.unsafe_settings`): `COOKIE_SECURE` must be true, and `DELETION_PARTICIPANTS` must name all seven services.
+> - **HTTP runtimes only** (`common.serve.unsafe_http_environment`): `BEHIND_PROXY` must be true, and `MONGODB_URI` must be set, since an unconfigured image would otherwise answer 503 to everything. v10: strictly, the check is the service's `CONFIGURED_BY` variable (`common/serve.py:52,81-83,173`): `MONGODB_URI` by default, `JWT_PUBLIC_KEYS` for `shared`, which has no database. Workers have no proxy in front of them, so they aren't checked for it.
+>
+> The error is an `UnsafeSettingsError` naming every problem, not a pydantic `ValidationError`, whose message would print part of the settings input (the secrets). `common.serve` now also exits 1 when an app's startup fails: uvicorn returned normally before, so a refused start looked like a clean stop. Checked on the local stack: auth started with `APP_ENV=prod` and `COOKIE_SECURE=false` exits 1 with the list of problems. The CORS and `TRUSTED_PROXY_HOPS` checks no longer apply; the per-environment JWT key check stays with APP-02.
+
 **Where:** `backend/app/settings.py:240-248` (only warnings).
 
 **Problem:** With `APP_ENV=prod`, the app starts happily with:
@@ -1353,6 +1599,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### PRIV-01 — Plaintext passwords and child PII written to logs 🟠
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. Validation errors aren't logged. FastAPI's default 422 response echoed the submitted values in `detail[].input`: a too-short `password`, and for a missing field the **whole body**. `backend/common/validation.py` now returns only each error's `type`, `loc` and `msg`, and `common.serve` installs it on both apps of every service (`backend/common/serve.py`, `build_servers`), keeping any handler a service sets itself (buddy-common 0.17.0, pinned by every service). Tests: `common/tests/test_validation.py`, `test_serve.py`. Checked against the local stack's auth (`POST /api/v1/auth/register`).
 
 **Where:** `backend/app/main.py:194` (`log.warning("422 validation_error … errors=%s", exc.errors())`) and `:198` (the response echoes `exc.errors()`).
 
@@ -1372,6 +1620,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### PRIV-02 — Deletion incomplete; worker recreates data; no 30-day purge 🟠
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. Deletion runs across every service with tombstones and guards: jobs are cancelled, S3 objects deleted, and a 30-day purge runs (`backend/common/deletion.py`, `children/worker.py:56-98`, `children/app/lifecycle.py:57,125-170`, `transform/app/lifecycle.py:152-163`, `cancel_jobs`, `common/generation/jobs.py:424-447`). The e2e account-deletion script checks every store.
 
 **Where:** `backend/app/routers/auth.py:678-742` (`delete_account`), `children.py:466-494` (soft-delete; the docstring at `:473` promises "purged by a scheduled hard-delete job"), `backend/worker.py:274-302` (`write_to_domain` with `upsert=True` at `:302`), `backend/app/database.py:89-95` (a purge index exists, but **no purge job exists anywhere**), `docs/api.md:31`.
 
@@ -1401,6 +1651,12 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### PRIV-03 — Children's voice/PII sent to LLM providers out of region 🟡
 
+> 🔄 **Current code (2026-11-05):** 🟡 Partial: documented; the legal steps are the owner's.
+> - **Residency matrix:** `docs/data-residency.md` lists each kind of personal data, where it's stored, which processor receives it and in which region, for today and for later. Today stg and prod store every user's data in ap-south-1 (India): one M10 each, served from there only (DEC-01, DEC-02), the owner's deliberate, temporary choice. What leaves India: generation prompts (the child's first name, age, pronouns, onboarding answers, personality and growth-area answers) and voice recordings to OpenAI, Anthropic or Gemini on their global endpoints; redacted WAF logs (us-east-1); backup copies if their copy region is abroad (ap-south-2 keeps them in India).
+> - **Prompts:** built on the server from stored data; no endpoint accepts a client-built prompt, and no email, address or parent name is sent.
+> - **Docs corrected:** `GLOBAL_ROUTING_MONGO.md`, `GLOBAL_ROUTING_MONGO_ATLAS.md` and `docs/infra-architecture-multi-region.md` no longer suggest per-location residency is in effect.
+> - **Still open (the owner's, not code):** processing agreements with zero data retention with the three AI providers; the transfer basis and privacy policy for the markets served (DPDP Act for India; GDPR SCCs and a transfer risk assessment for any EU users; COPPA for US children); a qualified review. In-region AI processing per location (for example Azure OpenAI or Bedrock) waits for per-location storage (DB-01 Stage 2).
+
 **Where:** `backend/app/routers/audio.py:83-87` (audio → OpenAI Whisper), `backend/app/routers/llm.py`, the job prompts (all providers are global endpoints).
 
 **Problem:**
@@ -1424,6 +1680,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### PRIV-04 — Soft-deleted child's data still readable 🟢
 
+> 🔄 **Current code (2026-11-01):** ✅ Done. A soft delete publishes an event, and the copies then return 404 on `is_deleted` (`backend/grow/app/access.py:94,126`, `children/app/main.py:570-576`). This is eventually consistent.
+
 **Where:** `backend/app/routers/users.py:180-187,298,434`. These GETs skip `_require_child`.
 
 **Fix:** Gate on `is_deleted: false` (call `_require_child`), or cascade the soft-delete to the child's related documents.
@@ -1433,6 +1691,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### SEC-10 — API task role can overwrite the public APK 🟠
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. Only `shared` can read the assets bucket, and only `GetObject`/`ListBucket` on the Android prefix (`infra-live-backend/terraform/services.tf:249-258`). No role can `PutObject` there.
 
 **Where:** `infra-live-backend/terraform/iam.tf:78` (`ecs_task_s3`: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the whole **assets** bucket).
 
@@ -1450,6 +1710,18 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### OBS-04 — No app logging config, request IDs or structured logs 🟡
+
+> 🔄 **Current code (2026-11-03):** ✅ Done (buddy-common 0.28.0).
+> - **Logs.** Every line is JSON with `request_id`, `trace_id` and level, at INFO (`backend/common/logging.py`, `common/telemetry.py`).
+> - **Access line.** `RequestIdMiddleware`, on every service's public and internal app, writes one line per request (logger `common.access`) with `method`, `path`, `route` (the template), `status`, `latency_ms`, `request_id` and `user`. `user` is the first 16 hex characters of the SHA-256 of the signed-in user's id, which `common.authz` records on the request. Successful health checks are left out. A request that raises before responding logs status 500.
+> - **The request id follows the work.**
+>   - Internal calls already sent it.
+>   - A generation job now stores the id of the request that started it (`start_job`), and `claim_next` makes it current, so the worker's lines for that job carry it.
+>   - An event carries it as a `request_id` SNS attribute and outbox field, like `traceparent`, so the message body and the consumers' schemas are unchanged. `Event.new` takes the current id, and the consumer makes it current while the handler runs.
+>   - Audit records use `current_request_id`, so a request id this service generated is recorded too, not only one that came in a header.
+> - **Tests:** the access line's fields and route template, the user hash through `common.authz`, quiet health checks, a 500 before any response, the id on a job and back on its claim, and the id on an event, its outbox row, its attribute and in the consumer's handler. `common` and all nine services are at 100% coverage.
+> - **Docs.** `docs/infra-operations.md` ("Finding a request in the logs") has the Logs Insights queries. The cost estimate's log volume already assumed about one line per request.
+> - **Not checked:** that the lines arrive in CloudWatch, which needs a deployed environment.
 
 **Where:** `backend/app/main.py` (no `logging.basicConfig`/dictConfig for the API), `backend/CLAUDE.md`. The worker already configures plain-text INFO logging (`worker.py:36-39`).
 
@@ -1472,11 +1744,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### MOB-01 — Prod mobile builds debug-signed and publicly downloadable 🟠 (new in v2)
 
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
+
+> 🔄 **Current code (2026-11-01):** ⬜ Open. Release builds are still debug-signed (`frontend-app/android/app/build.gradle:126,131`, `versionCode 1` at `:91`), and the builds are still public (`build-android-apk.yml:231,236`, `build-ios-ipa.yml:336-337,406`, `cloudfront.tf:144`). The APK prefix is now `APK_PREFIX` in `backend/shared/app/main.py:52` (`APK_LATEST` at `:55`); `backend/app/routers/downloads.py` is gone.
+
 **Where:**
-- `frontend-app/android/app/build.gradle:115-130`: `release` uses `signingConfigs.debug`, the committed `debug.keystore` with password `android`.
+- `frontend-app/android/app/build.gradle:116-131`: `release` uses `signingConfigs.debug`, the committed `debug.keystore` with password `android`.
 - `build.gradle:91`: `versionCode 1` is hard-coded.
-- `.github/workflows/build-android-apk.yml:185` and `build-ios-ipa.yml:349` copy the builds to `s3://<assets>/app-assets/applications/...`, which CloudFront serves **publicly** via `/app-assets/*` (`infra-live-edge/terraform/cloudfront.tf:137`).
-- iOS uses the `ad-hoc` export method (`build-ios-ipa.yml:281`), which is capped at 100 registered devices.
+- `.github/workflows/build-android-apk.yml:231` and `build-ios-ipa.yml:406` copy the builds to `s3://<assets>/app-assets/applications/...`, which CloudFront serves **publicly** via `/app-assets/*` (`infra-live-edge/terraform/cloudfront.tf:137`).
+- iOS uses the `ad-hoc` export method (`build-ios-ipa.yml:336-337`), which is capped at 100 registered devices.
 
 **Problems:**
 - Anyone can download the prod builds.
@@ -1487,8 +1763,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 **Fix:**
 1. **Android:** generate a real upload keystore and store it as base64 in GitHub secrets with its passwords. Write it to `$RUNNER_TEMP` and delete it after the build. Wire `signingConfigs.release` from env vars. Derive `versionCode` from `github.run_number` or a tag. Distribute via **Play Console** (internal testing → production), using Play App Signing. Build with `bundleRelease` (an **.aab**), since Play requires App Bundles for new apps.
 2. **iOS:** distribute via **TestFlight/App Store** (`app-store` export method + App Store Connect API key).
-3. Remove prod builds from the public `/app-assets/` path. If side-loading is needed for dev, use a private bucket with presigned URLs. Update `backend/app/routers/downloads.py:30` (`_ANDROID_APK_PREFIX`) and SEC-10's prefix condition together.
-4. Delete the decoded p12/profile files in the iOS cleanup step (`build-ios-ipa.yml:309-315` only deletes the keychain). This is low risk on hosted runners, but tidy.
+3. Remove prod builds from the public `/app-assets/` path. If side-loading is needed for dev, use a private bucket with presigned URLs. Update `backend/app/routers/downloads.py:30` (`_ANDROID_APK_PREFIX`; v10: now `APK_PREFIX`, `backend/shared/app/main.py:52`) and SEC-10's prefix condition together.
+4. Delete the decoded p12/profile files in the iOS cleanup step (`build-ios-ipa.yml:354-360`, v10: the step at `:365`, only deletes the keychain). This is low risk on hosted runners, but tidy.
 
 **Acceptance criteria:**
 - The release APK is signed with a non-debug key (`apksigner verify --print-certs`).
@@ -1500,6 +1776,10 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ## Disaster recovery & destroy safety
 
 ### DR-01 — Prod can be destroyed quickly and unrecoverably 🔴
+
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. No `prevent_destroy` anywhere. `secrets.tf:31` (backend) and `infra-live-scheduler/terraform/secrets.tf:25` still allow immediate deletion. ECR is now one repository per service with `force_delete` (`ecr.tf:18`). The ALB moved to `modules/alb` (`main.tf:56`). `terraform-live-backend.yml:8-16` still offers destroy with no confirmation input.
+>
+> 🔄 **v10 (2026-11-09), text accuracy only:** fix 5's "the current M0 tier has no cloud backup" is out of date for stg and prod, which are on M10 now (`tfvars/prod.tfvars:67-73`); only dev and sbx stay on M0, by design. PITR, the snapshot copy, the test restore and termination protection apply to the stg and prod M10 clusters. The "Existing protection" line holds for the schedules only: a forged invoke of the dispatcher can still reach prod (SEC-03).
 
 **Where:**
 - `infra-live-backend/terraform/secrets.tf:44`: `recovery_window_in_days = 0` (all environments including prod).
@@ -1543,6 +1823,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DR-02 — Account-wide services live in the stg stack; NAT EIPs churn 🟡 (new in v2)
 
+> 🔄 **Current code (2026-11-05):** ⚪ Moot by the account model. Each environment gets its own AWS account (`docs/environments.md`, section 1), so GuardDuty and CloudTrail belong to the one environment they're applied and destroyed with, and a destroy of one environment never affects another. While an environment is destroyed, the account's CloudTrail Event history (90 days of management events) still records activity. The NAT Elastic IPs stay per environment. stg and prod no longer need them for Atlas (PrivateLink, DEC-02); in dev and sbx, after each apply, the owner updates the Atlas IP access list by hand (`docs/infra-operations.md`, "After every apply of an environment"). Sharing an account stays possible, with the one-GuardDuty rule in `docs/environments.md` section 5.
+
 **Where:**
 - `docs/environments.md:187` (the shared account's GuardDuty is owned by stg), and `stg.tfvars:62-63` + `security.tf:34` (stg's trail is the shared account's only CloudTrail; `enable_cloudtrail = false` in dev/sbx).
 - `infra-live-backend/terraform/vpc.tf` (`aws_eip.nat`).
@@ -1565,6 +1847,18 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ## Observability
 
 ### OBS-01 — Alerting goes nowhere useful; edge/Redis not monitored 🟠
+
+> 🔄 **Current code (2026-11-02):** 🟡 Partial. Alerting stays on AWS only: email through SNS, with no third-party paging, by the owner's choice.
+> - **stg alerts too:** `enable_ops_email` and `enable_all_alarms` are on in stg as well as prod, so every alarm emails `OPS_EMAIL` there.
+> - **ALB 5xx is a rate:** `alb_5xx` is the services' 5xx plus the load balancer's own (`HTTPCode_ELB_5XX_Count`) as a share of requests, over 5% for 3 of 5 minutes. Minutes under 20 requests count as 0, and `FILL` covers minutes with no 5xx data.
+> - **Slow responses:** a new `alb_slow` alarm fires on p95 `TargetResponseTime` over 3 s for 3 of 5 minutes.
+> - **Valkey:** new `valkey` alarms (where `enable_all_alarms`) on engine CPU over 80%, memory over 80%, and any evictions, each across every node.
+> - **Edge** (`infra-live-edge/terraform/alarms.tf`, `enable_alarms`, stg and prod): an alert topic in us-east-1, emailing `OPS_EMAIL` (now passed to the edge workflow), and a `cloudfront_5xx` alarm on the distribution's `5xxErrorRate` over 5%. That's a free default metric, and it covers Lambda@Edge failures, since they reach viewers as 5xx.
+> - **Checked:** stack `terraform test` assertions for the ALB and Valkey alarms (and none in dev); validate, tflint and checkov for both stacks.
+>
+> Still open: CloudFront access logs, an outside uptime check (CloudWatch Synthetics), and push notifications to the AWS Console Mobile app (AWS User Notifications). On-call paging would need Incident Manager, which may not be open to new accounts.
+>
+> 🔄 **v10 (2026-11-09):** also still open: fix 4 (the healthy-hosts alarm is still `< 1`, `cloudwatch.tf:157`, not relative to the minimum), fix 6's `ReplicationLag` (the Valkey alarms at `cloudwatch.tf:331-339` cover CPU, memory and evictions only), and fix 7 (no retention is set on the Lambda@Edge log groups). Fix 1 is settled as email only (the owner's choice), so the first acceptance criterion now reads "a test alarm email arrives in stg".
 
 **Where:**
 - `infra-live-backend/terraform/cloudwatch.tf:38`: an email subscription that has to be confirmed by hand.
@@ -1594,13 +1888,19 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ⚠️ **Pitfall:** v1 said `AWS/Lambda` with `Region=Global`, which is wrong. `Region=Global` applies to `AWS/CloudFront`. Lambda@Edge's `AWS/Lambda` metrics are per region, under the function name `us-east-1.<fn>`.
 
 **Acceptance criteria:**
-- A test alarm in stg reaches the on-call channel.
+- A test alarm email arrives in stg (v10: email only, by the owner's choice; was "reaches the on-call channel").
 - Edge, Redis and latency alarms exist.
 - No log group has unlimited retention.
 
 ---
 
 ### OBS-02 — "Processing stuck" alarm will fire constantly 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Stuck jobs:** the stuck alarm uses `OldestRunningJobAgeSeconds` > 600 (`cloudwatch.tf`).
+> - **Due jobs only:** `pending_count` now counts only due jobs (not ones waiting out a retry delay), so retries don't scale workers out.
+> - **Waiting jobs:** a new `OldestPendingJobAgeSeconds` (the longest a due job has waited, since it was made or its retry came due) is published by each circle's leader, with a `jobs-waiting` alarm over 300 s for 3 of 5 minutes (stg, prod).
+> - **Checked:** tests in `common`; on the local stack, all four circles publish it.
 
 **Where:** `infra-live-backend/terraform/cloudwatch.tf:52-63`. It fires when Maximum `ProcessingJobCount > 0` for 10 minutes, which is always true under steady load.
 
@@ -1617,6 +1917,11 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### OBS-03 — Dead workers raise no alarm 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-02):** ✅ Done.
+> - **Job metrics:** one leader per region emits the job metrics, and `pending_jobs_missing` breaches when they stop.
+> - **Health checks:** workers have a heartbeat health check (APP-06), so ECS replaces a hung one.
+> - **No running tasks:** a new `no_tasks` alarm for every runtime (HTTP services, workers, the collector) fires when it has had no running task for 3 minutes. It uses the free `AWS/ECS` CPU metric: missing data is breaching, since ECS publishes it only while a task runs. So it doesn't need Container Insights (on only in prod).
 
 **Where:** `backend/worker.py:430`: only the workers emit `PendingJobCount`. All the related alarms use `treat_missing_data = "notBreaching"` (`autoscaling.tf`).
 
@@ -1637,6 +1942,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### NET-01 — Prod VPC CIDRs identical in every region 🟠/🟡 (v4: High if DEC-01 = B; Medium until Stage 2 if A)
 
+> 🔄 **Current code (2026-11-01):** ✅ Done (v6 note): `vpc_cidrs` per environment, for example `tfvars/prod.tfvars:11`. The Atlas CIDR is still to be set when the prod cluster is created. **v10 (2026-11-09):** not needed now. stg and prod reach Atlas through PrivateLink (`atlas.tf:2-14`), where the Atlas project CIDR doesn't matter; it is only needed if cross-region VPC peering is ever chosen.
+
 > v4: with the DB in ap-south-1 only (DB-01 Stage 1), **any private path from eu-west-1/us-east-1 to Atlas** (cross-region VPC peering, or Transit Gateway into the ap-south-1 VPC) needs unique, non-overlapping CIDRs for every backend VPC **and** for the Atlas project CIDR (pick an Atlas CIDR outside `10.0.0.0/8` ranges used here, e.g. `192.168.248.0/21`). The Atlas project's AWS CIDR for a region (/21–/24) must be set **before the first dedicated cluster is created in that region**, and can't be changed afterwards. This is required if DEC-01 = B. If DEC-01 = A (ap-south-1 only), it remains important for Stage 2 but isn't urgent.
 
 **Where:** `infra-live-backend/terraform/tfvars/prod.tfvars:9-16`. CIDRs are set per **environment**, so every prod region uses `10.22.0.0/16`. The environments themselves don't overlap (10.2/10.12/10.22/10.32).
@@ -1655,13 +1962,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 **Acceptance criteria:** Every (environment, region) pair has a unique CIDR; private capacity is ≥ 3× the maximum task count.
 
-> ✅ **v6 (2026-10-19): implemented** before any environment was deployed, so nothing had to be replaced. `vpc_cidrs` in each `tfvars/<env>.tfvars` gives one `/16` per region: dev `10.2–4`, stg `10.12–14`, prod `10.22–24`, sbx `10.32–34`, ap-south-1 first. All three regions are listed even when not deployed, so their blocks are reserved. `vpc.tf` derives public `/24` ×3 (`10.x.1–3.0`) and private `/20` ×3 (`10.x.16/32/48.0`): about 12,270 private IPs per region against a prod peak of about 520. Terraform validates the shape (`10.x.0.0/16`) and uniqueness within an environment; uniqueness across environments follows the numbering plan. **Still to do at DB-01 Stage 1:** set the Atlas project's AWS CIDR for ap-south-1 (outside `10.0.0.0/8`, e.g. `192.168.248.0/21`) **before** creating the first dedicated cluster. It can't be changed afterwards.
+> ✅ **v6 (2026-10-19): implemented** before any environment was deployed, so nothing had to be replaced. `vpc_cidrs` in each `tfvars/<env>.tfvars` gives one `/16` per region: dev `10.2–4`, stg `10.12–14`, prod `10.22–24`, sbx `10.32–34`, ap-south-1 first. All three regions are listed even when not deployed, so their blocks are reserved. `vpc.tf` derives public `/24` ×3 (`10.x.1–3.0`) and private `/20` ×3 (`10.x.16/32/48.0`): about 12,270 private IPs per region against a prod peak of about 520. Terraform validates the shape (`10.x.0.0/16`) and uniqueness within an environment; uniqueness across environments follows the numbering plan. (v10: the subnets are now derived in `modules/network/main.tf:40-41`; `vpc.tf` only calls the module. The step below is only needed if cross-region VPC peering is ever chosen, since stg/prod use PrivateLink.) **Still to do at DB-01 Stage 1:** set the Atlas project's AWS CIDR for ap-south-1 (outside `10.0.0.0/8`, e.g. `192.168.248.0/21`) **before** creating the first dedicated cluster. It can't be changed afterwards.
 
 ---
 
 ## Terraform structure & configuration
 
 ### TF-01 — No reusable modules; adding a region is manual everywhere 🟠
+
+> 🔄 **Current code (2026-11-05):** ✅ Done. Modules: `modules/{alb,ecs-service,events,network,redis}`, with lock files and `-lockfile=readonly`. `local.split_services` (`services.tf`) gives 9 HTTP runtimes, 8 workers and an OTel collector, all on `modules/ecs-service`. **Region input and allow-list (fix 4):** every region input (`aws_regions`, `backend_regions`, `target_aws_regions`, and `bootstrap_region`) is free text, a comma-separated list, or a JSON array from a caller. Each workflow's first job checks it against `shared/routing.json`'s regions and turns it into the JSON array later jobs read (`regions_json`, `scripts/workflow-inputs.sh`, 50 tests); terraform-live-all and the scheduler gained that job. Terraform's region validations (backend `aws_region` and `vpc_cidrs`, edge `backend_regions`, scheduler `target_aws_regions`) read the same file, and a stack test refuses a region outside it. The hand-written 2ⁿ − 1 dropdowns are gone, so allowing a region is one entry in `shared/routing.json` (each environment still adds that region's `vpc_cidrs`, certificate and buckets). An `edge-origin` module isn't needed: the edge stack no longer has per-region providers or origins to repeat.
 
 **Where:**
 - All `infra-live-*/terraform` stacks: e.g. hand-written `public_1/2/3` and `private_1/2/3` in `infra-live-backend/terraform/vpc.tf`, and per-region blocks in `infra-live-edge/terraform/data.tf:21-37`, `s3_uploads_policy.tf` and `provider.tf`.
@@ -1695,7 +2004,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 >
 > `JWT_PUBLIC_KEYS` is now required by the backend workflow, which checks that its `JWT_KEY_ID` entry matches `JWT_PRIVATE_KEY`. No edge change is needed.
 >
-> **Still open:** the region-list source (2) and the dropdown (4).
+> ~~**Still open:** the region-list source (2) and the dropdown (4).~~ Superseded (v10): both are done, per the 🔄 note at the top of this item (`shared/routing.json` is the region list; free-text region inputs replace the dropdowns).
 
 ⚠️ **Pitfall:** use `moved {}` blocks. The refactor plan must show **0 to destroy**.
 
@@ -1704,6 +2013,10 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### TF-02 — Task definition `:latest` bootstrap and config drift 🟡
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
+
+> 🔄 **Current code (2026-11-01):** ⬜ Open. The bootstrap still uses `:latest` (`infra-live-backend/terraform/ecs.tf:79`), and `modules/ecs-service/main.tf:166` ignores `task_definition` and `desired_count`.
 
 **Where:**
 - `infra-live-backend/terraform/ecs.tf:52,216`: the image is `:latest`, which is never pushed (the repos are IMMUTABLE).
@@ -1728,6 +2041,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### TF-03 — Prod sizing: single-process uvicorn makes CPU scaling inert 🟠 (v2: raised)
+
+> 🔄 **Current code (2026-11-05):** 🟡 Partial. Sizing is per tier in `runtime_sizes`, with desired = min, and every fix that doesn't need a deployed environment is done (buddy-common 0.32.0):
+> - **Fix 2:** each service sets `deployment_maximum_percent`: 150 where the desired count is 2+, else 200 (one extra task), with the minimum 100% healthy (`modules/ecs-service`, which refuses a surge with no room for an extra task).
+> - **Fix 3:** already in place: HTTP runtimes track ALB requests per target (1000/min), CPU and memory. LLM calls are in workers, so long requests don't skew it.
+> - **Fix 5:** workers run on a capacity provider strategy: the first task on demand, then 3 `FARGATE_SPOT` per on-demand one (`worker_spot`; `spot_weight = 0` turns it off). Nothing is applied yet, so the service replacement this needs costs nothing.
+> - **Fix 6:** `common/serve.py` keeps idle connections `HTTP_KEEP_ALIVE_SECONDS` (the ALB's now explicit 60 s idle timeout + 5) and gives in-flight requests 25 s on SIGTERM, inside ECS's 30 s. No proxy trust was added.
+> - **Fix 8:** `mongodb_connection_budget` (required) fails the plan when every Mongo runtime at its peak × (pool 5 + 6 monitoring) exceeds it. Today's values overshot: stg 836 against M0's 500, prod 3190 against M10's 1500. stg then moved to M10 (2026-11-05, for DB-05's Test Failover), so its budget is 1050 (70% of M10's 1500, as prod) and its max counts are back to 5 / 4 / 3 / 5 (76 tasks, 836). By the owner's choice (DB-01: prod on M10), prod's budget is 1050, 70% of M10's 1500, and its max counts are http 7, auth 9, worker 3, generating-worker 4: 93 tasks, 1023 connections.
+> - **Tests:** the stack test (8 runs: surge, Spot, keep-alive, the budget and its failure), the module test (18), `test_serve.py`.
+> - **Fixes 4 and 7 need no change:** workers already run at 256–1024 CPU, and there's one process per task (no `--workers`). **Still open:** the stg load test (fix 1's counts, with fix 9's bcrypt cost in a login storm), and raising prod's max counts with a larger Atlas tier (DB-01).
 
 **Where:** `infra-live-backend/terraform/tfvars/prod.tfvars`, `backend/Dockerfile:52` (uvicorn, no `--workers`), `ecs.tf:31,151,287`.
 
@@ -1777,6 +2099,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### TF-04 — Redis oversized and mis-shaped for future caching 🟡
 
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. Valkey 8.0 on `cache.t4g.*` is done (prod: `cache.t4g.medium`, 1 replica, multi-AZ). The parameter group still sets no `maxmemory-policy` (`modules/redis/main.tf:49-60`). That now matters more: auth writes an `authz:{sub}` cache entry at sign-in, which shares the cluster with the rate-limit counters. The v2 note's "the worker doesn't use Redis" is wrong now: every runtime except the collector uses Valkey (`services.tf:346`).
+
 **Where:** `infra-live-backend/terraform/elasticache.tf`, `prod.tfvars:19-21` (`cache.r6g.4xlarge`, `elasticache_replica_count = 2`, multi-AZ). The parameter group is empty (`elasticache.tf:47-54`), so the default `volatile-lru` applies. `engine_version = "7.1"` is hard-coded (`:68`).
 
 > v2 correction: Redis holds **more than LLM counters**. It also holds the slowapi per-route IP/user limits (`app/limiter.py:68-89`, `rl_ip`/`rl_user`) and the session-cleanup lock (`app/main.py:68-125`). Sessions are in **Mongo**, and the worker queue is the Mongo `jobs` collection (`worker.py:110`); the worker doesn't use Redis.
@@ -1791,9 +2115,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 > ✅ **Partly done 2026-10-23:** the engine is Valkey, `engine_version` is a variable (default `"8.0"`, parameter group family derived from it, `create_before_destroy`), and nodes are right-sized for the current keys: dev/sbx `cache.t4g.micro`, stg `cache.t4g.small`, prod `cache.t4g.medium` × 2 (primary + 1 replica, multi-AZ). The `elasticache.tf` comment matches the tfvars. Still open: set `maxmemory-policy` explicitly, and confirm the working set with a load test before moving prod to `cache.r7g.large`.
 
+> 🔄 **v10 correction (2026-11-09):** an earlier note (2026-11-03) said `maxmemory-policy = noeviction` was set through a `modules/redis` variable `maxmemory_policy` with a module test. That is not in the code. The parameter group (`modules/redis/main.tf:49-60`) has no `parameter` block and there is no such variable, so ElastiCache's default `volatile-lru` still applies. Every key here has a TTL (rate-limit counters, LLM limits, leader locks, the `authz:` cache), so under memory pressure Valkey can evict counters and locks. Still open: one `parameter { name = "maxmemory-policy", value = "noeviction" }` block in `modules/redis` plus a test that asserts it (a parameter change applies in place), and the load test for the working set.
+>
+> ✅ **Done 2026-11-09:** the `modules/redis` parameter group sets `maxmemory-policy = noeviction`, and `modules/redis/tests/redis.tftest.hcl` asserts it. It takes effect at the next apply of each backend stack, in place. Still open: the working-set load test.
+
 ---
 
 ### TF-05 — Bucket policies: no TLS-only deny; manual buckets 🟡
+
+> 🔄 **Current code (2026-11-05):** ✅ Done. Every Terraform-managed bucket policy ends with `DenyInsecureTransport`, and **the uploads buckets now have one too** (`aws_s3_bucket_policy.uploads`, `infra-live-backend/terraform/s3.tf`): the only statement, since access is the task roles' IAM. It's removed with the environment, like the uploads CORS and lifecycle rules, while the bucket and its photos stay; the stack test asserts it. **The buckets stay outside Terraform state, by the owner's choice** (no `import {}`). They're created by hand and outlive the environment on purpose (uploads and logs must survive a destroy, as the Atlas data does), so an environment stack owning them would delete them, or fail on a non-empty bucket, at every destroy.
 
 **Where:** `infra-live-edge/terraform/s3_uploads_policy.tf`, `s3_backend_policy.tf`, `infra-live-frontend/terraform/s3_policy.tf`, `infra-live-backend/terraform/s3.tf:85` (`regional_logging`).
 
@@ -1809,6 +2139,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ---
 
 ### TF-06 — Cross-stack SSM coupling is order-sensitive 🟡
+
+> 🔄 **Current code (2026-11-01):** ✅ Done. `terraform-live-frontend.yml:130-169` and `terraform-live-edge.yml:253-298` check the SSM parameters first and fail with "Ensure infra-live-… has been applied". The order is in `docs/infra-operations.md`.
 
 **Where:** `infra-live-edge/terraform/ssm_read.tf:14`, `infra-live-frontend/terraform/ssm_read.tf:6`. The chain is backend → SSM → edge → SSM → frontend.
 
@@ -1826,6 +2158,25 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ## WAF
 
 ### WAF-01 — CRS 8 KB body limit blocks audio/LLM; rate-limit gaps 🟠 (v2: raised from Medium)
+
+> 🔄 **Current code (2026-11-01):** 🟡 Partial: fix 1 is done in `infra-live-edge/terraform/waf.tf`.
+> - The Core Rule Set's `SizeRestrictions_BODY` is overridden to `count`.
+> - A new `BodySizeLimit` rule (priority 15) blocks a body over 8 KB with a 413 `body_too_large`, the services' own answer. Anything past CloudFront's 16 KB inspection window counts as over (`oversize_handling = MATCH`).
+> - Four routes are exempt (`local.large_body_paths`, an anchored regex on the URI path). Each is capped by its service instead (APP-09):
+>   - `POST /api/v1/speech/transcriptions` (10 MB);
+>   - `PUT /api/v1/children/{id}/onboarding` (about 11 KB);
+>   - `PATCH /api/v1/children/{id}/transform` (64 KB);
+>   - `PUT /api/v1/children/{id}/growth-areas/{area_id}` (64 KB).
+>
+> The regex was checked against every route in `backend/openapi/*.json`: only those four match, and routes under them (`…/generation`, `…/photos/presign`) keep the 8 KB limit. The endpoint table below cites deleted files and routes (`/llm/invoke`, `/jobs`). A new route whose bodies pass 8 KB has to be added to `local.large_body_paths`.
+>
+> - **Rate rule (part of fix 3, 2026-11-02):** `RateLimitPerIP` now counts only requests whose path starts with `/api/` (`scope_down_statement`), and its limit is 3,000 per 5 minutes per IP (`local.api_rate_limit_per_5_minutes`), up from 1,000 for everything. Before, the web app's own files counted, so many people behind one address (a mobile carrier's shared IPs, an office) could be blocked for loading the site. The services' per-route limits stay the finer check.
+>
+> ⏸ **Deferred (owner's decision, 2026-11-02):** the rest of fixes 2–4. That's a count-mode switch for new rule groups, a strict WAF rule on the auth routes (the services already limit them per IP and per account, AUTH-04), pinned managed-group versions, and the anonymous-IP list.
+>
+> Still open:
+> - the acceptance check (a 5 MB recording through stg CloudFront), which needs a stg apply;
+> - watching the CRS `*_BODY` rules' counts on `speech/transcriptions`, since they still inspect the first 16 KB of a recording.
 
 **Where:** `infra-live-edge/terraform/waf.tf`:
 - Geo block (priority 5, custom rule, `:38-62`)
@@ -1885,6 +2236,19 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### SCH-01 — Duplicate dispatch via Lambda async retries; no timeout/alarm 🟡
 
+> 🔄 **Current code (2026-11-03):** 🟡 Code done: fixes 1–4. Fix 5 is SEC-03 (done 2026-11-09), and the acceptance check needs an applied environment.
+> - **1:** `dispatcher.py` calls GitHub with `timeout=GITHUB_TIMEOUT_SECONDS` (10 s, inside the function's 30 s).
+> - **2:** `aws_lambda_function_event_invoke_config.dispatcher` (`infra-live-scheduler/terraform/lambda.tf`) sets `maximum_retry_attempts = 0` and `maximum_event_age_in_seconds = 300`, so a failed or timed-out invocation never runs again and can't start a second apply or destroy. The CKV_AWS_116 skip now gives that reason.
+> - **4:** the function logs to a Terraform-managed group with 30-day retention, `/<app>/<env>/scheduler/github-dispatcher` (through `logging_config`). It isn't the default `/aws/lambda/…` name, which Lambda creates itself and which would clash on apply. The role can only write to that group, and the unused `aws_caller_identity` data source is gone.
+> - **Tests:** `infra-live-scheduler/lambda/test_dispatcher.py` (standard library only) checks the request, the timeout, and that GitHub errors and timeouts fail the invocation. It runs in `check.sh` and `check.yml`.
+>
+> - **2 (the rest):** where `enable_alarms` (stg; the scheduler can't run for prod), a new topic, `<app>-scheduler-alerts-<env>`, emails `OPS_EMAIL` (`infra-live-scheduler/terraform/alarms.tf`). The `scheduler-dispatch-failed` alarm fires on any `AWS/Lambda` `Errors` of the function. The event invoke config's `on_failure` destination publishes the failed invocation (the schedule's event and the error) to the same topic, through a `sns:Publish` grant on the function's role. The workflow passes `TF_VAR_ops_email` from the `OPS_EMAIL` variable.
+> - **3:** before dispatching, the function lists the workflow's `workflow_dispatch` runs from the last 60 minutes and skips if one has this dispatch's title. The title is `terraform-live-all.yml`'s `run-name` (action, environment, regions), and a test checks the two stay the same. If the runs can't be listed, it dispatches anyway: a missed start or stop is worse than a duplicate, which the workflow's concurrency group would run one after the other.
+> - **Tests:** 5 more in `test_dispatcher.py` (8 in all): a duplicate skipped, other runs not counted, a failed list still dispatching, an event without the title inputs, and the title matching the run-name. `terraform validate` and tflint pass for the stack.
+>
+> Still open:
+> - the acceptance check (one run and one alert after a simulated timeout), which needs an applied environment.
+
 **Where:**
 - `infra-live-scheduler/lambda/dispatcher.py:37` (`urlopen(req)` with no timeout).
 - `infra-live-scheduler/terraform/scheduler.tf:97-100,138-141` (schedule retry policy).
@@ -1910,6 +2274,16 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-01 — Prod deploy/apply possible from any branch 🔴
 
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. The only `github.ref` check is `check.yml:18`; there's no CODEOWNERS file and no ref guard on the deploy or apply workflows.
+>
+> 🔄 **2026-11-09 (owner's request: prod only what came through stg):** 🟡 Partial. Every way into prod now goes through stg:
+> - **Application code:** only `promote-live-backend` and `promote-live-frontend`, from stg (CI-03); the deploy workflows refuse prod.
+> - **Infrastructure:** a prod `apply` of `terraform-live-backend`, `-edge` or `-frontend`, alone or through `terraform-live-all`, first checks that the same commit had a successful stg apply of that stack (alone or in a full-stack run), and refuses otherwise. The check is `check_stg_first` in `scripts/workflow-inputs.sh`, in each workflow's `validate` job, before any prod credentials; it reads this repo's run history (`actions: read`), so no access to stg's AWS account is needed. Tests: `scripts/workflow-inputs.test.sh`. A prod `plan` or `destroy` isn't checked.
+> - **Scheduler:** there is no prod scheduler (SEC-03).
+> - **Not code changes:** `restart-live-backend` (same images) and `rollback-live-frontend` (an earlier prod release) stay as they are.
+>
+> Still open: the branch rule (fix 1, deferred), so a commit applied to stg from a feature branch could still follow to prod; and the mobile builds (`build-android-apk`, `build-ios-ipa`): since 2026-11-09 their first `validate` job refuses prod unless the run is on the default branch, but a build doesn't need a stg build of the same commit first (the release signing is MOB-01, deferred).
+
 **Where:** Every `workflow_dispatch` deploy, Terraform, promote, restart and mobile workflow. No workflow checks the ref (the only `github.ref*` use is the concurrency key at `check.yml:11`).
 
 **Problem:** Anyone with write access can dispatch from a feature branch and apply that branch's Terraform, or deploy that branch's code, to **prod**. GitHub Environment "deployment branch" rules may exist in repo settings, but nothing in the repo shows or documents them.
@@ -1933,6 +2307,8 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 ---
 
 ### CI-02 — Plan and apply in one job; scheduler applies with no plan 🔴
+
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-02): to do later, not before the next releases. ⬜ Open. Plan and apply still share a job: backend `:408/:441`, edge `:329/:361`, frontend `:196/:223`. The scheduler applies with no plan (`terraform-live-scheduler.yml:233,267`).
 
 **Where:**
 - Backend: plan `terraform-live-backend.yml:321-323`, apply `:346-348`.
@@ -1966,6 +2342,15 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-03 — Deployed image ≠ scanned image; prod deploy bypasses promotion 🟠
 
+> 🔄 **Current code (2026-11-05):** ✅ Done (all six fixes). **Signing (fixes 1–2):** deploy-live-backend signs each region's pushed image with cosign keyless (GitHub OIDC; v2.6.5, checksum-pinned in `scripts/install-cosign.sh`) and attaches its CycloneDX SBOM as a signed attestation. Deploy and promote check the signature against this repo's `deploy-live-backend.yml` identity before each rollout (`verify_signature`) and register task definitions as `<repo>@<digest>`, so ECS runs only the checked image; promote copies the signature and attestation with the image (`copy_signatures`) and reads a digest-pinned source's tag from ECR (`tag_for_digest`). A higher-priority ECR lifecycle rule keeps 60 `sha256-*` items apart from the 30 releases (fix 5's lifecycle concern). `ecs-services.test.sh` (77 tests) covers signing, re-runs, a signature from another workflow or repo, a ref by tag, attestation, copying and an unsigned promote. **Earlier:** no direct prod deploy (fix 3), the digest-pinned base without `apt-get upgrade` (fix 4; v10: one pinned `zlib1g` upgrade until a base digest has it, see below), the registry copy by digest (fix 6, CI-09). **Not done, by choice:** SLSA build provenance (it needs `buildx` attestations and a different scan-then-push order); the SBOM attestation covers what's inside. The first real signature happens at the first stg or dev deploy.
+> - **No fresh build reaches prod.** `deploy-live-backend` and `deploy-live-frontend` no longer offer `prod`, and their `validate` job refuses it through `workflow_call` too (`check_deploy_environment` in `scripts/workflow-inputs.sh`). For prod, `terraform-live-all` applies infrastructure and skips both deploy steps; a `prod-deploy-skipped` job says so in the run. The scheduler can never start prod (`infra-live-scheduler/terraform/variables.tf`), so no daily run is affected.
+> - **The pushed image is the scanned image.** Each build in `deploy-live-backend` is scanned by Trivy (HIGH/CRITICAL with a fix fails, `.trivyignore` as in `check.yml`) before any push. Each pushed image also gets a `<tag>-scanned` ECR tag on the same digest, written by copying the manifest, so it can't point at another image. A re-run that finds the tag already pushed (another build of the commit) pulls and scans that image before marking it.
+> - **Promote moves only scanned images.** The export job requires the marker on the live image's digest in the source. The promote job marks the copy in the target, so stg → prod accepts it in turn, and refuses a target tag that already holds a different digest (CI-09).
+> - **Tests:** `scripts/ecs-services.test.sh` covers the marker (60 tests with CI-09's), and `workflow-inputs.test.sh` covers the prod refusal. Both push loops were run, as written in the YAML, against fake `aws`, `docker` and `trivy`: new tag, re-run, unmarked tag in ECR, and unmarked tag in the target.
+> - **Fix 4 (done 2026-11-05):** `backend/Dockerfile` builds both stages `FROM python:3.13.18-slim-trixie@sha256:d0a9e3…`, and the `apt-get upgrade` layer and its per-commit cache-bust are gone, so two builds of a commit start from the same base. Debian fixes arrive as Dependabot's weekly tag-and-digest bumps (`.github/dependabot.yml`). A local build of `users` scanned clean: Trivy found 0 HIGH/CRITICAL fixable issues, Debian 13.7 packages included.
+>   - **v10 exception (2026-11-09):** the final stage of `backend/Dockerfile` (`:50-59`) runs `apt-get install --only-upgrade zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1` (DSA-6613-1), because no `python:3.13-slim-trixie` digest had that fix yet. The version is pinned, so builds stay the same; the step goes with the next base bump that includes it. If Debian supersedes the version first, the build fails at that step and the pin is moved.
+> - **Not changed:** `promote-live-frontend` still rebuilds for the target, because `VITE_*` values are baked into the bundle, but only from a commit already deployed to stg.
+
 **Where:**
 - `check.yml:562` builds and scans its own image.
 - `deploy-live-backend.yml:154-164` runs a plain `docker build`: no buildx, no cache, no provenance/SBOM, no scan, no signing.
@@ -1993,10 +2378,21 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-04 — Actions pinned by tag; binaries downloaded unverified 🟠
 
+> 🔄 **Current code (2026-11-05):** ✅ Done.
+> - **Actions:** all 126 third-party `uses:` in `.github/workflows/` (count as of 2026-11-09; the 8 local `./` calls aside) name a full commit SHA with the exact version as a comment. Each was resolved from its tag through the GitHub API, `@v5`/`@v3`-style majors to the release they point to (for example `actions/cache` → v5.1.0, `codeql-action` → v3.39.1). The acceptance grep below prints nothing.
+> - **Downloads:** `check.yml` checks every binary against a pinned SHA-256 before running it (`echo "<sha256>  <file>" | sha256sum --check --strict`, tested with GNU coreutils). The hashes come from GitHub's recorded asset digest for gitleaks, and from each release's checksums file for Dockle and Nuclei, whose releases have no recorded digest.
+> - **Download retries (v10, 2026-11-09):** every release download in `check.yml` (gitleaks, Dockle, Nuclei, the retire.js repository) and in `promote-live-backend.yml` (crane) uses `curl --retry 5 --retry-all-errors --retry-delay 10`, so a GitHub blip doesn't fail the run. `scripts/install-cosign.sh:15` downloads cosign without a retry.
+> - **Gradle:** the Android build's wrapper pins `distributionSha256Sum` (`frontend-app/android/gradle/wrapper/gradle-wrapper.properties`, from Gradle's own `.sha256`), so it refuses a different Gradle 9.3.1 download.
+> - **Dependabot:** the new `.github/dependabot.yml` opens grouped weekly PRs for actions, pip (one PR across every backend requirements file, which must move together), npm (web and mobile) and the Dockerfiles, plus monthly Terraform providers. It ignores `buddy-common`, which is built from this repo, so it never looks that name up on PyPI.
+> - **`CODE_QUALITY_STANDARDS.md`** is updated to match.
+>
+> **2026-11-05: every image is pinned by digest.** The backend base (CI-03 fix 4); the frontend's `node:22.23.4-alpine3.24` and `nginx:1.31.6-alpine` (moved up from 1.27 to match the local gateway); docker-compose's `mongo`, `valkey`, `moto` and the gateway's `nginx`; CI's `mongo` (`scripts/ci-start-mongo.sh`) and `valkey` service containers; and the OpenTelemetry collector that ECS runs (`otel_collector_image`). Each is `tag@sha256:…`, the digest read from the registry. Dependabot bumps the Dockerfiles and docker-compose (a `docker-compose` ecosystem was added); the CI copies and the collector have no ecosystem, so `.github/dependabot.yml` says to move them with the compose PR. **v10 exception:** `backend/Dockerfile` also pins one Debian package, `zlib1g` (see CI-03 fix 4), until a base digest has it.
+> Still open: nothing in this item. (The repo setting that requires SHA-pinned actions is optional, not open work.)
+
 **Where:**
 - Tag-pinned actions everywhere: `aquasecurity/trivy-action@v0.36.0` ×10, `aws-actions/configure-aws-credentials@v6.1.1` ×14, `hashicorp/setup-terraform@v4.0.1` ×6, `actions/cache@v5` ×7, `actions/upload-artifact@v7/@v7.0.1`, `actions/dependency-review-action@v5`, `github/codeql-action/*@v3`, `actions/setup-java@v5`, `hadolint/hadolint-action@v3.3.0`, `terraform-linters/setup-tflint@v6.2.2`. Some are **major-only** tags (`@v5`, `@v3`).
 - Nuclei (`check.yml:778-783`) and Dockle (`:579-583`) are downloaded with `curl` and **no checksum** (gitleaks at `:285-292` does verify).
-- The service containers `mongo:7` and `redis:7-alpine` are tag-only.
+- The service containers `mongo:7` and `redis:7-alpine` are tag-only. ✅ **Partly fixed 2026-10-25:** CI and docker-compose now pin exact versions (`mongo:8.0.34`, `valkey/valkey:8.0.11-alpine`, `motoserver/moto:5.2.3`); digests aren't pinned yet.
 - There's no `.github/dependabot.yml`.
 
 **Problem:** Tags can be moved; `trivy-action` has had its tags hijacked before. A compromised action runs with the workflow's OIDC role and, because of SEC-06, with every secret in the job.
@@ -2018,6 +2414,10 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-05 — All regions deployed at once; no canary/bake 🟠
 
+> ⏸ **Deferred (owner's decision, 2026-11-02):** to do later, not before the next releases.
+
+> 🔄 **Current code (2026-11-01):** ⬜ Open. Regions still deploy in one `fail-fast: false` matrix (`deploy-live-backend.yml:324`), and there's no ECS `alarms {}` block in `modules/ecs-service/main.tf`.
+
 **Where:** `deploy-live-backend.yml:203-206`, `promote-live-backend.yml:113-116,308-311` and `restart-live-backend.yml:65-70` all use a `matrix.aws_region` with `fail-fast: false`. Restart in `all` mode also restarts backend **and** worker in parallel (`:70`), whereas deploy goes API first and then worker.
 
 **Problem:** A bad release that passes health checks reaches every region simultaneously.
@@ -2033,6 +2433,8 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 ---
 
 ### CI-06 — Polling and register-TD scripts duplicated 🟡
+
+> 🔄 **Current code (2026-11-01):** ✅ Done, as a shared script rather than composite actions. `scripts/ecs-services.sh` (`register_with_image:278`, `wait_stable:343`, `deploy_image:420`) is the one implementation; deploy, promote and restart use it, and CI tests it (`check.yml:394`). The CI-11 fix is in the same script.
 
 **Where:** the ~25-line 15-minute wait loop (`for i in $(seq 1 60) … sleep 15`):
 
@@ -2055,6 +2457,25 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ---
 
 ### CI-07 — Frontend deploy deletes live chunks; no rollback 🟠 (v2: raised)
+
+> 🔄 **Current code (2026-11-03):** ✅ Done: fixes 1–4 (fix 2 as kept releases), and pruning.
+> - **One script:** deploy and promote both publish through `scripts/frontend-publish.sh`. Promote checks out the script from its own commit, since the commit being promoted can predate it.
+> - **Fix 1:** `assets/` (Vite's hashed chunks) is synced **without** `--delete`, before `index.html` and the other unhashed files (which keep `--delete`). The live `index.html` and tabs opened before a deploy keep finding their chunks.
+> - **Fix 3:** only the unhashed files (and `/`) are invalidated, not `/*`. App routes are cached as `/index.html`, because `spa_rewrite` runs on viewer request.
+> - **Pruning:** after a successful deploy, a last step deletes chunks the new build doesn't contain *and* that are over 30 days old. That counts age from upload but never touches the current build, so the age-based-expiry problem in fix 2 doesn't arise.
+> - **Tests:** `scripts/frontend-publish.test.sh` (fake aws; in `check.sh` and `check.yml`) covers the sync order and flags, the invalidation paths, and pruning (only old unused chunks, an empty bucket, and batches of 1,000).
+>
+> ✅ **2026-11-03, fix 2 (as releases) and fix 4:**
+> - **Releases.** Every deploy and promote also keeps its build's unhashed files, with the list of the chunks it uses, under `releases/<sha>/` (about 450 KB). It keeps the last 10 (`prune_releases`).
+> - **Pruning.** The prune keeps every chunk a kept release uses, so a rollback never finds its chunks gone. The root sync no longer deletes `releases/`.
+> - **Rollback.** The new `rollback-live-frontend.yml` takes an environment (prod included) and a commit SHA, or none, meaning the newest saved release that isn't live. It checks every chunk the release needs is still there, copies the release back over the root (`restore_release`, `publish_unhashed`), invalidates those files and records the SHA as deployed. It shares the deploy's concurrency group, and has a `validate` job for the free-text SHA. It rolls back to that environment's own earlier build, never a fresh one (CI-03).
+> - **Tests.** `scripts/frontend-release.test.sh` (21, against a stateful fake S3; in `check.sh` and `check.yml`) covers: a release per build, a publish keeping the releases, the prune keeping a release's chunks, a restore bringing the old `index.html` back without publishing the chunk list, an unknown release and one with a missing chunk refused, the default target, and keeping only the newest releases. The 14 publish tests still pass.
+> - **Docs.** `docs/infra-operations.md` ("Rolling the frontend back") has the runbook, and its frontend deploy steps are corrected: they still described `--delete` on `assets/` and a `/*` invalidation.
+>
+> Still open:
+> - promote still rebuilds from source, so prod isn't byte-identical to stg (fix 5, runtime config);
+> - the deploy roles need `s3:ListBucket`/`s3:DeleteObject` on the bucket, which they already use for `sync --delete`; check them on the first deploy, and check a rollback once there.
+> - The acceptance criterion (zero failed chunk loads during a deploy) needs a deployed environment.
 
 **Where:** `deploy-live-frontend.yml:142` (`aws s3 sync frontend/dist/assets/ … --delete`), `:148` (`index.html` and the rest, `--exclude "assets/*"`), `:159` (invalidation `/*`). The same at `promote-live-frontend.yml:261,267`.
 
@@ -2081,6 +2502,13 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-08 — CodeQL non-gating; no SARIF upload; required checks unverified 🟢 (v2: rewritten)
 
+> 🔄 **Current code (2026-11-05):** ✅ Done.
+> - **SARIF uploaded.** The security scan writes SARIF from semgrep (`--sarif-output`), checkov (`-o sarif`) and a whole-repo `trivy config`, as the `sarif-reports` artifact. A separate `code-scanning` job, the only one besides CodeQL with `security-events: write`, uploads each under its own category. It skips fork and Dependabot PRs, whose token is read-only.
+> - **Found on the way: checkov scanned only `infra-live-backend`.** Given several `-d`, checkov 3.2.529 scans the first directory once per flag. CI and `check.sh` now scan from the repo root once. That surfaced 8 findings in edge and scheduler, now skipped with reasons in the code: Lambda@Edge can't use a VPC, DLQ or X-Ray; the scheduler's Lambda environment and schedule input hold no secrets.
+> - **Rulesets: not added, by the owner's choice** (2026-11-05). With one maintainer, `main` keeps its existing `MergeToMainBranch` ruleset (no deletion or force-push, PRs only), and the `Check` results and CodeQL alerts are read before merging rather than enforced. `docs/ci-cd.md` (`code-scanning`) describes the ruleset to add if more people join.
+> - **v10 (2026-11-09), upload tuning:** the `code-scanning` job drops SARIF results marked `suppressions` (an in-code `#checkov:skip=` with its reason) before upload (`check.yml`, "Drop the suppressed results", a `jq` filter), so an alert is only a finding nobody has justified. "Download SARIF reports" is `continue-on-error`, so a scan job that stopped before any scanner ran leaves only its own failure to read. "Trivy config (SARIF report)" runs only if the gating `trivy config` steps ran.
+> - **v10, CodeQL alerts fixed:** auth's admin account-id path parameter must be a UUIDv4 (`UUID_PATTERN`, `backend/auth/app/admin.py:127-128`); anything else is a 422 before the handler runs.
+
 > v2 correction: v1 claimed many security checks were non-blocking. That's **wrong**: every `continue-on-error` step is listed in its aggregator. `check.yml:641-672` covers all 23 security-scan steps (gitleaks, hadolint ×2, bandit, semgrep, pip-audit, checkov, npm audit, yarn audit, retire ×2, trivy vuln ×3, license ×3, config ×4, image, dockle), and `:795-806` covers openapi_drift, spectral and nuclei. The `outcome == failure` logic is correct.
 
 **Remaining gaps:**
@@ -2096,6 +2524,16 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ---
 
 ### CI-09 — Promotion moves images via `docker save` artifacts 🟡
+
+> 🔄 **Current code (2026-11-04):** ✅ Done.
+> - **No tarballs.** The export job uploads only `images.json` (each live image's tag and digest, read with jq, never sourced). The `docker save`/`load` steps and the image artifact are gone.
+> - **Registry to registry, by digest.** The promote job installs `crane` v0.22.1, checked against its release SHA-256, signs in to the source and target registries with one ECR token on stdin (`ecr_login`), and copies `<source repo>@<digest>` to `<target repo>:<tag>` (`copy_image` in `scripts/ecs-services.sh`).
+> - **Digest verified.** `copy_image` fails when the target tag already holds another digest, or when the copy's digest isn't the source's. An existing tag on the same digest is a no-op, so a re-run is safe. The scan marker is then added in the target as before (CI-03).
+> - **Across accounts:** `ecr_pull_account_ids` (`infra-live-backend`, default empty) adds a pull-only repository policy to every service repository for the listed accounts. The target role's own IAM policy, outside this repo, must allow the same pull actions (`docs/infra-operations.md`).
+> - **Tests:** `scripts/ecs-services.test.sh` (60 tests) runs the helpers against a fake ECR and a fake `crane`: copy, re-run, tag clash, a copy that changes the digest, a source by tag. The stack test checks the policy is pull-only and absent by default.
+> - **Not in scope until CI-03 signs images:** `cosign copy` of signatures and attestations, and `cosign verify` after the copy.
+>
+> 🔄 **v10 (2026-11-09):** the bullet above is out of date. CI-03 is done, and promote copies each image's signature and SBOM attestation (`copy_signatures` in `scripts/ecs-services.sh`, called from `promote-live-backend.yml:361`); every rollout then checks the signature (`verify_signature`, `scripts/ecs-services.sh:202`).
 
 **Where:** `promote-live-backend.yml:251-294` (`docker save | gzip` at `:278`, artifact retention 1 day at `:292`), and `:392` (`source promote/images.env`).
 
@@ -2116,6 +2554,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-10 — `promote-live-frontend` trusts the SSM SHA 🟠 (new in v2)
 
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. `promote-live-frontend.yml` now refuses an SSM value that isn't a 40-character lowercase commit SHA (in `source_ref`, and again before use), checks out full history and requires `git merge-base --is-ancestor <sha> origin/<default branch>`, and passes the SHA to `run:` through `env:` only (the `Record deployed git SHA` step too). A SHA recorded by a branch deploy can therefore no longer be promoted. Still open: restricting `ssm:PutParameter` on `*/edge/deployed_git_sha` to the deploy roles, which lives in IAM outside this repo.
+
 **Where:** `promote-live-frontend.yml:126-136` (reads `/<app>/<source_env>/edge/deployed_git_sha`), `:238` (`checkout ref: ${{ needs.source_ref.outputs.git_sha }}`, unvalidated), `:300` and `:303` (interpolated into `run:`).
 
 **Problem:** Anyone who can write the **dev/stg** SSM parameter can point it at **any commit** (anyone with repo write access can push one). `npm ci`/`npm run build` then runs that commit's code with **prod credentials** and deploys it to prod. Shell injection via `:300`/`:303` is also possible if the value is a valid ref name that survives `actions/checkout` at `:238`.
@@ -2132,6 +2572,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-11 — A rolled-back deploy can be reported as success 🟠 (new in v2)
 
+> 🔄 **Current code (2026-11-01):** 🟡 Code done; the acceptance check below needs a deployed environment. `roll_out` (`scripts/ecs-services.sh`) takes the ID of the PRIMARY deployment that `update-service` starts, and `wait_stable CLUSTER SERVICE DEPLOYMENT_ID` follows that deployment. It fails when it's `FAILED` (even behind the rollback) or no longer listed, and succeeds only when it's the one deployment left, PRIMARY and `COMPLETED`, with every task running. Restart (`restart-live-backend.yml`) uses `roll_out` without a task definition, so it waits on its `--force-new-deployment` the same way. `ecs-services.test.sh` covers the rollback in progress and the finished rollback (the old revision with every task running, which used to pass).
+
 **Where:** all 5 wait loops (CI-06 table), e.g. `deploy-live-backend.yml:321` (`ROLLOUT=… .deployments[0].rolloutState`) and `:328` (success when `DEPLOYMENTS -eq 1 && RUNNING == DESIRED`).
 
 **Problem:** When the circuit breaker rolls back, ECS creates a new PRIMARY deployment of the **old** revision, and the failed one moves behind it in the list. `deployments[0]` is then the rollback, so the `FAILED` check rarely fires. Once only one deployment remains, the loop prints "Deployment complete" and **exits 0 while the old version is running**. This compounds CI-05 and could also let promote pick up a bad image.
@@ -2146,6 +2588,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ---
 
 ### CI-12 — Concurrency groups per service allow overlapping deploys 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-05):** ✅ Done. Deploy, promote and restart lock per environment. When a rollout fails part-way, `deploy_image` (`scripts/ecs-services.sh`) now adds a `Mixed images` warning annotation and a run-summary table: each service, whether it's on the new image or the previous one (rolled back by ECS), and the `service=` re-run that ends it. Nothing is rolled back automatically, since that could undo a good release; every change already has to work across versions (`docs/infra-operations.md`). `ecs-services.test.sh` covers both the mixed and the all-failed cases (63 tests).
 
 **Where:** `deploy-live-backend.yml:67`, `promote-live-backend.yml:62` and `restart-live-backend.yml:52` all use `group: deploy-live-backend-superpower-<env>-<service>`.
 
@@ -2164,6 +2608,10 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-13 — `npm ci` runs with prod AWS credentials loaded 🟡 (new in v2)
 
+> 🔄 **Current code (2026-11-02):** 🟡 Partial. `deploy-live-frontend` and `promote-live-frontend` now run `npm ci --ignore-scripts` and the build before "Configure AWS Credentials", which comes right before the SSM, S3 and CloudFront steps (a missing edge apply now fails after the build). `--ignore-scripts` is safe: the only install scripts in the lock file are husky's hook setup and macOS-only `fsevents`. **Open:** the job still has `id-token: write`, so package code in a build step could request its own OIDC token for the deploy role. Closing that needs the two-job split (build without `id-token`, then deploy). Because `VITE_GOOGLE_CLIENT_ID`, `SUBDOMAIN` and `DOMAIN_NAME` are environment variables, that build job would need `environment:` too, which adds a second approval wherever the environment requires reviewers. Moving those three values to a repository variable would avoid that.
+
+> ⏸ **Deferred (owner's decision, 2026-11-02):** the two-job split. No environment has required reviewers today (checked 2026-11-02), so either form of the split would add no approval yet.
+
 **Where:** `deploy-live-frontend.yml:64-70` (configure credentials) runs before `:130` (`npm ci`). Similarly, `promote-live-frontend.yml:169` runs before `:249`.
 
 **Problem:** Any dependency's install script (supply-chain attack) can use the prod deploy role.
@@ -2177,6 +2625,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ---
 
 ### CI-14 — Promote reads PRIMARY even while it's still rolling out 🟡 (new in v2)
+
+> 🔄 **Current code (2026-11-02):** ✅ Done. `live_image` (`scripts/ecs-services.sh`) promotes only a service with exactly one deployment that is `PRIMARY` and `COMPLETED`, so a run mid-rollout or mid-rollback fails, naming the deployment states. Each export also uploads its `images.json`, and a new `same_release` job (no environment) compares them before anything is pushed: every source region must list the same services at the same tags, or promote stops and prints each region's tags. Tags are compared rather than digests, because deploy-live-backend pushes one build under one tag to every region. Promoting by a digest recorded at deploy time is still CI-03. Tests: 10 new cases in `scripts/ecs-services.test.sh`, plus a dry run of the comparison step.
 
 **Where:** `promote-live-backend.yml:200-203` (``deployments[?status==`PRIMARY`]``). The comment at `:179-182` claims this is the stable image.
 
@@ -2195,6 +2645,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-15 — Terraform CI checks thinner than documented 🟡 (new in v2)
 
+> 🔄 **Current code (2026-11-02):** ✅ Done. `check.yml`'s Terraform Lint job and `check.sh` now run `terraform init -backend=false` and `terraform validate` on all four stacks and five modules, with a shared provider cache in CI and the job timeout raised to 20 minutes. A repo-root `.tflint.hcl` enables the AWS ruleset (`tflint-ruleset-aws` 0.49.0, pinned) next to the recommended Terraform preset. Every tflint run passes it with `--config`, after `tflint --init`. All nine directories pass both. On a scratch config, validate refused a misspelled argument ("Unsupported argument") and tflint refused an invalid ElastiCache node type. `docs/ci-cd.md` and `docs/code-quality.md` list the checks. Not done: `deep_check` (needs AWS credentials, which Check doesn't have), and the PR plan, which stays with the deferred CI-02.
+
 **Where:** `check.yml` (terraform-lint job): no `terraform validate`; `tflint` runs with no `.tflint.hcl` and no AWS ruleset. `docs/ci-cd.md` overstates the coverage.
 
 **Fix:**
@@ -2207,6 +2659,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ---
 
 ### CI-16 — No job timeouts; queued runs silently cancelled 🟢 (new in v2)
+
+> 🔄 **Current code (2026-11-02):** ✅ Done. Every job in all 14 workflows sets `timeout-minutes` (rechecked 2026-11-06) (the 8 `terraform-live-all` jobs that only call a reusable workflow can't, and get the called jobs' limits instead). The limits are well above a normal run: Terraform backend 60, edge 90, frontend and scheduler 30; deploys, promotes and restarts 30–45, so a 15-minute rollout wait still fits; Android 60 and iOS 90; validate jobs 5. `docs/infra-operations.md` ("If a Terraform job timed out or was cancelled") covers recovery (re-plan, `force-unlock`, import on "already exists") and the one-pending-run-per-group behaviour. A fail-fast check for an already queued run wasn't added.
 
 **Where:** no job in the 12 workflows other than `check.yml` sets `timeout-minutes` (the default is 6 hours). All 10 `check.yml` jobs already set it. All backend/Terraform groups use `cancel-in-progress: false`.
 
@@ -2226,6 +2680,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-17 — Misc CI hygiene 🟢 (new in v2)
 
+> 🔄 **Current code (2026-11-05):** ✅ Done. (a) The retire.js cache key includes the ISO week. (b) CodeQL is `codeql-action` v4.39.1 with `build-mode: none` (no autobuild), and `check.yml` runs weekly (Monday 03:23 UTC) as well. (c) A skipped edge or frontend plan is a `Partial plan` warning and a line in the run summary, not a notice; it doesn't fail, since a first plan on a fresh environment has nothing to read. (d) was done earlier. (e) dependency-review comments on the PR when it fails (`comment-summary-in-pr: on-failure`). (f) is moot. (g) isn't needed: one admin, no approvers.
+
 | # | Where | Issue | Fix |
 |---|-------|-------|-----|
 | a | `check.yml:438-439` | retire.js DB cache key depends only on lockfiles, so the DB can be months old (`check.sh:71-77` refreshes weekly) | Add a week/date component to the cache key |
@@ -2241,6 +2697,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ## Documentation
 
 ### DOC-01 — Documentation drift 🟢 (new in v2)
+
+> 🔄 **Current code (2026-11-05):** ✅ Done. Fixed now: dependency-review's comment (`docs/ci-cd.md`, true since CI-17 e), restart and env changes (`docs/ci-cd.md`), and the deployed CSP coming from CloudFront, not nginx (`docs/static-assets.md`). Checked and already right: the frontend promotion paths and APK environments, the pip-audit ignore list, the coverage gate, tflint, the edge's location *hint* (`docs/jwt-keys.md`), zero-downtime key rotation (true since APP-02) and the CKV_AWS_116 reason. The `AdministratorAccess` wording stays with SEC-04 (deferred).
 
 | Doc | Statement | Reality |
 |-----|-----------|---------|
@@ -2270,33 +2728,45 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ## Low-severity items
 
-| # | Where | Item | Fix |
-|---|-------|------|-----|
-| L1 | all `provider.tf` | `~> 6.28`, no committed lock file | Commit `.terraform.lock.hcl`; `init -lockfile=readonly` (TF-01) |
-| L2 | `default_tags` | Only Project/Environment/ManagedBy | Add `Owner`, `CostCenter`, `Repo`, `DataClassification` |
-| L3 | `infra-live-edge/terraform/response_headers.tf:175` | CORS allow-methods omits PUT. The backend has no PUT routes, and CloudFront `allowed_methods` can't drop PUT (it accepts only {GET,HEAD}, {GET,HEAD,OPTIONS} or all 7) | Leave as-is with a comment, or add PUT to CORS for symmetry |
-| L4 | `response_headers.tf:88-89` | CSP `img-src https:` and `style-src 'unsafe-inline'` | `img-src 'self' data: blob:`, with APP-08. `blob:` is needed for upload previews (`frontend/src/hooks/useNinetyDayPlan.ts:334`, `URL.createObjectURL`); add the uploads CDN host only if it differs from the SPA host. Keep `style-src 'unsafe-inline'`: the CSP is a static CloudFront policy over S3, so nonces aren't possible, and framer-motion needs inline styles |
-| L5 | `response_headers.tf:79,214,252` | HSTS `preload` on a subdomain does nothing | Remove it, or preload the apex deliberately |
-| L6 | `infra-live-backend/terraform/variables.tf:194` | `jwt_key_id` description says "CloudFront Function" | Say "Lambda@Edge" |
-| L7 | `jwt-validator-lambda.js.tpl:151,155,322` | 503 body leaks the location/region name | Generic message; log details |
-| L8 | `elasticache.tf:68` | `engine_version = "7.1"` hard-coded | Variable (Appendix A) |
-| L9 | `ecs.tf:123,259` | ADOT image `v0.40.0` hard-coded twice | Variable/local; keep current. **v7:** the image now lives in one place (`modules/ecs-service`), and the sidecar is **off everywhere** because the app isn't instrumented; see [auth-users-split.md](auth-users-split.md) 15.5. |
-| L10 | `vpc.tf:10` | VPC flow logs disabled (CKV2_AWS_11) | Enable in prod (S3, Parquet) |
-| L11 | `autoscaling.tf` | SNS topic unencrypted (CKV_AWS_26) | **Customer-managed** KMS key whose policy allows `cloudwatch.amazonaws.com`. The AWS-managed `alias/aws/sns` key **can't** be used with CloudWatch alarms (v1's suggestion was wrong) |
-| L12 | `ecs.tf` (API + worker) | No `readonlyRootFilesystem`, no `stopTimeout`. The container is already non-root (`Dockerfile:42-45`) | Read-only root plus a task-level ephemeral `volume` (no host path) mounted at `/tmp`; Fargate doesn't support `linuxParameters.tmpfs`. `stopTimeout` ≤ 120 (the Fargate maximum); worker see APP-06 |
-| L13 | — | v1 said `.DS_Store` files were committed: **wrong**, they're gitignored and untracked | No action |
-| L14 | `terraform-live-backend.yml:139-141,279-283`; `docs/ci-cd.md:214-218` | Non-secret config stored as **secrets**: model names, `APP_NAME`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, ACM ARNs, bucket names, `STATE_BUCKET`, `JWT_PUBLIC_KEYS`. They show as `***` in logs (hard to review) but appear unmasked in the `tfplan.txt` artifact (the ACM ARNs reveal the account ID) | Move to environment **variables** (`vars.*`) |
-| L15 | `jwt-validator-lambda.js.tpl:56,60,96` | `${kid}`, `${jwt_key_id}`, `${region}` interpolated into single-quoted JS without `jsonencode` | Use `jsonencode` (as `:87` already does) |
-| L16 | `backend/app/services/s3_uploads.py:27-34`; `downloads.py:58` | `get_s3_client` caches one client and ignores later `region` arguments. This is latent today, because every caller passes `settings.aws_region`. `downloads.py:58` creates a new `boto3.client` on **every** request | Cache per region. Update `tests/test_s3_uploads.py:61` (`test_the_first_region_wins_for_the_process_lifetime` pins the current behaviour). Reuse a cached client in downloads |
-| L17 | `vpc_endpoints.tf` | No `monitoring` interface endpoint, so `PutMetricData` goes via NAT | Add it in stg/prod |
-| L18 | `ecs.tf:240` | Worker receives `JWT_PRIVATE_KEY` it doesn't need (shared `Settings` requires it) | Make it optional for the worker, and don't inject it. `derive_jwt_public_key` and `validate_jwt_private_key` (`settings.py:42-82`) parse it unconditionally, so they must skip an empty key |
-| L19 | `ecr.tf` | Basic scan-on-push only; no continuous rescanning | `aws_ecr_registry_scanning_configuration { scan_type = "ENHANCED" }` with a repository filter, in the prod account. It's registry-level (per account and region, not in `ecr.tf`) and replaces basic scan-on-push |
-| L20 | `vpc.tf:1` | `aws_availability_zones` doesn't filter `opt-in-status`; opting into a Local Zone would reorder the AZs and shift all subnets | Filter `opt-in-not-required`, or pin AZ IDs |
-| L21 | `tfvars/{dev,sbx,stg}.tfvars` | `cache.t3.*` Redis nodes | Switch to `cache.t4g.*` (cheaper, Graviton)  ✅ **Done 2026-10-23:** all environments use Valkey `cache.t4g.*` (TF-04) |
+The "Where" column is from 2026-10-18; the status column gives the current locations.
+
+| # | Where | Item | Fix | Status (2026-11-01) |
+|---|-------|------|-----|------|
+| L1 | all `provider.tf` | `~> 6.28`, no committed lock file | Commit `.terraform.lock.hcl`; `init -lockfile=readonly` (TF-01) | ✅ Lock files committed; workflows use `-lockfile=readonly` |
+| L2 | `default_tags` | Only Project/Environment/ManagedBy | Add `Owner`, `CostCenter`, `Repo`, `DataClassification` | ✅ Done: `Repo` (from the workflows' `github.repository`) and `DataClassification` per stack (backend confidential, edge and scheduler internal, frontend public). `Owner`/`CostCenter` left out: one owner, no cost centres |
+| L3 | `infra-live-edge/terraform/response_headers.tf:175` | CORS allow-methods omits PUT. The backend has no PUT routes, and CloudFront `allowed_methods` can't drop PUT (it accepts only {GET,HEAD}, {GET,HEAD,OPTIONS} or all 7) | Leave as-is with a comment, or add PUT to CORS for symmetry | ✅ Done: PUT added to the API's CORS methods (`response_headers.tf:176`), since onboarding's answers and grow's growth areas are PUT routes. It mattered little (the web app calls `/api/*` on its own origin, so no preflight), but the list now matches the routes |
+| L4 | `response_headers.tf:88-89` | CSP `img-src https:` and `style-src 'unsafe-inline'` | `img-src 'self' data: blob:`, with APP-08. `blob:` is needed for upload previews (`frontend/src/hooks/useNinetyDayPlan.ts:334`, `URL.createObjectURL`); add the uploads CDN host only if it differs from the SPA host. Keep `style-src 'unsafe-inline'`: the CSP is a static CloudFront policy over S3, so nonces aren't possible, and framer-motion needs inline styles | ✅ Done with APP-08: `img-src 'self' data: blob:` plus the uploads buckets (`response_headers.tf:95`); `style-src 'unsafe-inline'` kept, as the fix says |
+| L5 | `response_headers.tf:79,214,252` | HSTS `preload` on a subdomain does nothing | Remove it, or preload the apex deliberately | ✅ Done: `preload = false` on all three policies; checkov's CKV_AWS_259 skipped with the reason |
+| L6 | `infra-live-backend/terraform/variables.tf:194` | `jwt_key_id` description says "CloudFront Function" | Say "Lambda@Edge" | ✅ Done (`variables.tf:256`) |
+| L7 | `jwt-validator-lambda.js.tpl:151,155,322` | 503 body leaks the location/region name | Generic message; log details | ✅ Done: the 503 body is a generic `Service Unavailable`; the location or region goes to the function's log (test checks the body) |
+| L8 | `elasticache.tf:68` | `engine_version = "7.1"` hard-coded | Variable (Appendix A) | ✅ Variable (`modules/redis/variables.tf:90`) |
+| L9 | `ecs.tf:123,259` | ADOT image `v0.40.0` hard-coded twice | Variable/local; keep current. **v7:** the image now lives in one place (`modules/ecs-service`), and the sidecar is **off everywhere** because the app isn't instrumented; see [auth-users-split.md](auth-users-split.md) 15.5. | ✅ Variable (`otel_collector_image`, `variables.tf:185-189`) |
+| L10 | `vpc.tf:10` | VPC flow logs disabled (CKV2_AWS_11) | Enable in prod (S3, Parquet) | ⬜ Open (`modules/network/main.tf:57`) |
+| L11 | `autoscaling.tf` | SNS topic unencrypted (CKV_AWS_26) | **Customer-managed** KMS key whose policy allows `cloudwatch.amazonaws.com`. The AWS-managed `alias/aws/sns` key **can't** be used with CloudWatch alarms (v1's suggestion was wrong) | ⬜ Open: three alert topics are unencrypted, each with a `CKV_AWS_26` skip: backend `cloudwatch.tf:8-9`, edge `infra-live-edge/terraform/alarms.tf:20-21` and scheduler `infra-live-scheduler/terraform/alarms.tf:13-14`; the events topics are KMS-encrypted |
+| L12 | `ecs.tf` (API + worker) | No `readonlyRootFilesystem`, no `stopTimeout`. The container is already non-root (`Dockerfile:42-45`) | Read-only root plus a task-level ephemeral `volume` (no host path) mounted at `/tmp`; Fargate doesn't support `linuxParameters.tmpfs`. `stopTimeout` ≤ 120 (the Fargate maximum); worker see APP-06 | ⬜ Open (v10: `stopTimeout` is done for workers, `min(llm_timeout_seconds + 30, 120)` at `services.tf:418`, set at `ecs.tf:92`; only the read-only root filesystem remains), on hold until stg can be tested: a read-only root needs a writable `/tmp` the non-root user can write on Fargate (the worker heartbeat), and the usual root init container would keep the never-pushed `:latest` image, since deploys update only the main container |
+| L13 | — | v1 said `.DS_Store` files were committed: **wrong**, they're gitignored and untracked | No action | — No action |
+| L14 | `terraform-live-backend.yml:139-141,279-283`; `docs/ci-cd.md:214-218` | Non-secret config stored as **secrets**: model names, `APP_NAME`, `DOMAIN_NAME`, `SUBDOMAIN`, `HOSTED_ZONE_ID`, ACM ARNs, bucket names, `STATE_BUCKET`, `JWT_PUBLIC_KEYS`. They show as `***` in logs (hard to review) but appear unmasked in the `tfplan.txt` artifact (the ACM ARNs reveal the account ID) | Move to environment **variables** (`vars.*`) | ✅ Moved to `vars.*` (`terraform-live-backend.yml:114`) |
+| L15 | `jwt-validator-lambda.js.tpl:56,60,96` | `${kid}`, `${jwt_key_id}`, `${region}` interpolated into single-quoted JS without `jsonencode` | Use `jsonencode` (as `:87` already does) | ✅ Done: the region keys are `jsonencode`d too; no plain `${…}` is left in the template |
+| L16 | `backend/app/services/s3_uploads.py:27-34`; `downloads.py:58` | `get_s3_client` caches one client and ignores later `region` arguments. This is latent today, because every caller passes `settings.aws_region`. `downloads.py:58` creates a new `boto3.client` on **every** request | Cache per region. Update `tests/test_s3_uploads.py:61` (`test_the_first_region_wins_for_the_process_lifetime` pins the current behaviour). Reuse a cached client in downloads | ⚪ Moot: the files are gone; `backend/common/uploads.py:107` builds a client per config and region |
+| L17 | `vpc_endpoints.tf` | No `monitoring` interface endpoint, so `PutMetricData` goes via NAT | Add it in stg/prod | ⬜ Open (`modules/network/endpoints.tf:25-31`) |
+| L18 | `ecs.tf:240` | Worker receives `JWT_PRIVATE_KEY` it doesn't need (shared `Settings` requires it) | Make it optional for the worker, and don't inject it. `derive_jwt_public_key` and `validate_jwt_private_key` (`settings.py:42-82`) parse it unconditionally, so they must skip an empty key | ✅ Only auth gets `JWT_PRIVATE_KEY` (`services.tf:148`) |
+| L19 | `ecr.tf` | Basic scan-on-push only; no continuous rescanning | `aws_ecr_registry_scanning_configuration { scan_type = "ENHANCED" }` with a repository filter, in the prod account. It's registry-level (per account and region, not in `ecr.tf`) and replaces basic scan-on-push | ⬜ Open |
+| L20 | `vpc.tf:1` | `aws_availability_zones` doesn't filter `opt-in-status`; opting into a Local Zone would reorder the AZs and shift all subnets | Filter `opt-in-not-required`, or pin AZ IDs | ✅ Done: `opt-in-status = opt-in-not-required` filter (`modules/network/main.tf`) |
+| L21 | `tfvars/{dev,sbx,stg}.tfvars` | `cache.t3.*` Redis nodes | Switch to `cache.t4g.*` (cheaper, Graviton)  ✅ **Done 2026-10-23:** all environments use Valkey `cache.t4g.*` (TF-04) | ✅ Done |
 
 ---
 
 ## Suggested implementation order
+
+> 🔄 **2026-11-06:** the table is the v5 plan, kept as written. Almost all of it is now done; what's left, by phase:
+> - **0:** provisioning the Atlas M10 clusters with backups, PITR and termination protection, and a timed restore (DB-01; owner steps, `docs/infra-operations.md` "Atlas clusters"). DEC-01 and DEC-02 are decided and done in code.
+> - **1:** SEC-04, CI-01 and MOB-01 (deferred); the stg checks for EDGE-02, EDGE-03, APP-01 and CI-11; CI-10's IAM restriction (outside the repo).
+> - **2:** CI-02 and CI-13's two-job split (deferred). CI-03, CI-09 and the rest are done.
+> - **3:** SEC-08, SEC-09 and WAF-01 #2–4 (deferred); PRIV-03's owner steps (agreements, privacy policy, transfer basis).
+> - **4:** CI-05 (deferred); the stg checks for DB-03, DB-05 and SCH-01; OBS-01's CloudFront logs and canary.
+> - **5:** TF-02 (deferred); the TF-03 and TF-04 load tests. TF-04's `maxmemory-policy = noeviction` is done (2026-11-09).
+> - **6:** L10, L11, L17 and L19; L12 on hold for stg.
+> - **7:** unchanged: the Global Cluster and what waits for it.
 
 | Phase | Findings | Why |
 |-------|----------|-----|
@@ -2326,6 +2796,13 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### Current state (verified v2)
 
+> 🔄 **Current code (2026-11-01):** the files cited below (`app/llm_rate_limiter.py`, `app/limiter.py`, `app/main.py`, slowapi) are gone. Valkey (`backend/common/valkey.py`, IAM auth with a user per service) now holds:
+> - login throttles (`backend/auth/app/throttle.py`);
+> - the per-user rate limits (`backend/common/limiter.py`) and LLM limits (`backend/common/generation/llm_limit.py`);
+> - an `authz:{sub}` cache, written by auth at sign-in (`backend/auth/app/sessions.py`) and read by every service (`backend/common/authz.py`).
+>
+> So a cache already shares one cluster with the counters, and the parameter group still sets no `maxmemory-policy` (`modules/redis/main.tf:49-60`). The "separate workloads by eviction" advice below now applies, not just in theory. **v10 (2026-11-09):** the parameter group now sets `maxmemory-policy = noeviction` (TF-04), the right policy while counters, locks and the `authz:` cache share one cluster; split the workloads only once LRU/LFU caching is needed. `REDIS_URL` is set in `infra-live-backend/terraform/services.tf:73`. The RBAC user groups the sketch suggests are already in place.
+
 - `aws_elasticache_replication_group.main`: Redis OSS `7.1`, cluster mode disabled. Prod runs `cache.r6g.4xlarge` × 3 nodes (1 primary + 2 replicas) with multi-AZ (`prod.tfvars:19-21`). Dev/sbx/stg use `cache.t3.*` nodes.
 
   > **Update 2026-10-23:** now Valkey `8.0`, still cluster mode disabled. Prod runs `cache.t4g.medium` × 2 (primary + 1 replica, multi-AZ); stg `cache.t4g.small`; dev/sbx `cache.t4g.micro`. The "right now" recommendation below is done on burstable `t4g` nodes; `cache.r7g.large` is the next step when sustained load needs it.
@@ -2336,7 +2813,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
   All small, TTL-bound keys. Sessions live in **MongoDB**, the worker queue is the Mongo `jobs` collection, and the worker doesn't connect to Redis.
 - `cache.r6g.4xlarge` is about 105 GiB RAM and 16 vCPU per node. Redis executes commands mostly on one thread, so the CPU sits idle and the RAM is almost entirely unused. Three of these nodes cost several thousand USD/month on-demand (check current regional pricing).
-- The parameter group is empty, so the default `maxmemory-policy = volatile-lru` applies. That's wrong for a mixed workload.
+- The parameter group is empty, so the default `maxmemory-policy = volatile-lru` applies. That's wrong for a mixed workload. (2026-11-09: now `noeviction`, TF-04.)
 - Related app issues: APP-04 (permanent fallback after a blip) and APP-05 (sync client in async code).
 
 ### Recommendation
