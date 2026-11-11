@@ -68,6 +68,10 @@ Notes:
 - **Apply order follows these dependencies:** backend (every region), then edge, then frontend.
   **Destroy runs in reverse:** frontend, then edge, then backend. That way each consumer is gone
   before the parameters it reads are deleted. `terraform-live-all.yml` encodes both orders.
+  A single-stack destroy enforces the order too: `terraform-live-edge` destroy refuses while the
+  frontend state still holds resources, and `terraform-live-backend` destroy refuses a region the
+  edge state still routes to (it still reads that region's `alb_internal_fqdn`). To drop one region
+  from a multi-region environment, apply edge without it first, then destroy that region's backend.
 
 ---
 

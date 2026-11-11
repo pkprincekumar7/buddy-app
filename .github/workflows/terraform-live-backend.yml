@@ -365,6 +365,21 @@ jobs:
         run: |
           echo "TF_VAR_ops_email=${OPS_EMAIL:-}" >> "$GITHUB_ENV"
 
+      # Destroyed out of order, the stack that reads this one (frontend reads edge,
+      # edge reads each backend region) could no longer plan or destroy, so a destroy
+      # refuses while it still does (check_destroy_order).
+      - name: Check the destroy order
+        if: inputs.action == 'destroy'
+        env:
+          STATE_BUCKET: ${{ vars.STATE_BUCKET }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGION: ${{ matrix.aws_region }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/workflow-inputs.sh
+          check_destroy_order backend destroy "$STATE_BUCKET" "$APP_NAME" "$ENVIRONMENT" "$REGION"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:

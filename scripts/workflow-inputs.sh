@@ -14,6 +14,10 @@
 # workflows take regions as free text and turn them into a checked JSON array
 # (regions_json) in their validate job, so there's no list of every combination to keep.
 #
+# It also holds two checks that read more than the inputs: prod applies only what stg
+# applied first (check_stg_first), and a single-stack destroy keeps the destroy order
+# (check_destroy_order).
+#
 # Tests: scripts/workflow-inputs.test.sh
 
 WORKFLOW_INPUTS_ROUTING="${WORKFLOW_INPUTS_ROUTING:-$(dirname "${BASH_SOURCE[0]}")/../shared/routing.json}"
@@ -144,4 +148,59 @@ check_stg_first() {
   stg_applied_in "$runs" "$stack" && return 0
   echo "::error::prod applies only what stg applied first: no successful stg apply of the $stack stack at ${sha:0:12}. Apply this commit to stg (terraform-live-$stack or terraform-live-all), then prod."
   return 1
+}
+
+# Destroy order: frontend, then edge, then backend (terraform-live-all's D1 → D2 → D3).
+# A single-stack destroy run out of that order would leave the later stack unable to
+# plan or destroy (edge reads each backend region's ALB name, frontend reads edge's
+# distribution), so a destroy checks, from the other stack's state file, that nothing
+# still uses this one.
+
+# state_has_resources STATE_JSON → success if the state still holds a managed resource.
+state_has_resources() {
+  jq -e '[.resources[]? | select(.mode == "managed")] | length > 0' <<<"$1" >/dev/null
+}
+
+# edge_routes_to STATE_JSON REGION → success if the edge state still reads REGION's
+# ALB name, i.e. the edge still routes /api/* there. Keep the data source's type and
+# name in step with infra-live-edge/terraform/ssm_read.tf: a rename makes this pass.
+edge_routes_to() {
+  jq -e --arg region "$2" '
+    [.resources[]? | select(.mode == "data" and .type == "aws_ssm_parameter" and .name == "alb_internal_fqdn")
+     | .instances[]? | .index_key] | any(.[]; . == $region)' <<<"$1" >/dev/null
+}
+
+# read_state BUCKET KEY → the state file's JSON, or {} when there's no state file. A
+# file that isn't JSON fails, so the checks above can't pass on one by mistake.
+read_state() {
+  local count
+  count="$(aws s3api list-objects-v2 --region us-east-1 --bucket "$1" --prefix "$2" \
+    --query "length(Contents[?Key=='$2'] || \`[]\`)" --output text)" || return 1
+  if [[ "$count" == "0" ]]; then echo '{}'; return 0; fi
+  aws s3 cp --region us-east-1 "s3://$1/$2" - --quiet | jq -c .
+}
+
+# check_destroy_order STACK ACTION BUCKET APP ENVIRONMENT [REGION] → for a destroy,
+# error while the stack destroyed before this one still uses it. Anything else passes.
+check_destroy_order() {
+  local stack="$1" action="$2" bucket="$3" app="$4" env="$5" region="${6:-}" state
+  [[ "$action" == "destroy" ]] || return 0
+  local prefix="terraform-state-files/${app}/${env}"
+  case "$stack" in
+    frontend) return 0 ;;
+    edge)
+      state="$(read_state "$bucket" "$prefix/frontend/us-east-1/terraform.tfstate")" || {
+        echo "::error::Couldn't read the frontend stack's state to check the destroy order."; return 1; }
+      state_has_resources "$state" || return 0
+      echo "::error::infra-live-frontend is still applied for $env, and it uses this edge stack's distribution. Destroy it first (terraform-live-frontend destroy), or run terraform-live-all destroy."
+      return 1 ;;
+    backend)
+      [[ -n "$region" ]] || { echo "::error::check_destroy_order backend needs a region."; return 1; }
+      state="$(read_state "$bucket" "$prefix/edge/us-east-1/terraform.tfstate")" || {
+        echo "::error::Couldn't read the edge stack's state to check the destroy order."; return 1; }
+      edge_routes_to "$state" "$region" || return 0
+      echo "::error::infra-live-edge still routes to $region for $env. Destroy the edge stack first (after the frontend), apply it without $region in backend_regions, or run terraform-live-all destroy."
+      return 1 ;;
+    *) echo "::error::unknown stack '$stack'."; return 1 ;;
+  esac
 }

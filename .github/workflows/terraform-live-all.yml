@@ -239,9 +239,12 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Destroy step 1 — Frontend bucket policy (reverse order: remove OAC first)
+  # needs: regions — D1 itself doesn't use the regions, but a mistyped list must
+  # stop the run before anything is destroyed, not after the frontend is gone.
   # ---------------------------------------------------------------------------
   destroy-tf-frontend:
     name: "D1 · Terraform Frontend (destroy)"
+    needs: regions
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-frontend.yml
     with:

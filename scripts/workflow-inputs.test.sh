@@ -104,6 +104,55 @@ gh() { return 1; }
 refuses "a prod apply whose runs can't be listed" check_stg_first backend apply prod "$SHA"
 unset -f gh
 
+# The destroy order (state_has_resources, edge_routes_to, check_destroy_order).
+EMPTY='{"version":4,"resources":[]}'
+FRONTEND_UP='{"resources":[{"mode":"managed","type":"aws_s3_bucket_policy","name":"x","instances":[{}]}]}'
+FRONTEND_DATA_ONLY='{"resources":[{"mode":"data","type":"aws_ssm_parameter","name":"cloudfront_arn","instances":[{}]}]}'
+EDGE_UP='{"resources":[{"mode":"data","type":"aws_ssm_parameter","name":"alb_internal_fqdn","instances":[{"index_key":"ap-south-1"},{"index_key":"eu-west-1"}]},{"mode":"managed","type":"aws_cloudfront_distribution","name":"x","instances":[{}]}]}'
+accepts "a state with a resource has resources" state_has_resources "$FRONTEND_UP"
+refuses "an emptied state has none" state_has_resources "$EMPTY"
+refuses "data sources alone aren't resources" state_has_resources "$FRONTEND_DATA_ONLY"
+refuses "no state file has none" state_has_resources '{}'
+accepts "edge routes to a region it reads" edge_routes_to "$EDGE_UP" eu-west-1
+refuses "edge doesn't route to a region it doesn't read" edge_routes_to "$EDGE_UP" us-east-1
+refuses "a destroyed edge routes nowhere" edge_routes_to "$EMPTY" ap-south-1
+
+# A stand-in for aws: FAKE_STATES maps a state key to its JSON; a missing key has no
+# object, and FAKE_AWS_FAILS fails every call.
+# shellcheck disable=SC2317,SC2329 # called by read_state (SC2317 on older shellcheck)
+aws() {
+  [ -z "${FAKE_AWS_FAILS:-}" ] || return 1
+  local key
+  case "$1 $2" in
+    "s3api list-objects-v2") key="$8"; jq -r --arg k "$key" 'if has($k) then 1 else 0 end' <<<"$FAKE_STATES" ;;
+    "s3 cp") key="${5#s3://b/}"; jq -r --arg k "$key" '.[$k]' <<<"$FAKE_STATES" ;;
+    *) return 1 ;;
+  esac
+}
+P=terraform-state-files/app/dev
+FE="$P/frontend/us-east-1/terraform.tfstate"
+ED="$P/edge/us-east-1/terraform.tfstate"
+states() { jq -n --arg fe "$FE" --arg ed "$ED" --argjson f "$1" --argjson e "$2" '{($fe): $f, ($ed): $e}'; }
+FAKE_STATES='{}'
+accepts "a frontend destroy isn't checked" check_destroy_order frontend destroy b app dev
+accepts "a plan-destroy isn't checked" check_destroy_order edge plan-destroy b app dev
+FAKE_STATES="$(states "$FRONTEND_UP" "$EDGE_UP")"
+refuses "an edge destroy while the frontend is applied" check_destroy_order edge destroy b app dev
+refuses "a backend destroy while the edge routes there" check_destroy_order backend destroy b app dev ap-south-1
+accepts "a backend destroy of a region the edge doesn't route to" check_destroy_order backend destroy b app dev us-east-1
+FAKE_STATES="$(states "$EMPTY" "$EMPTY")"
+accepts "an edge destroy after the frontend's" check_destroy_order edge destroy b app dev
+accepts "a backend destroy after the edge's" check_destroy_order backend destroy b app dev ap-south-1
+FAKE_STATES='{}'
+accepts "an edge destroy with no frontend state file" check_destroy_order edge destroy b app dev
+accepts "a backend destroy with no edge state file" check_destroy_order backend destroy b app dev eu-west-1
+refuses "a backend destroy with no region" check_destroy_order backend destroy b app dev
+refuses "an unknown stack" check_destroy_order scheduler destroy b app dev
+FAKE_AWS_FAILS=1 refuses "a state that can't be read" check_destroy_order edge destroy b app dev
+FAKE_STATES="$(jq -n --arg fe "$FE" '{($fe): "not json {"}')"
+refuses "a state file that isn't JSON" check_destroy_order edge destroy b app dev
+unset -f aws
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
