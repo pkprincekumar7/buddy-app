@@ -77,10 +77,6 @@ export default function PersonalityJourney() {
   const focusedBefore = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      // Back from the profile: the Discover splash was left up so the circles never
-      // showed in between; the hub is visible again now.
-      setShowDiscoverSplash(false);
-      leavingForProfileRef.current = false;
       if (!focusedBefore.current) {
         focusedBefore.current = true; // the first load is useJourney's own
         return;
@@ -89,6 +85,18 @@ export default function PersonalityJourney() {
       const again = setTimeout(() => void refreshChild(), 2500);
       return () => clearTimeout(again);
     }, [refreshChild]),
+  );
+  // The Discover splash is a Portal, above every screen, and the stack keeps this one
+  // mounted: it's taken down as the profile opens (this screen loses focus), or it
+  // would stay over the profile.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        setShowDiscoverSplash(false);
+        leavingForProfileRef.current = false;
+      },
+      [],
+    ),
   );
   const child = 'child' in journey ? journey.child : null;
   const childName = child?.name ?? '';
@@ -104,7 +112,7 @@ export default function PersonalityJourney() {
   // The splash stays up (on its last frame) until the profile opens: hiding it first would
   // show the hub's circles while `viewed` is recorded. That's awaited before navigating, so
   // the profile's Grow button finds Discover done. Once only, however often onReady fires.
-  // The stack keeps this screen mounted, so the splash is taken down when it's focused again.
+  // The splash comes down when this screen loses focus to the profile (above).
   const handleDiscoverSplashReady = useCallback(() => {
     if (leavingForProfileRef.current) return;
     leavingForProfileRef.current = true;
@@ -181,13 +189,11 @@ export default function PersonalityJourney() {
     useAmbientAudio();
 
   // The Discover splash (stage 2) plays its own unmuted video — keep the
-  // ambient bed silent for that beat so the two don't overlap. Only while the hub is
-  // focused: the splash stays up under the profile until the hub is focused again.
-  const splashPlaying = showDiscoverSplash && isFocused;
+  // ambient bed silent for that beat so the two don't overlap.
   useEffect(() => {
-    setAmbientSuppressed(splashPlaying);
+    setAmbientSuppressed(showDiscoverSplash);
     return () => setAmbientSuppressed(false);
-  }, [splashPlaying, setAmbientSuppressed]);
+  }, [showDiscoverSplash, setAmbientSuppressed]);
 
   // Cleanup warp on unmount (the streak canvas stops itself when WarpOverlay unmounts)
   useEffect(
