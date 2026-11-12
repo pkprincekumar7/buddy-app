@@ -1,6 +1,6 @@
 # Child view: build plan
 
-**Status:** built. Left: the e2e run (4.2) and the launch pass on dev, then stg (4.4).
+**Status:** built; the e2e runs pass. Left: the launch pass on dev, then stg (4.4).
 **Against the prototype:** every remaining difference, screen by screen, is listed in
 [child-view-vs-prototype.md](child-view-vs-prototype.md).
 **What this is:** the order in which to build **multiple children** (a "+ Add Child" item in the
@@ -52,8 +52,8 @@ stores stars, quests, mini-game results or moods yet.
 | 1 | View mode, profile menu and route guard | 3 | 3 |
 | 2 | Kids theme, kids page shell, Release and Discover | 7 | 7 |
 | 3 | Transform quests and Grow worlds | 6 | 6 |
-| 4 | Connect, hardening and launch | 4 | 2 |
-| | **Total** | **27** | **25** |
+| 4 | Connect, hardening and launch | 4 | 3 |
+| | **Total** | **27** | **26** |
 
 Phase 0 doesn't depend on the decisions or on child view, and can ship on its own first.
 
@@ -749,7 +749,7 @@ parent pages show what the child did.
     wins first in its own list ("From <name>"), shared with the existing WhatsApp,
     Instagram and X flows. The card shows only the first name. `ComingSoon` is gone: every
     circle has its kids tab.
-- [ ] **4.2 Hardening.** *(in progress: built; the e2e steps not yet run)*
+- [x] **4.2 Hardening.** *(done; the e2e runs passed on 2026-11-12)*
   - **Delivers:** the kids write endpoints under each service's existing limiter (checked, not
     assumed); the new collections in the data-residency and backup notes
     ([data-residency.md](data-residency.md)); child-view events in the e2e journey (with
@@ -763,8 +763,8 @@ parent pages show what the child did.
     (counted once), a world run and a shown win, then checks the server's star sum (13) and
     the parent-side reads. It makes no LLM call. It's in the shared walk, so
     full-journey.py runs it and account-deletion.py's scan (every collection) proves
-    `kid_activity`, `kid_quests` and `world_runs` are emptied with the account. Not run yet:
-    the journey itself spends the circles' LLM calls (`RUN_E2E=1 ./check.sh`).
+    `kid_activity`, `kid_quests` and `world_runs` are emptied with the account. Run on
+    2026-11-12 in test mode: full-journey, account-deletion and convergence all passed.
 - [x] **4.3 Docs.** *(done)*
   - **Delivers:** the kids endpoints in [api.md](api.md); child view in
     [frontend.md](frontend.md) (the provider, the guard, the routes); this file's status.

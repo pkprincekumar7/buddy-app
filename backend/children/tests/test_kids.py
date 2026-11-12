@@ -179,7 +179,7 @@ def test_each_circle_opens_from_what_the_child_did_in_child_view(mongo_uri):
         assert locked.status_code == 403 and _code(locked) == "circle_locked"
         # The parent's flags open nothing past Discover in child view.
         await _open_flags(r, child_id, "conversation", "grow", "transform", "release")
-        steps = [
+        steps: list[tuple[str, dict[str, Any]]] = [
             ("grow", {"type": "world_done", "world": 2}),
             ("transform", {"type": "quest", "interest": "space", "quest": 0}),
             ("release", {"type": "mood", "mood": "good"}),
