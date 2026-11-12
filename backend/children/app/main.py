@@ -419,19 +419,21 @@ async def create_child(body: ChildIn, runtime: Ready, caller: SignedIn) -> Child
     _parents_only(caller)
     children = runtime.db[CHILDREN]
     live = {"location": caller.location, "user_id": caller.user_id, "is_deleted": False}
-    if await children.count_documents(live) >= MAX_CHILDREN:
-        raise _error(422, "child_limit", f"A parent can have at most {MAX_CHILDREN} children.")
     doc = new_child(
         str(uuid.uuid4()), caller.user_id, caller.location, body.model_dump(), datetime.now(UTC)
     )
 
     async def write(session: AsyncClientSession) -> None:
-        # Not for an account being deleted: the user's tombstone, checked behind its guard
-        # so a deletion in flight and this create conflict (review).
+        # Behind the user's guard: a deletion in flight and this create conflict (review),
+        # and so do two creates at once, so the limit below is counted with the other's
+        # child either committed or not started, and two can't both take the last place.
         user_stone = [tombstone_key("user", caller.user_id)]
         await write_guards(runtime.db, user_stone, location=caller.location, session=session)
+        # Not for an account being deleted: the user's tombstone.
         if await is_tombstoned(runtime.db, user_stone, session, location=caller.location):
             raise _error(409, "account_deleting", "This account is being deleted.")
+        if await children.count_documents(live, session=session) >= MAX_CHILDREN:
+            raise _error(422, "child_limit", f"A parent can have at most {MAX_CHILDREN} children.")
         await children.insert_one(doc, session=session)
         await _event(runtime, doc, session)
 
@@ -530,6 +532,13 @@ async def update_child(id: ChildId, body: ChildPatch, runtime: Ready, caller: Si
             await upload_tracking.attached(
                 runtime.db, [changes["avatar_key"]], location=before["location"], session=session
             )
+        old_key = before.get("avatar_key")
+        if old_key and old_key != updated.get("avatar_key"):
+            # The replaced or cleared photo: tracked in this commit, so the sweep deletes it
+            # if the delete after the commit fails.
+            await upload_tracking.replaced(
+                runtime.db, old_key, location=before["location"], child_id=id, session=session
+            )
         if copied_changed:
             await _event(runtime, updated, session)
         result["doc"] = updated
@@ -544,11 +553,10 @@ async def update_child(id: ChildId, body: ChildPatch, runtime: Ready, caller: Si
         raise _error(409, "child_changed", "The child changed while updating; try again.")
     old_key = before.get("avatar_key")
     if old_key and old_key != result["doc"].get("avatar_key") and runtime.uploads is not None:
-        # The replaced or cleared photo, after the change committed.
-        try:
-            await runtime.uploads.delete(old_key)
-        except Exception:
-            _logger.warning("children: old avatar not deleted; the purge removes it later")
+        # The replaced or cleared photo, after the change committed (tracked by `replaced`).
+        await upload_tracking.delete_now(
+            runtime.db, runtime.uploads, old_key, location=before["location"]
+        )
     return await _view(runtime, result["doc"])
 
 
@@ -735,26 +743,6 @@ class MoodIn(BaseModel):
     note: str | None = Field(default=None, max_length=kids.NOTE_MAX)
 
 
-class WorldDone(BaseModel):
-    """A Grow world finished in child view (grow keeps the scores): Grow is done there."""
-
-    model_config = _Strict
-    type: Literal["world_done"]
-    world: Annotated[int, Field(ge=0, le=kids.WORLD_COUNT - 1)]
-
-
-class QuestDone(BaseModel):
-    """A Transform quest logged (transform keeps the count): +1 the first time each quest is."""
-
-    model_config = _Strict
-    type: Literal["quest"]
-    interest: Literal[
-        "football", "drawing", "music", "building", "cooking", "space", "animals", "reading",
-        "games",
-    ]  # fmt: skip
-    quest: Annotated[int, Field(ge=0, le=2)]
-
-
 class ShowWin(BaseModel):
     """Connect's "Show my grown-up": keeps a win for the parent to share (P.2). No stars."""
 
@@ -767,7 +755,7 @@ class ShowWin(BaseModel):
 
 
 KidEvent = Annotated[
-    FlipPower | TryPower | GameBest | WorldDone | MoodIn | QuestDone | ShowWin,
+    FlipPower | TryPower | GameBest | MoodIn | ShowWin,
     Field(discriminator="type"),
 ]
 
@@ -856,7 +844,9 @@ async def kid_activity(id: ChildId, day: ChildDay, runtime: Ready, caller: Signe
     description="One thing the child did in child view (parents only; the child uses the "
     "parent's session). The server gives the stars, each once. Refused with `circle_locked` "
     "while the action's circle isn't open in child view: Discover once the chat is done, "
-    "each other once the one before is done there (`circles_done`).",
+    "each other once the one before is done there (`circles_done`). Grow's worlds and "
+    "Transform's quests aren't sent here: grow and transform publish them (`grow.world_played`, "
+    "`transform.quest_logged`) with the run or the log, and children records them.",
 )
 async def kid_event(
     id: ChildId,
@@ -912,20 +902,6 @@ async def kid_event(
                     "$inc": {"version": 1},
                 },
                 session=session,
-            )
-        elif isinstance(body, WorldDone):
-            await db[KID_ACTIVITY].update_one(
-                where,
-                {
-                    "$addToSet": {"worlds_done": body.world},
-                    "$set": {"updated_at": now},
-                    "$inc": {"version": 1},
-                },
-                session=session,
-            )
-        elif isinstance(body, QuestDone):
-            await kids.give_award(
-                db, child, f"quest:{body.interest}:{body.quest}", now, session=session
             )
         elif isinstance(body, GameBest):
             best = f"best_times.{body.game}"

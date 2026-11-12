@@ -29,6 +29,7 @@ import {
   areaSave,
   grow,
   GROW_ERRORS,
+  recommendationsAreCurrent,
   runGrowGeneration,
   type GrowthAreaDoc,
 } from '@/api/grow';
@@ -121,10 +122,6 @@ const answeredCount = (doc: GrowthAreaDoc | undefined) =>
     v => typeof v === 'string' && v.trim(),
   ).length;
 
-/** Whether two optional ISO times are the same moment (or both absent). */
-const sameTime = (a: string | null | undefined, b: string | null | undefined) =>
-  (a ? Date.parse(a) : null) === (b ? Date.parse(b) : null);
-
 export default function GrowthAreas() {
   const navigate = useNavigate();
   const { childId } = useParams();
@@ -163,10 +160,10 @@ export default function GrowthAreas() {
   // Which area the shown recommendations belong to: a generation outlives the sheet,
   // and must not show its result in another area's sheet.
   const recsAreaRef = useRef<string | null>(null);
-  // Areas with a recommendations job running, areas whose answers changed since their
-  // recommendations, and the input a generation last failed on (not retried by itself).
+  // Areas with a recommendations job running, and the input a generation last failed on
+  // (not retried by itself). Whether the answers or feedback changed since an area's
+  // recommendations is grow's to say (`recommendations_current`).
   const recsRunningRef = useRef(new Set<string>());
-  const staleRef = useRef(new Set<string>());
   const failedRef = useRef(new Map<string, string>());
   // The input each area's recommendations were last written from here. Grow records
   // the run it used, which can be newer than this page's worlds; without this a
@@ -286,8 +283,6 @@ export default function GrowthAreas() {
       setIsSaving(true);
       try {
         const stored = docOf(area.id);
-        const changed =
-          JSON.stringify(stored?.answers ?? {}) !== JSON.stringify(answers);
         keep(
           await grow.save(
             childId,
@@ -295,7 +290,6 @@ export default function GrowthAreas() {
             areaSave(stored, area.name, { answers, step: 'activity_summary' }),
           ),
         );
-        if (changed) staleRef.current.add(area.id);
         setInsightsFor(area.id);
         setInsightsTick(t => t + 1);
         return true;
@@ -317,8 +311,8 @@ export default function GrowthAreas() {
 
   /**
    * Generates the area's recommendations from its answers and the child's latest run of
-   * its world, shows them, then completes an answered area. Grow publishes the first
-   * completion, which unlocks Transform.
+   * its world, and shows them. Grow completes an answered area when they're written, and
+   * publishes the first completion, which unlocks Transform.
    */
   const generateRecommendations = useCallback(
     async (area: GrowthArea, input: string) => {
@@ -346,23 +340,14 @@ export default function GrowthAreas() {
           if (isCurrent()) setRecsStatus('error');
           return;
         }
-        // Only a success clears "the answers changed": a failed run leaves it, so the
-        // old recommendations never show as current.
-        staleRef.current.delete(area.id);
         writtenRef.current.set(area.id, input);
         if (isCurrent()) {
           setRecommendations(recs);
           setRecsStatus('ready');
         }
-        keep(
-          doc.status !== 'completed' && answeredCount(doc) > 0
-            ? await grow.save(
-                childId,
-                area.id,
-                areaSave(doc, area.name, { status: 'completed' }),
-              )
-            : doc,
-        );
+        // Grow completed an answered area in the job itself (the first one unlocks
+        // Transform), so this page leaving now loses nothing: no save of its own.
+        keep(doc);
       } catch (err) {
         if (isAbort(err)) return;
         console.error('[GrowthAreas] Recommendations failed:', err);
@@ -383,9 +368,9 @@ export default function GrowthAreas() {
 
   /**
    * Shows the area's stored recommendations when they are current, and writes new ones
-   * when they aren't: none yet, the answers changed, or the child played the world again
-   * since (grow records the run they were written from). With neither answers nor a run
-   * there is nothing to write them from.
+   * when they aren't: none yet, the answers or feedback changed (grow says so), or the
+   * child played the world again since (grow records the run they were written from).
+   * With neither answers nor a run there is nothing to write them from.
    */
   const refreshRecommendations = useCallback(
     (area: GrowthArea, { retry = false } = {}) => {
@@ -405,10 +390,10 @@ export default function GrowthAreas() {
       const input = `${world?.at ?? ''}|${JSON.stringify(doc?.answers ?? {})}`;
       const fresh =
         stored.length > 0 &&
-        !staleRef.current.has(area.id) &&
-        (worldsFailed ||
-          sameTime(doc?.recommendations_run_at, world?.at) ||
-          writtenRef.current.get(area.id) === input);
+        recommendationsAreCurrent(doc, world?.at, {
+          runsUnknown: worldsFailed,
+          writtenHere: writtenRef.current.get(area.id) === input,
+        });
       if (fresh) {
         setRecommendations(stored);
         setRecsStatus('ready');

@@ -658,7 +658,9 @@ This costs one internal call only in the rare case where the copy is behind; nor
 | `discover.completed` | discover | — | children (progress): the parent has passed the reveal splash |
 | `grow.area_completed`, `grow.area_updated` | grow | `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, `ai_three_month_recommendations` (`area_updated` also when the AI recommendations of a completed area are generated) | transform (Life Pathway; an update clears that area's milestones), release |
 | `grow.completed` | grow | — | children (progress) |
+| `grow.world_played` | grow | `world` | children (child view: Grow done), published with the world run |
 | `transform.completed` | transform | — | children (progress) |
+| `transform.quest_logged` | transform | `interest`, `quest` | children (child view: the quest's star, Transform done), published with the counted quest log |
 | `release.completed` | release | — | children (progress) |
 | `connect.visited` | connect | — | **Reserved, not published yet:** children records the Connect visit itself until a connect service exists (13.4). |
 
@@ -799,7 +801,7 @@ TTL 1 h
 4. **Fail closed — decided:** if the entry is missing and auth is unreachable, return **503**.
 
 **Keeping it current:**
-- **Change stream:** an `auth-worker` in **every** region watches **all** of `auth.auth`, not only its own users, and updates that region's cache through the versioned write. It updates only keys the region already holds, so regions don't fill up with every user. That matters because entries can be written outside a user's home region: login runs in the bootstrap region, an admin's lock lands in the admin's region, and failover can serve a user anywhere. It stores a resume token, and needs a dedicated Atlas cluster (M10+).
+- **Change stream:** an `auth-worker` in **every** region watches **all** of `auth.auth`, not only its own users, and updates that region's cache through the versioned write. It updates only keys the region already holds, so regions don't fill up with every user. That matters because entries can be written outside a user's home region: login runs in the bootstrap region, an admin's lock lands in the admin's region, and failover can serve a user anywhere. It stores a resume token, only once a change has been applied: if Valkey refuses a write, the stream restarts from the last saved token and applies it again, rather than leaving a lock or revocation to the entry's TTL. It needs a dedicated Atlas cluster (M10+).
 - **Every authz-changing write bumps the version:** registration inserts `authz_version: 1`. Every change to role, lock, deletion or revocation (lock, unlock, role change, logout-all, refresh reuse, account deletion) is one `findOneAndUpdate` with `$inc: {authz_version: 1}`, and the cache is written with the returned value.
 - **Versioned writes, so a slow fill can't undo a lock:**
   - `auth.auth` has an `authz_version` that increases on every change to role, lock, deletion or revocation. The entry carries it as `ver`.
@@ -875,7 +877,7 @@ sequenceDiagram
 6. **Sign in:** tokens, session, authz cache.
 
 **Failure handling:**
-- Steps 3–4 failing are undone in reverse order. If step 4 timed out, the profile may exist anyway, so the undo also calls users' idempotent `DELETE /internal/users/{user_id}`.
+- Steps 3–4 failing are undone in reverse order. If step 4 timed out, the profile may exist anyway, so the undo also calls users' idempotent `DELETE /internal/users/{user_id}`. That writes a `user:` tombstone with the delete, and the `PUT` checks it and inserts in one guarded transaction, so a `PUT` that was still running can't create the profile after the undo.
 - The `auth-worker` reaper cleans up `reserved` rows older than 15 min.
 - Login requires an `active` row, so a half-made user can't log in.
 

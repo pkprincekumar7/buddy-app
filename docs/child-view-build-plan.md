@@ -221,8 +221,10 @@ own order, from what the child has done there: Discover once the parent's chat i
 powers need the personality), then **Grow** once the Discover badge is earned (all seven powers
 open), **Transform** once a world is finished, **Release** once a quest is logged, **Connect**
 once a mood check-in is saved. The children service works it out (`circles_done` on
-`GET …/kids`, from `kid_activity`; a new `world_done` event marks a world) and refuses an event
-whose circle isn't open. Transform's quests and Grow's worlds open once the chat is done (their
+`GET …/kids`, from `kid_activity`) and refuses an event whose circle isn't open. A world and a
+quest aren't sent to children: grow and transform publish `grow.world_played` and
+`transform.quest_logged` in the run's or the log's own transaction, and children's worker
+records them whenever they arrive, even before the circle is open in child view (grow and transform have kept the run or log already, and the two topics are unordered), so the two can't disagree. Transform's quests and Grow's worlds open once the chat is done (their
 own locks are the parent's). The hub in child view and the kids tabs show these locks. The
 parent's circles keep their own locks in parent view.
 
@@ -622,7 +624,7 @@ after a reload and on the other device.
       `delete_child` and `delete_user`. Stars stay with 3.2 (children's `kid_activity`).
 - [x] **3.2 Transform tab.** *(done)*
   - **Delivers:** pick an interest, the three quests with their counts, log a quest (+ a star,
-    through a `quest` event on 2.1, the first time each quest is done).
+    through `transform.quest_logged`, the first time each quest is done).
   - **Needs:** 2.2, 3.1.
   - **Check:** component tests.
   - **As built:**
@@ -630,8 +632,12 @@ after a reload and on the other device.
       `api/kidQuests.ts`): no interest yet asks "What are you into?"; otherwise the interest
       chips ("From your parent" / "You added", "+ Add another"), and the three quests with a
       dot per time and "I did it today" (once a day, "Quest done!" at the target).
-    - The star: children's `kid_activity` takes a `quest` event (`quest:<interest>:<i>`, +1
-      once per quest, behind Transform's lock), sent after a quest's first log. The
+    - The star: transform publishes `transform.quest_logged` with each counted log (in the
+      log's transaction), and children's worker gives `quest:<interest>:<i>` (+1 once per
+      quest, whether or not Transform is open in child view yet: the log was already
+      accepted, and a quest can arrive before the world that opens it). The app then re-reads the activity until Transform
+      shows as done (`awaitProgress` in `useKidActivity`). Before 2026-11-12 the app sent a
+      `quest` kids event itself, a second call that could be lost. The
       prototype also gave +1 a log and +5 at the end; one star a quest keeps it to what
       children can check without asking transform.
     - The quest cards and dots are `.kids-quest*` (web) and `questCard` / `questDot`

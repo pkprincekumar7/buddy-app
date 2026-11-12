@@ -171,6 +171,22 @@ def test_a_parent_has_at_most_10_children(mongo_uri):
 
 
 @pytest.mark.live_service
+def test_concurrent_creates_cant_pass_the_limit(mongo_uri):
+    # Counted inside the create's transaction, behind the user's guard: creates at once
+    # conflict and run again, so they can't all count 9 and all insert (review).
+    async def test(r: Running) -> None:
+        for n in range(8):
+            assert (await add_child(r, name=f"Child {n}")).status_code == 201
+        results = await asyncio.gather(*(add_child(r, name=f"Late {n}") for n in range(5)))
+        codes = sorted(response.status_code for response in results)
+        assert codes == [201, 201, 422, 422, 422]
+        live = {"user_id": PARENT, "is_deleted": False}
+        assert await r.db[CHILDREN].count_documents(live) == 10
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
 def test_home_lists_only_your_live_children_in_one_query(mongo_uri):
     async def test(r: Running) -> None:
         names = ["Bea", "Aarav", "Cleo"]
@@ -455,6 +471,15 @@ def test_s3_failures_are_reported_not_hidden(mongo_uri, monkeypatch):
         assert (
             await r.http.patch(path, json={"avatar_id": "star"}, headers=auth_header())
         ).status_code == 200
+        # ...but it's tracked, due at once, so the worker's sweep deletes it (review).
+        pending = r.db[upload_tracking.PENDING_UPLOADS]
+        row = await pending.find_one({"_id": key})
+        assert row is not None and row["child_id"] == child["id"] and "sweep_after" in row
+        monkeypatch.undo()
+        assert await upload_tracking.sweep(r.db, uploads, None) == 1
+        s3 = uploads.client
+        assert s3.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0
+        assert await pending.count_documents({}) == 0
 
     live(mongo_uri, test)
 

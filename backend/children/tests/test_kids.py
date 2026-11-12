@@ -8,11 +8,22 @@ from typing import Any
 
 import httpx
 import pytest
-from children_testkit import ADMIN, OTHER, PARENT, Running, add_child, auth_header, running
+from children_testkit import (
+    ADMIN,
+    LOCATION,
+    OTHER,
+    PARENT,
+    Running,
+    add_child,
+    auth_header,
+    running,
+)
 
+from children import worker
 from children.app import kids, lifecycle
 from children.app.kids import KID_ACTIVITY
 from children.app.store import CHILDREN
+from common.events.testing import example_event, sns_envelope
 
 API = "/api/v1/children"
 TODAY = datetime.now(UTC).date().isoformat()
@@ -24,6 +35,14 @@ def live(mongo_uri: str, test: Callable[[Running], Awaitable[None]]) -> None:
             await test(r)
 
     asyncio.run(go())
+
+
+async def _from(r: Running, child_id: str, event_type: str, payload: dict[str, Any]) -> str:
+    """A child-view event from grow or transform, through children's consumer, as its topic
+    delivers it; the outcome ("handled" or "rejected")."""
+    event = example_event(event_type, aggregate_id=child_id, location=LOCATION, payload=payload)
+    body = sns_envelope(event, r.layout["topics"][event_type.split(".")[0]])
+    return (await worker.build_consumer(r.runtime).handle_body(body)).value
 
 
 async def _open_flags(r: Running, child_id: str, *flags: str) -> None:
@@ -179,22 +198,33 @@ def test_each_circle_opens_from_what_the_child_did_in_child_view(mongo_uri):
         assert locked.status_code == 403 and _code(locked) == "circle_locked"
         # The parent's flags open nothing past Discover in child view.
         await _open_flags(r, child_id, "conversation", "grow", "transform", "release")
-        steps: list[tuple[str, dict[str, Any]]] = [
-            ("grow", {"type": "world_done", "world": 2}),
-            ("transform", {"type": "quest", "interest": "space", "quest": 0}),
-            ("release", {"type": "mood", "mood": "good"}),
-            ("connect", {"type": "show_win", "key": "badge:discover", "title": "Badge"}),
+        # Grow's world and Transform's quest come from grow and transform as events; the
+        # others are kids events. Each kids event's circle opens only after the one before it:
+        # try the next first. (Grow's and transform's events count whenever they come.)
+        steps: list[tuple[str, str | None, dict[str, Any]]] = [
+            ("grow", "grow.world_played", {"world": 2}),
+            ("transform", "transform.quest_logged", {"interest": "space", "quest": 0}),
+            ("release", None, {"type": "mood", "mood": "good"}),
+            ("connect", None, {"type": "show_win", "key": "badge:discover", "title": "Badge"}),
         ]
+
+        async def do(event_type: str | None, body: dict[str, Any], *, locked: bool) -> None:
+            if event_type is None:
+                response = await _event(r, child_id, body)
+                assert response.status_code == (403 if locked else 200)
+            else:
+                assert await _from(r, child_id, event_type, body) == "handled"
+
         for power in range(kids.POWER_COUNT):
             await _event(r, child_id, {"type": "flip_power", "power": power})
-        for circle, body in steps:
-            # Each opens only after the one before it: try the next one first.
-            after = steps.index((circle, body)) + 1
-            if after < len(steps):
-                ahead = await _event(r, child_id, steps[after][1])
-                assert ahead.status_code == 403 and _code(ahead) == "circle_locked"
-            done = await _event(r, child_id, body)
-            assert done.status_code == 200 and done.json()["circles_done"][circle] is True
+        for i, (circle, event_type, body) in enumerate(steps):
+            if i + 1 < len(steps) and steps[i + 1][1] is None:
+                _, next_type, next_body = steps[i + 1]
+                await do(next_type, next_body, locked=True)
+                after = (await _get(r, child_id)).json()["circles_done"]
+                assert after[steps[i + 1][0]] is False  # skipped: its circle isn't open
+            await do(event_type, body, locked=False)
+            assert (await _get(r, child_id)).json()["circles_done"][circle] is True
         final = (await _get(r, child_id)).json()["circles_done"]
         assert final == dict.fromkeys(kids.CIRCLES, True)
 
@@ -315,20 +345,59 @@ def test_the_activity_goes_with_the_purged_child(mongo_uri):
 
 
 @pytest.mark.live_service
-def test_a_quest_gives_a_star_once_and_waits_for_a_world(mongo_uri):
+def test_a_quest_gives_a_star_once_even_before_a_world(mongo_uri):
     async def test(r: Running) -> None:
         child_id = await _open(r, "conversation")
         await _done(r, child_id, "discover")
-        quest = {"type": "quest", "interest": "space", "quest": 1}
-        locked = await _event(r, child_id, quest)
-        assert locked.status_code == 403 and _code(locked) == "circle_locked"
-        await _done(r, child_id, "discover", "grow")
-        assert (await _event(r, child_id, quest)).json()["stars"] == 1
-        assert (await _event(r, child_id, quest)).json()["stars"] == 1
-        other = {"type": "quest", "interest": "space", "quest": 2}
-        assert (await _event(r, child_id, other)).json()["stars"] == 2
-        for bad in ({**quest, "interest": "chess"}, {**quest, "quest": 3}):
-            assert (await _event(r, child_id, bad)).status_code == 422
+        quest = {"interest": "space", "quest": 1}
+        # transform.quest_logged may arrive before grow.world_played (two topics, no order),
+        # and transform has kept the log already: the star is given, not dropped (review).
+        assert await _from(r, child_id, "transform.quest_logged", quest) == "handled"
+        early = (await _get(r, child_id)).json()
+        assert early["stars"] == 1 and early["circles_done"]["grow"] is False
+        assert await _from(r, child_id, "grow.world_played", {"world": 0}) == "handled"
+        for _ in range(2):  # the same quest again (a later day, or the event redelivered)
+            assert await _from(r, child_id, "transform.quest_logged", quest) == "handled"
+            assert (await _get(r, child_id)).json()["stars"] == 1
+        done = (await _get(r, child_id)).json()["circles_done"]
+        assert done["grow"] is True and done["transform"] is True
+        other = {"interest": "space", "quest": 2}
+        await _from(r, child_id, "transform.quest_logged", other)
+        assert (await _get(r, child_id)).json()["stars"] == 2
+        # The kids events API no longer takes them.
+        sent = await _event(r, child_id, {"type": "quest", **quest})
+        assert sent.status_code == 422
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_world_played_before_discover_is_done_is_kept(mongo_uri):
+    async def test(r: Running) -> None:
+        child_id = await _open(r)  # not even Discover open in child view
+        assert await _from(r, child_id, "grow.world_played", {"world": 4}) == "handled"
+        doc = await r.db[KID_ACTIVITY].find_one({"_id": child_id})
+        assert doc is not None and doc["worlds_done"] == [4]
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_world_played_marks_grow_done_once_and_skips_a_gone_child(mongo_uri):
+    async def test(r: Running) -> None:
+        child_id = await _open(r, "conversation")
+        await _done(r, child_id, "discover")
+        for _ in range(2):  # redelivered: the world joins a set
+            assert await _from(r, child_id, "grow.world_played", {"world": 3}) == "handled"
+        doc = await r.db[KID_ACTIVITY].find_one({"_id": child_id})
+        assert doc["worlds_done"] == [3] and doc["stars"] == 0  # a world gives no stars
+        assert doc["version"] == 2  # created, then the world; the redelivery changed nothing
+        assert (await _get(r, child_id)).json()["circles_done"]["grow"] is True
+        gone = await _open(r, "conversation")
+        await r.db[CHILDREN].update_one({"_id": gone}, {"$set": {"is_deleted": True}})
+        assert await _from(r, gone, "grow.world_played", {"world": 0}) == "handled"
+        assert await r.db[KID_ACTIVITY].find_one({"_id": gone}) is None
+        assert (await _event(r, child_id, {"type": "world_done", "world": 1})).status_code == 422
 
     live(mongo_uri, test)
 

@@ -12,7 +12,8 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import boto3
@@ -61,6 +62,8 @@ class Runtime:
     cloudwatch: Any = None
     cache: Any = None
     uploads: Uploads | None = None
+    # Children whose purge just failed, and when to try again (lifecycle.purge).
+    purge_retry_at: dict[str, datetime] = field(default_factory=dict)
 
     # The background index build this task started, if any (prepare).
     index_build: asyncio.Task[Outcome] | None = None

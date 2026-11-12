@@ -32,19 +32,20 @@ import bson
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from limits import parse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
-from pymongo import ASCENDING
+from pymongo import ASCENDING, ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from common import upload_tracking
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import is_tombstoned, tombstone_key, write_guards
+from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key, write_guards
 from common.generation.jobs import JobRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
 from common.models import CHILD_ID_PATTERN, GROWTH_INPUTS, JOBS, growth_inputs_id, stage_done
 from common.routers import PolicyRouter, public
+from common.telemetry import current_traceparent
 from common.uploads import UploadError
 from transform.app import generation, quests
 from transform.app.access import (
@@ -71,7 +72,6 @@ from transform.app.store import (
 LOCATION_PATTERN = r"^[a-z0-9_-]{1,16}$"
 READ_ANY = "children:read:any"
 STATUS_CALLERS = ("release",)  # confirm-before-deny (12.4)
-SAVE_ATTEMPTS = 3
 PHOTO_KIND: Final = "ninety-day-plan"
 PLAN_KINDS: tuple[Kind, ...] = ("plan", "event_tracker")
 
@@ -233,11 +233,20 @@ _Strict = ConfigDict(extra="forbid", strict=True)
 
 
 class PlanPatch(BaseModel):
-    """The parent's part of the plan; each field sent replaces the stored one. `plan`,
-    `track_steps` and the Life Pathway are transform's jobs' only (422)."""
+    """The parent's part of the plan, made on the `version` the app last read; each field
+    sent replaces the stored one. `plan`, `track_steps` and the Life Pathway are
+    transform's jobs' only (422)."""
 
     model_config = _Strict
 
+    version: Annotated[
+        int,
+        Field(
+            ge=0,
+            description="The plan's `version` this change was made on (`0` before the "
+            "first save). Another save since is `409 plan_changed`: reload and apply again.",
+        ),
+    ]
     ask: Annotated[str, StringConstraints(max_length=ASK_MAX)] | None = None
     applied: dict[MapKey, bool] | None = None
     act_inputs: dict[MapKey, str] | None = None
@@ -275,6 +284,8 @@ class AreaView(BaseModel):
 
 
 class Transform(BaseModel):
+    # What PATCH must send back: `0` until the plan's first save or job.
+    version: int
     areas: list[AreaView]
     ask: str | None
     plan: dict[str, Any] | None
@@ -356,6 +367,7 @@ async def _view(
         ]
     event_date = doc.get("event_date")
     return Transform(
+        version=int(doc.get("version", 0)),
         areas=[
             AreaView(
                 area_id=area["area_id"],
@@ -390,6 +402,26 @@ async def _view(
 
 class _Stale(Exception):
     """The plan changed after it was read."""
+
+
+def _plan_changed() -> HTTPException:
+    return error(409, "plan_changed", "The plan changed on another device; reload it.")
+
+
+def _superseded(existing: Mapping[str, Any], changes: Mapping[str, Any], clear: bool) -> list[Kind]:
+    """The generations a save makes stale: the plan is built from `ask`, the tracker from
+    `ask` and the Day-90 event (generation.process)."""
+    changed = {
+        f
+        for f in ("ask", "event_name", "event_date")
+        if f in changes and changes[f] != existing.get(f)
+    }
+    kinds: list[Kind] = []
+    if "ask" in changed:
+        kinds.append("plan")
+    if changed or clear:
+        kinds.append("event_tracker")
+    return kinds
 
 
 # ── public routes ──────────────────────────────────────────────────────────────
@@ -463,15 +495,22 @@ async def _accept_photos(
 @router.patch(
     "",
     dependencies=[Depends(per_user("60/minute"))],
-    description="Save the parent's work on the 90-day plan; each field sent replaces the "
-    "stored one (`photos`: each field key sent replaces that field's keys). Setting the "
-    "Day-90 event once the plan exists completes Transform (`transform.completed`).",
+    description="Save the parent's work on the 90-day plan, made on the plan's `version` "
+    "(from the last GET or PATCH): if the plan was saved since (another device), nothing "
+    "changes and it's `409 plan_changed`; reload and apply the change again. Each field "
+    "sent replaces the stored one (`photos`: each field key sent replaces that field's "
+    "keys; a photo no longer in any field is deleted). A change to `ask` or the Day-90 "
+    "event, or `clear_track_steps`, ends a plan or tracker generation still building from "
+    "the old one. Setting the Day-90 event once the plan exists completes Transform "
+    "(`transform.completed`).",
 )
 async def patch_transform(
     id: ChildId, body: PlanPatch, runtime: Ready, caller: SignedIn
 ) -> Transform:
     child = await _parents_child(runtime, caller, id)
-    changes: dict[str, Any] = body.model_dump(exclude_unset=True, exclude={"clear_track_steps"})
+    changes: dict[str, Any] = body.model_dump(
+        exclude_unset=True, exclude={"clear_track_steps", "version"}
+    )
     if "event_date" in changes and changes["event_date"] is not None:
         day = changes["event_date"]
         changes["event_date"] = datetime(day.year, day.month, day.day, tzinfo=UTC)
@@ -479,70 +518,83 @@ async def patch_transform(
     await _accept_photos(runtime, child, photos)
     selector = _selector(child)
     plans = runtime.db[PLANS]
+    # The plan as the app last read it, or 409: every field sent replaces the stored one,
+    # so a save made on an older version would undo another device's.
+    existing = await plans.find_one(selector)
+    if int((existing or {}).get("version", 0)) != body.version:
+        raise _plan_changed()
     result: dict[str, Any] = {}
 
-    for _ in range(SAVE_ATTEMPTS):
-        existing = await plans.find_one(selector)
-
-        async def write(session: AsyncClientSession, existing: Any = existing) -> None:
-            tombstones = [tombstone_key("child", id), tombstone_key("user", child["user_id"])]
-            if await is_tombstoned(runtime.db, tombstones, session=session):
-                raise not_found()  # deleted meanwhile: nothing may come back
-            now = _now()
-            stored_photos = dict((existing or {}).get("photos") or {})
-            update: dict[str, Any] = {**changes, "updated_at": now}
-            if photos:
-                update["photos"] = {**stored_photos, **photos}
-                await upload_tracking.attached(
-                    runtime.db,
-                    [key for keys in photos.values() for key in keys],
-                    location=child["location"],
-                    session=session,
-                )
-            merged = {
-                **(existing or new_plan(id, child["user_id"], child["location"], now)),
-                **update,
-            }
-            if body.clear_track_steps:
-                merged.pop("track_steps", None)
-            if len(bson.encode(merged)) > MAX_BYTES:
-                raise error(422, "plan_too_large", "The plan is over 64 KB.")
-            if existing is None:
-                await plans.insert_one(merged, session=session)
-            else:
-                operation: dict[str, Any] = {"$set": update, "$inc": {"version": 1}}
-                if body.clear_track_steps:
-                    operation["$unset"] = {"track_steps": ""}
-                if (
-                    await plans.find_one_and_update(
-                        {**selector, "version": existing["version"]}, operation, session=session
-                    )
-                    is None
-                ):
-                    raise _Stale()
-            await generation.complete_if_ready(runtime, id, child["location"], session)
-            # A key still in any field after the merge stays: a photo moved from one field
-            # to another, or kept in two, isn't deleted (review).
-            kept = {key for keys in merged.get("photos", {}).values() for key in keys}
-            result["removed"] = sorted(
-                {key for keys in stored_photos.values() for key in keys} - kept
+    async def write(session: AsyncClientSession) -> None:
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", id)]
+        # Conflicts with a deletion in flight, so a first save can't bring a plan back.
+        await write_guards(runtime.db, stones, location=child["location"], session=session)
+        if await is_tombstoned(runtime.db, stones, session, location=child["location"]):
+            raise not_found()  # deleted meanwhile: nothing may come back
+        now = _now()
+        stored_photos = dict((existing or {}).get("photos") or {})
+        update: dict[str, Any] = {**changes, "updated_at": now}
+        if photos:
+            update["photos"] = {**stored_photos, **photos}
+            await upload_tracking.attached(
+                runtime.db,
+                [key for keys in photos.values() for key in keys],
+                location=child["location"],
+                session=session,
             )
+        merged = {
+            **(existing or new_plan(id, child["user_id"], child["location"], now)),
+            **update,
+        }
+        if body.clear_track_steps:
+            merged.pop("track_steps", None)
+        if len(bson.encode(merged)) > MAX_BYTES:
+            raise error(422, "plan_too_large", "The plan is over 64 KB.")
+        if existing is None:
+            await plans.insert_one(merged, session=session)  # a first save at once: 409
+        else:
+            operation: dict[str, Any] = {"$set": update, "$inc": {"version": 1}}
+            if body.clear_track_steps:
+                operation["$unset"] = {"track_steps": ""}
+            if (
+                await plans.find_one_and_update(
+                    {**selector, "version": body.version}, operation, session=session
+                )
+                is None
+            ):
+                raise _Stale()
+            # A plan or tracker still building from the old `ask` or event mustn't land.
+            kinds = _superseded(existing, changes, body.clear_track_steps)
+            await generation.supersede(runtime, id, child["location"], session, kinds=tuple(kinds))
+        await generation.complete_if_ready(runtime, id, child["location"], session)
+        # The version check makes `existing` exactly what this change was made on, so only
+        # the photos this change removed go. A key still in any field after the merge stays:
+        # a photo moved from one field to another, or kept in two, isn't deleted (review).
+        kept = {key for keys in merged.get("photos", {}).values() for key in keys}
+        removed = sorted({key for keys in stored_photos.values() for key in keys} - kept)
+        for key in removed:
+            # Tracked in this commit, so the sweep deletes it if the delete after the
+            # commit fails or never runs.
+            await upload_tracking.replaced(
+                runtime.db, key, location=child["location"], child_id=id, session=session
+            )
+        result["removed"] = removed
+        # The plan as this transaction left it (completion included): the response's
+        # `version` is this save's own, not a later save's whose edits the app lacks.
+        result["doc"] = await plans.find_one(selector, session=session)
 
-        try:
-            async with runtime.client.start_session() as session:
-                await session.with_transaction(write)
-            break
-        except (_Stale, DuplicateKeyError):
-            continue  # another save won the race: decide again against it
-    else:
-        raise error(409, "plan_changed", "The plan changed meanwhile; try again.")
-    for key in result["removed"]:
-        # The replaced photos, after the change committed.
-        try:
-            await runtime.uploads.delete(key)  # type: ignore[union-attr]
-        except Exception:
-            _logger.warning("transform: an old photo wasn't deleted")
-    return await _view(runtime, child, await plans.find_one(selector))
+    try:
+        async with runtime.client.start_session() as session:
+            await session.with_transaction(write)
+    except (_Stale, DuplicateKeyError):
+        raise _plan_changed() from None  # another save got there first
+    if runtime.uploads is not None:
+        for key in result["removed"]:
+            # The replaced photos, after the change committed (tracked by `replaced`).
+            await upload_tracking.delete_now(
+                runtime.db, runtime.uploads, key, location=child["location"]
+            )
+    return await _view(runtime, child, result["doc"])
 
 
 @router.post(
@@ -806,7 +858,9 @@ async def put_current_interest(
     "/quests/log",
     dependencies=[Depends(per_user("120/minute"))],
     description="The child did a quest today: `+1` to its count, once a day (a day after the "
-    "last one logged) and up to its target (anything more changes nothing). The interest must be the plan's or one the "
+    "last one logged) and up to its target (anything more changes nothing). A counted log "
+    "publishes `transform.quest_logged` in the same transaction (children gives the star and "
+    "marks Transform done in child view from it). The interest must be the plan's or one the "
     "child added (`409 interest_not_picked`). Parents only.",
 )
 async def log_quest(
@@ -828,7 +882,7 @@ async def log_quest(
         # when it's after the last one logged (ISO dates compare as strings): the server
         # takes any day within one of its own, so alternating two dates, or a clock moved
         # back, would otherwise log one real day twice.
-        await runtime.db[quests.KID_QUESTS].update_one(
+        logged = await runtime.db[quests.KID_QUESTS].find_one_and_update(
             {
                 **selector,
                 f"log_days.{key}": {"$not": {"$gte": today}},
@@ -838,7 +892,26 @@ async def log_quest(
                 "$inc": {f"logs.{key}": 1, "version": 1},
                 "$set": {f"log_days.{key}": today, "updated_at": now},
             },
+            return_document=ReturnDocument.AFTER,
             session=session,
+        )
+        if logged is None:
+            return  # already logged that day, or the target reached: nothing to tell
+        # In the same transaction: children gives the quest's star and marks Transform done
+        # in child view from it, so the log and the child's progress can't disagree.
+        await add_to_outbox(
+            runtime.db,
+            Event.new(
+                "transform.quest_logged",
+                producer=SERVICE,
+                aggregate_id=child["_id"],
+                location=child["location"],
+                version=logged["version"],
+                region=runtime.settings.aws_region,
+                payload={"interest": body.interest, "quest": body.quest},
+                traceparent=current_traceparent(),
+            ),
+            session,
         )
 
     await _quest_write(runtime, child, change)

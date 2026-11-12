@@ -403,6 +403,15 @@ class Running:
     def db(self) -> Any:
         return self.runtime.db
 
+    async def save_plan(self, child_id: str, **body: Any) -> httpx.Response:
+        """PATCH the plan on the version a GET shows, as the apps do (unless `version` is
+        given): each test's saves come one after another, so none is a conflict."""
+        path = f"/api/v1/children/{child_id}/transform"
+        if "version" not in body:
+            current = await self.http.get(path, headers=auth_header())
+            body["version"] = current.json()["version"] if current.status_code == 200 else 0
+        return await self.http.patch(path, json=body, headers=auth_header())
+
     async def copy(self, child_id: str, **fields: Any) -> None:
         """A `child_access` row, as `child.changed` leaves it (Grow done)."""
         doc = {

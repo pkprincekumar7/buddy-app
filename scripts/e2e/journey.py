@@ -170,24 +170,22 @@ def grow(j: Journey) -> None:
 def transform(j: Journey) -> None:
     step("transform: the plan, a photo, then the Day-90 event")
     plan = f"{j.child}/transform"
-    check(
-        j.http.patch(
-            plan, json={"ask": "Help him get dressed on his own in the morning"}
-        ),
-        200,
-    )
+    # Each save is made on the version the last response showed (409 otherwise).
+    version = check(j.http.get(plan), 200)["version"]
+    ask = {"ask": "Help him get dressed on his own in the morning", "version": version}
+    version = check(j.http.patch(plan, json=ask), 200)["version"]
     started = check(j.http.post(f"{plan}/generation", json={"kind": "plan"}), 200, 202)
     _job(j.http, f"{plan}/generation", started["job_id"])
     body = {"field_key": "week_1", "content_type": "image/jpeg"}
     presigned = check(j.http.post(f"{plan}/photos/presign", json=body), 200)
     _upload(presigned["upload_url"], presigned["upload_fields"], "image/jpeg")
-    check(
-        j.http.patch(plan, json={"photos": {"week_1": [presigned["photo_key"]]}}), 200
-    )
+    photos = {"photos": {"week_1": [presigned["photo_key"]]}, "version": version}
+    version = check(j.http.patch(plan, json=photos), 200)["version"]
     event = {
         "event_name": "Dressed by himself",
         "event_date": "2027-01-24",
         "event_set": True,
+        "version": version,
     }
     check(j.http.patch(plan, json=event), 200)
 
@@ -236,7 +234,7 @@ def child_view(j: Journey) -> None:
     if start["stars"] != 0 or any(start["circles_done"].values()):
         raise WalkFailed(f"a new child already has activity: {start}")
     # The parent's circles are all done, yet child view starts at Discover.
-    event({"type": "world_done", "world": 1}, 403)
+    event({"type": "mood", "mood": "good"}, 403)
     powers = check(j.http.get(f"{j.child}/personality/powers"), 200)
     if len(powers["powers"]) != 7 or not powers["style"]:
         raise WalkFailed(f"the powers aren't seven: {powers}")
@@ -258,8 +256,13 @@ def child_view(j: Journey) -> None:
     ran = check(j.http.post(f"{worlds}/1/runs", json={"scores": [80, 70, 60]}), 200)
     if [r["total"] for r in ran["runs"]["1"]] != [70]:
         raise WalkFailed(f"the world run wasn't kept: {ran['runs']}")
-    event({"type": "quest", "interest": "space", "quest": 0}, 403)  # Grow not done yet
-    event({"type": "world_done", "world": 1})
+    # grow publishes grow.world_played with the run; children's worker marks Grow done.
+    poll(
+        lambda: check(j.http.get(kids, params=at), 200),
+        lambda b: b["circles_done"]["grow"],
+        "Grow done in child view (grow.world_played)",
+        timeout=90,
+    )
     quests = f"{j.child}/transform/quests"
     check(j.http.put(f"{quests}/current", params=at, json={"interest": "space"}), 200)
     logged = check(
@@ -272,7 +275,14 @@ def child_view(j: Journey) -> None:
     )
     if logged["logs"] != {"space:0": 1} or again["logs"] != {"space:0": 1}:
         raise WalkFailed(f"a quest counted more than once a day: {again['logs']}")
-    event({"type": "quest", "interest": "space", "quest": 0})
+    # transform publishes transform.quest_logged with the counted log; children's worker
+    # gives the quest's star and marks Transform done.
+    poll(
+        lambda: check(j.http.get(kids, params=at), 200),
+        lambda b: b["circles_done"]["transform"],
+        "Transform done in child view (transform.quest_logged)",
+        timeout=90,
+    )
 
     step("child view: Release's mood, Connect's win, then the parent's reads")
     mood = event({"type": "mood", "mood": "good", "note": "A test note."})

@@ -581,6 +581,58 @@ def test_a_start_that_finds_a_job_running_gives_its_llm_slot_back(mongo_uri, mon
     live(mongo_uri, test)
 
 
+@pytest.mark.live_service
+def test_a_start_that_fails_gives_its_llm_slot_back(mongo_uri, monkeypatch):
+    # Found by review: a refused or failed start kept the hour's slot it had taken.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        for failure in (
+            OperationFailure("primary stepped down"),
+            jobs.JobRefused("deleted meanwhile"),
+            RuntimeError("unexpected"),
+        ):
+
+            async def failing(*args: Any, failure: Exception = failure, **kwargs: Any) -> Any:
+                raise failure
+
+            monkeypatch.setattr(generation, "start", failing)
+            if isinstance(failure, RuntimeError):  # a 500, raised through the test client
+                with pytest.raises(RuntimeError):
+                    await r.http.post(_path(child, "/generation"), headers=auth_header())
+            else:
+                failed = await r.http.post(_path(child, "/generation"), headers=auth_header())
+                assert failed.status_code == (503 if isinstance(failure, OperationFailure) else 404)
+            assert not r.runtime.llm_limit._memory.get(PARENT), failure
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_start_that_committed_before_its_error_keeps_its_llm_slot(mongo_uri, monkeypatch):
+    # Found by review: an unknown commit result can follow a start that did commit; its job
+    # runs, so its slot isn't given back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        real = generation.start
+
+        async def committed_then_failed(*args: Any, **kwargs: Any) -> Any:
+            await real(*args, **kwargs)
+            raise OperationFailure("unknown transaction commit result")
+
+        monkeypatch.setattr(generation, "start", committed_then_failed)
+        failed = await r.http.post(_path(child, "/generation"), headers=auth_header())
+        assert failed.status_code == 503 and _code(failed) == "generation_unavailable"
+        assert await r.db[JOBS].count_documents({}) == 1
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
+        # The retry finds the job running, and gives its own slot back.
+        monkeypatch.setattr(generation, "start", real)
+        retried = await r.http.post(_path(child, "/generation"), headers=auth_header())
+        assert retried.status_code == 200
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
+
+    live(mongo_uri, test)
+
+
 class _SwitchOff:
     """The kill switch, turned off (common.generation.switch)."""
 

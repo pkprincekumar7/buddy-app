@@ -160,8 +160,142 @@ def test_each_kind_builds_its_prompt_from_the_area_and_the_copies(mongo_uri):
         assert area["child_games"] == worlds.game_lines(AREA, latest)
         assert area["child_games"][0].startswith(f"Played {worlds.WORLDS[0]['games'][0]['title']}")
         assert [rec["source"] for rec in area["ai_three_month_recommendations"]][-1] == "step"
-        # In progress: no other service hears of it yet.
-        assert await r.db.outbox.count_documents({}) == 0
+        # Written from the answers and feedback the area has now.
+        assert area["recommendations_input"] == generation.input_hash(area)
+        # Answered and not yet completed: the job completes it, with the parent's completing
+        # save's fields and events, in its own transaction (the app sends no save).
+        assert area["status"] == "completed" and area["step"] is None and area["completed_at"]
+        rows = (
+            await r.db.outbox.find({"event_type": {"$ne": "grow.world_played"}})
+            .sort("created_at", 1)
+            .to_list(None)
+        )
+        assert [(row["event_type"], row["version"]) for row in rows] == [
+            ("grow.area_completed", area["version"]),
+            ("grow.completed", area["version"]),
+        ]
+        assert rows[0]["payload"] == generation.area_payload(area)
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_second_area_completed_by_its_job_does_not_complete_grow_again(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await _with_questions(r)
+        other = await r.http.put(
+            _path(child, "/self_care"),
+            json={"area_name": "Self Care", "status": "completed", "answers": {}},
+            headers=auth_header(),
+        )
+        assert other.status_code == 200
+        fake = FakeOpenAI(answers=[RECOMMENDATIONS_ANSWER])
+        job = await _start(r, child, "recommendations")
+        assert await generation.process(r.runtime, llm_client(fake), job) == "completed"
+        assert (await _area(r, child))["status"] == "completed"
+        kinds = [row["event_type"] async for row in r.db.outbox.find({}).sort("created_at", 1)]
+        assert kinds == ["grow.area_completed", "grow.completed", "grow.area_completed"]
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_stale_in_progress_save_after_the_job_completed_the_area_keeps_it_completed(mongo_uri):
+    # Found by review: a save from a copy that hadn't seen the job complete the area (another
+    # device, the sheet while the job ran) sent in_progress and was refused, losing answers.
+    async def test(r: Running) -> None:
+        child = await _with_questions(r)
+        fake = FakeOpenAI(answers=[RECOMMENDATIONS_ANSWER])
+        job = await _start(r, child, "recommendations")
+        assert await generation.process(r.runtime, llm_client(fake), job) == "completed"
+        done = await _area(r, child)
+        assert done["status"] == "completed"
+        answers = {**done["answers"], f"{AREA}_gq2": "Draws rockets"}
+        stale = await r.http.put(
+            _path(child, f"/{AREA}"),
+            json={"area_name": "Life Ambition", "status": "in_progress", "step": "answers",
+                  "answers": answers},
+            headers=auth_header(),
+        )  # fmt: skip
+        assert stale.status_code == 200, stale.text
+        body = stale.json()
+        assert body["status"] == "completed" and body["step"] is None
+        assert body["answers"] == answers
+        area = await _area(r, child)
+        assert area["status"] == "completed" and area["completed_at"] == done["completed_at"]
+        assert area["answers"] == answers and area["version"] == done["version"] + 1
+        rows = await r.db.outbox.find({}).sort("created_at", 1).to_list(None)
+        assert [row["event_type"] for row in rows] == [
+            "grow.area_completed",
+            "grow.completed",
+            "grow.area_updated",
+        ]
+        assert rows[-1]["version"] == area["version"]
+        # The same stale save again changes nothing: nothing more to publish.
+        again = await r.http.put(
+            _path(child, f"/{AREA}"),
+            json={"area_name": "Life Ambition", "status": "in_progress", "answers": answers},
+            headers=auth_header(),
+        )
+        assert again.status_code == 200 and again.json()["status"] == "completed"
+        assert await r.db.outbox.count_documents({}) == 3
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_feedback_saved_while_the_job_runs_leaves_the_recommendations_not_current(mongo_uri):
+    # Found by review: a job started before new feedback stored results from the old one,
+    # and they showed as current.
+    async def test(r: Running) -> None:
+        child = await _with_questions(r)
+        job = await _start(r, child, "recommendations")
+        stored = await _area(r, child)
+        listed = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
+        assert listed[0]["recommendations_current"] is False  # none yet
+
+        fake = FakeOpenAI(answers=[RECOMMENDATIONS_ANSWER])
+        llm = llm_client(fake)
+        real_invoke = llm.invoke
+
+        async def invoke(*args: Any, **kwargs: Any) -> Any:
+            # The parent saves feedback while the LLM writes from the area as read before.
+            saved = await r.http.put(
+                _path(child, f"/{AREA}"),
+                json={"area_name": "Life Ambition", "status": "in_progress",
+                      "answers": stored["answers"], "feedback": "More outdoor ideas"},
+                headers=auth_header(),
+            )  # fmt: skip
+            assert saved.status_code == 200
+            return await real_invoke(*args, **kwargs)
+
+        llm.invoke = invoke
+        assert await generation.process(r.runtime, llm, job) == "completed"
+        (area,) = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
+        assert area["ai_three_month_recommendations"] and area["feedback"] == "More outdoor ideas"
+        assert area["recommendations_current"] is False
+        # Written again from the present feedback, they're current; a changed answer isn't.
+        await generation.process(
+            r.runtime,
+            llm_client(FakeOpenAI(answers=[RECOMMENDATIONS_ANSWER])),
+            await _start(r, child, "recommendations"),
+        )
+        (area,) = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
+        assert area["recommendations_current"] is True
+        edited = await r.http.put(
+            _path(child, f"/{AREA}"),
+            json={"area_name": "Life Ambition", "status": "completed",
+                  "answers": {**area["answers"], f"{AREA}_gq1": "Builds paper planes"},
+                  "feedback": area["feedback"]},
+            headers=auth_header(),
+        )  # fmt: skip
+        assert edited.json()["recommendations_current"] is False
+        # Stored before the hash was: not current, so the apps write them again.
+        await r.db[GROWTH_AREAS].update_one(
+            {"_id": area_doc_id(child, AREA)}, {"$unset": {"recommendations_input": ""}}
+        )
+        (area,) = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
+        assert area["recommendations_current"] is False
 
     live(mongo_uri, test)
 
@@ -186,6 +320,9 @@ def test_recommendations_from_a_world_run_alone(mongo_uri):
         assert area["recommendations_run_at"] == played[-1]["at"]
         # "both" with no answers given can't be true: stored as the games alone.
         assert area["ai_three_month_recommendations"][0]["source"] == "kid"
+        # No answers (the games alone): the job leaves the area in progress, as the app did.
+        assert area["status"] == "in_progress" and "completed_at" not in area
+        assert await r.db.outbox.count_documents({"event_type": {"$ne": "grow.world_played"}}) == 0
 
     live(mongo_uri, test)
 

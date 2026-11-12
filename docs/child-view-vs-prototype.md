@@ -262,7 +262,8 @@ A red token for "wrong" doesn't exist yet: add one (e.g. `--kids-wrong-rgb`) for
 ### App issues found during the comparison (not prototype differences)
 
 - **A1. Grow save failure.** If "Finish world" fails to save, the report still shows a total
-  computed on the device and `world_done` isn't sent, so the child sees a result that wasn't kept.
+  computed on the device, so the child sees a result that wasn't kept. (Since 2026-11-12 a saved
+  run and Grow's progress can't disagree: grow publishes `grow.world_played` with the run.)
 - **A2. Streak wins can be shown again.** A streak win's key is `streak:N`, which changes every day,
   so a child can "Show my grown-up" a longer streak again (up to the 60 cap).
 - **A3. Parent Connect list shifts.** Shown wins load after the page and are put first, so the list

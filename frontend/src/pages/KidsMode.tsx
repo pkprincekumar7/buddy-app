@@ -152,7 +152,7 @@ export default function KidsMode() {
                 worlds={growWorlds.worlds}
                 saving={growWorlds.saving}
                 addRun={growWorlds.addRun}
-                send={kid.send}
+                awaitProgress={kid.awaitProgress}
               />
             ) : (
               <div className="kids-card mx-auto max-w-xl text-center">
@@ -178,7 +178,7 @@ export default function KidsMode() {
                 sending={quests.sending || kid.sending}
                 pick={quests.pick}
                 log={quests.log}
-                send={kid.send}
+                awaitProgress={kid.awaitProgress}
               />
             ) : (
               <div className="kids-card mx-auto max-w-xl text-center">

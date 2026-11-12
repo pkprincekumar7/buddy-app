@@ -12,7 +12,7 @@ import {
   trendLine,
   type KidWorlds,
 } from '@/api/kidWorlds';
-import type { KidActivity, KidEvent } from '@/api/kids';
+import type { KidActivity } from '@/api/kids';
 import type { GrowResult } from '@/lib/kidsGrow';
 import {
   POWER_COLORS,
@@ -142,8 +142,9 @@ interface GrowWorldsProps {
   worlds: KidWorlds;
   saving: boolean;
   addRun: (world: number, scores: number[]) => Promise<KidWorlds | null>;
-  /** Tells children a world is done: in child view that opens Transform. */
-  send: (event: KidEvent) => Promise<KidActivity | null>;
+  /** Waits for the run's progress: grow tells children (grow.world_played), which opens
+   *  Transform in child view a moment later. */
+  awaitProgress: (done: (activity: KidActivity) => boolean) => void;
 }
 
 type Phase = 'intro' | 'play' | 'result';
@@ -156,7 +157,7 @@ export default function GrowWorlds({
   worlds,
   saving,
   addRun,
-  send,
+  awaitProgress,
 }: GrowWorldsProps) {
   const [world, setWorld] = useState<number | null>(null);
   const [step, setStep] = useState(0);
@@ -369,7 +370,7 @@ export default function GrowWorlds({
     const previous = runs[runs.length - 1]?.total ?? null;
     const scores = results.map(r => r.score);
     const saved = await addRun(world, scores);
-    if (saved) void send({ type: 'world_done', world });
+    if (saved) awaitProgress(activity => activity.circles_done.grow);
     const mine = saved ? runsOf(saved, world) : [];
     setReport({
       total:

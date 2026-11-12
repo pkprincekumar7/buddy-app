@@ -52,7 +52,7 @@ export interface paths {
         get?: never;
         /**
          * Save Area
-         * @description Save one area: the parent's progress through its wizard, and its completion (`grow.area_completed`, and `grow.completed` for the child's first). Editing a completed area publishes `grow.area_updated`. Answer keys must be ids from the area's `parent_questions`; the generated parts can't be sent.
+         * @description Save one area: the parent's progress through its wizard, and its completion (`grow.area_completed`, and `grow.completed` for the child's first). Editing a completed area publishes `grow.area_updated`; a completed area stays completed (a save sending `in_progress` is an edit of it). Answer keys must be ids from the area's `parent_questions`; the generated parts can't be sent.
          */
         put: operations["save_area_api_v1_children__id__growth_areas__area_id__put"];
         post?: never;
@@ -73,7 +73,7 @@ export interface paths {
         put?: never;
         /**
          * Start Generation
-         * @description Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`). Recommendations need the parent's answers saved or a run of the area's world (`409 needs_input`), are written from both, and replace the last ones; the area's `recommendations_run_at` is the run they used. The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).
+         * @description Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`). Recommendations need the parent's answers saved or a run of the area's world (`409 needs_input`), are written from both, and replace the last ones; the area's `recommendations_run_at` is the run they used, and its `recommendations_current` says whether they're from its present answers and feedback. An answered area is completed by its recommendations' job (`grow.area_completed`, and `grow.completed` for the child's first). The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).
          */
         post: operations["start_generation_api_v1_children__id__growth_areas__area_id__generation_post"];
         delete?: never;
@@ -133,7 +133,7 @@ export interface paths {
         put?: never;
         /**
          * Add World Run
-         * @description A finished world: its three games' scores (0 to 100). The world keeps its last 10 runs. Parents only.
+         * @description A finished world: its three games' scores (0 to 100). The world keeps its last 10 runs, and publishes `grow.world_played` in the same transaction (children marks Grow done in child view from it). Parents only.
          */
         post: operations["add_world_run_api_v1_children__id__growth_areas_worlds__world__runs_post"];
         delete?: never;
@@ -186,6 +186,8 @@ export interface components {
             ai_three_month_recommendations: components["schemas"]["Recommendation"][] | null;
             /** Recommendations Run At */
             recommendations_run_at: string | null;
+            /** Recommendations Current */
+            recommendations_current: boolean;
             /** Feedback */
             feedback: string | null;
             /** Generating */

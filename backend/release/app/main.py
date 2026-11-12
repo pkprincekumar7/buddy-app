@@ -33,7 +33,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key
+from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key, write_guards
 from common.generation.jobs import JobRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
@@ -347,8 +347,10 @@ async def watch(id: ChildId, body: Watching, runtime: Ready, caller: SignedIn) -
         existing = await store.find_one(selector)
 
         async def write(session: AsyncClientSession, existing: Any = existing) -> None:
-            tombstones = [tombstone_key("child", id), tombstone_key("user", child["user_id"])]
-            if await is_tombstoned(runtime.db, tombstones, session=session):
+            stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", id)]
+            # Conflicts with a deletion in flight, so a first save can't bring them back.
+            await write_guards(runtime.db, stones, location=child["location"], session=session)
+            if await is_tombstoned(runtime.db, stones, session, location=child["location"]):
                 raise not_found()  # deleted meanwhile: nothing may come back
             known = {item["id"] for item in (existing or {}).get("items") or []}
             if set(watching) - known:

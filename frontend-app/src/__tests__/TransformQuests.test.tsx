@@ -42,17 +42,17 @@ const state = (over: Partial<KidQuests> = {}): KidQuests => ({
 function setup(q: KidQuests, firstLog = true) {
   const pick = jest.fn().mockResolvedValue(q);
   const log = jest.fn().mockResolvedValue(firstLog);
-  const send = jest.fn().mockResolvedValue(null);
+  const awaitProgress = jest.fn();
   const view = render(
     <TransformQuests
       quests={q}
       sending={false}
       pick={pick}
       log={log}
-      send={send}
+      awaitProgress={awaitProgress}
     />,
   );
-  return { ...view, pick, log, send };
+  return { ...view, pick, log, awaitProgress };
 }
 
 describe('TransformQuests', () => {
@@ -78,16 +78,11 @@ describe('TransformQuests', () => {
     expect(getByText('Quest done!')).toBeTruthy(); // "Play for someone": 1 of 1
   });
 
-  it("logs a quest, and sends its star only on the quest's first log", async () => {
+  it("logs a quest, and waits for its progress only on the quest's first log", async () => {
     const first = setup(state({ default_interest: 'music' }), true);
     fireEvent.press(first.getAllByLabelText('I did it today')[0]!);
-    await waitFor(() =>
-      expect(first.send).toHaveBeenCalledWith({
-        type: 'quest',
-        interest: 'music',
-        quest: 0,
-      }),
-    );
+    // transform tells children (transform.quest_logged): wait for Transform to show as done.
+    await waitFor(() => expect(first.awaitProgress).toHaveBeenCalledTimes(1));
     expect(first.log).toHaveBeenCalledWith('music', 0);
     first.unmount();
 
@@ -97,7 +92,7 @@ describe('TransformQuests', () => {
     );
     fireEvent.press(later.getAllByLabelText('I did it today')[0]!);
     await waitFor(() => expect(later.log).toHaveBeenCalled());
-    expect(later.send).not.toHaveBeenCalled();
+    expect(later.awaitProgress).not.toHaveBeenCalled();
   });
 
   it("doesn't log a quest twice in a day", () => {

@@ -14,7 +14,9 @@ in Valkey or in the uploads bucket.
 What may stay, by design (stack.scan): `tombstones` (each participant must hold the
 user's) and their `guards`; the ids-only `user.data_deleted` and
 `user.deletion_requested` outbox rows (gone 7 days after publishing); cancelled or finished
-`jobs` (ids only, gone 7 days after they end); auth's `audit` (the agreed retention); and
+`jobs` (ids only, gone 7 days after they end); a deleted child's `pending_uploads` rows
+(ids only, swept with any late upload once the presigned forms expire, about 15 minutes);
+auth's `audit` (the agreed retention); and
 Valkey's rate-limit and LLM-hour counters (ids only, expiring within the hour). Those are
 listed, not failed. Exit code 0 when clean.
 """

@@ -33,6 +33,7 @@ from release_testkit import (
     service_header,
 )
 
+from common.events import write_tombstone
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS, ONBOARDING_INPUTS
 from common.routers import assert_every_route_has_a_policy
 from release.app import generation, main
@@ -401,6 +402,36 @@ def test_two_first_saves_at_once_make_one_document(mongo_uri, monkeypatch):
         mongo.close()
         assert saved.status_code == 200 and saved.json()["span"] == "1 week"
         assert (await r.db[OBSERVATIONS].find_one({}))["version"] == 2
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_first_save_conflicts_with_a_deletion_in_flight(mongo_uri, monkeypatch):
+    # A first save checked "not deleted" without touching the guards, so a deletion
+    # committing meanwhile didn't conflict and the insert brought the document back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        real = main.is_tombstoned
+        conflicts: list[OperationFailure] = []
+
+        async def deleted_meanwhile(*args: Any, **kwargs: Any) -> bool:
+            if not conflicts:
+                async with r.runtime.client.start_session() as deleting:
+                    try:
+                        async with await deleting.start_transaction():
+                            await write_tombstone(
+                                r.db, f"user:{PARENT}", location=LOCATION, version=9,
+                                session=deleting,
+                            )  # fmt: skip
+                    except OperationFailure as exc:
+                        conflicts.append(exc)
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(main, "is_tombstoned", deleted_meanwhile)
+        assert (await _watch(r, child, [])).status_code == 200
+        (conflict,) = conflicts
+        assert conflict.has_error_label("TransientTransactionError")
 
     live(mongo_uri, test)
 

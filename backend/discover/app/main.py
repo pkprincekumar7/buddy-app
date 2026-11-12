@@ -312,6 +312,16 @@ async def get_personality(
     return _view(await _personality(runtime, child))
 
 
+async def _started_anyway(runtime: Runtime, child: Mapping[str, Any]) -> bool:
+    """Whether the personality has a job running after a start that failed with a database
+    error (its commit may have gone through). Unknown counts as not started."""
+    try:
+        personality = await _personality(runtime, child)
+        return await generation.running_job(runtime, personality) is not None
+    except PyMongoError:
+        return False
+
+
 @router.post(
     "/generation",
     status_code=202,
@@ -351,14 +361,23 @@ async def start_generation(
                 location=child["location"],
                 input_version=int(answers["version"]),
             )
-        except generation.AlreadyGenerated:
-            await runtime.llm_limit.give_back(caller.user_id)
-            raise error(409, "already_generated", "The personality is already generated.") from None
-        except JobRefused:
-            raise not_found() from None
-        except PyMongoError as exc:
-            _logger.exception("discover: the job couldn't be stored")
-            raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+        except Exception as exc:
+            # No job was started: no LLM call to count (review). Every failed start, the
+            # refusals below and anything unexpected alike. A database error can follow a
+            # start that did commit (an unknown commit result): its job runs, so it keeps
+            # the slot (review).
+            if not (isinstance(exc, PyMongoError) and await _started_anyway(runtime, child)):
+                await runtime.llm_limit.give_back(caller.user_id)
+            if isinstance(exc, generation.AlreadyGenerated):
+                raise error(
+                    409, "already_generated", "The personality is already generated."
+                ) from None
+            if isinstance(exc, JobRefused):
+                raise not_found() from None
+            if isinstance(exc, PyMongoError):
+                _logger.exception("discover: the job couldn't be stored")
+                raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+            raise
         if created:
             return Started(job_id=running, status="pending")
         await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call

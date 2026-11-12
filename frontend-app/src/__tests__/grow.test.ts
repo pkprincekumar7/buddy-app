@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import {
   areaSave,
   grow,
+  recommendationsAreCurrent,
   runGrowGeneration,
   type GrowthAreaDoc,
 } from '@/api/grow';
@@ -53,6 +54,7 @@ const STORED: GrowthAreaDoc = {
   recommendations: null,
   ai_three_month_recommendations: null,
   recommendations_run_at: null,
+  recommendations_current: false,
   feedback: 'Nice',
   generating: [],
   completed_at: null,
@@ -109,6 +111,55 @@ describe('the growth-area saves (build plan 7.6)', () => {
       `PUT ${AREA}`,
       `GET /api/v1/children/${ID}/growth-areas`,
     ]);
+  });
+});
+
+describe('whether stored recommendations are current', () => {
+  const RUN = '2026-11-01T10:00:00Z';
+  const written: GrowthAreaDoc = {
+    ...STORED,
+    ai_three_month_recommendations: [{ title: 'Walk', detail: 'Daily' }],
+    recommendations_run_at: RUN,
+    recommendations_current: true,
+  };
+
+  it('follow grow: from the present answers and feedback, and the latest run', () => {
+    expect(recommendationsAreCurrent(written, RUN)).toBe(true);
+    // The same moment written another way is the same run.
+    expect(recommendationsAreCurrent(written, '2026-11-01T10:00:00.000Z')).toBe(
+      true,
+    );
+    expect(
+      recommendationsAreCurrent(
+        { ...written, recommendations_run_at: null },
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it('are stale when grow says the answers or feedback changed since', () => {
+    // Saved elsewhere, or while the job ran: nothing kept in this app's memory says so.
+    const changed = { ...written, recommendations_current: false };
+    expect(recommendationsAreCurrent(changed, RUN)).toBe(false);
+    expect(
+      recommendationsAreCurrent(changed, RUN, {
+        runsUnknown: true,
+        writtenHere: true,
+      }),
+    ).toBe(false);
+    expect(recommendationsAreCurrent(undefined, RUN)).toBe(false);
+  });
+
+  it('are stale after a newer run, unless the runs are unknown or written here', () => {
+    const later = '2026-11-02T10:00:00Z';
+    expect(recommendationsAreCurrent(written, later)).toBe(false);
+    expect(recommendationsAreCurrent(written, null)).toBe(false);
+    expect(
+      recommendationsAreCurrent(written, later, { runsUnknown: true }),
+    ).toBe(true);
+    expect(
+      recommendationsAreCurrent(written, later, { writtenHere: true }),
+    ).toBe(true);
   });
 });
 

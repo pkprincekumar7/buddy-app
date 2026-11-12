@@ -9,6 +9,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,7 +35,7 @@ from grow_testkit import (
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
-from common.generation.jobs import TargetRefused
+from common.generation.jobs import JobRefused, TargetRefused
 from common.models import CHILD_ACCESS, JOBS
 from common.routers import assert_every_route_has_a_policy
 from grow.app import generation, main
@@ -83,8 +84,23 @@ async def _play(r: Running, child: str, world: int, scores: list[int]) -> dict[s
 
 
 async def _events(r: Running) -> list[tuple[str, int]]:
-    rows = await r.db.outbox.find({}).sort("created_at", 1).to_list(None)
+    """The growth areas' events (a world run's `grow.world_played` is the child's, not an
+    area's: _played reads those)."""
+    rows = (
+        await r.db.outbox.find({"event_type": {"$ne": "grow.world_played"}})
+        .sort("created_at", 1)
+        .to_list(None)
+    )
     return [(row["event_type"], row["version"]) for row in rows]
+
+
+async def _played(r: Running) -> list[dict[str, Any]]:
+    rows = (
+        await r.db.outbox.find({"event_type": "grow.world_played"})
+        .sort("created_at", 1)
+        .to_list(None)
+    )
+    return [{"child": row["aggregate_id"], **row["payload"]} for row in rows]
 
 
 # ── shape ──────────────────────────────────────────────────────────────────────
@@ -167,9 +183,12 @@ def test_an_area_from_its_questions_to_completion(mongo_uri):
         assert saved.status_code == 200 and saved.json()["answers"] == answers
         assert saved.json()["step"] == "q2"
         assert saved.json()["recommendations_run_at"] is None
+        assert saved.json()["recommendations_current"] is False  # none yet
         # The child plays the area's world (Life Ambition is world 0); the recommendations
         # are written from the answers and that run, and record which run it was.
         played = await _play(r, child, 0, [80, 50, 30])
+        # The run publishes grow.world_played with it, for children's child-view progress.
+        assert await _played(r) == [{"child": child, "world": 0}]
         await _generate(r, child, "life_ambition", "recommendations", RECOMMENDATIONS_ANSWER)
         (area,) = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
         recs = area["ai_three_month_recommendations"]
@@ -180,22 +199,24 @@ def test_an_area_from_its_questions_to_completion(mongo_uri):
         }
         assert [rec["source"] for rec in recs] == ["both", "kid", "you", "both", "step"]
         assert area["recommendations_run_at"] == played["at"]
-        assert "child_games" not in area  # Release's evidence, never on the public Area
-        assert area["status"] == "in_progress"  # jobs never change the parent's status
-        assert await _events(r) == []  # nothing published before completion
+        assert area["recommendations_current"] is True
+        assert "child_games" not in area and "recommendations_input" not in area
+        # An answered area is completed by its recommendations' job, as the parent's
+        # completing save would: the app needs no save of its own (review).
+        assert area["status"] == "completed" and area["step"] is None and area["completed_at"]
+        doc = await r.db[GROWTH_AREAS].find_one({"_id": area_doc_id(child, "life_ambition")})
+        assert await _events(r) == [
+            ("grow.area_completed", doc["version"]),
+            ("grow.completed", doc["version"]),
+        ]
+        # A completing save afterwards changes nothing and publishes nothing.
         done = await r.http.put(
             _path(child, "/life_ambition"),
             json=_area(area_name="Life Ambition", answers=answers, status="completed",
                        step="summary"),
             headers=auth_header(),
         )  # fmt: skip
-        body = done.json()
-        assert body["status"] == "completed" and body["step"] is None and body["completed_at"]
-        doc = await r.db[GROWTH_AREAS].find_one({"_id": area_doc_id(child, "life_ambition")})
-        assert await _events(r) == [
-            ("grow.area_completed", doc["version"]),
-            ("grow.completed", doc["version"]),
-        ]
+        assert done.json()["status"] == "completed" and len(await _events(r)) == 2
         row = await r.db.outbox.find_one({"event_type": "grow.area_completed"})
         assert row["aggregate_id"] == child and row["payload"]["area_id"] == "life_ambition"
         assert row["payload"]["ai_three_month_recommendations"] == recs
@@ -242,10 +263,16 @@ def test_completions_edits_and_identical_saves(mongo_uri):
         )
         assert edited.json()["feedback"] == "More outdoor ideas"
         assert (await _events(r))[-1] == ("grow.area_updated", 2)
+        # A completed area stays completed: an in_progress save is an edit of it (here
+        # identical once kept completed, so nothing to publish).
         back = await r.http.put(
-            _path(child, "/self_care"), json=_area(area_name="X"), headers=auth_header()
+            _path(child, "/self_care"),
+            json=_area(area_name="X", feedback="More outdoor ideas", step="answers"),
+            headers=auth_header(),
         )
-        assert back.status_code == 422 and _code(back) == "area_completed"
+        assert back.status_code == 200
+        assert back.json()["status"] == "completed" and back.json()["step"] is None
+        assert len(await _events(r)) == 4
         # A child's areas come back in the order they were started.
         listed = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
         assert [a["area_id"] for a in listed] == ["life_ambition", "self_care"]
@@ -442,6 +469,60 @@ def test_a_start_reads_the_copies_through_and_reports_failures(mongo_uri, monkey
     live(mongo_uri, test)
 
 
+@pytest.mark.live_service
+def test_a_start_that_fails_gives_its_llm_slot_back(mongo_uri, monkeypatch):
+    # Found by review: a refused or failed start kept the hour's slot it had taken.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        start = {"json": {"kind": "parent_questions"}, "headers": auth_header()}
+        for failure in (
+            OperationFailure("primary stepped down"),
+            JobRefused("deleted meanwhile"),
+            RuntimeError("unexpected"),
+        ):
+
+            async def failing(*args: Any, failure: Exception = failure, **kwargs: Any) -> Any:
+                raise failure
+
+            monkeypatch.setattr(generation, "start", failing)
+            if isinstance(failure, RuntimeError):  # a 500, raised through the test client
+                with pytest.raises(RuntimeError):
+                    await r.http.post(_path(child, "/self_care/generation"), **start)
+            else:
+                failed = await r.http.post(_path(child, "/self_care/generation"), **start)
+                assert failed.status_code == (503 if isinstance(failure, OperationFailure) else 404)
+            assert not r.runtime.llm_limit._memory.get(PARENT), failure
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_start_that_committed_before_its_error_keeps_its_llm_slot(mongo_uri, monkeypatch):
+    # Found by review: an unknown commit result can follow a start that did commit; its job
+    # runs, so its slot isn't given back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        start = {"json": {"kind": "parent_questions"}, "headers": auth_header()}
+        real = generation.start
+
+        async def committed_then_failed(*args: Any, **kwargs: Any) -> Any:
+            await real(*args, **kwargs)
+            raise OperationFailure("unknown transaction commit result")
+
+        monkeypatch.setattr(generation, "start", committed_then_failed)
+        failed = await r.http.post(_path(child, "/self_care/generation"), **start)
+        assert failed.status_code == 503 and _code(failed) == "generation_unavailable"
+        assert await r.db[JOBS].count_documents({}) == 1
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
+        # The retry finds the job running, and gives its own slot back.
+        monkeypatch.setattr(generation, "start", real)
+        retried = await r.http.post(_path(child, "/self_care/generation"), **start)
+        assert retried.status_code == 200
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
+
+    live(mongo_uri, test)
+
+
 # ── access ─────────────────────────────────────────────────────────────────────
 
 
@@ -553,6 +634,82 @@ def test_two_first_saves_at_once_make_one_area(mongo_uri, monkeypatch):
         assert saved.status_code == 200 and saved.json()["step"] == "q1"
         doc = await r.db[GROWTH_AREAS].find_one({})
         assert doc["version"] == 2 and await r.db[GROWTH_AREAS].count_documents({}) == 1
+
+    live(mongo_uri, test)
+
+
+def _purge(mongo: MongoClient[dict[str, Any]], db_name: str, child: str) -> str:
+    """The child's deletion as a tombstone write does it (its guard, then the tombstone), in
+    a transaction of its own: "committed", or "conflicted" with a write in flight."""
+    db = mongo[db_name]
+    with mongo.start_session() as session:
+        session.start_transaction()
+        try:
+            db.guards.update_one(
+                {"_id": f"child:{child}", "location": LOCATION},
+                {"$set": {"touched_at": datetime.now(UTC)}},
+                upsert=True,
+                session=session,
+            )
+            db.tombstones.insert_one(
+                {"_id": f"child:{child}", "location": LOCATION, "version": 2,
+                 "deleted_at": datetime.now(UTC)},
+                session=session,
+            )  # fmt: skip
+            session.commit_transaction()
+            return "committed"
+        except OperationFailure as exc:
+            session.abort_transaction()
+            assert exc.has_error_label("TransientTransactionError")
+            return "conflicted"  # it runs again after the write in flight
+
+
+@pytest.mark.live_service
+def test_a_deletion_during_a_first_save_conflicts_with_it(mongo_uri, monkeypatch):
+    # Found by review: the first save checked the tombstones without touching their guards,
+    # so a deletion committing after the check let the new area come back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        real = main.is_tombstoned
+        mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_uri)
+        deletion: list[str] = []
+
+        async def deleted_after_the_check(*args: Any, **kwargs: Any) -> bool:
+            found = await real(*args, **kwargs)
+            if not deletion:  # the purge commits after the save's check, before its insert
+                deletion.append(_purge(mongo, r.db.name, child))
+            return found
+
+        monkeypatch.setattr(main, "is_tombstoned", deleted_after_the_check)
+        saved = await r.http.put(_path(child, "/self_care"), json=_area(), headers=auth_header())
+        mongo.close()
+        # They conflicted: the deletion runs again, and then finds the area to delete.
+        assert deletion == ["conflicted"] and saved.status_code == 200
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_two_areas_completing_at_once_complete_grow_once(mongo_uri):
+    # Found by review: each completion counted the others in its own snapshot, so two at
+    # once could both see themselves as the first and publish grow.completed twice.
+    async def test(r: Running) -> None:
+        for _ in range(5):
+            child = await r.ready_child()
+            first, second = await asyncio.gather(
+                *(
+                    r.http.put(
+                        _path(child, f"/{area}"),
+                        json=_area(status="completed"),
+                        headers=auth_header(),
+                    )  # fmt: skip
+                    for area in ("self_care", "creativity")
+                )
+            )
+            assert (first.status_code, second.status_code) == (200, 200)
+            rows = await r.db.outbox.find({"aggregate_id": child}).to_list(None)
+            kinds = sorted(row["event_type"] for row in rows)
+            assert kinds == ["grow.area_completed", "grow.area_completed", "grow.completed"]
 
     live(mongo_uri, test)
 

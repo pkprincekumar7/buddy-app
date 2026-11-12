@@ -2,13 +2,16 @@
 
 `_id` is `{child_id}:{area_id}`, so the unique `{location, _id}` index (the future shard
 key) allows one per area. `status` is the parent's wizard (`in_progress` / `completed`);
-jobs never change it. The generated parts (`parent_questions`,
+the one job that changes it is the recommendations', which completes an answered area
+(grow.app.generation). The generated parts (`parent_questions`,
 `ai_three_month_recommendations` with its `recommendations_run_at`) are written by grow's
 jobs only, each under its own lock in `active_jobs` (one generation per kind per area).
 `recommendations_run_at` is the `at` of the world run (grow.app.worlds) the recommendations
 were written from, or null when the child hadn't played the area's world; `child_games` is
 that run's games as `Played …` lines (empty without a run), the child evidence of
-Release's observations, sent in grow's area events and never on the public `Area`. `version` counts the parent's saves
+Release's observations, sent in grow's area events and never on the public `Area`;
+`recommendations_input` is the hash of the answers and feedback they were written from
+(grow.app.generation.input_hash; missing on older areas, which reads as not current). `version` counts the parent's saves
 and the recommendations' results, and is carried by `grow.*` events (7.4).
 
 Everything here describes a child: never logged, deleted with the child or the account.
@@ -80,6 +83,7 @@ GROWTH_AREAS_VALIDATOR: dict[str, Any] = {
             "recommendations": {"bsonType": ["array", "null"], "maxItems": RECOMMENDATIONS_MAX},
             "ai_three_month_recommendations": {"bsonType": "array"},
             "recommendations_run_at": {"bsonType": ["date", "null"]},
+            "recommendations_input": {"bsonType": "string"},
             "child_games": {
                 "bsonType": "array",
                 "maxItems": CHILD_GAMES_MAX,

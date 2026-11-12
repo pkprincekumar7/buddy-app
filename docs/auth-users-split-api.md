@@ -1095,7 +1095,7 @@ Creates or replaces a profile. Called only by auth, in the registration saga (pr
 
 ### Processing
 
-An upsert on `{_id: user_id, location}`, setting `preferences` to the defaults on insert. A retry with the same body changes nothing, so the saga can retry safely. A different `location` for an existing profile is `409 location_mismatch`: location never changes.
+An upsert on `{_id: user_id, location}`, setting `preferences` to the defaults on insert. A retry with the same body changes nothing, so the saga can retry safely. A different `location` for an existing profile is `409 location_mismatch`: location never changes. An id with a `user:` tombstone (account deletion, or the `DELETE` below) is `409 profile_deleted`: the tombstone check and the insert run in one transaction behind the user's write guard, so a slow `PUT` auth has already given up on can't create the profile after auth's undo `DELETE` answered.
 
 ---
 
@@ -1111,7 +1111,7 @@ Deletes a profile. Called only by auth, to undo registration step 6 when a later
 | **Success** | `204 No Content`, also when there was no profile |
 | **Today** | None |
 
-Query `location` is required. **This isn't account deletion:** that's the event-driven saga, where users deletes the profile on `user.deletion_requested` and publishes `user.data_deleted` (proposal 10.3).
+Query `location` is required. In one transaction it deletes the profile and writes a `user:` tombstone (ids only, expiring with the others) and its write guard, so a `PUT` still in flight is refused afterwards (`409 profile_deleted`); the user id is never used again. A call with the wrong `location` for an existing profile changes nothing. **This isn't account deletion** (no event): that's the event-driven saga, where users deletes the profile on `user.deletion_requested` and publishes `user.data_deleted` (proposal 10.3).
 
 ---
 
@@ -1334,7 +1334,7 @@ The flow:
 2. **Save:** it then sends `PATCH /api/v1/children/{id}` with `{"avatar_key": …}`.
 3. **Preview:** `avatar_url` is a short-lived GET URL, so the photo can be shown at once.
 
-A photo refused at save (not an allowed image, or over 5 MB) is deleted at once. One presigned but never saved is deleted after a day: children records each presigned key in `pending_uploads`, the save removes it, and children's worker sweeps what's left. transform does the same for plan photos.
+A photo refused at save (not an allowed image, or over 5 MB) is deleted at once. One presigned but never saved is deleted after a day: children records each presigned key in `pending_uploads`, the save removes it, and children's worker sweeps what's left. A replaced or cleared photo is recorded as due at once in the save's transaction, then deleted; if that delete fails, the sweep does it. When the child (or the account) is deleted, its prefix is emptied and its rows are kept, due once the 5-minute forms can no longer be used (plus a margin), so the sweep also deletes a photo uploaded after the deletion. transform does the same for plan photos (`common.upload_tracking`).
 
 The key is created with `build_upload_key` under `uploads/{location}/{child_id}/avatar/`. Today avatars sit directly under the child's prefix, which also contains the plan photos; the `avatar/` sub-prefix keeps each service's objects, and its IAM access, apart.
 
@@ -1701,7 +1701,7 @@ Saves one growth area: the parent's progress through its wizard, and its complet
 | Field | Type | Required | Rules |
 |---|---|---|---|
 | `area_name` | string | ✅ | 1–100 |
-| `status` | enum `in_progress` / `completed` | ✅ | `completed` can't go back to `in_progress` (`422 area_completed`) |
+| `status` | enum `in_progress` / `completed` | ✅ | A completed area stays completed: `in_progress` on one (a stale copy, or a save while its recommendations job completed it) saves the rest and keeps it completed |
 | `step` | string | — | ≤ 100; the wizard step, while `in_progress` |
 | `answers` | map of question id → string | ✅ | ≤ 100 keys; each value ≤ 1,000. Keys must be ids from the area's `parent_questions`. |
 | `child_activity` | object | — | `results.summary` ≤ 2,000, `results.strengths` ≤ 20, `results.suggested_activities` ≤ 20 |
@@ -1725,7 +1725,7 @@ Saves one growth area: the parent's progress through its wizard, and its complet
 
 ### Errors
 
-Circle errors (`403 circle_locked` once discover confirms Discover isn't done; `503 …_unavailable` when an owner can't be asked); `409 area_changed`; `422` (validation, `unknown_question`, a generated field sent, `area_completed`, `area_too_large`, `invalid_area_id`).
+Circle errors (`403 circle_locked` once discover confirms Discover isn't done; `503 …_unavailable` when an owner can't be asked); `409 area_changed`; `422` (validation, `unknown_question`, a generated field sent, `area_too_large`, `invalid_area_id`).
 
 ---
 

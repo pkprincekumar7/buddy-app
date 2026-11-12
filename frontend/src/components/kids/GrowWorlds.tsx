@@ -8,7 +8,7 @@ import {
   trendLine,
   type KidWorlds,
 } from '@/api/kidWorlds';
-import type { KidActivity, KidEvent } from '@/api/kids';
+import type { KidActivity } from '@/api/kids';
 import type { GrowResult } from '@/lib/kidsGrow';
 import { cn } from '@/lib/utils';
 import { POWER_COLORS, tileVars } from '@/components/kids/palette';
@@ -20,8 +20,9 @@ interface GrowWorldsProps {
   worlds: KidWorlds;
   saving: boolean;
   addRun: (world: number, scores: number[]) => Promise<KidWorlds | null>;
-  /** Tells children a world is done: in child view that opens Transform. */
-  send: (event: KidEvent) => Promise<KidActivity | null>;
+  /** Waits for the run's progress: grow tells children (grow.world_played), which opens
+   *  Transform in child view a moment later. */
+  awaitProgress: (done: (activity: KidActivity) => boolean) => void;
 }
 
 type Phase = 'intro' | 'play' | 'result';
@@ -32,7 +33,7 @@ type Phase = 'intro' | 'play' | 'result';
  * each game, the strongest and the one to practise, the world's mission, and how it compares
  * with last time. The finished world is saved as a run (grow keeps the last 10).
  */
-export default function GrowWorlds({ worlds, saving, addRun, send }: GrowWorldsProps) {
+export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: GrowWorldsProps) {
   const [world, setWorld] = useState<number | null>(null);
   const [step, setStep] = useState(0);
   const [phase, setPhase] = useState<Phase>('intro');
@@ -208,7 +209,7 @@ export default function GrowWorlds({ worlds, saving, addRun, send }: GrowWorldsP
     const previous = runs[runs.length - 1]?.total ?? null;
     const scores = results.map((r) => r.score);
     const saved = await addRun(world, scores);
-    if (saved) void send({ type: 'world_done', world });
+    if (saved) awaitProgress((activity) => activity.circles_done.grow);
     const mine = saved ? runsOf(saved, world) : [];
     setReport({
       total: mine[mine.length - 1]?.total ?? Math.round(scores.reduce((a, b) => a + b, 0) / 3),

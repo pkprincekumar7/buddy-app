@@ -3,12 +3,11 @@
 | kind | job type | writes | once? |
 |---|---|---|---|
 | `parent_questions` | `generate_growth_parent_questions` | `parent_questions` | yes |
-| `recommendations` | `generate_recommendations` | `ai_three_month_recommendations`, `recommendations_run_at`, `child_games` | no |
+| `recommendations` | `generate_recommendations` | `ai_three_month_recommendations`, `recommendations_run_at`, `child_games`, `recommendations_input`, `version`; for an answered area not yet completed, `status`, `step`, `completed_at`, `updated_at` | no |
 
 - `start`: through common.generation.jobs.start_job, one lock per kind per area
-  (`active_jobs.<job type>`). The area's `status` is the parent's, so the job never sets
-  or fails it (`target_status=None`); `parent_questions` on a new area creates it
-  `in_progress`.
+  (`active_jobs.<job type>`). A job never fails the area's `status`
+  (`target_status=None`); `parent_questions` on a new area creates it `in_progress`.
 - `process`: builds the kind's prompt from the area, grow's copies and, for
   recommendations, the child's latest run of the area's world (grow.app.worlds); calls the
   LLM, runs the answer through today's normaliser (grow.app.areas), and stores the result.
@@ -17,9 +16,14 @@
   run's `at` as `recommendations_run_at` (null without a run): the apps regenerate when
   the latest run's `at` differs. With it goes `child_games`, that run's games as
   `Played …` lines (grow.app.worlds.game_lines; empty without a run), which the area
-  events carry as Release's child evidence. They also bump the area's `version` and, for a completed
-  area, publish `grow.area_updated` in the same transaction: transform's Life Pathway
-  prefers them, as today.
+  events carry as Release's child evidence, and `recommendations_input`, the hash of the
+  answers and feedback they were written from (input_hash): the public Area's
+  `recommendations_current` compares it with the area's present ones. They also bump the
+  area's `version` and, in the same transaction: an answered area not yet completed is
+  completed here (completion_fields, publish_completion: what the parent's completing
+  save does), so it can't stay in progress when the app leaves or its save fails; a
+  completed area publishes `grow.area_updated` (transform's Life Pathway prefers them, as
+  today). An area with no answers (the games alone) stays as it is.
 - `report_jobs`: `PendingJobCount` and `OldestRunningJobAgeSeconds` from one leader per
   region, in the HTTP runtime (15.5).
 """
@@ -28,6 +32,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import logging
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -36,7 +42,7 @@ from typing import Any, Literal
 from pymongo import ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 
-from common.events import Event, add_to_outbox
+from common.events import Event, add_to_outbox, tombstone_key, write_guards
 from common.generation import jobs
 from common.generation.jobs import Target
 from common.generation.llm import LlmClient, LlmConfigError
@@ -104,6 +110,67 @@ def area_event(runtime: Runtime, event_type: str, doc: Mapping[str, Any]) -> Eve
         payload=payload,
         traceparent=current_traceparent(),
     )
+
+
+def answered(doc: Mapping[str, Any]) -> bool:
+    """Whether the parent saved at least one non-empty answer (the apps' answered count)."""
+    return any(str(v).strip() for v in (doc.get("answers") or {}).values())
+
+
+def input_hash(doc: Mapping[str, Any]) -> str:
+    """What the recommendations are written from on the parent's side: the answers and the
+    feedback, as one stable hash (stored as `recommendations_input`)."""
+    used = {"answers": doc.get("answers") or {}, "feedback": doc.get("feedback")}
+    text = json.dumps(used, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def recommendations_current(doc: Mapping[str, Any]) -> bool:
+    """Whether the stored recommendations were written from the area's present answers and
+    feedback. False without them, and for ones stored before the hash was (no
+    `recommendations_input`): the apps then write them again."""
+    stored = doc.get("recommendations_input")
+    return bool(doc.get("ai_three_month_recommendations")) and stored == input_hash(doc)
+
+
+def now_ms() -> datetime:
+    """To the millisecond, as MongoDB keeps it: a response shows what a later GET will."""
+    moment = datetime.now(UTC)
+    return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+
+
+def completion_fields(now: datetime) -> dict[str, Any]:
+    """What completing an area sets, from the parent's save or the recommendations job."""
+    return {"status": "completed", "step": None, "completed_at": now}
+
+
+def guard_keys(child_id: str, user_id: str) -> list[str]:
+    """The child's and user's tombstone keys. An area write touches their guards
+    (common.events.write_guards) before checking them: it then conflicts with a deletion in
+    flight, and two writes of one child's areas conflict too, so only one of two areas
+    completing at once sees itself as the first (`grow.completed` once)."""
+    return [tombstone_key("child", child_id), tombstone_key("user", user_id)]
+
+
+async def publish_completion(
+    runtime: Runtime, doc: Mapping[str, Any], session: AsyncClientSession
+) -> None:
+    """`grow.area_completed` for the area just completed in `session`, and `grow.completed`
+    when it's the child's first. The caller has written the child's guards in `session`
+    (guard_keys), so a second area completing at once conflicts and counts again."""
+    db = runtime.db
+    await add_to_outbox(db, area_event(runtime, "grow.area_completed", doc), session)
+    others = await db[GROWTH_AREAS].count_documents(
+        {
+            "location": doc["location"],
+            "child_id": doc["child_id"],
+            "status": "completed",
+            "_id": {"$ne": doc["_id"]},
+        },
+        session=session,
+    )
+    if others == 0:
+        await add_to_outbox(db, area_event(runtime, "grow.completed", doc), session)
 
 
 async def running_job(runtime: Runtime, area: Mapping[str, Any] | None, kind: Kind) -> str | None:
@@ -267,25 +334,45 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
         return await give_up(f"the answer couldn't be used as {kind}")
     if kind == "recommendations":
         # A tag the inputs can't back ("kid" with no games played) is fixed, not stored.
-        answered = any(str(v).strip() for v in (area.get("answers") or {}).values())
-        value = fit_sources(value, answered=answered, played=bool(runs))
+        value = fit_sources(value, answered=answered(area), played=bool(runs))
 
     async def after(session: AsyncClientSession) -> None:
         if kind != "recommendations":
             return  # the question sets are grow's own: no other service uses them
+        # Before reading the area: a deletion in flight, or another of the child's areas
+        # completing, conflicts with this transaction (guard_keys).
+        stones = guard_keys(job["child_id"], job["user_id"])
+        await write_guards(db, stones, location=location, session=session)
+        current = await db[GROWTH_AREAS].find_one(
+            {"_id": doc_id, "location": location}, session=session
+        )
+        if current is None:  # stored just above, in this transaction
+            raise RuntimeError("the growth area is missing")
+        completing = current["status"] != "completed" and answered(current)
+        changes: dict[str, Any] = {"$inc": {"version": 1}}
+        if completing:
+            now = now_ms()
+            changes["$set"] = {**completion_fields(now), "updated_at": now}
         updated = await db[GROWTH_AREAS].find_one_and_update(
             {"_id": doc_id, "location": location},
-            {"$inc": {"version": 1}},
+            changes,
             return_document=ReturnDocument.AFTER,
             session=session,
         )
-        if updated is not None and updated["status"] == "completed":
+        if updated is None:
+            raise RuntimeError("the growth area is missing")
+        if completing:
+            await publish_completion(runtime, updated, session)
+        elif updated["status"] == "completed":
             await add_to_outbox(db, area_event(runtime, "grow.area_updated", updated), session)
 
     update: dict[str, Any] = {FIELDS[kind]: value}
     if kind == "recommendations":
         update["recommendations_run_at"] = runs[-1]["at"] if runs else None
         update["child_games"] = worlds.game_lines(area["area_id"], runs[-1]) if runs else []
+        # The answers and feedback the prompt was built from (read before the LLM call): a
+        # save meanwhile leaves these not current (recommendations_current).
+        update["recommendations_input"] = input_hash(area)
     stored = await jobs.complete_job(
         db, runtime.client, job, target_update=update, in_transaction=after
     )

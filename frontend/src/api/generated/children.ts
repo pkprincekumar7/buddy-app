@@ -145,7 +145,7 @@ export interface paths {
         put?: never;
         /**
          * Kid Event
-         * @description One thing the child did in child view (parents only; the child uses the parent's session). The server gives the stars, each once. Refused with `circle_locked` while the action's circle isn't open in child view: Discover once the chat is done, each other once the one before is done there (`circles_done`).
+         * @description One thing the child did in child view (parents only; the child uses the parent's session). The server gives the stars, each once. Refused with `circle_locked` while the action's circle isn't open in child view: Discover once the chat is done, each other once the one before is done there (`circles_done`). Grow's worlds and Transform's quests aren't sent here: grow and transform publish them (`grow.world_played`, `transform.quest_logged`) with the run or the log, and children records them.
          */
         post: operations["kid_event_api_v1_children__id__kids_events_post"];
         delete?: never;
@@ -371,24 +371,6 @@ export interface components {
             progress: components["schemas"]["Progress"];
         };
         /**
-         * QuestDone
-         * @description A Transform quest logged (transform keeps the count): +1 the first time each quest is.
-         */
-        QuestDone: {
-            /**
-             * Type
-             * @constant
-             */
-            type: "quest";
-            /**
-             * Interest
-             * @enum {string}
-             */
-            interest: "football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games";
-            /** Quest */
-            quest: number;
-        };
-        /**
          * ShowWin
          * @description Connect's "Show my grown-up": keeps a win for the parent to share (P.2). No stars.
          */
@@ -438,19 +420,6 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
-        };
-        /**
-         * WorldDone
-         * @description A Grow world finished in child view (grow keeps the scores): Grow is done there.
-         */
-        WorldDone: {
-            /**
-             * Type
-             * @constant
-             */
-            type: "world_done";
-            /** World */
-            world: number;
         };
     };
     responses: never;
@@ -770,7 +739,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FlipPower"] | components["schemas"]["TryPower"] | components["schemas"]["GameBest"] | components["schemas"]["WorldDone"] | components["schemas"]["MoodIn"] | components["schemas"]["QuestDone"] | components["schemas"]["ShowWin"];
+                "application/json": components["schemas"]["FlipPower"] | components["schemas"]["TryPower"] | components["schemas"]["GameBest"] | components["schemas"]["MoodIn"] | components["schemas"]["ShowWin"];
             };
         };
         responses: {

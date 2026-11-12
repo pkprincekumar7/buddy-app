@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, Plus } from 'lucide-react';
-import type { KidActivity, KidEvent } from '@/api/kids';
+import type { KidActivity } from '@/api/kids';
 import {
   currentInterest,
   myInterests,
@@ -19,7 +19,9 @@ interface TransformQuestsProps {
   pick: (interest: QuestInterestKey) => Promise<KidQuests | null>;
   /** Resolves true when it was the quest's first log. */
   log: (interest: QuestInterestKey, quest: number) => Promise<boolean>;
-  send: (event: KidEvent) => Promise<KidActivity | null>;
+  /** Waits for the log's progress: transform tells children (transform.quest_logged), which
+   *  gives the star and opens Release in child view a moment later. */
+  awaitProgress: (done: (activity: KidActivity) => boolean) => void;
 }
 
 /**
@@ -32,7 +34,7 @@ export default function TransformQuests({
   sending,
   pick,
   log,
-  send,
+  awaitProgress,
 }: TransformQuestsProps) {
   const [adding, setAdding] = useState(false);
   const mine = myInterests(quests);
@@ -143,7 +145,7 @@ export default function TransformQuests({
           const today = quests.logged_today.includes(key);
           const doIt = async () => {
             if (await log(interest.key, i)) {
-              void send({ type: 'quest', interest: interest.key, quest: i });
+              awaitProgress((activity) => activity.circles_done.transform);
             }
           };
           return (

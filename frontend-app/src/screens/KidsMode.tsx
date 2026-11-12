@@ -209,7 +209,7 @@ export default function KidsMode() {
                   worlds={growWorlds.worlds}
                   saving={growWorlds.saving}
                   addRun={growWorlds.addRun}
-                  send={kid.send}
+                  awaitProgress={kid.awaitProgress}
                 />
               ) : (
                 <View className="items-center" style={card(area)}>
@@ -242,7 +242,7 @@ export default function KidsMode() {
                   sending={quests.sending || kid.sending}
                   pick={quests.pick}
                   log={quests.log}
-                  send={kid.send}
+                  awaitProgress={kid.awaitProgress}
                 />
               ) : (
                 <View className="items-center" style={card(area)}>

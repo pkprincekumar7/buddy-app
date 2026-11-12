@@ -141,16 +141,21 @@ def grow_everything(j: Journey) -> None:
 def transform_everything(j: Journey) -> None:
     step("transform: the plan, a photo, the event, its tracker and the Life Pathway")
     plan = f"{j.child}/transform"
-    check(j.http.patch(plan, json={"ask": "Help him get dressed on his own"}), 200)
+    # Each save is made on the version the last response showed (409 otherwise).
+    version = check(j.http.get(plan), 200)["version"]
+    ask = {"ask": "Help him get dressed on his own", "version": version}
+    version = check(j.http.patch(plan, json=ask), 200)["version"]
     _generate(j, plan, {"kind": "plan"})
     body = {"field_key": "week_1", "content_type": "image/jpeg"}
     presigned = check(j.http.post(f"{plan}/photos/presign", json=body), 200)
     journey._upload(presigned["upload_url"], presigned["upload_fields"], "image/jpeg")
-    check(j.http.patch(plan, json={"photos": {"week_1": [presigned["photo_key"]]}}), 200)
+    photos = {"photos": {"week_1": [presigned["photo_key"]]}, "version": version}
+    version = check(j.http.patch(plan, json=photos), 200)["version"]
     event = {
         "event_name": "Dressed by himself",
         "event_date": "2027-01-24",
         "event_set": True,
+        "version": version,
     }
     check(j.http.patch(plan, json=event), 200)
     _generate(j, plan, {"kind": "event_tracker"})

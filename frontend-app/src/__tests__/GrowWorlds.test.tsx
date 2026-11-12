@@ -73,9 +73,14 @@ describe('GrowWorlds', () => {
       },
     };
     const addRun = jest.fn().mockResolvedValue(saved);
-    const send = jest.fn().mockResolvedValue(null);
+    const awaitProgress = jest.fn();
     const { getByLabelText, getByText } = render(
-      <GrowWorlds worlds={WORLDS} saving={false} addRun={addRun} send={send} />,
+      <GrowWorlds
+        worlds={WORLDS}
+        saving={false}
+        addRun={addRun}
+        awaitProgress={awaitProgress}
+      />,
     );
     expect(getByText('Last: 60')).toBeTruthy();
     fireEvent.press(getByLabelText('Self Care'));
@@ -88,8 +93,11 @@ describe('GrowWorlds', () => {
     }
     await waitFor(() => expect(getByText('73')).toBeTruthy());
     expect(addRun).toHaveBeenCalledWith(0, [80, 80, 60]);
-    // Grow is done in child view: Transform opens next.
-    expect(send).toHaveBeenCalledWith({ type: 'world_done', world: 0 });
+    // grow tells children (grow.world_played): the page waits for Grow to show as done.
+    expect(awaitProgress).toHaveBeenCalledTimes(1);
+    const [done] = awaitProgress.mock.calls[0] as [(a: unknown) => boolean];
+    expect(done({ circles_done: { grow: false } })).toBe(false);
+    expect(done({ circles_done: { grow: true } })).toBe(true);
     expect(getByText('Up 13 since last time!')).toBeTruthy();
     expect(getByText('Growing well')).toBeTruthy();
     expect(getByText('Skill one')).toBeTruthy(); // strongest
@@ -106,7 +114,7 @@ describe('GrowWorlds', () => {
         worlds={WORLDS}
         saving={false}
         addRun={jest.fn()}
-        send={jest.fn()}
+        awaitProgress={jest.fn()}
       />,
     );
     fireEvent.press(getByLabelText('Self Care'));

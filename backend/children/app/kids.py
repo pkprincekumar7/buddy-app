@@ -11,7 +11,9 @@ of the child's: the parent's `{location, user_id}` own it, and only parents writ
 - `try:<i>:<date>`: "Try this today" for power `i`, once a day (+1);
 - `badge:discover`: every power flipped (+3);
 - `mood:<date>`: Release's check-in, once a day (+1);
-- `quest:<interest>:<i>`: a Transform quest's first log (+1); transform keeps the counts.
+- `quest:<interest>:<i>`: a Transform quest's first log (+1), from transform's
+  `transform.quest_logged` (transform keeps the counts). Grow's worlds come the same way, from
+  `grow.world_played` into `worlds_done` (children.app.lifecycle.record_child_view).
 
 A mood note is the child's own words: capped, and never logged.
 
@@ -73,16 +75,14 @@ ACTION_CIRCLE: Final[Mapping[str, Circle]] = {
     "flip_power": "discover",
     "try_power": "discover",
     "game_best": "discover",
-    "world_done": "grow",
-    "quest": "transform",
     "mood": "release",
     "show_win": "connect",
 }
 WORLD_COUNT: Final = 6
 
-Action = Literal[
-    "flip_power", "try_power", "game_best", "world_done", "quest", "mood", "show_win"
-]  # fmt: skip
+# The actions the kids events API takes. Grow's worlds and Transform's quests come from grow
+# and transform instead (grow.world_played, transform.quest_logged: children.app.lifecycle).
+Action = Literal["flip_power", "try_power", "game_best", "mood", "show_win"]
 
 KID_ACTIVITY_VALIDATOR: dict[str, Any] = {
     "$jsonSchema": {

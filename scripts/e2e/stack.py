@@ -238,6 +238,10 @@ def _allowed(db: str, collection: str, doc: dict[str, Any]) -> bool:
         return doc.get("status") in ("completed", "failed")
     if collection == "outbox":
         return doc.get("event_type") in ID_ONLY_EVENTS
+    if collection == "pending_uploads":
+        # A deleted child's presigned keys (ids only), kept until its forms expire so the
+        # sweep deletes a late upload too (common.upload_tracking).
+        return "sweep_after" in doc
     return db == "auth" and collection == "audit"  # the agreed retention
 
 

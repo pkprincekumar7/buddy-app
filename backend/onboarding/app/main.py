@@ -35,7 +35,7 @@ from pymongo.errors import DuplicateKeyError
 
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key
+from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key, write_guards
 from common.internal_client import allow_callers
 from common.models import ANSWER_FIELDS, CHILD_ID_PATTERN
 from common.routers import PolicyRouter, public
@@ -325,7 +325,12 @@ async def put_onboarding(
 
         async def write(session: AsyncClientSession, existing: Any = existing) -> None:
             tombstones = [tombstone_key("child", id), tombstone_key("user", child["user_id"])]
-            if await is_tombstoned(runtime.db, tombstones, session=session):
+            # Their guards first, so a deletion in flight and this save conflict and one runs
+            # again: a first save's insert can't commit after the deletion (write_guards).
+            await write_guards(runtime.db, tombstones, location=child["location"], session=session)
+            if await is_tombstoned(
+                runtime.db, tombstones, session=session, location=child["location"]
+            ):
                 raise not_found()  # deleted meanwhile: nothing may come back
             now = to_millis(datetime.now(UTC))
             if existing is None:

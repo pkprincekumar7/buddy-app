@@ -31,7 +31,7 @@ from auth_testkit import (
 from pymongo.errors import OperationFailure, PyMongoError
 
 from auth.app import authz_stream, main
-from auth.app.authz_cache import entry_from_account, write_entry
+from auth.app.authz_cache import delete_entry, entry_from_account, write_entry
 from auth.app.authz_stream import AuthzStream
 from auth.app.reaper import Reaper
 from auth.app.store import AUTH, AUTHZ_FIELDS, EMAIL_INDEX, WORKER_STATE, authz_change
@@ -318,7 +318,7 @@ def test_a_lost_resume_token_restarts_the_stream_from_now(mongo_uri, monkeypatch
         await stream.save_token({"_data": "stale"})
         stop = asyncio.Event()
         failures = [OperationFailure("history lost", code=286), PyMongoError("network"),
-                    OperationFailure("other", code=1)]  # fmt: skip
+                    OperationFailure("other", code=1), RuntimeError("anything else")]  # fmt: skip
 
         async def follow(_: asyncio.Event) -> None:
             if failures:
@@ -333,6 +333,188 @@ def test_a_lost_resume_token_restarts_the_stream_from_now(mongo_uri, monkeypatch
         await stream.apply({"operationType": "update", "documentKey": {"_id": "x"}})
 
     live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_lock_valkey_refused_is_applied_again_not_skipped(mongo_uri, redis_url, monkeypatch):
+    # write_entry used to swallow the error while follow() saved the token past the change,
+    # so this region kept the unlocked entry until its 1 h TTL (review).
+    async def run() -> None:
+        async with valkey(redis_url) as cache, running(mongo_uri, cache=cache) as r:
+            user_id = await _user(r)  # sign-in cached the entry in this region
+            real_eval = cache.eval
+            refused: list[str] = []
+
+            async def flaky(*args: Any) -> Any:
+                if not refused:
+                    refused.append(args[2])
+                    raise aioredis.ConnectionError("valkey restarting")
+                return await real_eval(*args)
+
+            monkeypatch.setattr(cache, "eval", flaky)
+            monkeypatch.setattr(authz_stream, "RETRY_SECONDS", 0.05)
+            stream = AuthzStream(r.runtime, "ap-south-1", max_await_ms=100)
+            stop = asyncio.Event()
+            task = asyncio.create_task(stream.run(stop))
+            await asyncio.sleep(0.3)
+            before = await stream.load_token()
+            await r.db[AUTH].update_one(
+                {"_id": user_id}, authz_change({"is_locked": True}, datetime.now(UTC))
+            )
+            deadline = asyncio.get_running_loop().time() + 10
+            while not ((await _cached(cache, user_id)) or {}).get("locked"):
+                assert asyncio.get_running_loop().time() < deadline, "the lock was skipped"
+                await asyncio.sleep(0.05)
+            assert refused == [f"authz:{user_id}"]  # the first try failed, the retry wrote it
+            assert not task.done()  # the stream restarted itself
+            stop.set()
+            await asyncio.wait_for(task, 10)
+            assert await stream.load_token() != before
+            await cache.delete(f"authz:{user_id}")
+
+    asyncio.run(run())
+
+
+@pytest.mark.live_service
+def test_a_first_change_that_fails_isnt_lost_to_a_restart_from_now(
+    mongo_uri, redis_url, monkeypatch
+):
+    # Review: with no token saved yet, a failed first change restarted the stream with
+    # resume_after=None ("from now"), so that change was never applied.
+    async def run() -> None:
+        async with valkey(redis_url) as cache, running(mongo_uri, cache=cache) as r:
+            user_id = await _user(r)
+            real_eval = cache.eval
+            refused: list[str] = []
+
+            async def flaky(*args: Any) -> Any:
+                if not refused:
+                    refused.append(args[2])
+                    raise aioredis.ConnectionError("valkey restarting")
+                return await real_eval(*args)
+
+            monkeypatch.setattr(cache, "eval", flaky)
+            monkeypatch.setattr(authz_stream, "RETRY_SECONDS", 0.05)
+            # A long await: the change is the first thing the open stream returns, with no
+            # idle round saving a token before it.
+            stream = AuthzStream(r.runtime, "us-east-9", max_await_ms=3000)
+            assert await stream.load_token() is None
+            stop = asyncio.Event()
+            task = asyncio.create_task(stream.run(stop))
+            await asyncio.sleep(0.3)
+            assert await stream.load_token() is not None  # the opening token, saved
+            await r.db[AUTH].update_one(
+                {"_id": user_id}, authz_change({"is_locked": True}, datetime.now(UTC))
+            )
+            deadline = asyncio.get_running_loop().time() + 10
+            while not ((await _cached(cache, user_id)) or {}).get("locked"):
+                assert asyncio.get_running_loop().time() < deadline, "the first change was lost"
+                await asyncio.sleep(0.05)
+            assert refused == [f"authz:{user_id}"]
+            stop.set()
+            await asyncio.wait_for(task, 10)
+            await cache.delete(f"authz:{user_id}")
+
+    asyncio.run(run())
+
+
+@pytest.mark.live_service
+def test_a_change_that_always_fails_is_skipped_after_three_tries(
+    mongo_uri, redis_url, monkeypatch, caplog
+):
+    # Review: the catch-all retried forever from the same token, so one bad change stalled
+    # the region's stream quietly. Now: three tries, an ERROR line, its entry dropped.
+    async def run() -> None:
+        async with valkey(redis_url) as cache, running(mongo_uri, cache=cache) as r:
+            bad = await _user(r)
+            await r.allow("sam@example.com")
+            good = claims((await r.register(email="sam@example.com")).json()["access_token"])["sub"]
+            assert await _cached(cache, bad) is not None and await _cached(cache, good)
+            stream = AuthzStream(r.runtime, "ap-south-1", max_await_ms=100)
+            real_apply = stream.apply
+            tries: list[str] = []
+
+            async def malformed(change: Any) -> None:
+                if change["documentKey"]["_id"] == bad:
+                    tries.append(bad)
+                    raise KeyError("fullDocument.role")
+                await real_apply(change)
+
+            monkeypatch.setattr(stream, "apply", malformed)
+            monkeypatch.setattr(authz_stream, "RETRY_SECONDS", 0.05)
+            stop = asyncio.Event()
+            task = asyncio.create_task(stream.run(stop))
+            await asyncio.sleep(0.3)
+            now = datetime.now(UTC)
+            await r.db[AUTH].update_one({"_id": bad}, authz_change({"role": "admin"}, now))
+            await r.db[AUTH].update_one({"_id": good}, authz_change({"role": "admin"}, now))
+            deadline = asyncio.get_running_loop().time() + 10
+            # The change after it still goes through: the stream moved past the bad one.
+            while ((await _cached(cache, good)) or {}).get("role") != "admin":
+                assert asyncio.get_running_loop().time() < deadline, "the stream stalled"
+                await asyncio.sleep(0.05)
+            assert tries == [bad] * authz_stream.MAX_CHANGE_ATTEMPTS
+            # The next request reads authz from Mongo, not the entry the change missed.
+            assert await _cached(cache, bad) is None
+            skipped = [rec for rec in caplog.records if "authz.stream.change_skipped" in rec.msg]
+            assert len(skipped) == 1 and skipped[0].levelname == "ERROR"
+            assert skipped[0].getMessage().count(bad) == 1
+            stop.set()
+            await asyncio.wait_for(task, 10)
+            await cache.delete(f"authz:{good}")
+
+    asyncio.run(run())
+
+
+def test_transient_failures_are_never_skipped():
+    class Runtime:
+        cache = None
+
+    stream = AuthzStream(Runtime(), "ap-south-1")  # type: ignore[arg-type]
+    change = {"_id": {"_data": "t1"}, "operationType": "delete", "documentKey": {"_id": "u"}}
+    attempts = {"n": 0}
+
+    async def down(_: Any) -> None:
+        attempts["n"] += 1
+        raise aioredis.ConnectionError("down")
+
+    setattr(stream, "apply", down)  # noqa: B010
+    for _ in range(authz_stream.MAX_CHANGE_ATTEMPTS * 2):
+        with pytest.raises(aioredis.ConnectionError):
+            asyncio.run(stream.apply_or_skip(change))
+    assert attempts["n"] == authz_stream.MAX_CHANGE_ATTEMPTS * 2
+
+    # Other failures count per change: a different change in between starts again.
+    async def broken(_: Any) -> None:
+        raise KeyError("role")
+
+    setattr(stream, "apply", broken)  # noqa: B010
+    other = {**change, "_id": {"_data": "t2"}}
+    for c in (change, other, change):
+        with pytest.raises(KeyError):
+            asyncio.run(stream.apply_or_skip(c))
+    # The third try in a row skips it; one with no readable user id has no entry to drop.
+    malformed = {"_id": {"_data": "t3"}, "operationType": "update"}
+    for _ in range(authz_stream.MAX_CHANGE_ATTEMPTS - 1):
+        with pytest.raises(KeyError):
+            asyncio.run(stream.apply_or_skip(malformed))
+    asyncio.run(stream.apply_or_skip(malformed))
+
+
+def test_a_strict_cache_write_raises_instead_of_returning_false():
+    class Down:
+        async def eval(self, *args: Any) -> Any:
+            raise aioredis.ConnectionError("down")
+
+        async def delete(self, *args: Any) -> Any:
+            raise aioredis.ConnectionError("down")
+
+    entry = AuthzEntry(ver=1, role="parent", locked=False, deleting=False, revoked_at_ms=None)
+    assert asyncio.run(write_entry(Down(), "u", entry)) is False
+    with pytest.raises(aioredis.ConnectionError):
+        asyncio.run(write_entry(Down(), "u", entry, strict=True))
+    with pytest.raises(aioredis.ConnectionError):
+        asyncio.run(delete_entry(Down(), "u", strict=True))
 
 
 # ── the reaper ─────────────────────────────────────────────────────────────────

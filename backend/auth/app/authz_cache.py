@@ -71,12 +71,19 @@ def entry_json(entry: AuthzEntry) -> str:
 
 
 async def write_entry(
-    cache: Any, user_id: str, entry: AuthzEntry, *, only_existing: bool = False
+    cache: Any,
+    user_id: str,
+    entry: AuthzEntry,
+    *,
+    only_existing: bool = False,
+    strict: bool = False,
 ) -> bool:
     """The versioned write. True if stored; False if a newer entry won, or no cache.
 
     `only_existing`: update the entry only if this region already holds one, so the change
     stream (which sees every account) doesn't fill a region with every user (9.3).
+    `strict`: raise when Valkey can't be reached instead of returning False: the change
+    stream must not move past a lock or revocation it couldn't write.
     """
     if cache is None:
         return False
@@ -91,16 +98,21 @@ async def write_entry(
             "1" if only_existing else "0",
         )
     except (RedisError, OSError, TimeoutError):
+        if strict:
+            raise
         _logger.warning("authz cache unreachable; %s fills on its next request", user_id)
         return False
     return bool(written)
 
 
-async def delete_entry(cache: Any, user_id: str) -> None:
-    """An account that no longer exists: drop its entry (the next request fills a 401)."""
+async def delete_entry(cache: Any, user_id: str, *, strict: bool = False) -> None:
+    """An account that no longer exists: drop its entry (the next request fills a 401).
+    `strict`: raise when Valkey can't be reached (as write_entry)."""
     if cache is None:
         return
     try:
         await cache.delete(CACHE_PREFIX + user_id)
     except (RedisError, OSError, TimeoutError):
+        if strict:
+            raise
         _logger.warning("authz cache unreachable; %s's entry expires on its own", user_id)

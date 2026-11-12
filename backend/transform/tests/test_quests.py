@@ -61,9 +61,7 @@ async def _log(
 
 
 async def _ask(r: Running, child: str, ask: str) -> None:
-    patched = await r.http.patch(
-        f"/api/v1/children/{child}/transform", json={"ask": ask}, headers=auth_header()
-    )
+    patched = await r.save_plan(child, ask=ask)
     assert patched.status_code == 200
 
 
@@ -231,5 +229,24 @@ def test_quest_writes_are_rate_limited(mongo_uri):
         assert picks[0] == 200 and picks[-1] == 429 and picks.count(429) == 1
         logs = [(await _log(r, child, "space", 0)).status_code for _ in range(121)]
         assert logs[0] == 200 and logs[-1] == 429 and logs.count(429) == 1
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_counted_log_publishes_transform_quest_logged_with_it(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        await _pick(r, child, "space")
+        await _log(r, child, "space", 0)
+        await _log(r, child, "space", 0)  # the same day: not counted, nothing published
+        await _log(r, child, "space", 0, day=TOMORROW)
+        rows = await r.db.outbox.find({"event_type": "transform.quest_logged"}).to_list(None)
+        # Each counted log, in the log's transaction, for children's child-view progress.
+        assert [(row["aggregate_id"], row["payload"]) for row in rows] == [
+            (child, {"interest": "space", "quest": 0}),
+            (child, {"interest": "space", "quest": 0}),
+        ]
+        assert sorted(row["version"] for row in rows) == sorted({row["version"] for row in rows})
 
     live(mongo_uri, test)

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/transform.quest_logged.v1.json",
+  "title": "transform.quest_logged v1",
+  "description": "A Transform quest logged in child view for the child's day: the count is kept in transform (kid_quests), published in the same transaction as the log. children gives the quest's star the first time and marks Transform done in child view. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "interest": {
+      "type": "string",
+      "enum": [
+        "football",
+        "drawing",
+        "music",
+        "building",
+        "cooking",
+        "space",
+        "animals",
+        "reading",
+        "games"
+      ],
+      "description": "The quest's interest (transform.app.quests)."
+    },
+    "quest": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "The quest's index in the interest."
+    }
+  },
+  "required": [
+    "interest",
+    "quest"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "interest": "space",
+      "quest": 0
+    }
+  ]
+}

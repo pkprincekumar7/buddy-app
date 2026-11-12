@@ -13,8 +13,6 @@ export type KidEvent =
   | Schemas['TryPower']
   | Schemas['GameBest']
   | Schemas['MoodIn']
-  | Schemas['WorldDone']
-  | Schemas['QuestDone']
   | Schemas['ShowWin'];
 export type KidMoodKey = Schemas['MoodIn']['mood'];
 

@@ -41,7 +41,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Transform
-         * @description Save the parent's work on the 90-day plan; each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys). Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).
+         * @description Save the parent's work on the 90-day plan, made on the plan's `version` (from the last GET or PATCH): if the plan was saved since (another device), nothing changes and it's `409 plan_changed`; reload and apply the change again. Each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys; a photo no longer in any field is deleted). A change to `ask` or the Day-90 event, or `clear_track_steps`, ends a plan or tracker generation still building from the old one. Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).
          */
         patch: operations["patch_transform_api_v1_children__id__transform_patch"];
         trace?: never;
@@ -157,7 +157,7 @@ export interface paths {
         put?: never;
         /**
          * Log Quest
-         * @description The child did a quest today: `+1` to its count, once a day (a day after the last one logged) and up to its target (anything more changes nothing). The interest must be the plan's or one the child added (`409 interest_not_picked`). Parents only.
+         * @description The child did a quest today: `+1` to its count, once a day (a day after the last one logged) and up to its target (anything more changes nothing). A counted log publishes `transform.quest_logged` in the same transaction (children gives the star and marks Transform done in child view from it). The interest must be the plan's or one the child added (`409 interest_not_picked`). Parents only.
          */
         post: operations["log_quest_api_v1_children__id__transform_quests_log_post"];
         delete?: never;
@@ -270,10 +270,16 @@ export interface components {
         };
         /**
          * PlanPatch
-         * @description The parent's part of the plan; each field sent replaces the stored one. `plan`,
-         *     `track_steps` and the Life Pathway are transform's jobs' only (422).
+         * @description The parent's part of the plan, made on the `version` the app last read; each field
+         *     sent replaces the stored one. `plan`, `track_steps` and the Life Pathway are
+         *     transform's jobs' only (422).
          */
         PlanPatch: {
+            /**
+             * Version
+             * @description The plan's `version` this change was made on (`0` before the first save). Another save since is `409 plan_changed`: reload and apply again.
+             */
+            version: number;
             /** Ask */
             ask?: string | null;
             /** Applied */
@@ -382,6 +388,8 @@ export interface components {
         };
         /** Transform */
         Transform: {
+            /** Version */
+            version: number;
             /** Areas */
             areas: components["schemas"]["AreaView"][];
             /** Ask */

@@ -49,9 +49,9 @@ beforeEach(async () => {
 });
 
 describe('transform (build plan 7.7)', () => {
-  it('patches only the fields sent, and photos by key', async () => {
+  it('patches only the fields sent, and photos by key, on the version read', async () => {
     const sent = network({ [`PATCH ${T}`]: json(200, {}) });
-    await transform.patch(ID, {
+    await transform.patch(ID, 4, {
       ask: 'Help him handle frustration calmly',
       photos: { 'act:week-1': ['uploads/in/x/ninety-day-plan/a.jpg'] },
     });
@@ -59,6 +59,7 @@ describe('transform (build plan 7.7)', () => {
       clear_track_steps: false,
       ask: 'Help him handle frustration calmly',
       photos: { 'act:week-1': ['uploads/in/x/ninety-day-plan/a.jpg'] },
+      version: 4,
     });
   });
 

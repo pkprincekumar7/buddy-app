@@ -570,7 +570,7 @@
           "children"
         ],
         "summary": "Kid Event",
-        "description": "One thing the child did in child view (parents only; the child uses the parent's session). The server gives the stars, each once. Refused with `circle_locked` while the action's circle isn't open in child view: Discover once the chat is done, each other once the one before is done there (`circles_done`).",
+        "description": "One thing the child did in child view (parents only; the child uses the parent's session). The server gives the stars, each once. Refused with `circle_locked` while the action's circle isn't open in child view: Discover once the chat is done, each other once the one before is done there (`circles_done`). Grow's worlds and Transform's quests aren't sent here: grow and transform publish them (`grow.world_played`, `transform.quest_logged`) with the run or the log, and children records them.",
         "operationId": "kid_event_api_v1_children__id__kids_events_post",
         "security": [
           {
@@ -622,13 +622,7 @@
                     "$ref": "#/components/schemas/GameBest"
                   },
                   {
-                    "$ref": "#/components/schemas/WorldDone"
-                  },
-                  {
                     "$ref": "#/components/schemas/MoodIn"
-                  },
-                  {
-                    "$ref": "#/components/schemas/QuestDone"
                   },
                   {
                     "$ref": "#/components/schemas/ShowWin"
@@ -1245,45 +1239,6 @@
         ],
         "title": "ProgressOut"
       },
-      "QuestDone": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "quest",
-            "title": "Type"
-          },
-          "interest": {
-            "type": "string",
-            "enum": [
-              "football",
-              "drawing",
-              "music",
-              "building",
-              "cooking",
-              "space",
-              "animals",
-              "reading",
-              "games"
-            ],
-            "title": "Interest"
-          },
-          "quest": {
-            "type": "integer",
-            "maximum": 2.0,
-            "minimum": 0.0,
-            "title": "Quest"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "type",
-          "interest",
-          "quest"
-        ],
-        "title": "QuestDone",
-        "description": "A Transform quest logged (transform keeps the count): +1 the first time each quest is."
-      },
       "ShowWin": {
         "properties": {
           "type": {
@@ -1394,29 +1349,6 @@
           "type"
         ],
         "title": "ValidationError"
-      },
-      "WorldDone": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "world_done",
-            "title": "Type"
-          },
-          "world": {
-            "type": "integer",
-            "maximum": 5.0,
-            "minimum": 0.0,
-            "title": "World"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "type",
-          "world"
-        ],
-        "title": "WorldDone",
-        "description": "A Grow world finished in child view (grow keeps the scores): Grow is done there."
       }
     },
     "securitySchemes": {

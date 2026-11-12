@@ -15,6 +15,9 @@
   A finished `plan` completes Transform if the Day-90 event is already set
   (`transform.completed`, in the job's transaction). An unusable answer, a failed call or a
   copy not there yet is retried with backoff, then the job fails.
+- `supersede`: what a running job builds from changed (the parent's `ask` or event, an
+  age, gender or area change clearing the Life Pathway): in that change's transaction the
+  job is ended and its lock released, so its result is dropped (common.generation.jobs).
 - `report_jobs`: the job metrics from one leader per region, in the HTTP runtime (15.5).
 """
 
@@ -93,6 +96,33 @@ async def complete_if_ready(
         return False
     await add_to_outbox(runtime.db, completed_event(runtime, updated), session)
     return True
+
+
+async def supersede(
+    runtime: Runtime,
+    child_id: str,
+    location: str,
+    session: AsyncClientSession,
+    *,
+    kinds: tuple[Kind, ...] = (),
+    areas: tuple[str, ...] | None = (),
+) -> int:
+    """In the transaction that changes what these jobs build from: end the running ones,
+    so their results are never stored over the change. `areas` names Life Pathway areas;
+    `None` means every area with a running job."""
+    targets = [target(child_id, kind) for kind in kinds]
+    if areas is None:
+        doc = await runtime.db[PLANS].find_one(
+            {"_id": child_id, "location": location}, {"active_jobs": 1}, session=session
+        )
+        prefix = f"{JOB_TYPES['life_pathway']}:"
+        areas = tuple(
+            lock.removeprefix(prefix)
+            for lock in ((doc or {}).get("active_jobs") or {})
+            if lock.startswith(prefix)
+        )
+    targets += [target(child_id, "life_pathway", area_id) for area_id in areas]
+    return await jobs.supersede_jobs(runtime.db, targets, location=location, session=session)
 
 
 async def running_job(
