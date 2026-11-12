@@ -1,330 +1,377 @@
 # Child view vs the design prototype
 
 **As of:** 2026-11-12. Prototype: *Superpower version, 4th November* (a bundled HTML file, not in
-this repo). Build: the web app (`frontend/src`); the mobile app (`frontend-app/src`) now follows the
-web at phone width (below 640px), so a web item applies to both unless marked otherwise.
+this repo). Build: the web app (`frontend/src`); the mobile app (`frontend-app/src`) follows the web
+at phone width (below 640px), so an item applies to both unless it says otherwise.
 
-- **D**: the difference is recorded in [child-view-build-plan.md](child-view-build-plan.md).
-- **U**: not recorded there.
-- Hex colours replaced by tokens, and sizes rounded to the Tailwind scale, are covered by the plan's
-  Theming rules (D), unless the token is a *different colour* from the prototype's (listed as U).
-- **Fixed** marks a difference that was there when the comparison was made and has since been
-  closed (2026-11-12). Everything else is still open; none of it has been decided as a change yet.
+Every difference found when the two were compared side by side is sorted into one of these groups:
 
-### Web and mobile
+1. **[Safe to apply](#1-safe-to-apply):** the prototype is the better or intended version, and
+   matching it changes only the look, motion or copy. No new data, no change to a decision.
+2. **[Needs a decision](#2-needs-a-decision):** matching the prototype changes behaviour, privacy
+   or the backend, or it conflicts with something the app does on purpose. Includes a few app
+   issues the comparison turned up that aren't prototype differences.
+3. **[Ignore](#3-ignore-prototype-issue-or-the-app-is-better):** a problem in the prototype (demo
+   content, a contradiction, a weak rule, an implementation shortcut, weaker accessibility), or the
+   app's version is better. Not to be applied.
 
-Fixed on 2026-11-12: the mobile kids screens were aligned with the web at phone width (kids bar,
-Discover, the game dialog and games, Grow, Transform, Release and Connect), and the web's
-secondary kids button (`.kids-btn-off`) was made fully rounded like mobile's. What still differs
-on purpose:
+Then, for reference: [already decided](#4-already-decided) (recorded in
+[child-view-build-plan.md](child-view-build-plan.md)), [web and mobile](#5-web-and-mobile), and
+[fixed since the comparison](#6-fixed-since-the-comparison).
+
+Colours in group 1 are written as the prototype's hex for reference; applying one means using (or
+adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, never a literal.
+
+---
+
+## 1. Safe to apply
+
+### Hub (circles) — `pages/PersonalityJourney.tsx`
+
+- **H1.** The Discover hover tooltip: "Explore {name}'s personality analysis results" (the prototype
+  names Rahul; use the real child). Web only (no hover on mobile).
+- **H2.** A ring on the tapped circle before it opens (the prototype's `sel` box-shadow).
+- **H3.** The Discover portal video: `object-cover` with the prototype's filter
+  (`hue-rotate(-8deg) saturate(1.15) contrast(1.05)`) and radial overlay, cut at 3000 ms.
+
+### Profile menu — `Layout.tsx`, `ProfileChildren.tsx`
+
+- **P1.** In child view, the child's row reads "Child · age N" (now "Child view").
+
+### Kids page shell — `KidsMode.tsx`, `KidsHeader.tsx`
+
+- **S1.** Home: the prototype's house icon (no door), a 4 px press, 22 px right padding.
+- **S2.** Area chip: .08em tracking, 18 px left padding.
+- **S3.** "Read to me" when on: always cyan (#4be9ff on #1b8aa3, dark ink), Rajdhani 700 16 px,
+  gap 10, a 4 px press with the shadow unchanged, 22 px icon.
+- **S4.** Discover's read-aloud text built from the child's result: "You are The {style}. {line}.
+  Tap each power around you." (now "You have superpowers. Tap each power around you.").
+- **S5.** Confetti: 46 pieces plus a cyan and a gold ring each time Discover opens, and on the Grow
+  report (the plan already promises it at lines ~77, 199 and 512). Off under reduced motion.
+
+### Discover — `DiscoverPowers.tsx`
+
+- **D1.** The eyebrow pops in (`kPop .6s`); the name pill rises (`kUp .5s .5s`) instead of fading;
+  the count pill pops for 0.6 s (now 0.7 s).
+- **D2.** The hover tip gets its small arrow and a .2 s fade (keep it on keyboard focus too).
+- **D3.** Heading #e7f5f9 (now #f2fbff); "The {style}" with a cyan glow (`text-shadow 0 0 28px`).
+- **D4.** Gold #ffd98a (`constellation-gold-bright`) for the eyebrow, twinkles and the opened
+  power's edge (now #ffe08a).
+- **D5.** Photo ring: the 4-stop conic (cyan, #0a5b74, cyan-bright, cyan); inner #0e3a4a; photo
+  position 50% 35%.
+- **D6.** Power bubbles: rgba(14,58,74,.9) → rgba(5,19,26,.95); selected #1ec4e8 → #0a5b74;
+  cyan-bright glow; selected ink #eafdff.
+- **D7.** Name pill and tip background #05131a, text #eafdff (now #060a18 / #f2fbff).
+- **D8.** Count pill gradient cyan-bright → #0a5b74 (now cyan → #1b8aa3).
+
+### Game dialog — `GameDialog.tsx`
+
+- **G1.** Backdrop rgba(2,6,15,.84) with 6 px blur (web only), padding 20, a .25 s rise-in.
+- **G2.** Panel 540 px, radius 32, gradient #0e3a4a → #05131a, 1 px border, two shadows, pops in.
+- **G3.** Title row: the icon inside a 48 px circle (cyan border, tinted fill) at 26 px; title
+  Orbitron 700 22 px, .04em, #eafdff; close as a 48 px outlined circle.
+- **G4.** Instruction line #e7f5f9, 21 px.
+- **G5.** Win screen: the four twinkling dots, the 72 px pulsing check medallion; "You did it!"
+  28 px; the seconds 44 px with a gold glow.
+- **G6.** "New best!" as a solid gold pill that pops in; "Best: X.Xs" and "First try!" as an
+  outlined cyan pill in grey.
+- **G7.** The win line in the prototype's dashed box (navy fill, dashed cyan border, radius 18,
+  19 px). For the words, see decision W1.
+- **G8.** "Play again" outlined cyan, 46 px, uppercase Rajdhani; "Done" as a cyan gradient with a
+  glow, uppercase.
+
+### Discover mini games — `KidsGames.tsx`, `GamePieces.tsx`
+
+- **M1.** Frame max `calc(100vh - 260px)`; background #0e3a4a → #05131a; captions #84a0b2.
+- **M2.** The seven sky stars twinkle (1.4 s + 0.3 s per star), #eafdff.
+- **M3.** Bursts: cyan for climb and energy, scale .4 → 2.6.
+- **M4.** Focus: the light pulses (`kPulse 1s`), moves in 1.1 s, gradient ends #0a5b74.
+- **M5.** Curious: closed boxes float, an opened box flips; "?" clamp(22–34 px); empty dot #3c5568.
+- **M6.** Order: the line glows; the next star pulses; a wrong tap shakes; numbers clamp(16–24 px);
+  a done number #05131a.
+- **M7.** Draw: stroke #ffd98a with a glow.
+- **M8.** Climb: the flag twinkles; the climber moves in .12 s; mountain #0a5b74.
+- **M9.** Voice: dark-cyan mic circle (#1ec4e8 → #0a5b74) with a light mic, a gold border above
+  90%, glow 20 → 70 px; wave bars 5 px apart.
+
+### Grow — "Pick a world" — `GrowWorlds.tsx`
+
+- **GW1.** "Grow" eyebrow as the bordered pill (cyan .5 border, cyan .1 fill, Rajdhani 15, .24em).
+- **GW2.** Heading Orbitron 700, .02em, #e7f5f9; "world" with a cyan glow. Subtitle #84a0b2.
+- **GW3.** Grid auto-fit `minmax(220px,1fr)`, gap 20, margin-top 34.
+- **GW4.** World card: radius 30, padding 28/18/24, soft gradient rgba(14,58,74,.55) →
+  rgba(5,19,26,.85), 1 px cyan .28 border, soft shadow.
+- **GW5.** World icon: 46 px dark icon in a 104 px glowing orb (three gradients: cyan, gold,
+  cyan-deep), a dashed ring spinning (18 s), the orb floating (4 s, staggered .5 s).
+- **GW6.** World colours cycle through the three orbs (now the six power pairs).
+- **GW7.** World name Orbitron 700 19 px #eafdff. The tag uppercase, .24em, and "Completed" in gold
+  once played (keep "Last: {total}" beside it).
+- **GW8.** Played marker: a 34 px gold #ffd98a disc with a dark check and 3 px dark border, popping,
+  on the orb's top-right.
+- **GW9.** Motion: cards unfold one after another (.08 s stagger); hover lifts 6 px, tilts ±1.5°,
+  cyan border and glow; press scales to .96.
+
+### Grow — game screens — `GrowWorlds.tsx`
+
+- **GS1.** Header centred.
+- **GS2.** Back as a 44 px outlined cyan circle with a chevron.
+- **GS3.** Progress dots 46×10: done gold #ffd98a with a glow, current cyan with a glow, the rest
+  cyan .14, animated.
+- **GS4.** Two pills under the dots: the world name (cyan) and "Game n of 3" (gold).
+- **GS5.** Game title Orbitron 700 clamp(28–44 px) #e7f5f9; how-to #84a0b2, 21 px.
+- **GS6.** Intro: a square game-sized frame; the skill in gold #ffd98a, .28em; a 150 px round
+  pulsing "Play" with a cyan gradient; "Played before" / "New game" (from the world's runs).
+- **GS7.** Result: the 96 px gold check orb; "Well done!" in gold #ffd98a with a glow (keep the
+  score and band under it, D).
+- **GS8.** Result buttons outside the card, 62 px, uppercase Rajdhani: "Next game" / "Finish world"
+  a cyan gradient with a glow, "Try again" outlined cyan.
+
+### Grow — the games — `GrowGames.tsx`, `GamePieces.tsx`
+
+- **GG1.** Frame `min(100%, 540px, 100vh - 300px)`, min 260; radial #0e3a4a → #05131a; twinkling
+  sky; bar fill #1ec4e8 → #ffd98a; HUD #ffd98a; captions #84a0b2.
+- **GG2.** Catch: gold bursts for good words, red #ff7a7a for bad; the basket #ffd98a with its glow.
+- **GG3.** Sort: a right answer flies off toward its side (±14°, .45 s fade); a wrong one shakes
+  with a red glow; each new card pops in; right border #ffd98a, wrong #ff7a7a; card
+  rgba(14,58,74,.95) → rgba(5,19,26,.98); left side gold #ffd98a .25 → #8a6420 .45, right side
+  cyan .45 → #0a5b74 .7.
+- **GG4.** Memory: second pad #ffd98a; the frame flashes on a wrong tap.
+- **GG5.** Timing: "Miss" red #ff7a7a; "Perfect!" / "Good" #ffd98a with a glow and a pop; target
+  #ffd98a.
+- **GG6.** Dash: a burst on each grab; picked words as gold chips (.6 border on .15 fill, Rajdhani
+  14) that pop in.
+- **GG7.** React: "Too soon!" red #ff7a7a; light gradient #fff6dc / #ffd98a / #8a6420.
+- **GG8.** Spark: strokes glow; colours #ffd98a, #4be9ff, #3ce1be, #9d8cff, #ff8fb1; inner line white.
+
+A red token for "wrong" doesn't exist yet: add one (e.g. `--kids-wrong-rgb`) for GG2, GG3, GG5, GG7.
+
+### Grow — report — `GrowWorlds.tsx`
+
+- **R1.** Eyebrow as a gold pill "{World} report"; "complete!" in gold #ffd98a with a glow,
+  Orbitron 700.
+- **R2.** The 150 px floating world orb with its icon (and the confetti, S5).
+- **R3.** "Play again" outlined cyan, 62 px, uppercase; "Pick another world" as a borderless text
+  link in #84a0b2.
+
+### Transform — `TransformQuests.tsx`
+
+- **T1.** Picker subtitle in the "add another" state: "Pick what else you are into. You get new
+  quests for it." (keep "Pick one. You get quests for it." when there's no interest yet).
+- **T2.** "Back to my quests" transparent with a 2 px gold .5 border, #ffe08a, 48 px.
+- **T3.** Interest grid auto-fit `minmax(200px,1fr)`, gap 16, margin-top 30; tiles solid in their
+  colour, dark ink Orbitron 900 20, radius 24, a 3 px hover lift.
+- **T4.** Colour order cyan, gold, teal, pink, violet, orange for interests, quests (quests 2 and 3
+  swap back) and wins (C4).
+- **T5.** Quests header left-aligned, with the subtitle "Do it for real, then tap the big button."
+- **T6.** Interest chips left-aligned, radius 20, min-height 60, padding 8/22, off fill gold .08,
+  tag Rajdhani 14 .08em.
+- **T7.** "+ Add another" with a 2 px dashed gold .5 border, transparent, Rajdhani 18 #ffe08a.
+- **T8.** Quest card: two columns (content left, a 132 px round action button right), radius 28,
+  padding 24/26, an 8 px shade shadow, 18 px between cards.
+- **T9.** Number as a 44 px rounded square in the quest's colour with the number in dark ink.
+- **T10.** How-to #d4e6ee.
+- **T11.** Progress dots 30 px with a 3 px border at .4; filled ones carry a 16 px ink star.
+- **T12.** Log button: the 132 px circle in the quest's own colour with a shade shadow, "+" and
+  "I did it today", scaling on hover. Done: a 132 px teal circle with a check, popping in (keep
+  "Quest done!").
+
+### Release — `ReleaseCheckIn.tsx`
+
+- **RL1.** Content max-width 1000 px.
+- **RL2.** Mood grid auto-fit `minmax(150px,1fr)`, gap 16 (fits 5 in a row from about 830 px).
+- **RL3.** Tile transition .12 s; Save shadow 7 px.
+- **RL4.** The note card pops in (`kPop .35s`).
+- **RL5.** The prototype's flame path (control point −5.5).
+
+### Connect — `ConnectWins.tsx`
+
+- **C1.** Two equal columns from `md` (now 1fr / 1.1fr), gap 26.
+- **C2.** Win buttons: Rajdhani 700 20 px, radius 22, min-height 72, padding 14/18, gap 14; a
+  neutral border, pink when picked (pink .14 fill); no shade shadow; hover slides right 4 px.
+- **C3.** Dot 14 px.
+- **C4.** Dot colour order as T4.
+- **C5.** The card column sticks (`top: 110px`).
+- **C6.** Card: pink → violet gradient (`160deg`, #ff8fb1 → #9d8cff), `0 10px 0 #5a4aa8`, radius 30,
+  padding 30/28, min-height 300, left-aligned; it re-pops on each pick.
+- **C7.** Card header: "SUPERPOWER" Orbitron 900 14 px .14em in dark ink on the left; a 34 px star
+  (#ffe08a fill, dark stroke) spinning (8 s) on the right.
+- **C8.** Win title Orbitron 900 clamp(26–34 px), dark ink #08101f, left, balanced.
+- **C9.** Avatar 72 px, 4 px dark border, gold #ffe08a fill, `0 5px 0 #5a4aa8`, photo at 50% 35%;
+  initial Orbitron 900 30 px dark. Name 20 px 700 #1d1640 (first name only, D).
+
+### Parent pages
+
+- **PP1.** Growth map "Kids N" label: 10.5 px, uppercase, .16em, margin-top 3 px (reads "KIDS 78").
+- **PP2.** Life Pathway quests section: the "{n}/3 quests done" / "Not started" chip and the
+  "{n} of 3 quests done" count; subtitle "Your topic: {Interest} · done in child view"; Orbitron
+  700 17 px #f2fdff title.
+- **PP3.** Its header stats "Logged" and "Finished n/3" ("Seen by you" needs decision Q1).
+- **PP4.** Its empty state: the topic name, a "Not started" pill, "When {name} logs a {topic}
+  quest in child view, it shows up here."
+- **PP5.** Each row: a 48 px conic progress ring with "ct/tgt" (teal when done), a "Done" (teal) /
+  "In progress" (gold) status, and relative dates ("today", "yesterday", "N days ago").
+
+---
+
+## 2. Needs a decision
+
+### Behaviour
+
+- **B1. Release streak.** The app keeps yesterday's streak until the day ends (a child who hasn't
+  checked in yet today still sees "4-day streak"); the prototype shows 0 until today's check-in.
+  Same on the parent's Observations moods. Changing it is one rule in `lib/kidsDay.ts`
+  (`moodStreak`) in both apps.
+- **B2. Read-aloud on content change.** The app reads once per area; the prototype re-reads at each
+  Grow game ("{title}. {how}"), on the report ("World complete! Well done."), and the whole quest
+  list. More speech for a child who can't read yet, more interruption for one who can.
+- **B3. "Start Again" in child view.** Hidden in the app; the prototype shows it grey and disabled,
+  "Completed". Showing it tells the child the parent's journey is done; hiding it keeps the hub to
+  the child's five circles.
+- **B4. "Back to parent view".** The app goes to the orb screen; the prototype stays on the screen
+  it was on. Staying would land the parent on the kids page in parent view, which the app doesn't
+  have.
+- **B5. The hub's "Back" button and "Superpower" eyebrow in child view.** The app shows the app
+  bar's wordmark and a "Back" ghost button; the prototype has an eyebrow and no Back. In child
+  view, Back from the hub goes nowhere useful.
+- **B6. "Month 1 · {Interest}".** The prototype's quests eyebrow names a month, but child-view
+  quests aren't tied to the plan's months. Show the plan's current month, or keep "{Interest}".
+
+### Copy
+
+- **W1. Win lines' power tags.** The prototype ends each line with its power: "with super Focus!",
+  "That's real Curiosity!", "Pure Imagination!", "He Never Gives Up!", "Brave Voice!", "So much
+  Energy!", "all on his own!". Bringing them back needs second-person versions without pronouns
+  ("You never give up!", "All on your own!").
+
+### Privacy and data
+
+- **Q1. Parent quest acknowledgement and feedback.** The prototype's parent quest rows have an
+  "Acknowledge" / "Seen" toggle, a "How is it going?" panel (Going well, Too hard, Too easy, No time
+  this week, Loved it), "Next month" options (Keep going, Raise the target, Make it easier, Try a new
+  quest), a note, and a "Next step" line, plus "Seen by you n/3". New stored fields in transform,
+  and a question of whether the feedback feeds the next plan's prompt.
+- **Q2. Photo upload in child view** (Discover's "Add photo" / "Remove photo", Connect's "Add your
+  photo"). The child would change their own photo from child view: storage is the existing upload
+  flow, but whether a child may replace the parent-chosen photo, and the gold toasts that go with it
+  ("Photo added", "Photo removed"), are product questions.
+- **Q3. Zero-count quests on the parent page.** The app lists all three quests of each interest,
+  including "0 of N · not yet"; the prototype lists only quests the child has logged.
+- **Q4. Full name on the parent's Connect.** "From {full name}" there, first name on the child's
+  card. The prototype has no equivalent; pick one.
+
+### App issues found during the comparison (not prototype differences)
+
+- **A1. Grow save failure.** If "Finish world" fails to save, the report still shows a total
+  computed on the device and `world_done` isn't sent, so the child sees a result that wasn't kept.
+- **A2. Streak wins can be shown again.** A streak win's key is `streak:N`, which changes every day,
+  so a child can "Show my grown-up" a longer streak again (up to the 60 cap).
+- **A3. Parent Connect list shifts.** Shown wins load after the page and are put first, so the list
+  moves and per-card edits (kept by position) land on other items.
+- **A4. Parent Connect row keys.** Rows are keyed by title, so a shown win with the same title as
+  another item would collide.
+
+---
+
+## 3. Ignore: prototype issue, or the app is better
+
+### Demo content and contradictions
+
+- The sample child "Rahul", his photo, "age 10", the "Priya / Rahul" profile rows, and the
+  "Thinker" archetype in copy and read-aloud: the app uses the real child and result.
+- The five hard-coded wins ("First in the district relay", "Finished your first build", "Science
+  project picked for the fair", "Two new friends at the club", "You are The Thinker"), and the fake
+  quest logs and stars seeded for untouched interests.
+- "Rahul, age 10" on the Connect card beside "Only your first name goes on the card.": the app's
+  first-name-only card is the consistent one (age dropped on purpose).
+- He/his in copy ("He loved it", "all on his own!", "He Never Gives Up!", "plan his next month"):
+  the app writes to the child and names no pronoun.
+- "Kids Mode": the app calls it child view throughout.
+
+### Weak rules
+
+- Quests: +1 star per tap with no daily limit and +5 on completion; sharing gives +1 star; awards
+  keyed by list position (`share:<index>`), so they move when the list changes. The app logs once a
+  day, gives stars once, and keys wins by what they are.
+- Grow's +2 stars per world per day (dropped with the stars, D).
+
+### Implementation shortcuts
+
+- Everything kept in `localStorage`, unpadded day keys (`2026-11-1`), the note dropped on save.
+- The kids page as an iframe over the hub, the 900 ms veil, the bottom "Back" pill and the profile
+  pill hidden while it's open (the app has a route, the app bar and Home).
+- `sort(random - .5)` shuffling (the app's Fisher–Yates is unbiased); Catch with no fallback when
+  the bad list runs out; Spark dropping a point before lighting its cell.
+- Values computed but never shown (Grow's score, band, strongest, weakest, mission): the app shows
+  them (D).
+- Bottom padding 120 px, there to clear the iframe's "Back" pill.
+- The round ambient / voice toggle at the bottom right: the app's header holds the voice control.
+- The Grow spoke drawn slate (the prototype marks Grow inactive; the app shows locks).
+- The frontier spoke always on Discover: the app puts it on the child's next circle.
+
+### Where the app is better
+
+- Locked, loading and error states with "Try again" (Discover, Grow, Transform, Release, Connect).
+- Busy states ("Saving…", disabled buttons while sending), failed-save toasts, the
+  "Your grown-up has lots to see already." limit message.
+- Accessibility: radio roles and labels, `role="status"`, focus on × in the game dialog, Escape to
+  close, closing only when a press started on the backdrop, Escape and click-outside on the profile
+  menu, the power labels "{name}: play its game" (not "click here to enjoy the game"), the profile
+  button "Your profile", keyboard controls and labels in the games.
+- The profile panel's 288 px (it holds edit, remove and "Add Child"); the plain "Child" label for a
+  child with no age.
+- Pre-filling today's mood and note on return; the empty "No wins yet" state; the teal tick on wins
+  already shown; "Done today" after the day's log.
+- Taps on click rather than pointer-down (no accidental presses while scrolling); memory pads
+  disabled outside the child's turn.
+- The read-aloud voice and pitch coming from the app's one TTS setting.
+- The parent Connect "From {name}" strings and Observations' moods (not in the prototype; D).
+
+---
+
+## 4. Already decided
+
+Recorded in [child-view-build-plan.md](child-view-build-plan.md), not to be changed back:
+
+- Circles lock in the child's order; a locked circle shows "{Area} opens later" / "Keep going!".
+- No PIN on "Back to parent view" (P.1); no sharing from child view, "Show my grown-up" instead,
+  shared from the parent's Connect (P.2); Grow's handover removed, worlds feed recommendations (P.3);
+  Discover's powers from the child's real result (P.4).
+- No child versions of Connect, Growth, Life Pathway or Observations.
+- The app bar and the kids bar on the kids page; the avatar video on entry; the page fade; ambient
+  music kept; read-aloud through the app's TTS preference, once per entry.
+- Stars: kept on the server, not shown; +1 for a flip, +3 for the badge, +1 for a mood a day, +1
+  for a quest's first log; none for Grow or sharing.
+- Data on the server: moods with the note (capped at 500 characters), quest logs once a day, world
+  runs (10 kept), best times (0.5–600 s); the interest from the plan's text, or the picker.
+- Tokens instead of hex; Tailwind-scale sizes; no sounds in the games; the Grow insight box not
+  built; Grow's report contents (total, trend, strongest, keep practising, mission).
+- The profile menu's real rows, "Add Child", and opening a child's view at the circles.
+
+## 5. Web and mobile
+
+On 2026-11-12 the mobile kids screens were aligned with the web at phone width, and the web's
+secondary kids button (`.kids-btn-off`) was made fully rounded like mobile's. What still differs on
+purpose:
 
 - No backdrop blur on mobile; the game dialog is in a Portal and keeps clear of the notch.
 - No hover tips or hover motion, and no keyboard controls in the games, on mobile.
 - Animation by transform and opacity only on mobile: the game progress bar's fill jumps instead
   of sliding, and the timing and voice rings grow by scaling (their thin borders scale with them).
 - The kids page glow stays fixed behind the scroll on mobile; on the web it scrolls with the page.
-- The profile pill shows the dot only on mobile. The web also hides the name below 640px, so at
-  phone width they match.
+- The profile pill shows the dot only on mobile; the web also hides the name below 640px.
 - The web games' `aria-live` captions aren't ported to mobile.
 - Mobile's style file (`components/kids/palette.ts`) still has older sizes for some Grow game
   pieces, which `GrowGames.tsx` overrides; nothing differs on screen.
 
----
+Applying an item from group 1 means changing both apps the same way.
 
-## 1. Hub (circles) in child view — `pages/PersonalityJourney.tsx`
+## 6. Fixed since the comparison
 
-1. Circles lock in the child's order (Discover → Grow → Transform → Release → Connect), locked ones dim; prototype has no locks. **D**
-2. The glowing spoke and moving dots sit on the child's next circle; prototype always on Discover. **U**
-3. "Start Again" is hidden in child view; prototype shows it grey, disabled, check badge, "Completed". **U**
-4. Discover hover tooltip "Explore Rahul's personality analysis Results" is missing. **U**
-5. No ring on the tapped circle before it opens (prototype `sel` box-shadow). **U**
-6. Grow spoke is cyan; prototype slate #5b6b78, 1.1px, opacity .22. **U**
-7. No "Superpower" eyebrow at the top of the hub; the app bar and an extra "Back" ghost button are there instead. **U**
-8. Sound: prototype's round ambient/voice toggle at bottom right is replaced by the header TTS button. **U**
-9. Discover tap: video plays to its end (prototype cuts at 3000 ms), `object-contain` (prototype `object-cover` with hue/saturate/contrast filter and radial overlay). No `viewed` call is D; length, fit and filter **U**
-10. Transform/Grow: the hub navigates at once and the kids page plays its video; prototype plays Transform's 5 s video on the hub, Grow none. **D**
-11. Kids page is a route (prototype an iframe with a 900 ms veil and .6 s fade, a bottom-centre "Back" pill, profile pill hidden). Fade and app bar **D**; missing bottom "Back" pill **U**
-12. Ambient music keeps playing on the kids page (prototype mutes it). **D**
-
-## 2. Profile menu — `Layout.tsx`, `ProfileChildren.tsx`
-
-1. Heading "Signed-in profile" (prototype "… · preview"). **D**
-2. Panel 288 px wide (prototype 230). **U**
-3. Button aria-label "Your profile" (prototype "Signed-in profile"). **U**
-4. Name and view label beside the dot only from `sm` up. **D**
-5. Real rows: parent (not clickable), each child (photo/dot, "Child · age N" / "Child · setting up" / plain "Child"), pencil and ×, "Add Child" with "Maximum of 10 children", Home, Account settings, Sign out, plus loading/error/"Try again" and hover title. **D**; plain "Child" label **U**
-6. Tapping a child opens that child's view at the circles (or onboarding if still setting up); prototype just switches role in place. **D**
-7. In child view: only the child row and "← Back to parent view"; prototype lists both profiles. **D**
-8. Child row text in child view is "Child view" (prototype "Child · age 10"). **U**
-9. "Back to parent view" goes to `/PersonalityJourney/:childId`; prototype stays on the screen. **U**
-10. Escape and click-outside close the menu (prototype neither). **U**
-11. Mobile: the pill is the dot only at every width; the web also hides the name below 640px, so at phone width they match.
-
-## 3. Kids page shell — `KidsMode.tsx`, `KidsHeader.tsx`
-
-1. Kids bar sticky under the app bar, slightly different paddings and blur. **D**
-2. Home icon is lucide `House` (with a door), not the prototype's path; press moves 5 px (prototype 4); right padding 20 (prototype 22). **U**
-3. Area chip tracking .05em (prototype .08em), left padding 16 (prototype 18). **U**
-4. "Read to me" on: takes the area's colour and Orbitron Black (prototype always cyan, Rajdhani 700 16); gap 8 vs 10; press 5 px and shadow shrinks; icon 20 vs 22 px. **U**
-5. Read-aloud uses the app's global TTS preference (two controls for one setting). **D**
-6. Reads once per area entry, after the video (D); does not re-read when content changes (each Grow step, quest list). **U**
-7. Discover read-aloud text "You have superpowers. Tap each power around you." (prototype "You are The Thinker. You can think about one hard thing for a long time. Tap each power around you."); pitch 1.15 vs 1.1, different voice list. **U**
-8. Star counter: neither shows one. No difference.
-9. No gold toast component (prototype: star pill, Orbitron 900 19px, 2.6 s, for photo added/removed, share, copy); app only has error toasts. Share toasts **D**; photo toasts / toast component **U**
-10. No confetti anywhere (prototype: 46 pieces plus cyan and gold rings each time Discover opens, and `growConfetti` on the Grow report). **U** — the plan still mentions confetti (lines ~77, 199, 512).
-11. Locked-circle card "<Area> opens later" / "Keep going!". **D**
-12. Extra loading and error states ("We couldn't load this." / "Try again", "Your powers are still on their way.", "We couldn't load your powers." / "Look again", page loader). **U**
-13. Main area bottom padding 64 px (prototype 120). **U**
-14. Speech is cancelled on unmount rather than on Home tap. Equivalent.
-15. ~~Mobile: kids bar not sticky; smaller Home, chip and Read to me; Read to me stays Rajdhani.~~ **Fixed**
-
-## 4. Discover — `DiscoverPowers.tsx`, `lib/kidsPowers.ts`
-
-1. Eyebrow, heading and line come from the child's real result ("Hey {first name}, your superpowers are here!", "You are The {style}"). **D**
-2. Power names match; levels follow the child's result. **D**
-3. Power aria-label "{name}: play its game" (+ "(not opened yet)"); prototype "{name}: click here to enjoy the game". **U**
-4. "Share your superpower" (WhatsApp, Instagram) removed. **D**
-5. Photo: no "Add photo" upload, no "Remove photo", no photo toasts; avatar is the onboarding photo or initial. **U**
-6. Eyebrow doesn't pop in (prototype `kPop .6s`). **U**
-7. Name pill fades instead of rising (`kUp .5s .5s`). **U**
-8. Hover tip: no arrow, no .2 s fade; also shows on keyboard focus. **U**
-9. Count pill pops for 0.7 s (prototype 0.6 s). **U**
-10. Heading colour `kids-text` #f2fbff (prototype #e7f5f9); "The {style}" has no cyan glow. **U**
-11. Eyebrow, twinkles and opened-power edge in `kids-streak` #ffe08a (prototype #ffd98a, which the plan maps to `constellation-gold-bright`). **U**
-12. Photo ring: 3-stop conic (prototype 4-stop with #0a5b74); inner #0e3a4a becomes `discover-shade` .6; photo position 50% 35% lost. **U**
-13. Power bubble backgrounds, selected gradient, glow and ink use different tokens from the prototype colours. **U**
-14. Name pill and tip backgrounds `kids-bg` #060a18 (prototype #05131a), text #f2fbff (prototype #eafdff). **U**
-15. Count pill gradient cyan → #1b8aa3 (prototype cyan-bright → #0a5b74). **U**
-16. Behaviour and stars match: tap opens the game, first tap +1, all seven +3 (no 900 ms delay), no visible "Try this today" in either.
-17. ~~Mobile: no twinkles, float or ring spin; solid cyan photo ring; name pill at 63%; fixed type sizes; innermost ring at opacity .45.~~ **Fixed**. Still: no hover tip on mobile, no blur. **D**
-
-## 5. Game dialog — `GameDialog.tsx`
-
-1. Backdrop `kids-bg` .8, no blur, padding 16, no rise-in (prototype rgba(2,6,15,.84), blur 6, padding 20, .25 s). **U**
-2. Panel 576 px, radius 28, `p-5`, plain background, 2 px border, one glow, no pop (prototype 540, radius 32, gradient #0e3a4a → #05131a, 1 px border, two shadows, `kPop`). **U**
-3. Title row: bare 28 px icon (prototype inside a 48 px circle), title 24 px no tracking (prototype Orbitron 700 22 px .04em). Close is a 44 px dark round button (prototype 48 px outlined circle); it was square-cornered until fixed on 2026-11-12. **U**
-4. Instruction copy matches; colour `kids-body` #c6dbe6 (prototype #e7f5f9), 20 px (prototype 21). **U**
-5. Win screen: no twinkling dots, no 72 px pulsing check medallion; "You did it!" 30 px (28); seconds 48 px (44) with no gold glow. **U**
-6. "New best!" / "Best: X.Xs" / "First try!" are plain teal lines (prototype: solid gold popping pill for New best, outlined cyan pill otherwise). **U**
-7. Win lines: second person is D. Each line also drops its power tag ("with super Focus!", "That's real Curiosity!", "Pure Imagination!", "He Never Gives Up!", "Brave Voice!", "So much Energy!", "all on his own!"), and shows as a plain paragraph instead of the dashed box. **U**
-8. WhatsApp/Instagram removed **D**. "Play again" is a filled cyan Orbitron button, 56 px, not uppercase (prototype outlined cyan, 46 px, uppercase Rajdhani). "Done" is a dark round button, now rounded (prototype cyan gradient with glow, uppercase). **U**
-9. Timing, 0.5 s pause, 0.1 s precision and best-time saving match; the 0.5–600 s clamp is extra. **D**
-10. Closes only when the press started on the backdrop, also on Escape, and focuses × (prototype any backdrop click). **U**
-11. Mobile: Portal **D**. ~~Closes only with × or Android Back, "Done" in Orbitron, content scrolls only on the result.~~ **Fixed**
-
-## 6. Discover mini games — `KidsGames.tsx`, `GamePieces.tsx`, `lib/kidsGames.ts`
-
-Rules, timings, goals and captions match exactly (shared rules **D**). Visual differences, all **U**:
-1. Frame max `calc(100vh - 210px)` (prototype 260); background and caption colours differ (`kids-muted` #a9c6d4 vs #84a0b2).
-2. Sky stars don't twinkle; colour #f2fbff (prototype #eafdff).
-3. Bursts always gold, scale .3 → 1.6 (prototype cyan for climb and energy, .4 → 2.6).
-4. Focus: light doesn't pulse, moves in 1.0 s (1.1), gradient ends #1b8aa3 (#0a5b74).
-5. Curious: boxes don't float or flip; "?" fixed 30 px; empty dot #1a2442 (#3c5568).
-6. Order: line has no glow; next star doesn't pulse; wrong tap turns pink 400 ms instead of shaking; numbers fixed 20 px; done number #08101f (#05131a).
-7. Draw: stroke #ffc94b (prototype #ffd98a), no glow.
-8. Climb: flag doesn't twinkle; climber .10 s (.12); mountain #1b8aa3 (#0a5b74).
-9. Voice: white-to-cyan orb with dark mic, no border, fixed glow (prototype dark cyan with light mic, gold border above 90%, glow 20 → 70 px); bars 4 px apart (5).
-10. Energy: bursts gold instead of cyan.
-11. Mobile: same rules, drawn from measured width, transform-only motion. **D**
-
-## 7. Shared across the Grow and Transform tabs
-
-1. Locks ("{Area} opens later"). **D**
-2. Avatar video on entry. **D**
-3. No stars shown, no star toast. **D**
-4. Extra loader and error states ("We couldn't load the worlds." / "We couldn't load your quests." with "Try again", error toasts). **U**
-5. One fixed read-aloud line per tab; prototype re-reads per step ("{title}. {how}", "World complete! Well done.", the full quest list, "What are you into? …"). **U**
-6. Per-element entrance animations (kUp, kPop, kUnfoldY) mostly missing; only the page fade/rise. Page fade **D**; the rest **U**
-7. ~~`.kids-btn-off` on its own had no `rounded-full`, so Grow's Back, "Try again", "Pick another world", Transform's "Back to my quests" and "Done today" (and the dialog's × and "Done") were square-cornered on the web.~~ **Fixed**
-
-## 8. Grow — "Pick a world"
-
-1. Eyebrow "Grow" is plain text, not the prototype's bordered pill. **U**
-2. Heading font-black #f2fbff (prototype Orbitron 700 .02em #e7f5f9); "world" cyan without glow. **U**
-3. Subtitle text same; colour #c6dbe6 (prototype #84a0b2). **U**
-4. Grid `2 / sm:3` columns, gap 16, mt 32 (prototype auto-fit 220 px, gap 20, mt 34). **U** (mobile 2, as the web at phone width)
-5. World card is the chunky `.kids-tile` (radius 26, 3 px colour border, solid 7 px shade shadow) instead of the prototype's soft gradient card (radius 30, 1 px cyan border, soft shadow). **U**
-6. Icon is a bare 48 px stroked icon; no 104 px glowing orb, no spinning dashed ring, no float. **U**
-7. Colours cycle through the 6 power pairs (prototype 3 orbs: cyan, gold, cyan-deep). **U**
-8. World name Orbitron black text-lg (prototype Orbitron 700 19 px #eafdff). **U**
-9. Tag "3 games" / "Last: {total}" (D); not uppercase, no tracking, and "Completed" in gold is dropped. **U**
-10. Played marker is a bare teal check at the card's corner (prototype 34 px gold disc with dark check, popping, on the orb). "A tick" **D**; look **U**
-11. Motion: lift 4 px, press 6 px, no tilt, no staggered unfold, no cyan hover glow, no .96 press scale. **U**
-12. World names, order and icons match; the prototype's three either/or rounds per world are gone. **D**
-
-## 9. Grow — game screens (intro, play, result)
-
-1. Header left-aligned (prototype centred). **U**
-2. Back button is an off-filled square-cornered button with ArrowLeft (prototype 44 px outlined circle with chevron). **U**
-3. Progress dots 40×12, `kids-streak` / discover / `kids-off`, no glow (prototype 46×10, gold #ffd98a / cyan with glow / cyan .14, animated). **U**
-4. One line "{World} · Game n of 3" (prototype two pills: world name cyan, "Game n of 3" gold). **U**
-5. Game title font-black text-3xl/4xl (prototype Orbitron 700 clamp 28–44 px #e7f5f9). **U**
-6. How-to line #c6dbe6 (prototype #84a0b2). **U**
-7. Intro is a `.kids-card` with the skill in muted text and a pill "Play" button; prototype a square game-sized frame, skill in gold, 150 px round pulsing "Play", and "Played before" / "New game" (no per-game best is kept). **U**
-8. Play / Try again behaviour matches.
-9. Result: "Well done!" in light text, then the score (48 px, `kids-streak`) and band label (D); no 96 px gold check orb, different colours and sizes. **U**
-10. Result buttons inside the card, Orbitron, not uppercase, the off one square (prototype outside the card, 62 px, uppercase Rajdhani, gradient / outlined). **U**
-11. "Finish world" saves to the server with "Saving…" (D). If the save fails the report still shows a local mean and `world_done` isn't sent. **U**
-12. No +2 stars per world per day (D); 10 runs kept instead of 6 (D); runs store scores, total and time only (D).
-
-## 10. Grow — the games
-
-1. Frame `min(100%, 100vh-260px)`, min 220 (now also on mobile), no 540 px cap (prototype `min(100%,540px,100vh-300px)`, min 260). **U**
-2. Frame background, static sky stars, bar fill (#4be9ff → #ffe08a vs #1ec4e8 → #ffd98a), HUD colour, caption colour all differ. **U**
-3. No sounds (prototype beeps on hit, miss and pad). **D**
-4. Rules, thresholds, timings, scoring and result lines match exactly. Minor: Fisher–Yates shuffle; Catch picks a good word when the bad list is empty; Spark can light a cell the prototype would skip (slightly higher scores). **U**
-5. Catch: no gold/red hit bursts; basket has no glow; basket #ffe08a (prototype #ffd98a); arrow keys and ARIA label added. **U**
-6. Sort: no fly-off (±14°), shake or pop; only the border changes; wrong colour pink #ff8fb1 (prototype red #ff7a7a); card and side-button colours differ; reacts on click not pointer-down. **U**
-7. Memory: second pad #ffc94b (prototype #ffd98a); no frame flash on a wrong tap; pads react on click and are disabled outside input. **U**
-8. Timing: "Miss" pink (prototype red), "Perfect!/Good" #ffe08a (#ffd98a), no glow, no pop; target colour. **U**
-9. Dash: no burst on grab; picked chips use the area-coloured `kids-chip` with no pop (prototype gold chips popping in). **U**
-10. React: "Too soon!" pink (red); light gradient tokens differ. **U**
-11. Spark: no stroke glow; stroke colours #ffc94b / … (prototype #ffd98a / …); inner line #f2fbff (#ffffff). **U**
-12. All 18 games' content matches exactly; `build_on`/`support` added for the parent prompt (D); Dream Catcher / Box Ideas insight not built (D).
-
-## 11. Grow — report ("World complete!")
-
-1. Eyebrow plain text in cyan (prototype gold pill "{World} report"). **U**
-2. "complete!" in cyan, font-black (prototype gold with glow, Orbitron 700). **U**
-3. Missing: the 150 px floating world orb, and the report confetti. **U**
-4. Shown by the build, not on the prototype screen: total card with band and trend, per-game score and bar on band-tinted cards (no gold check discs), "Strongest", "Keep practising" with tip, "Your mission". Contents **D** (plan lists them), but not flagged as additions.
-5. Dashed insight box not built. **D**
-6. Sharing ("Share it", WhatsApp, Instagram, their toasts and message) not built. **D**
-7. "Play again" filled primary (prototype outlined cyan, 62 px, uppercase); "Pick another world" a square button (prototype a borderless text link under the share row). **U**
-8. Band thresholds and labels match; band colours #ffc94b / cyan / violet (prototype #ffd98a / cyan / violet). **D**
-
-## 12. Transform — interest picker
-
-1. No interest in the plan → picker "What are you into?" (prototype falls back to "drawing"); interest found by keywords in the plan's text. **D**
-2. Subtitle "Pick one. You get quests for it." in both states (prototype "Pick what else you are into. You get new quests for it."). **U**
-3. "Back to my quests" is a dark round button (prototype transparent, 2 px gold border, #ffe08a, 48 px, rounded). **U**
-4. Grid `2 / sm:3` columns (prototype auto-fit 200 px, gap 16, mt 30). **U** (mobile 2, as the web at phone width)
-5. Tiles: `.kids-tile` with off background and light text (prototype solid colour fill, dark ink Orbitron 900 20, radius 24, lift 3 px). **U**
-6. Colour order discover, teal, transform, … (prototype cyan, gold, teal, …). **U**
-7. Tiles disabled while saving; picker closes only after the server accepts. **U**
-8. 9 interests, 27 quests, how-to lines and targets match exactly; keyword lists added. **D**
-
-## 13. Transform — "Your quests"
-
-1. Header centred (prototype left-aligned). **U**
-2. Eyebrow "{Interest}" (prototype "Month 1 · {Interest}"). **U**
-3. Subtitle "Do it for real, then tap the big button." missing. **U**
-4. Interest chips: centred, fully rounded `kids-chip` (prototype left-aligned, radius 20, min-height 60); off background area .14 (gold .08); tag text smaller; selected chip disabled. **U**
-5. "From your parent" only on the plan's interest (prototype always the first chip). Follows **D**
-6. "+ Add another" is a solid area chip with a Plus icon (prototype dashed gold, transparent, #ffe08a). **U**
-7. Quest card: dots top-right and the action button in a full row below (prototype two columns with a 132 px round button on the right). **U** (mobile now matches the web)
-8. Card radius 26, `p-5`, no shade shadow, gap 20 (prototype radius 28, 24/26, 8 px shade shadow, gap 18). **U**
-9. Quest colours discover, teal, transform — quests 2 and 3 swap gold and teal. Six pairs **D**; order **U**
-10. "Quest {n}" small muted label (prototype a 44 px coloured rounded square with the number). **U**
-11. How-to colour #c6dbe6 (prototype #d4e6ee). **U**
-12. Progress dots 20 px, 2 px border, no star (prototype 30 px, 3 px border, 16 px ink star when filled). **U**
-13. Log button is an area-gold pill "I did it today" (prototype 132 px circle in the quest's colour, "+" and "I did it", hover scale). **U**
-14. Once a day per quest via the server (D); the button becomes a disabled "Done today" (**U**); all buttons disabled while saving. Prototype adds 1 per tap with no daily limit.
-15. Only a picked interest can be logged. **D**
-16. Done: inline teal check "Quest done!" (text **D**; prototype 132 px teal popping circle "Done" **U**).
-17. Stars +1 on a quest's first log (prototype +1 per log, +5 on completion). **D**
-
-## 14. Release (child view) — `ReleaseCheckIn.tsx`
-
-1. Header with the app bar, no star counter. **D**
-2. Content width 896 px (prototype 1000) and different paddings. **U**
-3. Entry animation on the whole page, plus reduced-motion handling. **D**
-4. Locked card "Release opens later". **D**
-5. Load error "We couldn't load this." / "Try again". **U**
-6. Read-aloud once per entry. **D**
-7. Copy identical: "Daily check-in", "How do you feel today?", "There is no wrong answer."
-8. Eyebrow matches.
-9. h1 36/48 px fixed steps (prototype clamp 34–56). **D**
-10. Sub line 24 px, 576 px wide. **D**
-11. Mood labels, order, mouths and colours match. **D**
-12. Mood grid by viewport breakpoints (2/3/5); at about 830–1023 px it shows 3 + 2 where the prototype fits 5. **U**
-13. Tile matches; label 18 px (19) **D**; transition .1 s (.12). **U**
-14. Face matches.
-15. Radio roles and labels added. **U**
-16. "Want to tell more?" copy identical.
-17. Note card doesn't pop in (prototype `kPop .35s`). **U**
-18–20. Card, title, textarea sizes rounded. **D**
-21. Note capped at 500 characters. **D**
-22. Status lines identical; `role="status"` added.
-23. Save button shadow 6 px (prototype 7) **U**; padding rounded **D**; "Saving…" busy state added **U**
-24. The note is kept on the server (prototype drops it). **D**
-25. Stored on the server per local day. **D**
-26. +1 star once a day, not shown. **D**
-27. Today's saved mood and note are pre-filled on return (prototype always starts empty). **U**
-28. Failed save shows a toast. **U**
-29. Day keys `YYYY-MM-DD` (prototype unpadded). **U** (internal)
-30. Streak copy identical.
-31. Streak counts from yesterday when today has no mood yet (prototype shows 0 until today's check-in). **U**
-32. Flame path has one control point −5 instead of −5.5. **U**
-33. Streak text matches; spacing rounded. **D**
-34–38. ~~Mobile: smaller headings, tiles and face; Save on its own line; smaller textarea and streak row.~~ **Fixed**. Still: no blur, no hover on mobile. **D**
-
-## 15. Connect (child view) — `ConnectWins.tsx`, `lib/kidsWins.ts`
-
-1. Locked card "Connect opens later". **D**
-2. Loading spinner while quests and worlds load. **U**
-3. Read-aloud "Your wins. Pick one and show it to your grown-up." (prototype "Share your wins. Pick a win. Send it to people you love."). **D** (exact wording not recorded)
-4. h1 "Your wins" (prototype "Share your wins"); sub "Pick a win. Show it to your grown-up." (prototype "Pick a win. Send it to people you love."). **D** (exact copy not recorded)
-5. Heading sizes rounded. **D**
-6. Wins from the child's own data (quests, worlds, badge or "Opened N superpowers", streak of 3+); prototype adds five hard-coded wins. **D**
-7. "Thinker badge unlocked" at 3 powers → "Discover badge unlocked" at 7 / "Opened N superpowers". **D**
-8. Empty state "No wins yet" / "Open your powers, finish a quest or play a world. Your wins show up here." **U**
-9. Teal check on wins already shown. **U**
-10. One column below `md`, then 1fr / 1.1fr (prototype always two equal columns, gap 26). **U**
-11. Win buttons reuse `.kids-tile`: Orbitron 16 px (prototype Rajdhani 700 20), radius 26 (22), each win's own colour for border and fill (prototype neutral, always pink when picked), 7 px shade shadow (none), lift up (prototype slide right 4 px), no min-height 72. **U**
-12. Dot 12 px (14). **D**
-13. Dot colour order swaps gold and teal for wins 2 and 3. **U**
-14. Card column isn't sticky (prototype `sticky; top:110px`). **U**
-15. Card is a pink-tinted `.kids-card`, centred, no gradient, no shadow, no min-height (prototype pink → violet gradient, `0 10px 0 #5a4aa8`, radius 30, min-height 300, left-aligned). **U**
-16. Card doesn't re-pop on each pick. **U**
-17. Card header: centred 20 px star before "Superpower" in light grey Rajdhani (prototype "SUPERPOWER" Orbitron 900 14 px dark ink on the left, 34 px spinning star with dark stroke on the right). **U**
-18. Win title light, centred, 30 px, no balance (prototype dark ink #08101f, left, clamp 26–34, balanced). **U**
-19. Avatar 56 px, 3 px pink border, radial fill, glow, centred photo; initial 24 px light (prototype 72 px, 4 px dark border, gold fill, `0 5px 0 #5a4aa8` shadow, photo at 50% 35%, initial 30 px dark). **U**
-20. Name line: first name only (D); age dropped and colour `kids-body` (prototype "Rahul, age 10" #1d1640). **U**
-21. Photo alt is empty (prototype "Rahul"). **U**
-22. No "Add your photo" / "Change your photo" control (dashed pink, camera icon, 240 px JPEG crop, toasts). **U**
-23. WhatsApp / Share / Copy (with +1 star and toasts, message "<win> — Rahul, on Superpower. superpower.app") replaced by one "Show my grown-up" button that becomes "Your grown-up can see it". **D**
-24. Button disabled while sending. **U**
-25. At 60 shown wins: toast "Your grown-up has lots to see already." Cap **D**; message **U**
-26. Wins keyed by a stable key (D); side effect: `streak:N` gets a new key each day, so a longer streak can be shown again. **U**
-27. Footnote "Only your first name goes on the card." identical; size rounded. **D**
-28. ~~Mobile: smaller heading, card star, "Superpower", title, avatar and name; 56 px button.~~ **Fixed**. Mobile is one column, as the web below 768px.
-
-## 16. Parent pages showing the child's activity
-
-**Growth map label ("Kids N")**
-1. Text and when it shows match. **D**; matched by area name, not index. **D**
-2. Style 11.5 px, not uppercase, no tracking, positioned 30 px below the node (prototype 10.5 px uppercase .16em, "KIDS 78"). **U** (same on mobile)
-
-**Life Pathway quests section (`ChildQuests.tsx`)**
-3. A standalone section above the closing CTA (prototype inside the plan dashboard after "The achievement this month"). **D**; the missing "{n}/3 quests done" chip, quest counts and the two Kids Mode lines **U**
-4. Title "{name}'s quests" (D); subtitle "What {name} does in child view, quest by quest." (prototype "Your topic: {Interest} · done in Kids Mode"), weight 900 and colour differ. **U**
-5. No header stats ("Logged", "Finished n/3", "Seen by you n/3"). **U**
-6. Empty state "Nothing logged yet." (D) / "When {name} ticks off a quest in child view, it shows here." (prototype topic name, "Not started" pill, "When Rahul logs a {topic} quest in Kids Mode, it shows up here."). **U**
-7. Shows the plan's interest and every interest the child added and logged, each as a card (D), listing all three quests including "0 of N · not yet" (prototype only quests with a count). **U**
-8. Rows are flat: title, "{n} of {target}" / "Done" in gold, "· last 10 Nov" / "· not yet" (format D); no 48 px progress ring, no "Done"/"In progress" status, done colour gold instead of teal. **U**
-9. Missing: per-row "Acknowledge" / "Seen" toggle; the feedback panel ("How is it going?" tags, "Next month" options, note with Save, "Goes to Superpower to plan his next month. Rahul doesn't see it."); the "Next step: …" line; stored parent feedback. **U**
-10. "child view" instead of "Kids Mode". **U** (as an explicit decision)
-11. No demo data. Implicit **D**
-
-**Connect page ("From <name>")**
-12. The child's shown wins come first; not in the prototype. **D**
-13. Row strings: kind "From <full name>", caption "<name> chose to show you this in child view.", kids star icon, lower-case "today / yesterday / N days ago", newest first. **U**
-14. Full name here, first name on the child's card. **U**
-15. Shown wins load after the page and are prepended, so the list shifts and per-card edits (kept by index) move to other items. **U**
-16. Rows keyed by title, so a shown win with the same title as another item would collide. **U**
-17. Shared through the existing WhatsApp / Instagram / X flows. **D**
-18. Mobile does the same.
-
-**Observations moods (`RecentMoods.tsx`)**
-19. Not in the prototype (its only mood UI is a child variant of that page, not built per the plan). **D**
-20. Contents and placement match 2.4. **D** (exact copy and placement not recorded)
-21. Streak uses the same yesterday rule as Release item 31. **U**
-
-## 17. Mobile-only mismatches with the web build
-
-1. ~~Grow report eyebrow, play line and intro card used the world's colour on mobile, the area colour on web.~~ **Fixed**
-2. ~~Quest dots below the how-to on mobile, top-right on web.~~ **Fixed**
-3. No keyboard controls in the games on mobile (arrows, Enter, Space). Kept: no hardware keyboard on a phone.
-
-See "Web and mobile" at the top for the differences kept on purpose.
+- The web's secondary kids buttons were square-cornered (Grow's Back, "Try again", "Pick another
+  world"; Transform's "Back to my quests" and "Done today"; the game dialog's × and "Done").
+- On mobile: the kids bar didn't stick and its controls were smaller; Discover had no looping
+  animations, a solid photo ring, the name pill at 63%, fixed type sizes and a faded inner ring;
+  the game dialog closed only with × or Back and its "Done" was in Orbitron; Release's headings,
+  tiles, note card and streak row were smaller, with Save on its own line; Connect's heading, card
+  and button were smaller; Grow used each world's colour where the web uses the Grow colour; quest
+  dots sat below the how-to.
