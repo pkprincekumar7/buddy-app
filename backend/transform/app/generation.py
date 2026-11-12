@@ -203,6 +203,8 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
         validator = plans.PLAN_VALIDATOR if kind == "plan" else plans.TRACKER_VALIDATOR
         # Over-long text is clipped, not a reason to fail (common.generation.fit).
         answer = clip_to_schema(result.data, validator.schema)
+        # Repeated ids would make two fields (or activities) share what the parent fills in.
+        answer = plans.unique_ids(answer)
         problems = plans.errors(validator, answer)
         if problems:
             return await give_up(f"the answer didn't fit the schema at {', '.join(problems[:5])}")

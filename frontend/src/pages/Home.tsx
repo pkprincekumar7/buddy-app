@@ -2,11 +2,11 @@ import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
-import { children as childrenApi } from '@/api/children';
 import { services, unwrap } from '@/api/services';
-import { useQuery } from '@tanstack/react-query';
-import ChildCard from '@/components/shared/ChildCard';
+import { useChildren } from '@/hooks/useChildren';
+import { childPath } from '@/lib/childPaths';
 import PageLoader from '@/components/shared/PageLoader';
+import ChildViewNews from '@/components/home/ChildViewNews';
 import {
   Sparkles,
   ArrowRight,
@@ -20,7 +20,6 @@ import {
   Users,
   Smartphone,
   Loader2,
-  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -107,24 +106,11 @@ export default function Home() {
     }
   };
 
-  const {
-    data: childrenRaw = [],
-    isLoading,
-    isLoadingError,
-    isFetching,
-    refetch,
-  } = useQuery({
-    queryKey: ['children'],
-    queryFn: () => childrenApi.list(),
-  });
-  const children = Array.isArray(childrenRaw) ? childrenRaw : [];
+  const { list: children, isLoading, isLoadingError, isFetching, refetch } = useChildren();
 
   const handleStartJourney = () => {
     void navigate('/Onboarding');
   };
-
-  // TO ENABLE MULTIPLE CHILDREN: replace children[0] with the child the user selected.
-  const firstChild = children[0]?.id ? children[0] : null;
 
   if (isLoading) {
     return <PageLoader />;
@@ -156,13 +142,7 @@ export default function Home() {
         <div className="pointer-events-none absolute left-10 top-40 h-72 w-72 rounded-full bg-primary/[0.05] blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 right-10 h-96 w-96 rounded-full bg-personality/[0.04] blur-3xl" />
 
-        <div
-          // Padding was previously shrunk when children existed (py-8) because the
-          // children management section below provided visual weight. Now that section
-          // is hidden, always use full hero padding. Restore the conditional
-          // `children.length > 0 ? 'py-8 md:py-12' : 'py-24 md:py-36'` when re-enabling.
-          className="relative mx-auto max-w-6xl px-4 py-24 md:py-36"
-        >
+        <div className="relative mx-auto max-w-6xl px-4 py-24 md:py-36">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -187,7 +167,7 @@ export default function Home() {
               capable individual.
             </p>
 
-            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:flex-wrap">
               {children.length === 0 ? (
                 <Button
                   size="xl"
@@ -199,22 +179,30 @@ export default function Home() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
-                // "Continue Your Journey" is shown here because the children management
-                // section below is hidden. When that section is re-enabled, remove this
-                // else-branch so the hero goes back to showing no button when children exist.
-                <Button
-                  size="xl"
-                  onClick={() =>
-                    void navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
-                  }
-                  className="btn-primary rounded-full transition-all duration-200"
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Continue Your Journey
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
+                // One child: "Continue Your Journey". Several: one button each. The
+                // profile menu lists them too, and adds or deletes them.
+                children.map((child) => (
+                  <Button
+                    key={child.id}
+                    size="xl"
+                    onClick={() => void navigate(childPath(child))}
+                    className="btn-primary rounded-full transition-all duration-200"
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {children.length === 1
+                      ? 'Continue Your Journey'
+                      : `Continue with ${child.name}`}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                ))
               )}
             </div>
+            {/* What each child did in child view: their parent pages open later. */}
+            {children
+              .filter((child) => child.progress.conversation)
+              .map((child) => (
+                <ChildViewNews key={child.id} child={child} />
+              ))}
           </motion.div>
         </div>
       </section>
@@ -263,64 +251,6 @@ export default function Home() {
                   </>
                 )}
               </Button>
-            </motion.div>
-          </div>
-        </section>
-      )}
-
-      {/* FEATURE HIDDEN: Children management section (add child, child cards, delete child).
-          To re-enable: remove the `{false && ( ... )}` wrapper below, remove the `firstChild`
-          variable and the "Continue Your Journey" else-branch in the hero above, and restore
-          the hero padding conditional. The underlying API and hook (useStartOver) are untouched. */}
-      {false && (
-        <section className="py-10">
-          <div className="mx-auto max-w-6xl px-4">
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">Your Children</h2>
-                <div className="flex flex-col items-end gap-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void navigate('/Onboarding', { state: { forceNew: true } });
-                    }}
-                    disabled={children.length >= 10}
-                    className="rounded-xl"
-                  >
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    Add Child
-                  </Button>
-                  {children.length >= 10 && (
-                    <p className="text-xs text-muted-foreground">Maximum of 10 children reached.</p>
-                  )}
-                </div>
-              </div>
-
-              {children.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-                  No children yet.{' '}
-                  <button
-                    className="text-primary underline underline-offset-2"
-                    onClick={() => {
-                      void navigate('/Onboarding', { state: { forceNew: true } });
-                    }}
-                  >
-                    Add your first child
-                  </button>{' '}
-                  to begin their journey.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {children.map((child) => (
-                    <ChildCard key={child.id} child={child} />
-                  ))}
-                </div>
-              )}
             </motion.div>
           </div>
         </section>

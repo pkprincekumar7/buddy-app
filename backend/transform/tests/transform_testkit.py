@@ -107,7 +107,7 @@ TRACKER_ANSWER: dict[str, Any] = {
     "steps": [
         {
             "title": f"Step {n}", "short": f"S{n}", "when": f"{10 - n} weeks out",
-            "body": "Practise the routine.", "fields": [{"k": "note", "label": "Notes", "type": "note"}],
+            "body": "Practise the routine.", "fields": [{"k": f"note{n}", "label": "Notes", "type": "note"}],
         }
         for n in range(1, 10)
     ]

@@ -48,18 +48,18 @@ const STORED: GrowthAreaDoc = {
   status: 'in_progress',
   step: 'activity_summary',
   parent_questions: { questions: [{ id: 'self_care_gq1' }] },
-  child_rounds: null,
   answers: { self_care_gq1: 'Often' },
-  child_activity: { selections: ['a'] },
+  child_activity: { results: { summary: 'Calm' } },
   recommendations: null,
   ai_three_month_recommendations: null,
+  recommendations_run_at: null,
   feedback: 'Nice',
   generating: [],
   completed_at: null,
   updated_at: '2026-10-31T00:00:00Z',
 };
 const job = (status: string) =>
-  json(200, { job_id: 'j1', kind: 'child_rounds', status });
+  json(200, { job_id: 'j1', kind: 'recommendations', status });
 
 beforeEach(async () => {
   await SecureStore.setItemAsync('superpower.access_token', 'parent-token');
@@ -68,13 +68,13 @@ beforeEach(async () => {
 describe('the growth-area saves (build plan 7.6)', () => {
   it('carry every stored field, since a save replaces them all', () => {
     expect(
-      areaSave(STORED, 'Self care', { child_activity: { selections: ['b'] } }),
+      areaSave(STORED, 'Self care', { answers: { self_care_gq1: 'Daily' } }),
     ).toEqual({
       area_name: 'Self care',
       status: 'in_progress',
       step: 'activity_summary',
-      answers: { self_care_gq1: 'Often' },
-      child_activity: { selections: ['b'] },
+      answers: { self_care_gq1: 'Daily' },
+      child_activity: { results: { summary: 'Calm' } }, // kept
       recommendations: null,
       feedback: 'Nice', // kept, not cleared
     });
@@ -143,13 +143,13 @@ describe('a growth-area generation (build plan 7.6)', () => {
       [`GET ${AREA}/generation/j1`]: job('failed'),
     });
     expect(
-      await runGrowGeneration(ID, 'self_care', 'child_rounds', {
+      await runGrowGeneration(ID, 'self_care', 'recommendations', {
         intervalMs: 1,
       }),
     ).toBe('failed');
-    expect(sent[0]?.body).toEqual({ kind: 'child_rounds' });
+    expect(sent[0]?.body).toEqual({ kind: 'recommendations' });
     expect(
-      await runGrowGeneration(ID, 'self_care', 'child_rounds', {
+      await runGrowGeneration(ID, 'self_care', 'recommendations', {
         intervalMs: 1,
       }),
     ).toBe('completed');

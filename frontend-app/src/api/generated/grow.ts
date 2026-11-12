@@ -73,7 +73,7 @@ export interface paths {
         put?: never;
         /**
          * Start Generation
-         * @description Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`); recommendations need the answers saved (`409 needs_answers`) and replace the last ones. The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).
+         * @description Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`). Recommendations need the parent's answers saved or a run of the area's world (`409 needs_input`), are written from both, and replace the last ones; the area's `recommendations_run_at` is the run they used. The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).
          */
         post: operations["start_generation_api_v1_children__id__growth_areas__area_id__generation_post"];
         delete?: never;
@@ -96,6 +96,46 @@ export interface paths {
         get: operations["get_job_api_v1_children__id__growth_areas__area_id__generation__job_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/children/{id}/growth-areas/worlds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Worlds
+         * @description Child view's six worlds with their games, the score bands, and the child's last runs per world. Parents only (the parent's Growth page reads it too).
+         */
+        get: operations["get_worlds_api_v1_children__id__growth_areas_worlds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/children/{id}/growth-areas/worlds/{world}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add World Run
+         * @description A finished world: its three games' scores (0 to 100). The world keeps its last 10 runs. Parents only.
+         */
+        post: operations["add_world_run_api_v1_children__id__growth_areas_worlds__world__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -132,10 +172,6 @@ export interface components {
             parent_questions: {
                 [key: string]: unknown;
             } | null;
-            /** Child Rounds */
-            child_rounds: {
-                [key: string]: unknown;
-            } | null;
             /** Answers */
             answers: {
                 [key: string]: string;
@@ -147,13 +183,13 @@ export interface components {
             /** Recommendations */
             recommendations: string[] | null;
             /** Ai Three Month Recommendations */
-            ai_three_month_recommendations: {
-                [key: string]: string;
-            }[] | null;
+            ai_three_month_recommendations: components["schemas"]["Recommendation"][] | null;
+            /** Recommendations Run At */
+            recommendations_run_at: string | null;
             /** Feedback */
             feedback: string | null;
             /** Generating */
-            generating: ("parent_questions" | "child_rounds" | "recommendations")[];
+            generating: ("parent_questions" | "recommendations")[];
             /** Completed At */
             completed_at: string | null;
             /**
@@ -191,13 +227,23 @@ export interface components {
             /** Areas */
             areas: components["schemas"]["Area"][];
         };
+        /** Band */
+        Band: {
+            /** Min */
+            min: number;
+            /** Label */
+            label: string;
+            /**
+             * Color
+             * @enum {string}
+             */
+            color: "gold" | "cyan" | "violet";
+        };
         /**
          * ChildActivity
-         * @description The child's picks (option ids from `child_rounds`) and, for older flows, results.
+         * @description The child's activity results, carried by the area's events (`child_activity_results`).
          */
         ChildActivity: {
-            /** Selections */
-            selections?: string[] | null;
             results?: components["schemas"]["ActivityResults"] | null;
         };
         /** GenerationIn */
@@ -206,7 +252,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "parent_questions" | "child_rounds" | "recommendations";
+            kind: "parent_questions" | "recommendations";
             /** Area Name */
             area_name?: string | null;
         };
@@ -223,7 +269,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "parent_questions" | "child_rounds" | "recommendations";
+            kind: "parent_questions" | "recommendations";
             /**
              * Status
              * @enum {string}
@@ -238,6 +284,26 @@ export interface components {
             created_at: string;
             /** Completed At */
             completed_at: string | null;
+        };
+        /**
+         * Recommendation
+         * @description One of the area's AI recommendations (grow.app.areas.normalize_recommendations).
+         */
+        Recommendation: {
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source?: "both" | "kid" | "you" | "step";
+        };
+        /** RunIn */
+        RunIn: {
+            /** Scores */
+            scores: number[];
         };
         /** Started */
         Started: {
@@ -258,6 +324,66 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** World */
+        World: {
+            /** Name */
+            name: string;
+            /** Icon */
+            icon: string;
+            /** Mission */
+            mission: string;
+            /** Hint */
+            hint: string;
+            /** Games */
+            games: components["schemas"]["WorldGame"][];
+        };
+        /** WorldGame */
+        WorldGame: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "dash" | "sort" | "timing" | "catch" | "memory" | "spark" | "react";
+            /** Title */
+            title: string;
+            /** Skill */
+            skill: string;
+            /** How */
+            how: string;
+            /** Tip */
+            tip: string;
+            /** Cfg */
+            cfg: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorldRun */
+        WorldRun: {
+            /** Total */
+            total: number;
+            /** Scores */
+            scores: number[];
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
+        /**
+         * Worlds
+         * @description The six worlds and their games, the score bands, and the child's runs per world
+         *     (`"0"`…`"5"`, oldest first, the last 10).
+         */
+        Worlds: {
+            /** Worlds */
+            worlds: components["schemas"]["World"][];
+            /** Bands */
+            bands: components["schemas"]["Band"][];
+            /** Runs */
+            runs: {
+                [key: string]: components["schemas"]["WorldRun"][];
+            };
         };
     };
     responses: never;
@@ -432,6 +558,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_worlds_api_v1_children__id__growth_areas_worlds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Worlds"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_world_run_api_v1_children__id__growth_areas_worlds__world__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+                /** @description The world, 0 to 5 */
+                world: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Worlds"];
                 };
             };
             /** @description Validation Error */

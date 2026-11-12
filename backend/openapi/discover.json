@@ -295,6 +295,60 @@
           }
         }
       }
+    },
+    "/api/v1/children/{id}/personality/powers": {
+      "get": {
+        "tags": [
+          "personality"
+        ],
+        "summary": "Get Powers",
+        "description": "Child view's seven powers (Discover's kids page), each with its game, a level from 3 to 5 that follows the personality, a line and a \"try this\". `404 personality_not_ready` until the personality is `ready`. Parents only.",
+        "operationId": "get_powers_api_v1_children__id__personality_powers_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Powers"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -442,6 +496,74 @@
           "viewed_at"
         ],
         "title": "Personality"
+      },
+      "Power": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "game": {
+            "type": "string",
+            "enum": [
+              "focus",
+              "curious",
+              "order",
+              "draw",
+              "climb",
+              "voice",
+              "energy"
+            ],
+            "title": "Game"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level"
+          },
+          "line": {
+            "type": "string",
+            "title": "Line"
+          },
+          "try_this": {
+            "type": "string",
+            "title": "Try This"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "game",
+          "level",
+          "line",
+          "try_this"
+        ],
+        "title": "Power"
+      },
+      "Powers": {
+        "properties": {
+          "style": {
+            "type": "string",
+            "title": "Style"
+          },
+          "style_line": {
+            "type": "string",
+            "title": "Style Line"
+          },
+          "powers": {
+            "items": {
+              "$ref": "#/components/schemas/Power"
+            },
+            "type": "array",
+            "title": "Powers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "style",
+          "style_line",
+          "powers"
+        ],
+        "title": "Powers"
       },
       "Started": {
         "properties": {

@@ -40,7 +40,12 @@ import PageLoader from '@/components/shared/PageLoader';
 import Starfield from '@/components/shared/Starfield';
 import PageBackRow from '@/components/layout/PageBackRow';
 import { HEADER_HEIGHT } from '@/components/layout/AppHeader';
-import GrowthAreaSheet from '@/components/growth/GrowthAreaSheet';
+import GrowthAreaSheet, {
+  type RecsPhase,
+} from '@/components/growth/GrowthAreaSheet';
+import { useUnmountSignal } from '@/hooks/useUnmountSignal';
+import { useKidWorlds } from '@/hooks/useKidWorlds';
+import { worldSummary } from '@/api/kidWorlds';
 import {
   EASE_OUT,
   EASE_OUT_EXPO,
@@ -110,9 +115,25 @@ const nodeIn = (i: number) =>
     .delay(250 + i * 80);
 const NODE_IN = GROWTH_AREAS.map((_, i) => nodeIn(i));
 
+/** How many of an area's reflections the parent has saved. */
+const answeredCount = (doc: GrowthAreaDoc | undefined) =>
+  Object.values(doc?.answers ?? {}).filter(
+    v => typeof v === 'string' && v.trim(),
+  ).length;
+
+/** Whether two optional ISO times are the same moment (or both absent). */
+const sameTime = (a: string | null | undefined, b: string | null | undefined) =>
+  (a ? Date.parse(a) : null) === (b ? Date.parse(b) : null);
+
 export default function GrowthAreas() {
   const navigate = useNavigate();
   const { childId } = useParams();
+  // The child's world runs in child view (3.6): a score under each area, and its insights.
+  const {
+    worlds: kidWorlds,
+    isLoading: worldsLoading,
+    isLoadingError: worldsFailed,
+  } = useKidWorlds(childId);
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
   const { width: winW, height: winH } = useWindowDimensions();
@@ -120,7 +141,7 @@ export default function GrowthAreas() {
   const [childName, setChildName] = useState('');
   const [childGender, setChildGender] = useState('');
   const [hydrated, setHydrated] = useState(false);
-  // A load that failed for any reason other than a redirect: shows Try again.
+  // A failed load is not "no areas yet": it would show finished areas as not started.
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   /**
@@ -130,26 +151,29 @@ export default function GrowthAreas() {
    */
   const [areaDocs, setAreaDocs] = useState<GrowthAreaDoc[]>([]);
   const [activeArea, setActiveArea] = useState<GrowthArea | null>(null);
+  // The area whose sheet is on its insights, and a tick to look again when shown anew.
+  const [insightsFor, setInsightsFor] = useState<string | null>(null);
+  const [insightsTick, setInsightsTick] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
-  const [recsStatus, setRecsStatus] = useState<
-    'idle' | 'loading' | 'ready' | 'error'
-  >('idle');
+  const [recsStatus, setRecsStatus] = useState<RecsPhase>('idle');
   const [recommendations, setRecommendations] = useState<
     GrowthRecommendation[]
   >([]);
   const [showSplash, startTimer] = useStageSplash(0);
-  // Which area the in-flight/last recommendations generation belongs to — the
-  // sheet only ever shows results for the area it's currently open on, but the
-  // generation itself is anchored here so it survives the parent closing the sheet.
-  const recsAreaRef = useRef<GrowthArea | null>(null);
-  // The answers and picks the CURRENT `recommendations` were generated for. Lets a
-  // same-session replay (Play Again → identical six choices) reuse what's already
-  // showing instead of generating again for no-op input.
-  const recsAnswersRef = useRef<Record<string, string>>({});
-  const recsPicksRef = useRef<string[] | null>(null);
+  // Which area the shown recommendations belong to: a generation outlives the sheet,
+  // and must not show its result in another area's sheet.
+  const recsAreaRef = useRef<string | null>(null);
+  // Areas with a recommendations job running, areas whose answers changed since their
+  // recommendations, and the input a generation last failed on (not retried by itself).
+  const recsRunningRef = useRef(new Set<string>());
+  const staleRef = useRef(new Set<string>());
+  const failedRef = useRef(new Map<string, string>());
+  // The input each area's recommendations were last written from here. Grow records
+  // the run it used, which can be newer than this page's worlds; without this a
+  // success would look stale against them and be written again, and again.
+  const writtenRef = useRef(new Map<string, string>());
   // Stops polling when the page goes away.
-  const abortRef = useRef<AbortController>(new AbortController());
-  useEffect(() => () => abortRef.current.abort(), []);
+  const abortRef = useUnmountSignal();
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -231,46 +255,27 @@ export default function GrowthAreas() {
     () => Object.fromEntries(areaDocs.map(doc => [doc.area_id, doc.answers])),
     [areaDocs],
   );
-  // Lets a finished area open straight into its result (constellation +
-  // recommendations) instead of forcing a full redo just to look at it again.
-  const completedResults = useMemo(() => {
-    const results: Record<
-      string,
-      { picks: string[]; recommendations: GrowthRecommendation[] }
-    > = {};
-    for (const doc of areaDocs) {
-      if (doc.status !== 'completed') continue;
-      const recs = normalizeRecommendations(doc.ai_three_month_recommendations);
-      const picks = (doc.child_activity as { selections?: unknown } | null)
-        ?.selections;
-      if (
-        recs.length > 0 &&
-        Array.isArray(picks) &&
-        picks.every(p => typeof p === 'string')
-      ) {
-        results[doc.area_id] = { picks, recommendations: recs };
-      }
-    }
-    return results;
-  }, [areaDocs]);
 
-  /**
-   * Both question sets, generated per child per area by grow and stored on the
-   * area's document. Anchored on the page rather than in the sheet so a generation
-   * survives the parent closing the sheet mid-way.
-   */
   const generated = useGrowthAreaQuestions({
     childId,
     areas: areaDocs,
     area: activeArea,
     enabled: hydrated,
   });
-  const { ensureParent, ensureChild } = generated;
+  const { ensureParent } = generated;
+
+  /** The child's latest run of an area's world; null until played (or while unknown). */
+  const worldOf = useCallback(
+    (area: GrowthArea) =>
+      kidWorlds ? worldSummary(kidWorlds, area.name) : null,
+    [kidWorlds],
+  );
+  // Until the runs are known, a missing world can't be told from an unplayed one.
+  const worldsReady = !worldsLoading;
 
   /**
-   * The one and only write for the reflection step, on Finish at question five.
-   * Returns whether it landed so the sheet can hold position on failure rather
-   * than handing a device to the child with the parent's answers lost.
+   * The one write for the reflections, on Finish at question five. Returns whether it
+   * landed, so the sheet holds position on failure rather than losing the answers.
    */
   const handleSaveAnswers = useCallback(
     async (
@@ -280,20 +285,19 @@ export default function GrowthAreas() {
       if (!childId) return false;
       setIsSaving(true);
       try {
+        const stored = docOf(area.id);
+        const changed =
+          JSON.stringify(stored?.answers ?? {}) !== JSON.stringify(answers);
         keep(
           await grow.save(
             childId,
             area.id,
-            areaSave(docOf(area.id), area.name, {
-              answers,
-              step: 'activity_summary',
-            }),
+            areaSave(stored, area.name, { answers, step: 'activity_summary' }),
           ),
         );
-        // Stage two starts here, not on the click that opened this area: grow builds
-        // the child's choices from the answers just saved, and the wait then runs
-        // underneath the handoff beat the parent is about to read.
-        ensureChild(area);
+        if (changed) staleRef.current.add(area.id);
+        setInsightsFor(area.id);
+        setInsightsTick(t => t + 1);
         return true;
       } catch (err) {
         console.error('[GrowthAreas] Saving reflection failed:', err);
@@ -308,28 +312,28 @@ export default function GrowthAreas() {
         setIsSaving(false);
       }
     },
-    [childId, docOf, keep, ensureChild],
+    [childId, docOf, keep],
   );
 
   /**
-   * Generates the area's recommendations from what's saved on it, shows them, then
-   * completes the area. Grow publishes the first completion, which unlocks Transform.
+   * Generates the area's recommendations from its answers and the child's latest run of
+   * its world, shows them, then completes an answered area. Grow publishes the first
+   * completion, which unlocks Transform.
    */
   const generateRecommendations = useCallback(
-    async (area: GrowthArea) => {
+    async (area: GrowthArea, input: string) => {
       if (!childId) return;
+      const isCurrent = () => recsAreaRef.current === area.id;
+      setRecsStatus('loading');
+      if (recsRunningRef.current.has(area.id)) return;
+      recsRunningRef.current.add(area.id);
       try {
         const outcome = await runGrowGeneration(
           childId,
           area.id,
           'recommendations',
-          {
-            signal: abortRef.current.signal,
-          },
+          { signal: abortRef.current.signal },
         );
-        // The parent may have opened another area meanwhile: its sheet must not show
-        // this one's result, but this area still gets completed below.
-        const isCurrent = () => recsAreaRef.current?.id === area.id;
         const doc =
           outcome === 'completed'
             ? (await grow.list(childId)).find(a => a.area_id === area.id)
@@ -338,139 +342,105 @@ export default function GrowthAreas() {
           doc?.ai_three_month_recommendations,
         );
         if (!doc || recs.length === 0) {
+          failedRef.current.set(area.id, input);
           if (isCurrent()) setRecsStatus('error');
           return;
         }
+        // Only a success clears "the answers changed": a failed run leaves it, so the
+        // old recommendations never show as current.
+        staleRef.current.delete(area.id);
+        writtenRef.current.set(area.id, input);
         if (isCurrent()) {
           setRecommendations(recs);
           setRecsStatus('ready');
         }
         keep(
-          await grow.save(
-            childId,
-            area.id,
-            areaSave(doc, area.name, { status: 'completed' }),
-          ),
+          doc.status !== 'completed' && answeredCount(doc) > 0
+            ? await grow.save(
+                childId,
+                area.id,
+                areaSave(doc, area.name, { status: 'completed' }),
+              )
+            : doc,
         );
       } catch (err) {
         if (isAbort(err)) return;
         console.error('[GrowthAreas] Recommendations failed:', err);
-        if (recsAreaRef.current?.id === area.id)
-          setRecsStatus(status => (status === 'ready' ? status : 'error'));
+        failedRef.current.set(area.id, input);
+        if (isCurrent()) setRecsStatus('error');
         toast.error(
           httpErrorMessage(err as Error, {
             codeMessages: GROW_ERRORS,
-            fallback: 'Recommendations could not be saved. Please try again.',
+            fallback: 'Recommendations could not be written. Please try again.',
           }),
         );
-      }
-    },
-    [childId, keep],
-  );
-
-  /**
-   * The one and only write for the child's rounds, after round six — followed
-   * immediately by generating the recommendations. The sheet moves to its result
-   * phase optimistically (the archetype is derived client-side, no network
-   * needed); recsStatus/recommendations stream back down as the generation runs.
-   */
-  const handleCompleteRounds = useCallback(
-    async (area: GrowthArea, pickedIds: string[]) => {
-      if (!childId) return;
-
-      // A same-session replay with the exact same parent answers AND the exact
-      // same six picks (e.g. Play Again, then choosing identically) already has
-      // valid recommendations sitting in state — reuse them instead of
-      // generating again for input that hasn't changed.
-      const currentAnswers = savedAnswers[area.id] ?? {};
-      const answersUnchanged =
-        JSON.stringify(recsAnswersRef.current) ===
-        JSON.stringify(currentAnswers);
-      const isIdenticalReplay =
-        recsAreaRef.current?.id === area.id &&
-        recsStatus === 'ready' &&
-        answersUnchanged &&
-        recsPicksRef.current !== null &&
-        recsPicksRef.current.length === pickedIds.length &&
-        recsPicksRef.current.every((id, i) => id === pickedIds[i]);
-      if (isIdenticalReplay) return;
-
-      recsAreaRef.current = area;
-      recsAnswersRef.current = currentAnswers;
-      recsPicksRef.current = pickedIds;
-      setRecsStatus('loading');
-      setRecommendations([]);
-      setIsSaving(true);
-      try {
-        // The picks are what grow grounds the recommendations in, next to the answers.
-        const stored = docOf(area.id);
-        keep(
-          await grow.save(
-            childId,
-            area.id,
-            areaSave(stored, area.name, {
-              step: 'activity_summary',
-              child_activity: {
-                ...stored?.child_activity,
-                selections: pickedIds,
-              },
-            }),
-          ),
-        );
-      } catch (err) {
-        console.error('[GrowthAreas] Saving child rounds failed:', err);
-        setRecsStatus('error');
-        toast.error(
-          httpErrorMessage(err as Error, {
-            codeMessages: GROW_ERRORS,
-            fallback: 'Could not save the answers. Please try again.',
-          }),
-        );
-        return;
       } finally {
-        setIsSaving(false);
+        recsRunningRef.current.delete(area.id);
       }
-      void generateRecommendations(area);
     },
-    [childId, savedAnswers, recsStatus, docOf, keep, generateRecommendations],
+    [abortRef, childId, keep],
   );
 
-  const recsPhase = recsStatus;
-
   /**
-   * A finished area with a durable picks record opens straight into its
-   * result — no reason to make a parent redo five questions and a child redo
-   * six rounds just to see what's already there. Play Again (inside the
-   * result view) remains the way to redo the child's rounds on purpose.
+   * Shows the area's stored recommendations when they are current, and writes new ones
+   * when they aren't: none yet, the answers changed, or the child played the world again
+   * since (grow records the run they were written from). With neither answers nor a run
+   * there is nothing to write them from.
    */
+  const refreshRecommendations = useCallback(
+    (area: GrowthArea, { retry = false } = {}) => {
+      if (!worldsReady) return;
+      recsAreaRef.current = area.id;
+      const doc = docOf(area.id);
+      const world = worldOf(area);
+      if (answeredCount(doc) === 0 && !world) {
+        setRecommendations([]);
+        setRecsStatus('idle');
+        return;
+      }
+      const stored = normalizeRecommendations(
+        doc?.ai_three_month_recommendations,
+      );
+      // What they'd be written from: a failed attempt isn't repeated by itself.
+      const input = `${world?.at ?? ''}|${JSON.stringify(doc?.answers ?? {})}`;
+      const fresh =
+        stored.length > 0 &&
+        !staleRef.current.has(area.id) &&
+        (worldsFailed ||
+          sameTime(doc?.recommendations_run_at, world?.at) ||
+          writtenRef.current.get(area.id) === input);
+      if (fresh) {
+        setRecommendations(stored);
+        setRecsStatus('ready');
+        return;
+      }
+      if (!retry && failedRef.current.get(area.id) === input) {
+        setRecsStatus('error');
+        return;
+      }
+      failedRef.current.delete(area.id);
+      void generateRecommendations(area, input);
+    },
+    [worldsReady, worldsFailed, docOf, worldOf, generateRecommendations],
+  );
+
+  useEffect(() => {
+    const area = GROWTH_AREAS.find(a => a.id === insightsFor);
+    if (area) refreshRecommendations(area);
+  }, [insightsFor, insightsTick, refreshRecommendations]);
+
+  /** An answered area opens on its insights; one that isn't, on its questions. */
   const handleAreaClick = useCallback(
     (area: GrowthArea) => {
-      const cached = completedResults[area.id];
-      if (cached) {
-        recsAreaRef.current = area;
-        recsAnswersRef.current = savedAnswers[area.id] ?? {};
-        recsPicksRef.current = cached.picks;
-        setRecsStatus('ready');
-        setRecommendations(cached.recommendations);
-      } else {
-        // Stage one. Skipped for a finished area, which opens straight into its
-        // result and never shows a question — generating a set it would not
-        // display would only spend a parent's quota to fill a cache.
-        ensureParent(area);
-      }
+      // The questions are wanted either way: the Reflection tab shows them.
+      ensureParent(area);
+      setRecommendations([]);
+      setRecsStatus('idle');
+      setInsightsFor(answeredCount(docOf(area.id)) > 0 ? area.id : null);
+      setInsightsTick(t => t + 1);
       setActiveArea(area);
     },
-    [completedResults, savedAnswers, ensureParent],
-  );
-
-  /**
-   * Play Again on an area finished before its rounds were ever generated: the
-   * result renders from the hardcoded set, but replaying deserves rounds of this
-   * child's own, and the answers to ground them in are already saved.
-   */
-  const handleReplayRounds = useCallback(
-    (area: GrowthArea) => ensureChild(area),
-    [ensureChild],
+    [docOf, ensureParent],
   );
 
   // web: motion.div initial opacity 0 → animate opacity (showSplash ? 0 : 1), 0.8s easeOut.
@@ -487,8 +457,6 @@ export default function GrowthAreas() {
   const sceneMinH = winH - (HEADER_HEIGHT + insets.top);
   // Arc box: the page's px-4 container.
   const arcW = winW - 32;
-
-  const cachedActive = activeArea ? completedResults[activeArea.id] : undefined;
 
   return (
     <View className="flex-1 bg-background">
@@ -746,6 +714,23 @@ export default function GrowthAreas() {
                             >
                               {area.name}
                             </Text>
+                            {kidWorlds && worldSummary(kidWorlds, area.name) ? (
+                              <Text
+                                numberOfLines={1}
+                                style={{
+                                  position: 'absolute',
+                                  top: NODE + 30,
+                                  left: (NODE - LABEL_W) / 2,
+                                  width: LABEL_W,
+                                  textAlign: 'center',
+                                  fontWeight: '700',
+                                  fontSize: 11.5,
+                                  color: rgb('constellation-gold'),
+                                }}
+                              >
+                                Kids {worldSummary(kidWorlds, area.name)?.total}
+                              </Text>
+                            ) : null}
                           </Pressable>
                         </Animated.View>
                       );
@@ -770,30 +755,33 @@ export default function GrowthAreas() {
             progress: generated.parent.progressMessage,
             onRetry: generated.parent.retry,
           }}
-          childRounds={{
-            data: generated.rounds,
-            status: generated.child.status,
-            progress: generated.child.progressMessage,
-            onRetry: generated.child.retry,
-          }}
           initialAnswers={savedAnswers[activeArea.id]}
-          initialPhase={cachedActive ? 'result' : 'questions'}
-          initialPicks={cachedActive?.picks}
+          initialPhase={
+            insightsFor === activeArea.id ? 'insights' : 'questions'
+          }
+          answered={answeredCount(docOf(activeArea.id))}
+          world={worldOf(activeArea)}
           isSaving={isSaving}
-          recsPhase={recsPhase}
+          recsPhase={recsStatus}
           recommendations={recommendations}
           onClose={() => {
-            if (!isSaving) setActiveArea(null);
+            if (isSaving) return;
+            setActiveArea(null);
+            setInsightsFor(null);
           }}
           onSaveAnswers={answers => handleSaveAnswers(activeArea, answers)}
-          onReplayRounds={() => handleReplayRounds(activeArea)}
-          onCompleteRounds={pickedIds => {
-            void handleCompleteRounds(activeArea, pickedIds);
+          onShowInsights={() => {
+            setInsightsFor(activeArea.id);
+            setInsightsTick(t => t + 1);
           }}
+          onRetryRecommendations={() =>
+            refreshRecommendations(activeArea, { retry: true })
+          }
           onExploreTransform={() => {
             // The web unmounts this page on navigate; a stack screen stays mounted
             // underneath, so close the sheet's Modal explicitly before pushing.
             setActiveArea(null);
+            setInsightsFor(null);
             navigate(`/LifePathway/${childId ?? ''}`);
           }}
         />

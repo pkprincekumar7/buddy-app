@@ -24,6 +24,7 @@ from children_testkit import (
 
 from children import worker
 from children.app import lifecycle
+from children.app.kids import KID_ACTIVITY, empty
 from children.app.store import CHILDREN
 from common import upload_tracking
 from common.events import Event, SnsPublisher
@@ -224,6 +225,10 @@ def test_account_deletion_removes_every_child_at_once_and_confirms(mongo_uri):
     async def test(r: Running) -> None:
         a = (await add_child(r, name="A")).json()
         b = await _deleted_days_ago(r, 3, name="B")  # soft-deleted: no 30-day wait
+        for child in (a, b):
+            await r.db[KID_ACTIVITY].insert_one(
+                empty(child["id"], PARENT, LOCATION, datetime.now(UTC))
+            )
         theirs = (await add_child(r, OTHER, name="Theirs")).json()
         await seed_user_outbox(
             r.db, user_id=PARENT, child_id=a["id"], other_user_id=OTHER, other_child_id=theirs["id"]
@@ -236,6 +241,8 @@ def test_account_deletion_removes_every_child_at_once_and_confirms(mongo_uri):
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"other"}
         assert await r.db[CHILDREN].count_documents({"user_id": PARENT}) == 0
+        # What the child did in child view goes too (docs/child-view-build-plan.md, 2.1).
+        assert await r.db[KID_ACTIVITY].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILDREN].find_one({"_id": theirs["id"]}) is not None
         assert r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0
         stones = {t["_id"]: t["version"] for t in await r.db.tombstones.find({}).to_list(None)}

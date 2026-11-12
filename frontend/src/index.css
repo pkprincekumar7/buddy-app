@@ -311,6 +311,10 @@
     --constellation-card-rgb: 9 13 22; /* Connect.tsx + AccomplishmentRow surface */
     --constellation-surface-rgb: 5 9 18; /* Connect.tsx panel surface */
     --constellation-slate-soft-rgb: 157 180 196; /* #9db4c4 — GrowthAreaSheet + LifePathway */
+    --constellation-lavender-rgb: 179 170 255; /* #b3aaff — GrowthAreas: a child's game score band */
+    --constellation-sky-rgb: 143 216 255; /* #8fd8ff — GrowthAreaSheet: the "child's games" tag */
+    --constellation-lilac-rgb: 195 166 255; /* #c3a6ff — GrowthAreaSheet: the "your answers" tag */
+    --constellation-mint-rgb: 95 232 196; /* #5fe8c4 — GrowthAreaSheet: the "next step" tag, a score going up */
     --constellation-cyan-frost-rgb: 207 233 242; /* #cfe9f2 — GrowthAreaSheet + LifePathway */
     --constellation-slate-cool-rgb: 147 174 190; /* #93aebe — GrowthAreaSheet + LifePathway */
     --constellation-overlay-rgb: 8 14 26; /* GrowthAreaSheet sheet backdrop + WhatsAppModal backdrop */
@@ -453,6 +457,46 @@
     --growth-critical-thinking-icon-rgb: 143 196 255; /* #8fc4ff */
     --growth-physical-wellness-icon-rgb: 95 232 196; /* #5fe8c4 */
     --growth-social-skills-icon-rgb: 179 170 255; /* #b3aaff */
+
+    /*
+     * Profile button and menu (Layout's header): the pill's surface and border,
+     * and the dark stop of the parent's avatar dot. The rest of the menu uses
+     * constellation tokens (overlay, cyan, text-frost, slate-warm/-mute).
+     */
+    --profile-pill-rgb: 11 18 32; /* #0b1220 pill background, used at .75 */
+    --profile-pill-border-rgb: 24 34 52; /* #182234 pill border */
+    --profile-parent-deep-rgb: 138 106 58; /* #8a6a3a parent avatar dot, outer stop */
+
+    /*
+     * Kids page (child view, docs/child-view-build-plan.md "Theming"): its own brighter
+     * palette. Each circle's colour and the darker shade its chunky buttons sit on;
+     * --kids-area-* is the open circle's pair (the page sets it, cyan by default).
+     */
+    --kids-discover-rgb: 75 233 255; /* #4be9ff — as constellation-cyan */
+    --kids-discover-shade-rgb: 27 138 163; /* #1b8aa3 */
+    --kids-grow-rgb: 75 233 255; /* #4be9ff */
+    --kids-grow-shade-rgb: 27 138 163; /* #1b8aa3 */
+    --kids-transform-rgb: 255 201 75; /* #ffc94b */
+    --kids-transform-shade-rgb: 179 134 28; /* #b3861c */
+    --kids-connect-rgb: 255 143 177; /* #ff8fb1 */
+    --kids-connect-shade-rgb: 179 82 111; /* #b3526f */
+    --kids-release-rgb: 157 140 255; /* #9d8cff */
+    --kids-release-shade-rgb: 90 74 168; /* #5a4aa8 */
+    --kids-teal-rgb: 60 225 190; /* #3ce1be — powers, the "Great" mood, done states */
+    --kids-teal-shade-rgb: 29 143 119; /* #1d8f77 */
+    --kids-orange-rgb: 255 159 90; /* #ff9f5a — powers */
+    --kids-orange-shade-rgb: 179 100 42; /* #b3642a */
+    --kids-area-rgb: 75 233 255;
+    --kids-area-shade-rgb: 27 138 163;
+    --kids-bg-rgb: 6 10 24; /* #060a18 page background */
+    --kids-text-rgb: 242 251 255; /* #f2fbff headings, text on dark */
+    --kids-body-rgb: 198 219 230; /* #c6dbe6 body copy */
+    --kids-muted-rgb: 169 198 212; /* #a9c6d4 hints */
+    --kids-subtle-rgb: 132 160 178; /* #84a0b2 a line under a title, a quiet label */
+    --kids-ink-rgb: 8 16 31; /* #08101f text on a lit button */
+    --kids-off-rgb: 26 36 66; /* #1a2442 an off button, an unpicked tile */
+    --kids-off-shade-rgb: 12 19 40; /* #0c1328 */
+    --kids-streak-rgb: 255 224 138; /* #ffe08a the streak line */
   }
 }
 
@@ -1032,6 +1076,617 @@
     @apply border-edge rounded-2xl bg-card p-6;
   }
 
+  /* ── Profile button and menu (Layout) ─────────────────────────────────────── */
+  /* The header's profile pill: avatar dot, name, and the view under it. */
+  .profile-pill {
+    @apply flex h-11 items-center gap-2.5 rounded-full pl-1.5 pr-1.5 font-rajdhani transition-colors sm:pr-4;
+    background: rgb(var(--profile-pill-rgb) / 0.75);
+    border: 1px solid rgb(var(--profile-pill-border-rgb));
+    color: rgb(var(--constellation-text-frost-rgb));
+    backdrop-filter: blur(6px);
+  }
+  .profile-pill:hover {
+    border-color: rgb(var(--constellation-cyan-rgb) / 0.45);
+  }
+  /* The dropdown panel. */
+  .profile-panel {
+    @apply rounded-[14px] p-2;
+    background: rgb(var(--constellation-overlay-rgb) / 0.96);
+    border: 1px solid rgb(var(--constellation-cyan-rgb) / 0.2);
+    box-shadow: 0 20px 60px rgb(var(--constellation-void-deep-rgb) / 0.7);
+  }
+  /* Small uppercase labels: the view under the name, and the panel's headings. */
+  .profile-label {
+    @apply whitespace-nowrap font-rajdhani font-bold uppercase;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  .profile-heading {
+    @apply profile-label px-2.5 pb-2 pt-1.5;
+    color: rgb(var(--constellation-slate-mute-rgb));
+  }
+  /* A row in the panel (a profile, Add Child, Home, …). */
+  .profile-row {
+    @apply flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left font-rajdhani transition-colors;
+  }
+  .profile-row:hover {
+    background: rgb(var(--constellation-cyan-rgb) / 0.08);
+  }
+  .profile-row-selected,
+  .profile-row-selected:hover {
+    background: rgb(var(--constellation-cyan-rgb) / 0.1);
+  }
+  /* A child's row: the row itself is the box (hover), holding the main button
+     and the row's icon actions, so they sit inside it. */
+  .profile-row-group {
+    @apply flex items-center gap-1 rounded-[10px] pr-1.5 transition-colors;
+  }
+  .profile-row-group:hover,
+  .profile-row-group:focus-within {
+    background: rgb(var(--constellation-cyan-rgb) / 0.08);
+  }
+  /* The row's main button inside a group: the group draws the background. */
+  .profile-row-main {
+    @apply flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] py-2 pl-2.5 text-left font-rajdhani;
+  }
+  /* The row's small icon actions (edit, delete). */
+  .profile-row-action {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  .profile-row-action:hover {
+    color: rgb(var(--constellation-text-frost-rgb));
+    background: rgb(var(--constellation-cyan-rgb) / 0.12);
+  }
+  /* The open child's name. */
+  .profile-name-current {
+    color: rgb(var(--constellation-cyan-rgb));
+  }
+  .profile-name {
+    @apply truncate font-rajdhani text-sm font-bold;
+    color: rgb(var(--constellation-text-frost-rgb));
+  }
+  .profile-desc {
+    @apply truncate font-rajdhani text-xs font-semibold;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  /* Home, Account settings, Sign out, Add Child: a row with an icon and a label. */
+  .profile-link {
+    @apply profile-row text-sm font-semibold;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  .profile-link:hover {
+    color: rgb(var(--constellation-text-frost-rgb));
+  }
+  .profile-link-active,
+  .profile-link-active:hover {
+    color: rgb(var(--constellation-cyan-rgb));
+  }
+  .profile-divider {
+    @apply mx-1 my-1.5;
+    border-top: 1px solid rgb(var(--constellation-cyan-rgb) / 0.1);
+  }
+  /* ── Kids page (child view) ───────────────────────────────────────────────── */
+  /* The page: a soft cyan, violet and gold glow over the kids background. */
+  .kids-page {
+    @apply min-h-screen font-rajdhani;
+    color: rgb(var(--kids-text-rgb));
+    background:
+      radial-gradient(ellipse at 85% -10%, rgb(var(--kids-discover-rgb) / 0.2), transparent 50%),
+      radial-gradient(ellipse at 5% 60%, rgb(var(--kids-release-rgb) / 0.16), transparent 45%),
+      radial-gradient(ellipse at 70% 110%, rgb(var(--kids-transform-rgb) / 0.12), transparent 45%),
+      rgb(var(--kids-bg-rgb));
+  }
+  /* The chunky button: the open circle's colour on its darker shade, pressed down. */
+  .kids-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-orbitron font-black transition-transform duration-100 disabled:cursor-not-allowed disabled:opacity-50;
+    background: rgb(var(--kids-area-rgb));
+    color: rgb(var(--kids-ink-rgb));
+    box-shadow: 0 6px 0 rgb(var(--kids-area-shade-rgb));
+  }
+  .kids-btn:not(:disabled):active {
+    transform: translateY(5px);
+    box-shadow: 0 1px 0 rgb(var(--kids-area-shade-rgb));
+  }
+  /* The same, off: Back, Read to me, and other secondary buttons. */
+  .kids-btn-off {
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-rajdhani font-bold transition-transform duration-100;
+    background: rgb(var(--kids-off-rgb));
+    color: rgb(var(--kids-text-rgb));
+    box-shadow: 0 5px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  .kids-btn-off:not(:disabled):active {
+    /* Pushed down as on mobile (palette.ts buttonOff), also when used on its own. */
+    transform: translateY(4px);
+    box-shadow: 0 1px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  /* A panel tinted with the open circle's colour. */
+  .kids-card {
+    @apply rounded-[28px] p-6;
+    background: rgb(var(--kids-area-rgb) / 0.12);
+    border: 3px solid rgb(var(--kids-area-rgb) / 0.45);
+  }
+  /* The circle's name chip in the header. */
+  .kids-chip {
+    @apply inline-flex items-center gap-2.5 rounded-full px-4 py-2.5;
+    background: rgb(var(--kids-area-rgb) / 0.14);
+    border: 2px solid rgb(var(--kids-area-rgb));
+  }
+  /* A big pickable tile (a mood, a power): its own colour pair, set where used. */
+  .kids-tile {
+    @apply flex flex-col items-center justify-center gap-3 rounded-[26px] font-orbitron font-black transition-transform duration-100;
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-off-rgb) / 0.6);
+    border: 3px solid rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.3);
+    box-shadow: 0 7px 0 rgb(var(--kids-tile-shade-rgb, var(--kids-area-shade-rgb)));
+  }
+  .kids-tile:hover {
+    transform: translateY(-4px);
+  }
+  .kids-tile:not(:disabled):active {
+    transform: translateY(6px);
+  }
+  .kids-tile-on {
+    background: rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.22);
+    border-color: rgb(var(--kids-tile-rgb, var(--kids-area-rgb)));
+  }
+  /* A text box on the kids page. */
+  .kids-input {
+    @apply w-full rounded-[18px] px-4 py-4 font-rajdhani text-xl font-semibold outline-none;
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-bg-rgb) / 0.7);
+    border: 3px solid rgb(var(--kids-area-rgb) / 0.35);
+  }
+  .kids-input:focus {
+    border-color: rgb(var(--kids-area-rgb));
+  }
+  /* Discover's orbit (2.5): rings around the child, and a bubble per power in its own pair. */
+  .kids-orbit-ring {
+    @apply pointer-events-none absolute rounded-full;
+    border: 1px solid rgb(var(--kids-area-rgb) / 0.28);
+  }
+  .kids-orbit-ring-dashed {
+    border-style: dashed;
+    border-color: rgb(var(--kids-area-rgb) / 0.14);
+  }
+  .kids-orbit-ring-faint {
+    border-color: rgb(var(--kids-area-rgb) / 0.12);
+  }
+  .kids-avatar {
+    @apply flex items-center justify-center overflow-hidden rounded-full font-orbitron font-black;
+    color: rgb(var(--kids-text-rgb));
+    border: 3px solid rgb(var(--kids-area-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-area-rgb) / 0.35),
+      rgb(var(--kids-bg-rgb))
+    );
+    box-shadow: 0 0 40px rgb(var(--kids-area-rgb) / 0.35);
+  }
+  /* A power's bubble (the prototype's): cyan, its edge gold once opened, lit while its
+     game is open. */
+  .kids-power {
+    @apply absolute rounded-full p-0;
+    transform: translate(-50%, -50%);
+  }
+  /* The bubble itself. Its hover growth and press dip are on this inner face, so the button's
+     own area never shrinks under the pointer and every click lands (a shrinking target can
+     end a press outside itself, and then the browser fires no click). */
+  .kids-power-face {
+    @apply absolute inset-0 flex items-center justify-center rounded-full;
+    color: rgb(var(--kids-discover-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-discover-shade-rgb) / 0.55),
+      rgb(var(--kids-bg-rgb) / 0.95)
+    );
+    box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.15);
+    backdrop-filter: blur(8px);
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  /* The app's buttons shrink while pressed (`button:active`, base layer), which would replace
+     these centring transforms and jump them to the bottom-right: they keep their own. */
+  .kids-power:not(:disabled):active,
+  .kids-game-orb:not(:disabled):active,
+  .kids-game-node:not(:disabled):active,
+  .kids-game-bubble:not(:disabled):active,
+  .kids-game-light:not(:disabled):active,
+  .kids-game-pill:not(:disabled):active {
+    transform: translate(-50%, -50%);
+  }
+  /* A whole game frame you tap or hold (climb, voice, timing) stays still. */
+  .kids-game:not(:disabled):active {
+    transform: none;
+  }
+  .kids-power:hover > .kids-power-face {
+    transform: scale(1.05);
+  }
+  .kids-power:active > .kids-power-face {
+    transform: scale(0.97);
+  }
+  .kids-power-open > .kids-power-face {
+    border-color: rgb(var(--kids-streak-rgb) / 0.6);
+  }
+  .kids-power-on > .kids-power-face {
+    color: rgb(var(--kids-text-rgb));
+    border-color: rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-discover-rgb) / 0.85),
+      rgb(var(--kids-discover-shade-rgb))
+    );
+    box-shadow: 0 0 40px rgb(var(--kids-discover-rgb) / 0.55);
+  }
+  .kids-power-label {
+    @apply max-w-[90%] text-center font-rajdhani font-bold uppercase leading-none tracking-[0.1em];
+    font-size: clamp(10px, 1.8vw, 14px);
+  }
+  /* "Click here to enjoy the game", over a bubble while it's hovered or focused. */
+  .kids-power-tip {
+    @apply pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-xl px-3.5 py-2 font-rajdhani text-[15px] font-bold tracking-[0.06em] group-hover:block group-focus-visible:block;
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-bg-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 20px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* Discover's heading pieces: the gold eyebrow with its twinkling dots, the glow round the
+     orbit, a spoke to each power, the child's photo in its cyan ring and their name. */
+  .kids-eyebrow {
+    @apply inline-flex max-w-full items-center gap-2.5 rounded-full px-[18px] py-2 font-rajdhani font-bold uppercase;
+    font-size: clamp(11px, 2.2vw, 16px);
+    letter-spacing: clamp(0.04em, 0.6vw, 0.12em);
+    color: rgb(var(--kids-streak-rgb));
+    border: 1px solid rgb(var(--kids-streak-rgb) / 0.55);
+    background: rgb(var(--kids-streak-rgb) / 0.08);
+  }
+  .kids-twinkle {
+    @apply h-2 w-2 shrink-0 rounded-full;
+    background: rgb(var(--kids-streak-rgb));
+    box-shadow: 0 0 10px rgb(var(--kids-streak-rgb));
+  }
+  .kids-glow-dot {
+    box-shadow: 0 0 12px rgb(var(--kids-area-rgb));
+  }
+  .kids-orbit-glow {
+    @apply pointer-events-none absolute inset-0 rounded-full;
+    background: radial-gradient(
+      circle at 50% 50%,
+      rgb(var(--kids-discover-rgb) / 0.16),
+      transparent 62%
+    );
+  }
+  .kids-orbit-spoke {
+    @apply pointer-events-none absolute left-1/2 top-1/2 h-px w-[39%] origin-left;
+  }
+  .kids-orbit-spoke-line {
+    @apply block h-full w-full origin-left;
+    background: linear-gradient(90deg, transparent 40%, rgb(var(--kids-discover-rgb) / 0.3));
+  }
+  .kids-orbit-spoke-on .kids-orbit-spoke-line {
+    background: linear-gradient(90deg, transparent 40%, rgb(var(--kids-discover-rgb) / 0.8));
+  }
+  .kids-photo-ring {
+    @apply absolute inset-[34%] rounded-full p-1.5;
+    background: conic-gradient(
+      from 200deg,
+      rgb(var(--kids-discover-rgb)),
+      rgb(var(--kids-discover-shade-rgb)),
+      rgb(var(--kids-discover-rgb))
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-photo {
+    @apply flex h-full w-full items-center justify-center overflow-hidden rounded-full border-4 font-orbitron font-bold;
+    color: rgb(var(--kids-text-rgb));
+    border-color: rgb(var(--kids-bg-rgb));
+    background: rgb(var(--kids-discover-shade-rgb) / 0.6);
+  }
+  .kids-name-pill {
+    @apply pointer-events-none absolute left-1/2 top-[66%] whitespace-nowrap rounded-full px-[18px] py-1.5 font-orbitron font-semibold uppercase tracking-[0.18em];
+    transform: translate(-50%, -20%);
+    font-size: clamp(12px, 2vw, 15px);
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-bg-rgb) / 0.92);
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  .kids-count-pill {
+    @apply inline-block whitespace-nowrap rounded-full px-[22px] py-2.5 font-orbitron font-bold tracking-[0.08em];
+    font-size: clamp(14px, 2.4vw, 18px);
+    color: rgb(var(--kids-text-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-discover-rgb) / 0.25),
+      rgb(var(--kids-discover-shade-rgb) / 0.35)
+    );
+    box-shadow: 0 0 30px rgb(var(--kids-discover-rgb) / 0.3);
+  }
+  /* Discover's mini games (2.6): the square they're played in, and their pieces. */
+  .kids-game {
+    @apply relative mx-auto aspect-square w-full touch-none select-none overflow-hidden rounded-[26px];
+    max-width: min(100%, calc(100vh - 260px));
+    min-width: 220px;
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.3);
+    background: radial-gradient(
+      circle at 50% 40%,
+      rgb(var(--kids-discover-shade-rgb) / 0.45),
+      rgb(var(--kids-bg-rgb)) 78%
+    );
+  }
+  .kids-game-bar {
+    @apply pointer-events-none absolute left-[6%] right-[6%] top-[5%] z-10 h-2 overflow-hidden rounded;
+    background: rgb(var(--kids-discover-rgb) / 0.14);
+  }
+  .kids-game-bar-fill {
+    @apply h-full rounded transition-[width] duration-200;
+    background: linear-gradient(90deg, rgb(var(--kids-discover-rgb)), rgb(var(--kids-streak-rgb)));
+    box-shadow: 0 0 12px rgb(var(--kids-discover-rgb) / 0.7);
+  }
+  .kids-game-sky {
+    @apply pointer-events-none absolute h-[3px] w-[3px] rounded-full;
+    background: rgb(var(--kids-text-rgb));
+  }
+  .kids-game-caption {
+    @apply pointer-events-none absolute bottom-[5%] left-1/2 -translate-x-1/2 whitespace-nowrap font-rajdhani text-lg font-bold uppercase tracking-[0.22em];
+    color: rgb(var(--kids-muted-rgb));
+  }
+  .kids-game-orb {
+    @apply absolute rounded-full;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-text-rgb)),
+      rgb(var(--kids-discover-rgb)) 45%,
+      rgb(var(--kids-discover-shade-rgb))
+    );
+    box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.8);
+  }
+  .kids-game-box {
+    @apply flex items-center justify-center rounded-[18px] font-orbitron text-3xl font-bold;
+    color: rgb(var(--kids-text-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+    background: linear-gradient(
+      160deg,
+      rgb(var(--kids-discover-rgb) / 0.35),
+      rgb(var(--kids-discover-shade-rgb) / 0.5)
+    );
+  }
+  .kids-game-box-open {
+    background: rgb(var(--kids-bg-rgb) / 0.7);
+  }
+  .kids-game-box-found {
+    border-color: rgb(var(--kids-streak-rgb));
+    background: radial-gradient(
+      circle,
+      rgb(var(--kids-streak-rgb) / 0.25),
+      rgb(var(--kids-bg-rgb) / 0.9)
+    );
+    box-shadow: 0 0 26px rgb(var(--kids-streak-rgb) / 0.35);
+  }
+  .kids-game-node {
+    @apply absolute flex items-center justify-center rounded-full font-orbitron text-xl font-bold;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-text-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb) / 0.35);
+    background: rgb(var(--kids-bg-rgb) / 0.85);
+  }
+  .kids-game-node-next {
+    border-color: rgb(var(--kids-discover-rgb));
+  }
+  .kids-game-node-done {
+    color: rgb(var(--kids-ink-rgb));
+    border-color: rgb(var(--kids-streak-rgb));
+    background: radial-gradient(
+      circle,
+      rgb(var(--kids-streak-rgb)),
+      rgb(var(--kids-transform-shade-rgb))
+    );
+  }
+  .kids-game-node-wrong {
+    border-color: rgb(var(--kids-connect-rgb));
+  }
+  .kids-game-bubble {
+    @apply absolute rounded-full;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.8);
+    background: radial-gradient(
+      circle at 32% 30%,
+      rgb(var(--kids-text-rgb) / 0.95),
+      rgb(var(--kids-discover-rgb) / 0.25) 35%,
+      rgb(var(--kids-discover-rgb) / 0.12) 70%
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-game-burst {
+    @apply pointer-events-none absolute h-[16%] w-[16%] rounded-full;
+    border: 3px solid rgb(var(--kids-streak-rgb));
+    animation: kids-burst 0.6s ease-out forwards;
+  }
+  .kids-game-ring {
+    @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  .kids-game-wave {
+    @apply w-1.5 rounded-full;
+    background: rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 8px rgb(var(--kids-discover-rgb) / 0.7);
+  }
+  /* Grow's games (3.5): the readouts, the words that fall or fly, the basket, the sort
+     card and its sides, the memory pads, the timing target and the reaction light. */
+  .kids-game-hud {
+    @apply pointer-events-none absolute top-[9%] z-10 font-orbitron text-base font-bold;
+  }
+  .kids-game-pill {
+    @apply absolute whitespace-nowrap rounded-full px-4 py-2.5 font-orbitron text-sm font-bold sm:text-base;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-text-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 40% 30%,
+      rgb(var(--kids-discover-rgb) / 0.6),
+      rgb(var(--kids-discover-shade-rgb) / 0.9)
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-game-basket {
+    @apply pointer-events-none absolute top-[87%] h-[8%] w-[28%];
+    transform: translate(-50%, -50%);
+    border: 3px solid rgb(var(--kids-streak-rgb));
+    border-top: none;
+    border-radius: 0 0 9999px 9999px;
+    background: linear-gradient(180deg, transparent, rgb(var(--kids-streak-rgb) / 0.35));
+  }
+  .kids-game-card {
+    @apply absolute left-1/2 top-[44%] flex min-h-[34%] w-[78%] items-center justify-center rounded-[26px] px-5 py-6 text-center font-orbitron text-lg font-bold leading-snug sm:text-2xl;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-text-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb) / 0.5);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-discover-shade-rgb) / 0.6),
+      rgb(var(--kids-bg-rgb))
+    );
+  }
+  .kids-game-card-right {
+    border-color: rgb(var(--kids-streak-rgb));
+  }
+  .kids-game-card-wrong {
+    border-color: rgb(var(--kids-connect-rgb));
+  }
+  .kids-game-side {
+    @apply flex min-h-16 flex-1 items-center justify-center gap-2 rounded-[20px] font-rajdhani text-base font-bold uppercase tracking-[0.12em] sm:text-lg;
+    color: rgb(var(--kids-text-rgb));
+    border: 1px solid rgb(var(--kids-tile-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-tile-rgb) / 0.35),
+      rgb(var(--kids-tile-shade-rgb) / 0.6)
+    );
+  }
+  .kids-game-pad {
+    @apply flex aspect-square w-full items-center justify-center rounded-full font-orbitron text-sm font-bold transition-transform duration-100 sm:text-lg;
+    color: rgb(var(--kids-text-rgb));
+    border: 2px solid rgb(var(--kids-tile-rgb) / 0.6);
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-tile-rgb) / 0.35),
+      rgb(var(--kids-bg-rgb) / 0.9) 75%
+    );
+  }
+  .kids-game-pad-lit {
+    transform: scale(1.06);
+    color: rgb(var(--kids-ink-rgb));
+    border-color: rgb(var(--kids-text-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-text-rgb)),
+      rgb(var(--kids-tile-rgb)) 55%
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-tile-rgb));
+  }
+  .kids-game-target {
+    @apply pointer-events-none absolute left-1/2 top-1/2 flex h-[26%] w-[26%] items-center justify-center rounded-full font-orbitron text-base font-bold sm:text-xl;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-streak-rgb));
+    border: 3px dashed rgb(var(--kids-streak-rgb));
+    background: radial-gradient(
+      circle,
+      rgb(var(--kids-streak-rgb) / 0.3),
+      rgb(var(--kids-streak-rgb) / 0.05)
+    );
+  }
+  .kids-game-target-near {
+    border-color: rgb(var(--kids-text-rgb));
+    box-shadow: 0 0 40px rgb(var(--kids-streak-rgb) / 0.8);
+  }
+  .kids-game-closing {
+    @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
+    transform: translate(-50%, -50%);
+    border: 4px solid rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.7);
+  }
+  .kids-game-light {
+    @apply absolute flex h-[22%] w-[22%] items-center justify-center rounded-full font-orbitron text-base font-black sm:text-xl;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-ink-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-text-rgb)),
+      rgb(var(--kids-streak-rgb)) 45%,
+      rgb(var(--kids-transform-shade-rgb))
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-streak-rgb) / 0.8);
+  }
+  .kids-game-word {
+    @apply pointer-events-none absolute left-1/2 top-[22%] -translate-x-1/2 font-orbitron text-2xl font-black sm:text-3xl;
+  }
+  /* A score's bar in the world report, in its band's colour. */
+  .kids-score-bar {
+    @apply h-3 overflow-hidden rounded-full;
+    background: rgb(var(--kids-text-rgb) / 0.08);
+  }
+  .kids-score-bar-fill {
+    @apply h-full rounded-full;
+    background: rgb(var(--kids-tile-rgb));
+  }
+  /* The game's dialog over the kids page. */
+  .kids-dialog-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+    background: rgb(var(--kids-bg-rgb) / 0.8);
+  }
+  .kids-dialog {
+    @apply max-h-full w-full max-w-xl overflow-y-auto rounded-[28px] p-5;
+    background: rgb(var(--kids-bg-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb) / 0.4);
+    box-shadow: 0 0 60px rgb(var(--kids-discover-rgb) / 0.25);
+  }
+  /* A quest's progress (3.2): a dot per time it's to be done, filled up to the count. */
+  .kids-quest-dot {
+    @apply h-5 w-5 rounded-full;
+    border: 2px solid rgb(var(--kids-tile-rgb) / 0.4);
+  }
+  .kids-quest-dot-on {
+    background: rgb(var(--kids-tile-rgb));
+    border-color: rgb(var(--kids-tile-rgb));
+  }
+  /* A quest's card: its own pair, teal once it's done. */
+  .kids-quest {
+    @apply rounded-[26px] p-5;
+    background: rgb(var(--kids-tile-rgb) / 0.1);
+    border: 3px solid rgb(var(--kids-tile-rgb) / 0.5);
+  }
+  .kids-quest-done {
+    background: rgb(var(--kids-teal-rgb) / 0.12);
+    border-color: rgb(var(--kids-teal-rgb));
+  }
+
+  /* The round avatar dots: parent gold, child cyan. Size is set where used. */
+  .avatar-dot {
+    @apply flex shrink-0 items-center justify-center rounded-full font-orbitron font-black;
+    color: rgb(var(--constellation-navy-rgb));
+  }
+  .avatar-dot-parent {
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--constellation-gold-cream2-rgb)),
+      rgb(var(--constellation-gold-rgb)) 55%,
+      rgb(var(--profile-parent-deep-rgb))
+    );
+  }
+  .avatar-dot-child {
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--constellation-cyan-pale-rgb)),
+      rgb(var(--constellation-cyan-rgb)) 55%,
+      rgb(var(--constellation-cyan-deep-rgb))
+    );
+  }
+
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */
   .btn-primary {
     @apply glow-teal bg-gradient-to-r from-primary-medium to-primary font-semibold text-primary-foreground hover:from-primary hover:to-primary-light;
@@ -1249,5 +1904,113 @@
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes kids-burst {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kids-game-burst {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+@keyframes kids-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes kids-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kids-twinkle {
+    animation: kids-twinkle 1s ease-in-out infinite;
+  }
+  .kids-float {
+    animation: kids-float 4s ease-in-out infinite;
+  }
+}
+
+/* The kids page's entrances (the prototype's kUp, kPop, kUnfold, kGrowX), only where motion is
+   welcome: sections rise in, the photo and pills pop, the powers unfold from the centre. */
+@keyframes kids-up {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes kids-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes kids-unfold {
+  from {
+    left: 50%;
+    top: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.15);
+  }
+}
+@keyframes kids-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes kids-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kids-enter-up {
+    animation: kids-up 0.5s ease both;
+  }
+  .kids-enter-pop {
+    animation: kids-pop 0.7s ease backwards;
+  }
+  .kids-enter-unfold {
+    animation: kids-unfold 0.8s cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
+  }
+  .kids-enter-grow {
+    animation: kids-grow-x 0.7s ease-out backwards;
+  }
+  .kids-enter-fade {
+    animation: kids-fade 0.5s ease backwards;
   }
 }

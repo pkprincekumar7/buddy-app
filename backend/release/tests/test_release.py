@@ -19,7 +19,7 @@ from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 from release_testkit import (
     ADMIN,
-    CHOICE,
+    GAME_LINE,
     LOCATION,
     OTHER,
     PARENT,
@@ -128,14 +128,14 @@ def test_patterns_watching_completion_and_regeneration(mongo_uri):
         ready = (await r.http.get(_path(child), headers=auth_header())).json()
         assert ready["status"] == "ready" and ready["source"] == "llm" and ready["job_id"] is None
         items = ready["items"]
-        # The page's six, every offered block cited by one; the invented choice line dropped.
+        # The page's six, every offered block cited by one; the invented game line dropped.
         assert len(items) == 6 and {s for i in items for s in i["sources"]} == {
             "onboarding",
             "grow",
             "child",
         }
-        picks = next(i for i in items if i["sources"] == ["child"])
-        assert picks["notes"] == [CHOICE] and picks["icon"] == "sense"
+        played = next(i for i in items if i["sources"] == ["child"])
+        assert played["notes"] == [GAME_LINE] and played["icon"] == "sense"
         # Nothing watched: not done. The first pattern watched: done, once.
         assert (await _watch(r, child, [])).json()["completed_at"] is None
         watched = await _watch(r, child, [items[0]["id"], items[0]["id"], items[1]["id"]])

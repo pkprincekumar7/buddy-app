@@ -19,6 +19,7 @@ import boto3
 from pydantic import Field
 from pymongo import AsyncMongoClient
 
+from children.app.kids import ensure_kid_activity
 from children.app.store import ensure_children
 from common import upload_tracking
 from common.authz import Authorizer, AuthzConfig
@@ -112,6 +113,7 @@ class Runtime:
 
         async def ensure(db: Db) -> None:
             await ensure_children(db)
+            await ensure_kid_activity(db)
             await upload_tracking.ensure_pending_uploads(db)
             await ensure_outbox(db)
             await ensure_tombstones(db)

@@ -315,7 +315,7 @@ These collections appear in several databases with the same shape. `common` owns
 |---|---|---|---|
 | `onboarding_inputs` | child id | The seven answers: `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour` | `onboarding.conversation_completed`, `onboarding.answers_updated` |
 | `personality_inputs` | child id | `traits` (summary), `strengths` | `discover.personality_finalised` |
-| `growth_inputs` | `{child_id}:{area_id}` (one per area) | `child_id`, `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, `ai_three_month_recommendations` (what the Life Pathway and observation prompts need; the Life Pathway prefers the AI recommendations, as today) | `grow.area_completed`, `grow.area_updated` |
+| `growth_inputs` | `{child_id}:{area_id}` (one per area) | `child_id`, `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, `ai_three_month_recommendations`, `reflections`, `child_games` (what the Life Pathway and observation prompts need; the Life Pathway prefers the AI recommendations, as today; `child_games` is the child's child view game results, the observations' child evidence) | `grow.area_completed`, `grow.area_updated` |
 
 **`tombstones`** (every service that holds per-child or per-user data or copies; 7.4):
 

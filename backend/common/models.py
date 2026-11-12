@@ -60,9 +60,10 @@ GROWTH_FIELDS: tuple[str, ...] = (
     "recommendations",
     "ai_three_month_recommendations",
     # Added for release's observations (0.13.0): the questions with their answers, and the
-    # child's picks as "Chose “X” over “Y”" lines. Optional: older events lack them.
+    # child's child view game results as "Played X (Skill): N of 100, Band" lines (the
+    # world run the area's recommendations were written from). Optional: older events lack them.
     "reflections",
-    "child_choices",
+    "child_games",
 )
 
 # Each generating service's own job types (4.1, today's names).
@@ -70,7 +71,6 @@ JOB_TYPES: dict[str, tuple[str, ...]] = {
     "discover": ("generate_personality_analysis",),
     "grow": (
         "generate_growth_parent_questions",
-        "generate_growth_child_rounds",
         "generate_recommendations",
     ),
     "transform": ("generate_life_pathway", "generate_ninety_day_plan", "generate_event_tracker"),
@@ -155,7 +155,7 @@ GROWTH_INPUTS_VALIDATOR = _schema(
         "recommendations": {"bsonType": ["array", "null"]},
         "ai_three_month_recommendations": {"bsonType": ["array", "null"]},
         "reflections": {"bsonType": ["array", "null"]},
-        "child_choices": {"bsonType": ["array", "null"], "items": _STRING},
+        "child_games": {"bsonType": ["array", "null"], "items": _STRING},
     },
 )
 

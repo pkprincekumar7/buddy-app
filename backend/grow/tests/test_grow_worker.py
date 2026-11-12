@@ -17,7 +17,6 @@ from grow_testkit import (
     OTHER,
     PARENT,
     RECOMMENDATIONS_ANSWER,
-    ROUNDS_ANSWER,
     SUMMARY,
     FakeOpenAI,
     Running,
@@ -40,8 +39,10 @@ from common.generation import jobs
 from common.generation.llm import LlmClient, LlmConfig
 from common.models import CHILD_ACCESS, JOBS, ONBOARDING_INPUTS, PERSONALITY_INPUTS
 from grow import worker
-from grow.app import generation, lifecycle
+from grow.app import generation, lifecycle, worlds
+from grow.app.areas import fill_template
 from grow.app.store import GROWTH_AREAS, area_doc_id
+from grow.app.worlds import WORLD_RUNS
 
 AREA = "life_ambition"
 BLOCK = re.compile(r"\[DATA (\w+)\]\n(.*?)\n\[END DATA\]", flags=re.S)
@@ -53,6 +54,16 @@ def live(mongo_uri: str, test: Callable[[Running], Awaitable[None]]) -> None:
             await test(r)
 
     asyncio.run(go())
+
+
+async def _run_world(r: Running, child_id: str, scores: list[int] | None = None) -> None:
+    """A world (Life Ambition's) finished in child view: the child's world_runs document."""
+    ran = await r.http.post(
+        _path(child_id, "/worlds/0/runs"),
+        json={"scores": scores or [50, 60, 70]},
+        headers=auth_header(),
+    )
+    assert ran.status_code == 200
 
 
 def _path(child_id: str, rest: str = "") -> str:
@@ -104,31 +115,16 @@ async def _with_questions(r: Running) -> str:
 def test_each_kind_builds_its_prompt_from_the_area_and_the_copies(mongo_uri):
     async def test(r: Running) -> None:
         child = await _with_questions(r)
-        fake = FakeOpenAI(answers=[ROUNDS_ANSWER])
-        assert (
-            await generation.process(
-                r.runtime, llm_client(fake), await _start(r, child, "child_rounds")
-            )
-            == "completed"
-        )
-        rounds_prompt = dict(BLOCK.findall(fake.prompts[0]))
-        reflections = json.loads(rounds_prompt["reflections"])
-        assert [pair["answer"] for pair in reflections] == [
-            "Builds Lego towers",
-            "Asks how bridges work",
-        ]
-        assert json.loads(rounds_prompt["profile"])["personality_archetype"] == "The Thinker"
-        rounds = (await _area(r, child))["child_rounds"]["rounds"]
-        assert rounds[0]["a"]["id"] == f"{AREA}_gr1a" and rounds[0]["b"]["icon"] == "spark"
-        # The child plays, then the recommendations use the picks and their archetype.
-        picks = [f"{AREA}_gr1a", f"{AREA}_gr2a", f"{AREA}_gr3a"]
         await r.http.put(
             _path(child, f"/{AREA}"),
             json={"area_name": "Life Ambition", "status": "in_progress",
-                  "answers": (await _area(r, child))["answers"],
-                  "child_activity": {"selections": picks}, "feedback": "Less screen time"},
+                  "answers": (await _area(r, child))["answers"], "feedback": "Less screen time"},
             headers=auth_header(),
         )  # fmt: skip
+        # Two runs of Life Ambition's world (0); the prompt reads the latest.
+        await _run_world(r, child, [40, 50, 60])
+        await _run_world(r, child, [90, 30, 60])
+        latest = (await r.db[WORLD_RUNS].find_one({"_id": child}))["runs"]["0"][-1]
         fake = FakeOpenAI(answers=[RECOMMENDATIONS_ANSWER])
         before = (await _area(r, child))["version"]
         assert (
@@ -138,18 +134,58 @@ def test_each_kind_builds_its_prompt_from_the_area_and_the_copies(mongo_uri):
             == "completed"
         )
         blocks = dict(BLOCK.findall(fake.prompts[0]))
-        choices = json.loads(blocks["choices"])
-        assert choices["choices"] == [
-            "Build a thing number 0", "Build a thing number 1", "Build a thing number 2",
+        games = json.loads(blocks["games"])
+        assert [game["score"] for game in games["games"]] == [90, 30, 60]
+        assert [game["band"] for game in games["games"]] == [
+            "Super strong", "Keep practising", "Growing well",
         ]  # fmt: skip
-        assert choices["pattern"]["title"] == "The Builder"
-        assert "Aarav" in choices["pattern"]["line"] and "{name}" not in choices["pattern"]["line"]
+        assert games["games"][0]["skill"] == worlds.WORLDS[0]["games"][0]["skill"]
+        assert (games["total"], games["tries"], games["change_since_previous_run"]) == (60, 2, 10)
+        assert games["days_since_played"] == 0
+        # The best game's "Build on" and the weakest's "Support", filled for the child.
+        assert games["build_on"]["game"] == worlds.WORLDS[0]["games"][0]["skill"]
+        assert games["support"]["game"] == worlds.WORLDS[0]["games"][1]["skill"]
+        assert games["support"]["title"] == fill_template(
+            worlds.WORLDS[0]["games"][1]["support"]["title"], "Aarav", "boy"
+        )
+        for text in (games["build_on"], games["support"]):
+            assert "{" not in text["title"] + text["body"]
         assert json.loads(blocks["feedback"]) == "Less screen time"
         assert json.loads(blocks["reflections"])[0]["hint"]
+        assert json.loads(blocks["profile"])["name"] == "Aarav"
         area = await _area(r, child)
         assert len(area["ai_three_month_recommendations"]) == 5 and area["version"] == before + 1
+        # The run they were written from, and its games as Release's child evidence.
+        assert area["recommendations_run_at"] == latest["at"]
+        assert area["child_games"] == worlds.game_lines(AREA, latest)
+        assert area["child_games"][0].startswith(f"Played {worlds.WORLDS[0]['games'][0]['title']}")
+        assert [rec["source"] for rec in area["ai_three_month_recommendations"]][-1] == "step"
         # In progress: no other service hears of it yet.
         assert await r.db.outbox.count_documents({}) == 0
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_recommendations_from_a_world_run_alone(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        await generation.process(
+            r.runtime, llm_client(), await _start(r, child, "parent_questions")
+        )
+        await _run_world(r, child, [20, 85, 55])
+        fake = FakeOpenAI(answers=[RECOMMENDATIONS_ANSWER])
+        job = await _start(r, child, "recommendations")
+        assert await generation.process(r.runtime, llm_client(fake), job) == "completed"
+        blocks = dict(BLOCK.findall(fake.prompts[0]))
+        assert json.loads(blocks["reflections"]) == "(no answers given)"
+        games = json.loads(blocks["games"])
+        assert (games["tries"], games["change_since_previous_run"]) == (1, None)
+        area = await _area(r, child)
+        played = (await r.db[WORLD_RUNS].find_one({"_id": child}))["runs"]["0"]
+        assert area["recommendations_run_at"] == played[-1]["at"]
+        # "both" with no answers given can't be true: stored as the games alone.
+        assert area["ai_three_month_recommendations"][0]["source"] == "kid"
 
     live(mongo_uri, test)
 
@@ -176,12 +212,14 @@ def test_recommendations_for_a_completed_area_publish_an_update(mongo_uri):
             == area["ai_three_month_recommendations"]
         )
         assert area["status"] == "completed"
+        assert area["recommendations_run_at"] is None  # the child hasn't played the world
+        assert area["child_games"] == [] and update["payload"]["child_games"] == []
         # The question sets publish nothing: no other service uses them.
-        await r.db[GROWTH_AREAS].update_one({"_id": area["_id"]}, {"$unset": {"child_rounds": ""}})
+        await r.db[GROWTH_AREAS].update_one(
+            {"_id": area["_id"]}, {"$unset": {"parent_questions": ""}}
+        )
         await generation.process(
-            r.runtime,
-            llm_client(FakeOpenAI(answers=[ROUNDS_ANSWER])),
-            await _start(r, child, "child_rounds"),
+            r.runtime, llm_client(), await _start(r, child, "parent_questions")
         )
         assert await r.db.outbox.count_documents({"event_type": "grow.area_updated"}) == 1
 
@@ -215,7 +253,6 @@ def test_unusable_answers_and_failures_are_retried_then_fail_the_job_only(mongo_
         # A rejected recommendations answer stores nothing either.
         assert generation._normalised("recommendations", AREA, {"recommendations": []}) is None
         assert generation._normalised("recommendations", AREA, "no") is None
-        assert generation._normalised("child_rounds", AREA, {"rounds": []}) is None
 
     live(mongo_uri, test)
 
@@ -428,6 +465,8 @@ def test_a_purged_child_is_deleted_with_its_areas_and_jobs(mongo_uri):
                 _path(target, f"/{AREA}/generation"), json={"kind": "parent_questions"},
                 headers=auth_header(),
             )  # fmt: skip
+        for target in (child, kept):
+            await _run_world(r, target)
         await seed_user_outbox(
             r.db, user_id=PARENT, child_id=child, other_user_id=OTHER, other_child_id=kept
         )
@@ -436,8 +475,9 @@ def test_a_purged_child_is_deleted_with_its_areas_and_jobs(mongo_uri):
         assert await seeded_outbox_left(r.db) == {"named", "other"}  # only the child's went
         assert await r.db[GROWTH_AREAS].count_documents({"child_id": child}) == 0
         assert await r.db[GROWTH_AREAS].count_documents({"child_id": kept}) == 1
-        for name in (CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS):
+        for name in (WORLD_RUNS, CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS):
             assert await r.db[name].find_one({"_id": child}) is None
+        assert await r.db[WORLD_RUNS].find_one({"_id": kept}) is not None
         assert (await r.db[JOBS].find_one({"child_id": child}))["error"] == "cancelled"
         assert (await r.db.tombstones.find_one({"_id": f"child:{child}"}))["version"] == 7
         await consumer.handle_body(_changed(r, child, 8))
@@ -455,6 +495,7 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
             json={"kind": "parent_questions"},
             headers=auth_header(),
         )
+        await _run_world(r, child)
         theirs = r.owners.add_child(user_id=OTHER)
         await r.copy(theirs, user_id=OTHER)
         await seed_user_outbox(
@@ -463,7 +504,7 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"other"}
-        for name in (GROWTH_AREAS, CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS):
+        for name in (GROWTH_AREAS, WORLD_RUNS, CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS):
             assert await r.db[name].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILD_ACCESS].count_documents({"user_id": OTHER}) == 1
         assert (await r.db[JOBS].find_one({}))["error"] == "cancelled"

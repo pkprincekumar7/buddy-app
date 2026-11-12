@@ -174,727 +174,6 @@
     }
   },
   {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": {
-      "rounds": [
-        {
-          "a": {
-            "text": "Build a thing number 0",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 0",
-            "tag": "teller",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 5",
-            "tag": "helper",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 5",
-            "tag": "maker",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": [
-      {
-        "a": {
-          "text": "Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly Fly",
-          "tag": "maker",
-          "icon": "rocket",
-          "star": "A very long star label"
-        },
-        "b": {
-          "text": "  Lead the team  ",
-          "tag": "leader",
-          "icon": 7,
-          "star": null
-        }
-      },
-      {
-        "a": {
-          "text": "Build a thing number 1",
-          "tag": "teller",
-          "icon": "rocket",
-          "star": "Star"
-        },
-        "b": {
-          "text": "Tell a story number 1",
-          "tag": "leader",
-          "icon": "nope",
-          "star": ""
-        }
-      },
-      {
-        "a": {
-          "text": "Build a thing number 2",
-          "tag": "leader",
-          "icon": "rocket",
-          "star": "Star"
-        },
-        "b": {
-          "text": "Tell a story number 2",
-          "tag": "explorer",
-          "icon": "nope",
-          "star": ""
-        }
-      },
-      {
-        "a": {
-          "text": "Build a thing number 3",
-          "tag": "explorer",
-          "icon": "rocket",
-          "star": "Star"
-        },
-        "b": {
-          "text": "Tell a story number 3",
-          "tag": "thinker",
-          "icon": "nope",
-          "star": ""
-        }
-      },
-      {
-        "a": {
-          "text": "Build a thing number 4",
-          "tag": "thinker",
-          "icon": "rocket",
-          "star": "Star"
-        },
-        "b": {
-          "text": "Tell a story number 4",
-          "tag": "helper",
-          "icon": "nope",
-          "star": ""
-        }
-      },
-      {
-        "a": {
-          "text": "Build a thing number 5",
-          "tag": "helper",
-          "icon": "rocket",
-          "star": "Star"
-        },
-        "b": {
-          "text": "Tell a story number 5",
-          "tag": "maker",
-          "icon": "nope",
-          "star": ""
-        }
-      },
-      {
-        "a": {
-          "text": "Build a thing number 0",
-          "tag": "maker",
-          "icon": "rocket",
-          "star": "Star"
-        },
-        "b": {
-          "text": "Tell a story number 0",
-          "tag": "teller",
-          "icon": "nope",
-          "star": ""
-        }
-      }
-    ]
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": {
-      "rounds": [
-        {
-          "a": {
-            "text": "Build a thing number 0",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 0",
-            "tag": "teller",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": {
-      "rounds": [
-        {
-          "a": {
-            "text": "x",
-            "tag": "wizard",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "y",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 5",
-            "tag": "helper",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 5",
-            "tag": "maker",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": {
-      "rounds": [
-        "oops",
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 5",
-            "tag": "helper",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 5",
-            "tag": "maker",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": {
-      "rounds": [
-        {
-          "a": "oops",
-          "b": {
-            "text": "y",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 5",
-            "tag": "helper",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 5",
-            "tag": "maker",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": {
-      "rounds": [
-        {
-          "a": {
-            "text": "  ",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "y",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 5",
-            "tag": "helper",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 5",
-            "tag": "maker",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "unknown_area",
-    "answer": {
-      "rounds": [
-        {
-          "a": {
-            "text": "Build a thing number 0",
-            "tag": "maker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 0",
-            "tag": "teller",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 1",
-            "tag": "teller",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 1",
-            "tag": "leader",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 2",
-            "tag": "leader",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 2",
-            "tag": "explorer",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 3",
-            "tag": "explorer",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 3",
-            "tag": "thinker",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 4",
-            "tag": "thinker",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 4",
-            "tag": "helper",
-            "icon": "nope",
-            "star": ""
-          }
-        },
-        {
-          "a": {
-            "text": "Build a thing number 5",
-            "tag": "helper",
-            "icon": "rocket",
-            "star": "Star"
-          },
-          "b": {
-            "text": "Tell a story number 5",
-            "tag": "maker",
-            "icon": "nope",
-            "star": ""
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "child_rounds",
-    "area_id": "life_ambition",
-    "answer": 7
-  },
-  {
     "kind": "recommendations",
     "area_id": "self_care",
     "answer": {
@@ -939,7 +218,153 @@
     "kind": "recommendations",
     "area_id": "self_care",
     "answer": {
-      "no": "list"
+      "no": "list",
+      "recommendations": [
+        {
+          "title": "Name the bedtime worry",
+          "detail": "Each night, ask what felt hard today.",
+          "source": "both"
+        },
+        {
+          "title": "Praise the slow, careful game",
+          "detail": "After each run, name one careful move.",
+          "source": "kid"
+        },
+        {
+          "title": "Keep the reading habit",
+          "detail": "Read together for ten minutes after dinner.",
+          "source": "you"
+        },
+        {
+          "title": "Plan a calm-down corner together",
+          "detail": "Set it up this month and use it twice a week.",
+          "source": "both"
+        },
+        {
+          "title": "Play again next week",
+          "detail": "Check back in a week to see the change.",
+          "source": "step"
+        }
+      ]
     }
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": [
+      {
+        "title": "  Start a bedtime routine  ",
+        "detail": "Every night at eight, read together for ten minutes."
+      },
+      {
+        "title": "t t t t t t t t t t t t t t",
+        "detail": "d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d"
+      },
+      {
+        "t": "Shorthand title",
+        "b": "Shorthand body"
+      },
+      "  A legacy string recommendation that is long but never capped at all by the normaliser rules  ",
+      {
+        "title": "",
+        "detail": ""
+      },
+      "",
+      null,
+      5,
+      {
+        "title": "Only a title"
+      }
+    ]
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": {
+      "recommendations": [
+        {
+          "title": "Name the bedtime worry",
+          "detail": "Each night, ask what felt hard today.",
+          "source": "both"
+        },
+        {
+          "title": "Praise the slow, careful game",
+          "detail": "After each run, name one careful move.",
+          "source": "kid"
+        },
+        {
+          "title": "Keep the reading habit",
+          "detail": "Read together for ten minutes after dinner.",
+          "source": "you"
+        },
+        {
+          "title": "Play again next week",
+          "detail": "Check back in a week to see the change.",
+          "source": "step"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": [
+      {
+        "title": "Valid both",
+        "detail": "d",
+        "source": "both"
+      },
+      {
+        "title": "Valid kid",
+        "detail": "d",
+        "source": "kid"
+      },
+      {
+        "title": "Valid you",
+        "detail": "d",
+        "source": "you"
+      },
+      {
+        "title": "Valid step",
+        "detail": "d",
+        "source": "step"
+      },
+      {
+        "title": "Unknown source",
+        "detail": "d",
+        "source": "parent"
+      },
+      {
+        "title": "Wrong case",
+        "detail": "d",
+        "source": "KID"
+      },
+      {
+        "title": "Padded source",
+        "detail": "d",
+        "source": " kid "
+      },
+      {
+        "title": "Not a string",
+        "detail": "d",
+        "source": 5
+      },
+      {
+        "title": "Null source",
+        "detail": "d",
+        "source": null
+      },
+      {
+        "t": "Shorthand with a source",
+        "b": "b",
+        "source": "you"
+      },
+      {
+        "title": "",
+        "detail": "",
+        "source": "step"
+      },
+      "  A plain string stays a title  "
+    ]
   }
 ]

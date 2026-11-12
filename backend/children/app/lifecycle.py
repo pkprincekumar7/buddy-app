@@ -31,6 +31,7 @@ from typing import Any
 from pymongo import ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 
+from children.app.kids import KID_ACTIVITY
 from children.app.runtime import SERVICE, Runtime
 from children.app.store import CHILDREN, snapshot
 from common import upload_tracking
@@ -145,6 +146,10 @@ async def purge_one(runtime: Runtime, doc: Mapping[str, Any]) -> bool:
         await upload_tracking.forget_children(
             runtime.db, [doc["_id"]], location=doc["location"], session=session
         )
+        # What the child did in child view goes with them (docs/child-view-build-plan.md, 2.1).
+        await runtime.db[KID_ACTIVITY].delete_one(
+            {"_id": doc["_id"], "location": doc["location"]}, session=session
+        )
         # Its earlier snapshots (names, progress) go with it; child.deleted stays.
         await delete_child_events(
             runtime.db, location=doc["location"], child_id=doc["_id"], session=session
@@ -206,6 +211,7 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> int:
         deleted["docs"] = docs
         child_ids = [doc["_id"] for doc in docs]
         await runtime.db[CHILDREN].delete_many(selector, session=session)
+        await runtime.db[KID_ACTIVITY].delete_many(selector, session=session)
         await upload_tracking.forget_children(
             runtime.db, child_ids, location=location, session=session
         )

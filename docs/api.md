@@ -165,12 +165,15 @@ Errors the apps tell apart carry `detail.code`.
 | DELETE | `/children/{id}` | 10/min | Hides the child at once (`204`); the purge follows after 30 days. | |
 | POST | `/children/{id}/avatar/presign` | 20/min | `{content_type}` → `{upload_url, upload_fields, avatar_key, avatar_url}`. See the upload steps below. | |
 | POST | `/children/{id}/connect/visit` | 30/min | No body → `{progress}`. Parents only (build plan 5.7). Sets `progress.connect` once; a repeat changes nothing. | `403 circle_locked`, `503 release_unavailable` with `Retry-After` |
+| GET | `/children/{id}/kids?date=` | 60/min | Child view's activity (docs/child-view-build-plan.md, 2.1): `stars`, `circles_done` (what the child has done in child view, circle by circle), `flipped_powers`, `discover_badge`, `tried_today`, `best_times`, `moods` (the last 62 days), `shown` (the wins kept for the parent). `date` is the child's day, `YYYY-MM-DD`. Parents only. Reads nothing into existence. | `422 bad_date` |
+| POST | `/children/{id}/kids/events?date=` | 120/min | One thing the child did, by `type`: `flip_power` `{power}`, `try_power` `{power}`, `game_best` `{game, seconds}`, `world_done` `{world}`, `quest` `{interest, quest}`, `mood` `{mood, note?}`, `show_win` `{key, title}`. The server gives the stars (a client never sends a count), each award once. Each type waits for its circle **in child view's own order**: Discover once the chat is done, then Grow (`world_done`) once the Discover badge is earned, Transform (`quest`) once a world is done, Release (`mood`) once a quest is, Connect (`show_win`) once a mood is. The parent's progress doesn't open them. Answers with the activity. Parents only. | `403 circle_locked`, `409 shown_full`, `422 bad_date` |
 
 | Rule | Detail |
 |---|---|
 | Avatar upload | POST the photo as a form (`upload_fields`, then the file as `file`) within 5 minutes; S3 refuses it over 5 MB. Then PATCH the child with `avatar_key`: it must be this child's `…/avatar/` key, an allowed image, at most 5 MB. |
 | Connect unlock | Locked until Release is done. If the child's own `progress.release` isn't set, release is asked first, and its yes sets both flags. |
 | `progress.profile` | Set by the service once name, age and gender are all present. |
+| Kids stars | `power:<i>` +1 (first flip), `try:<i>:<day>` +1 (once a day), `badge:discover` +3 (every power flipped), `mood:<day>` +1, `quest:<interest>:<i>` +1 (a quest's first log). `game_best` keeps the fastest time (0.5–600 s); `show_win` gives none. |
 | Changed fields | `created_date` is now `created_at`. The onboarding answers, personality and phase fields are gone (they belong to the circles). |
 
 | Internal (port 8001) | Purpose |
@@ -210,6 +213,7 @@ Unlocked once the onboarding conversation is completed.
 | POST | `/children/{id}/personality/generation` | 10/min | No body. Starts the personality when there's none: `202 {job_id, status: "pending"}`, or `200` with the job already running. Usually not needed: discover starts it on its own when the conversation completes. | `409 already_generated` (no regeneration), `429 llm_limit`, `503 generation_unavailable` (job can't be stored) |
 | GET | `/children/{id}/personality/generation/{job_id}` | 300/min | `{job_id, kind: "personality", status, error, created_at, completed_at}`. | `404 job_not_found` |
 | POST | `/children/{id}/personality/viewed` | 30/min | The parent passed the reveal splash: Discover is done (publishes `discover.completed` once). | `409 personality_not_ready` |
+| GET | `/children/{id}/personality/powers` | 60/min | Child view's seven powers: `style` (the dominant archetype) and `powers` (`name`, `game`, `level` 3–5, `line`, `try_this`), the levels from the personality's scores by a fixed table (`powers.json`). Parents only. | `404 personality_not_ready` |
 
 | Internal (port 8001) | Returns | Used by |
 |---|---|---|
@@ -226,15 +230,17 @@ Unlocked once Discover is done.
 |---|---|---|---|---|
 | GET | `/children/{id}/growth-areas` | 60/min | `{areas: [...]}`, in the order they were started (fields below). | |
 | PUT | `/children/{id}/growth-areas/{area_id}` | 60/min | Saves an area: `area_name`, `status` (`in_progress` / `completed`), `step`, `answers`, `child_activity`, `recommendations`, `feedback`. Generated and unknown fields are 422. An identical save changes nothing. | `422 unknown_question`, `422 area_completed`, `422 area_too_large`, `422 invalid_area_id` |
-| POST | `/children/{id}/growth-areas/{area_id}/generation` | 10/min | `{kind, area_name?}`; `kind` is `parent_questions` (creates the area), `child_rounds` or `recommendations`. | `409 already_generated`, `409 needs_answers`, `404 area_not_found`, `422 unknown_area`, `429 llm_limit` |
+| POST | `/children/{id}/growth-areas/{area_id}/generation` | 10/min | `{kind, area_name?}`; `kind` is `parent_questions` (creates the area) or `recommendations` (from the parent's answers and the latest run of the area's world; needs one of the two). | `409 already_generated`, `409 needs_input`, `404 area_not_found`, `422 unknown_area`, `429 llm_limit` |
 | GET | `/children/{id}/growth-areas/{area_id}/generation/{job_id}` | 300/min | Polls the job (`kind`, `status`, `error`). | |
+| GET | `/children/{id}/growth-areas/worlds` | 60/min | Child view's six worlds and their games (`worlds.json`, without the per-game suggestions, which only ground the recommendations' prompt), the score bands, and the child's `runs` per world (the last 10, oldest first). Parents only. Open once the chat is done, not behind Grow's lock (child view's order is the children service's). | `403 circle_locked` |
+| POST | `/children/{id}/growth-areas/worlds/{world}/runs` | 60/min | A finished world (0–5): `{scores}`, three games, 0–100 each. Stored with its `total` (the rounded mean). | `422` (scores or world) |
 
 | Area field | Content |
 |---|---|
 | `status`, `step`, dates | Progress through the area |
 | `parent_questions` | Generated: `{questions: [{id, question, hint}]}` |
-| `child_rounds` | Generated: `{rounds: [{a, b}]}`, icons as keys |
-| `ai_three_month_recommendations` | Generated: `[{title, detail}]` |
+| `ai_three_month_recommendations` | Generated: 5 × `{title, detail, source?}`; `source` is `both` (answers and games), `kid` (games), `you` (answers) or `step` (the next step) |
+| `recommendations_run_at` | The `at` of the world run the recommendations used, or null; the apps regenerate when the latest run's `at` differs |
 | `answers`, `child_activity`, `recommendations`, `feedback` | Saved by the parent |
 | `generating` | The kinds running |
 
@@ -270,6 +276,9 @@ Unlocked once a growth area is completed.
 | PATCH | `/children/{id}/transform` | 60/min | Any subset of the parent's fields; each one sent replaces the stored one, and each `photos` field key sent replaces that field's keys. `clear_track_steps` clears the tracker. `plan`, `track_steps` and the Life Pathway are 422. | `422 invalid_photo_key`, `422 photo_not_uploaded`, `422 photo_too_large`, `422 plan_too_large` (over 64 KB) |
 | POST | `/children/{id}/transform/generation` | 10/min | `{kind, area_id?}`: `life_pathway` (for a completed growth area), `plan` or `event_tracker`. | `409 needs_completed_area`, `409 needs_ask`, `409 needs_plan`, `409 needs_event`, `429 llm_limit` |
 | GET | `/children/{id}/transform/generation/{job_id}` | 300/min | Polls the job. | |
+| GET | `/children/{id}/transform/quests?date=` | 60/min | Child view's quests (these three routes open once the chat is done, not behind Transform's lock): `default_interest` (read from the plan's `ask`), the child's own `interests`, `current`, `logs`, `last_logged`, `logged_today` and the `catalog` (9 interests × 3 quests, `quests.json`). Parents only. | `422 bad_date` |
+| PUT | `/children/{id}/transform/quests/current?date=` | 60/min | `{interest}`: the interest on screen; one the plan doesn't name is added to `interests`. | `422 bad_date` |
+| POST | `/children/{id}/transform/quests/log?date=` | 120/min | `{interest, quest}`: `+1`, once a day per quest, up to its target (anything more changes nothing). | `409 interest_not_picked`, `422 bad_date` |
 | POST | `/children/{id}/transform/photos/presign` | 20/min | `{field_key, content_type}` → `{upload_url, upload_fields, photo_key, photo_url}`. POST as a form within 5 minutes, then PATCH the key into `photos`. | `415`, `502`, `503 uploads_not_configured` |
 
 | GET field | Content |
@@ -308,7 +317,7 @@ Unlocked once Transform is done.
 |---|---|---|
 | `GET /internal/release/children/{id}/status?location=` | `{completed}` | children (the Connect visit) |
 
-**Worker:** runs the job (the evidence from its copies of the questionnaire, the areas' reflections and the child's picks), keeps the copies, and deletes on `child.deleted` and `user.deletion_requested`.
+**Worker:** runs the job (the evidence from its copies of the questionnaire, the areas' reflections and the child's child view game results), keeps the copies, and deletes on `child.deleted` and `user.deletion_requested`.
 
 ## shared
 

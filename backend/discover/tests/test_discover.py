@@ -75,6 +75,7 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
     assert public == {
         "/health", base, f"{base}/generation", f"{base}/generation/{{job_id}}", f"{base}/viewed",
+        f"{base}/powers",
     }  # fmt: skip
     internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
     assert internal == {

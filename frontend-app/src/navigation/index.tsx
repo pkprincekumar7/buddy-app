@@ -34,9 +34,12 @@ import LifePathway from '@/screens/LifePathway';
 import GrowthAreas from '@/screens/GrowthAreas';
 import Observations from '@/screens/Observations';
 import Connect from '@/screens/Connect';
+import KidsMode from '@/screens/KidsMode';
 import AccountSettings from '@/screens/AccountSettings';
 import PageNotFound from '@/screens/PageNotFound';
 import { withStackWindow } from './withStackWindow';
+import { withChildViewGuard } from './withChildViewGuard';
+import { useViewMode } from '@/lib/ViewModeContext';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -69,18 +72,22 @@ const bare: StackNavigationOptions = {
 };
 
 // Pages that route by /:pageName/:childId on the web (App.tsx ProtectedRoutes).
-// Each is wrapped so only the top two stack pages stay rendered — see withStackWindow.
+// Each is wrapped so only the top two stack pages stay rendered — see withStackWindow —
+// and so child view keeps to the child's hub and kids page — see withChildViewGuard.
+const page = (Screen: React.ComponentType) =>
+  withChildViewGuard(withStackWindow(Screen));
 const PROTECTED_PAGES = {
-  Home: withStackWindow(Home),
-  Onboarding: withStackWindow(Onboarding),
-  ConversationalOnboarding: withStackWindow(ConversationalOnboarding),
-  PersonalityJourney: withStackWindow(PersonalityJourney),
-  PersonalityProfile: withStackWindow(PersonalityProfile),
-  LifePathway: withStackWindow(LifePathway),
-  GrowthAreas: withStackWindow(GrowthAreas),
-  Observations: withStackWindow(Observations),
-  Connect: withStackWindow(Connect),
-  AccountSettings: withStackWindow(AccountSettings),
+  Home: page(Home),
+  Onboarding: page(Onboarding),
+  ConversationalOnboarding: page(ConversationalOnboarding),
+  PersonalityJourney: page(PersonalityJourney),
+  PersonalityProfile: page(PersonalityProfile),
+  LifePathway: page(LifePathway),
+  GrowthAreas: page(GrowthAreas),
+  Observations: page(Observations),
+  Connect: page(Connect),
+  Kids: page(KidsMode),
+  AccountSettings: page(AccountSettings),
 } as const;
 
 function FullScreenSpinner() {
@@ -100,8 +107,10 @@ function FullScreenSpinner() {
 function RootNavigator() {
   const { isLoadingAuth, authError, isAuthenticated, checkAppState, user } =
     useAuth();
+  // The stored view decides the first screen in child view: wait for it.
+  const { ready: viewReady } = useViewMode();
 
-  if (isLoadingAuth) return <FullScreenSpinner />;
+  if (isLoadingAuth || !viewReady) return <FullScreenSpinner />;
 
   if (authError?.type === 'unknown') {
     return (

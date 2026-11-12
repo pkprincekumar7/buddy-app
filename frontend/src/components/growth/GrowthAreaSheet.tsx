@@ -1,66 +1,39 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { SPINNER } from '@/lib/animations';
-import {
-  GAME_ROUNDS_PER_AREA,
-  fillTemplate,
-  pickedOptions,
-  resolveRounds,
-  topArchetype,
-} from '@/lib/growthAreaData';
+import { daysAgo, rankedGames, type WorldSummary } from '@/api/kidWorlds';
+import { fillTemplate } from '@/lib/growthAreaData';
 import type {
-  GameOption,
-  GameRound,
   GrowthArea,
   GrowthRecommendation,
   Question,
+  RecommendationSource,
 } from '@/lib/growthAreaData';
 
 /**
- * The whole per-area flow, as one overlay over the Growth Map:
+ * The per-area overlay over the Growth Map, as the prototype has it:
  *
- *   questions → the parent's five free-text reflections
- *   handoff   → the "hand the screen over" beat
- *   rounds    → the child's six either/or choices
- *   result    → constellation + recommendations
+ *   questions → "Guided Reflection": the parent's five free-text reflections
+ *   insights  → "Growth insights": what the parent answered and what the child played
+ *               in child view (the area's world), and the recommendations from both
  *
- * Nothing is written per step. The parent's answers persist once, when they hit
- * Finish (onSaveAnswers); the child's picks persist once, after round six
- * (onCompleteRounds) — which also kicks off recommendation generation in the
- * caller. The archetype and constellation render instantly off the picks alone
- * (no network needed); recsPhase/recommendations stream in afterwards as that
- * generation progresses. Closing the sheet mid-run discards the current step,
- * matching the source design — except mid-round, where it would strand the
- * child half-way through their six choices.
+ * Two tabs switch between them. An area the parent has answered opens on its insights;
+ * one they haven't, on its questions. The answers persist once, on Finish
+ * (onSaveAnswers), which moves to the insights; the caller keeps the recommendations
+ * current (onShowInsights) and passes them down.
  *
- * Neither question set is owned here: both are generated per child per area by
- * the caller and arrive as props, along with the status of that generation. Each
- * set therefore has three states to render — waiting, unusable (with a retry),
- * and ready — and the two waits are placed where they cost the parent least: the
- * reflections load behind the sheet's own opening, and the child's rounds load
- * behind the handoff beat while the parent reads "hand the screen over".
+ * The questions are generated per child per area by the caller and arrive as props, with
+ * the status of that generation: waiting, unusable (with a retry) or ready.
  */
 
-type Phase = 'questions' | 'handoff' | 'rounds' | 'result';
+type Phase = 'questions' | 'insights';
 export type RecsPhase = 'idle' | 'loading' | 'ready' | 'error';
+/** Generation state of the question set, as reported by the caller's hook. */
+export type SetStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 const PANEL_MAX = 620;
-
-/** Star, shown on the handoff beat. */
-const HANDOFF_STAR_PATH = 'M12 3l2.2 5.6L20 9.4l-4 4 1 6-5-2.9-5 2.9 1-6-4-4 5.8-.8z';
-
-/** Constellation node positions (percent of the 560×132 result-panel area) and
- * the path connecting them, in the same order as the child's six picks. */
-const CONSTELLATION_PATH = 'M40 84 L142 46 L244 66 L316 34 L418 60 L520 30';
-const CONSTELLATION_STARS = [
-  { left: 7.1, top: 64.6 },
-  { left: 25.4, top: 35.4 },
-  { left: 43.6, top: 50.8 },
-  { left: 56.4, top: 26.2 },
-  { left: 74.6, top: 46.2 },
-  { left: 92.9, top: 23.1 },
-];
 
 const CLOSE_BTN: React.CSSProperties = {
   position: 'absolute',
@@ -106,42 +79,65 @@ const CTA: React.CSSProperties = {
   boxShadow: '0 0 24px rgb(var(--constellation-cyan-rgb) / .45)',
 };
 
-const CHOICE_TILE: React.CSSProperties = {
-  cursor: 'pointer',
-  borderRadius: 16,
-  padding: '18px 16px',
+/** The small cyan caps over a block ("Parent app", "Latest child view result"). */
+const EYEBROW: React.CSSProperties = {
+  fontWeight: 700,
+  fontSize: 9.5,
+  letterSpacing: '.28em',
+  textTransform: 'uppercase',
+  color: 'rgb(var(--constellation-cyan-bright-rgb))',
+};
+
+const CARD: React.CSSProperties = {
+  borderRadius: 13,
   background:
-    'linear-gradient(160deg,rgb(var(--constellation-navy-soft-rgb) / .9),rgb(var(--constellation-ink-navy-rgb) / .9))',
-  border: '1px solid rgb(var(--constellation-cyan-rgb) / .26)',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 12,
-  textAlign: 'center',
-  transition: 'border-color .2s ease,box-shadow .2s ease',
+    'linear-gradient(120deg,rgb(var(--constellation-navy-soft-rgb) / .55),rgb(var(--constellation-ink-navy-rgb) / .55))',
 };
 
-// Marks the option that occupied this round on the previous run — shown on a
-// Play Again replay (or a completed area opened straight into its result and
-// then replayed) so it reads as "here's what was picked, change it if you
-// like" rather than a blank round with no memory of the earlier answer.
-const CHOICE_TILE_PICKED: React.CSSProperties = {
-  ...CHOICE_TILE,
-  border: '1px solid rgb(var(--constellation-gold-rgb) / .85)',
-  boxShadow:
-    '0 0 0 1px rgb(var(--constellation-gold-rgb) / .35),0 0 22px rgb(var(--constellation-gold-rgb) / .25)',
+const FILLED = 'rgb(var(--constellation-gold-rgb) / .45)';
+const UNFILLED = 'rgb(var(--constellation-cyan-rgb) / .16)';
+
+/** A game score's colour: its band's gold / cyan / violet as the page's tokens. */
+const BAND_RGB = {
+  gold: 'var(--constellation-gold-rgb)',
+  cyan: 'var(--constellation-cyan-rgb)',
+  violet: 'var(--constellation-lavender-rgb)',
+} as const;
+
+/** Each recommendation's tag: its words, colour and border. */
+const TAGS: Record<
+  RecommendationSource,
+  { label: (name: string) => string; color: string; border: string }
+> = {
+  both: {
+    label: (name) => `You + ${name}`,
+    color: 'rgb(var(--constellation-gold-rgb))',
+    border: 'rgb(var(--constellation-gold-rgb) / .5)',
+  },
+  kid: {
+    label: (name) => `${name}’s games`,
+    color: 'rgb(var(--constellation-sky-rgb))',
+    border: 'rgb(var(--constellation-cyan-rgb) / .4)',
+  },
+  you: {
+    label: () => 'Your answers',
+    color: 'rgb(var(--constellation-lilac-rgb))',
+    border: 'rgb(var(--constellation-lilac-rgb) / .45)',
+  },
+  step: {
+    label: () => 'Next step',
+    color: 'rgb(var(--constellation-mint-rgb))',
+    border: 'rgb(var(--constellation-mint-rgb) / .45)',
+  },
 };
 
-/** Generation state of one question set, as reported by the caller's hook. */
-export type SetStatus = 'idle' | 'loading' | 'ready' | 'error';
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
  * Stands in for a question set that is still being written, or could not be.
  *
- * The failure path offers a retry rather than the hardcoded questions, on
- * purpose: the entire value of the set is that it was written for this child
- * from their profile, so generic questions would quietly produce a generic plan
- * while looking like they had worked.
+ * The failure path offers a retry rather than hardcoded questions, on purpose: the
+ * value of the set is that it was written for this child from their profile.
  */
 function SetGate({
   status,
@@ -225,6 +221,303 @@ function SetGate({
   );
 }
 
+/** One of the two tabs under the header. */
+function Tab({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={on}
+      onClick={onClick}
+      className="flex items-center whitespace-nowrap font-bold uppercase"
+      style={{
+        gap: 8,
+        padding: '8px 16px',
+        borderRadius: 999,
+        fontSize: 12,
+        letterSpacing: '.14em',
+        background: on ? 'rgb(var(--constellation-cyan-rgb) / .16)' : 'transparent',
+        border: `1px solid ${on ? 'rgb(var(--constellation-cyan-rgb) / .7)' : 'rgb(var(--constellation-cyan-rgb) / .22)'}`,
+        color: on
+          ? 'rgb(var(--constellation-cyan-pale-rgb))'
+          : 'rgb(var(--constellation-slate-dark-rgb))',
+        transition: 'all .2s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** "Parent app" / "Child view": where the insights come from, gold-edged once there. */
+function SourceCard({ label, text, filled }: { label: string; text: string; filled: boolean }) {
+  return (
+    <div
+      style={{
+        borderRadius: 13,
+        padding: '10px 14px',
+        border: `1px solid ${filled ? FILLED : UNFILLED}`,
+        background: 'rgb(var(--constellation-ink-navy-rgb) / .55)',
+      }}
+    >
+      <div style={EYEBROW}>{label}</div>
+      <div
+        style={{
+          marginTop: 4,
+          fontWeight: 700,
+          fontSize: 14,
+          color: 'rgb(var(--constellation-cyan-pale-rgb))',
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
+/** The latest run: its total in a ring, its strongest and weakest game, and each game. */
+function WorldResult({ world }: { world: WorldSummary }) {
+  const order = rankedGames(world.rows.map((r) => r.score));
+  const best = world.rows[order[0] ?? 0];
+  const weakest = world.rows[order[order.length - 1] ?? 0];
+  const up = world.change !== null && world.change > 0;
+  const change =
+    world.change === null ? '' : ` · ${world.change >= 0 ? '+' : ''}${world.change} vs last try`;
+  const deg = `${Math.round(world.total * 3.6)}deg`;
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center" style={{ gap: 18 }}>
+        <div className="relative flex-shrink-0" style={{ width: 92, height: 92 }}>
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: `conic-gradient(rgb(var(--constellation-cyan-rgb)) 0deg,rgb(var(--constellation-gold-rgb)) ${deg},rgb(var(--constellation-cyan-rgb) / .12) ${deg})`,
+            }}
+          />
+          <div
+            className="absolute flex flex-col items-center justify-center rounded-full"
+            style={{ inset: 8, background: 'rgb(var(--constellation-badge-b-rgb))' }}
+          >
+            <div
+              className="font-orbitron"
+              style={{
+                fontWeight: 700,
+                fontSize: 26,
+                lineHeight: 1,
+                color: 'rgb(var(--constellation-cyan-paler-rgb))',
+              }}
+            >
+              {world.total}
+            </div>
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 9.5,
+                fontWeight: 700,
+                letterSpacing: '.18em',
+                color: 'rgb(var(--constellation-slate-dark-rgb))',
+              }}
+            >
+              / 100
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ ...EYEBROW, letterSpacing: '.3em' }}>Latest child view result</div>
+          <div
+            className="font-orbitron"
+            style={{
+              marginTop: 6,
+              fontWeight: 700,
+              fontSize: 17,
+              color: 'rgb(var(--constellation-cyan-paler-rgb))',
+            }}
+          >
+            Strongest: {best?.skill}. Room to grow: {weakest?.skill}.
+          </div>
+          <div
+            style={{
+              marginTop: 5,
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: up
+                ? 'rgb(var(--constellation-mint-rgb))'
+                : 'rgb(var(--constellation-slate-dark-rgb))',
+            }}
+          >
+            Played {daysAgo(world.at)} · {plural(world.tries, 'try', 'tries')}
+            {change}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col" style={{ marginTop: 16, gap: 9 }}>
+        {world.rows.map((row) => {
+          const rgb = BAND_RGB[row.band?.color ?? 'cyan'];
+          return (
+            <div
+              key={row.title}
+              style={{
+                ...CARD,
+                padding: '11px 14px',
+                border: '1px solid rgb(var(--constellation-cyan-rgb) / .16)',
+              }}
+            >
+              <div className="flex items-baseline justify-between" style={{ gap: 10 }}>
+                <div className="flex min-w-0 flex-col" style={{ gap: 2 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 14.5,
+                      lineHeight: 1.25,
+                      color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                    }}
+                  >
+                    {row.skill}
+                  </div>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 12.5,
+                      lineHeight: 1.25,
+                      color: 'rgb(var(--constellation-slate-dark-rgb))',
+                    }}
+                  >
+                    {row.title}
+                  </div>
+                </div>
+                <div
+                  className="font-orbitron"
+                  style={{ fontWeight: 700, fontSize: 15, color: `rgb(${rgb})` }}
+                >
+                  {row.score}
+                </div>
+              </div>
+              <div
+                aria-hidden="true"
+                style={{
+                  marginTop: 9,
+                  height: 5,
+                  borderRadius: 3,
+                  overflow: 'hidden',
+                  background: 'rgb(var(--constellation-cyan-rgb) / .12)',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${row.score}%`,
+                    height: '100%',
+                    borderRadius: 3,
+                    background: `linear-gradient(90deg,rgb(var(--constellation-cyan-bright-rgb)),rgb(${rgb}))`,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/** One numbered recommendation, with its tag. */
+function Recommendation({
+  rec,
+  index,
+  childName,
+}: {
+  rec: GrowthRecommendation;
+  index: number;
+  childName: string;
+}) {
+  const tag = rec.source ? TAGS[rec.source] : null;
+  return (
+    <div
+      className="grid items-start transition-[border-color,transform] duration-200 hover:translate-x-0.5 hover:[border-color:rgb(var(--constellation-gold-rgb)_/_.5)]"
+      style={{
+        ...CARD,
+        gridTemplateColumns: '26px 1fr',
+        gap: 12,
+        padding: '12px 14px',
+        border: '1px solid rgb(var(--constellation-gold-rgb) / .18)',
+      }}
+    >
+      <div className="flex flex-col items-center" style={{ gap: 6, paddingTop: 2 }}>
+        <div
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: 'rgb(var(--constellation-gold-pale-rgb))',
+            boxShadow: '0 0 10px rgb(var(--constellation-gold-rgb) / .9)',
+          }}
+        />
+        <div
+          className="font-orbitron"
+          style={{
+            fontWeight: 700,
+            fontSize: 10,
+            color: 'rgb(var(--constellation-gold-rgb) / .6)',
+          }}
+        >
+          {String(index + 1).padStart(2, '0')}
+        </div>
+      </div>
+      <div>
+        <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: 14.5,
+              lineHeight: 1.35,
+              color: 'rgb(var(--constellation-cyan-pale-rgb))',
+            }}
+          >
+            {rec.title}
+          </span>
+          {tag && (
+            <span
+              className="whitespace-nowrap font-bold uppercase"
+              style={{
+                padding: '2px 8px',
+                borderRadius: 999,
+                border: `1px solid ${tag.border}`,
+                fontSize: 10,
+                letterSpacing: '.14em',
+                color: tag.color,
+              }}
+            >
+              {tag.label(childName)}
+            </span>
+          )}
+        </div>
+        {rec.detail && (
+          <div
+            style={{
+              marginTop: 3,
+              fontWeight: 600,
+              fontSize: 13,
+              lineHeight: 1.45,
+              color: 'rgb(var(--constellation-slate-cool-rgb))',
+            }}
+          >
+            {rec.detail}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface GrowthAreaSheetProps {
   area: GrowthArea;
   childName: string;
@@ -238,39 +531,28 @@ interface GrowthAreaSheetProps {
     progress?: string;
     onRetry: () => void;
   };
-  /** The child's six either/or rounds for this area — same shape as
-   *  parentQuestions, for the child-rounds generation stage. */
-  childRounds: {
-    data: GameRound[] | null;
-    status: SetStatus;
-    progress?: string;
-    onRetry: () => void;
-  };
   /** Previously saved answers for this area, used to prefill a redo. */
   initialAnswers?: Record<string, unknown>;
-  /** Mount straight into the result view for an already-finished area, skipping
-   *  the questions/handoff/rounds entirely. Requires initialPicks. */
+  /** Open on the insights (an answered area) rather than the questions. */
   initialPhase?: Phase;
-  /** The picks a completed area's result was generated from — only meaningful
-   *  together with initialPhase="result"; ignored otherwise. */
-  initialPicks?: string[];
+  /** How many of the area's reflections the parent has saved. */
+  answered: number;
+  /** The child's latest run of this area's world in child view; null until played. */
+  world: WorldSummary | null;
   onClose: () => void;
-  /** Resolve true to advance to the handoff; false keeps the parent on question five. */
+  /** Resolve true to move to the insights; false keeps the parent on question five. */
   onSaveAnswers: (answers: Record<string, string>) => Promise<boolean>;
-  /** Called on Play Again, so the caller can generate rounds if it has none yet. */
-  onReplayRounds: () => void;
-  /** Called once, with the six chosen option ids, after the last round (and again
-   *  after any Play Again replay). The sheet moves to the result phase itself —
-   *  this only needs to persist the picks and start recommendation generation. */
-  onCompleteRounds: (pickedIds: string[]) => void;
-  /** Called from the result phase's "Explore Transform" button, to leave the
-   *  sheet for the Life Pathway (Transform) page. */
+  /** Called when the insights are shown from a tab, so the caller can bring the
+   *  recommendations up to date. */
+  onShowInsights: () => void;
+  /** Leaves the sheet for the Life Pathway (Transform) page. */
   onExploreTransform: () => void;
-  /** True while either of the caller's writes is in flight. */
+  /** True while the caller's save is in flight. */
   isSaving?: boolean;
-  /** Status of the recommendation generation the caller kicked off. */
+  /** Status of the recommendation generation the caller runs. */
   recsPhase?: RecsPhase;
   recommendations?: GrowthRecommendation[];
+  onRetryRecommendations: () => void;
 }
 
 export default function GrowthAreaSheet({
@@ -278,18 +560,18 @@ export default function GrowthAreaSheet({
   childName,
   childGender,
   parentQuestions,
-  childRounds,
   initialAnswers,
   initialPhase = 'questions',
-  initialPicks,
+  answered,
+  world,
   onClose,
   onSaveAnswers,
-  onReplayRounds,
-  onCompleteRounds,
+  onShowInsights,
   onExploreTransform,
   isSaving = false,
   recsPhase = 'idle',
   recommendations = [],
+  onRetryRecommendations,
 }: GrowthAreaSheetProps) {
   const {
     data: generatedQuestions,
@@ -297,46 +579,21 @@ export default function GrowthAreaSheet({
     progress: questionsProgress = '',
     onRetry: onRetryQuestions,
   } = parentQuestions;
-  const {
-    data: generatedRounds,
-    status: roundsStatus,
-    progress: roundsProgress = '',
-    onRetry: onRetryRounds,
-  } = childRounds;
-  // Stable empty arrays, so an area still waiting on its sets does not hand every
-  // downstream memo and effect a fresh reference on each render.
-  const questions: Question[] = useMemo(() => generatedQuestions ?? [], [generatedQuestions]);
-  const rounds: GameRound[] = useMemo(() => generatedRounds ?? [], [generatedRounds]);
-
-  if (import.meta.env.DEV && generatedRounds && rounds.length !== GAME_ROUNDS_PER_AREA) {
-    // The handoff copy promises "Six quick choices"; shout in dev if a generated
-    // set ever stops matching that promise. Only checked once a set has actually
-    // arrived — an absent one is a wait, not a mismatch.
-    console.warn(
-      `[GrowthAreaSheet] ${area.id} has ${rounds.length} rounds but the handoff copy says ${GAME_ROUNDS_PER_AREA}.`,
-    );
-  }
+  const questions: Question[] = generatedQuestions ?? [];
 
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [qIdx, setQIdx] = useState(0);
-  const [rIdx, setRIdx] = useState(0);
-  const [picks, setPicks] = useState<string[]>(
-    initialPhase === 'result' ? (initialPicks ?? []) : [],
-  );
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const who = childName || 'Your child';
+  const fill = (text: string) => fillTemplate(text, childName, childGender);
 
-  // Prefill a redo from previously saved answers, keeping only keys belonging to
-  // the current question set — a document written against an earlier question set
-  // holds ids that no longer exist, and resolves to "nothing answered".
-  //
-  // An effect rather than a useState initialiser because the questions arrive
-  // asynchronously: on first open there is no set to match keys against yet.
-  // Merging into whatever is already typed means a set arriving late (or a
-  // re-render) can never discard the parent's own input.
+  // Prefill a redo from previously saved answers, keeping only keys belonging to the
+  // current question set. An effect, because the questions may arrive after opening;
+  // merging means a late set never discards what the parent has typed.
   useEffect(() => {
-    if (questions.length === 0) return;
-    const known = new Set(questions.map((q) => q.id));
+    if (!generatedQuestions?.length) return;
+    const known = new Set(generatedQuestions.map((q) => q.id));
     setAnswers((prev) => {
       const seed: Record<string, string> = {};
       for (const [k, v] of Object.entries(initialAnswers ?? {})) {
@@ -344,32 +601,29 @@ export default function GrowthAreaSheet({
       }
       return Object.keys(seed).length > 0 ? { ...prev, ...seed } : prev;
     });
-  }, [questions, initialAnswers]);
+  }, [generatedQuestions, initialAnswers]);
 
   const currentQuestion = questions[qIdx];
-  const currentRound = rounds[rIdx];
   const isLastQuestion = qIdx >= questions.length - 1;
 
-  // Closing mid-round would strand the child half-way through their choices —
-  // but while the rounds are still being written (or have failed) there is no run
-  // to strand, and a parent stuck on that wait must be able to get out.
-  const dismissable = phase !== 'rounds' || roundsStatus !== 'ready';
-
-  // Escape closes, matching the ✕ affordance — but not once the child is
-  // answering, where a stray key press would throw away their run.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && dismissable) onClose();
+      if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, dismissable]);
+  }, [onClose]);
 
-  // Move focus into the field on open and on each question change — including
-  // the moment the generated questions land and the field first exists.
+  // Focus the field on open and on each question change, including when the
+  // generated questions land and the field first exists.
   useEffect(() => {
     if (phase === 'questions' && questionsStatus === 'ready') textareaRef.current?.focus();
   }, [qIdx, phase, questionsStatus]);
+
+  const showInsights = useCallback(() => {
+    setPhase('insights');
+    onShowInsights();
+  }, [onShowInsights]);
 
   const goNext = useCallback(async () => {
     if (isSaving) return;
@@ -377,68 +631,24 @@ export default function GrowthAreaSheet({
       setQIdx((i) => i + 1);
       return;
     }
-    // Only advance once the single write has landed — a failed save leaves the
-    // parent on question five with their text intact.
-    const saved = await onSaveAnswers(answers);
-    if (saved) setPhase('handoff');
+    // Only move on once the write has landed: a failed save leaves the parent on
+    // question five with their text intact.
+    if (await onSaveAnswers(answers)) setPhase('insights');
   }, [isLastQuestion, onSaveAnswers, answers, isSaving]);
 
-  const choose = useCallback(
-    (option: GameOption) => {
-      if (isSaving) return;
-      // Assign by index rather than appending — on a fresh run this builds the
-      // array up exactly like append did (rIdx always equals the current
-      // length), but on a Play Again replay it overwrites the previous run's
-      // pick at this round in place, leaving rounds not yet reached still
-      // showing their old value (so they stay pre-highlighted until visited).
-      const next = [...picks];
-      next[rIdx] = option.id;
-      setPicks(next);
-      if (rIdx >= rounds.length - 1) {
-        // The archetype and constellation are derived from `next` alone, so the
-        // result view renders immediately — recommendations catch up via props.
-        setPhase('result');
-        onCompleteRounds(next);
-      } else {
-        setRIdx((i) => i + 1);
-      }
-    },
-    [picks, rIdx, rounds.length, onCompleteRounds, isSaving],
-  );
-
-  const playAgain = useCallback(() => {
-    setRIdx(0);
-    // Deliberately keep `picks` as-is — each round now pre-highlights what was
-    // chosen last time (see the tile rendering below), matching how the parent
-    // questions prefill on a redo. `choose` overwrites in place as rounds are
-    // revisited, so this is just the starting point, not a lock-in.
-    setPhase('rounds');
-    // No-op unless this area finished before its rounds were generated, in which
-    // case the rounds phase shows its wait while they are written.
-    onReplayRounds();
-  }, [onReplayRounds]);
-
-  // The picks being rendered may predate this child's generated rounds — an area
-  // completed against the hardcoded set still has to show what was actually
-  // chosen, so the set the ids belong to decides which one they resolve against.
-  const pickRounds = useMemo(
-    () => resolveRounds(area.id, generatedRounds, picks),
-    [area.id, generatedRounds, picks],
-  );
-  const archetype = useMemo(
-    () => topArchetype(area.id, pickRounds, picks)?.archetype ?? null,
-    [area.id, pickRounds, picks],
-  );
-  const pickedStars = useMemo(
-    () => pickedOptions(pickRounds, picks).map((o) => o.star),
-    [pickRounds, picks],
-  );
+  const hasInput = answered > 0 || world !== null;
+  const recsFrom =
+    answered > 0 && world
+      ? `From your answers and ${who}’s games`
+      : answered > 0
+        ? 'From your answers'
+        : `From ${who}’s games`;
 
   return (
     <motion.div
       role="dialog"
       aria-modal="true"
-      aria-label={`${area.name} — guided reflection`}
+      aria-label={`${area.name} — ${phase === 'insights' ? 'growth insights' : 'guided reflection'}`}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -451,8 +661,7 @@ export default function GrowthAreaSheet({
         backdropFilter: 'blur(7px)',
       }}
       onClick={(e) => {
-        // Backdrop dismiss, except mid-round where it would discard the child's run.
-        if (e.target === e.currentTarget && dismissable) onClose();
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <motion.div
@@ -484,67 +693,286 @@ export default function GrowthAreaSheet({
           </svg>
         </button>
 
-        {/* Area header — persists across the first three phases; the result
-            phase replaces it with the constellation label instead. */}
-        {phase !== 'result' && (
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex flex-shrink-0 items-center justify-center rounded-full"
+            style={{
+              width: 38,
+              height: 38,
+              background:
+                'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+              border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
+              boxShadow: '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={area.iconColor}
+              strokeWidth="1.8"
+              style={{ width: 19, height: 19 }}
+            >
+              <path d={area.iconPath} />
+            </svg>
+          </div>
+          <div>
             <div
-              className="flex flex-shrink-0 items-center justify-center rounded-full"
+              className="whitespace-nowrap font-bold uppercase"
               style={{
-                width: 38,
-                height: 38,
-                background:
-                  'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
-                border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
-                boxShadow: '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
+                letterSpacing: '.34em',
+                fontSize: 9.5,
+                lineHeight: 1.3,
+                color: 'rgb(var(--constellation-cyan-bright-rgb))',
               }}
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={area.iconColor}
-                strokeWidth="1.8"
-                style={{ width: 19, height: 19 }}
-              >
-                <path d={area.iconPath} />
-              </svg>
+              {phase === 'insights' ? 'Growth insights' : 'Guided Reflection'}
             </div>
-            <div>
-              <div
-                className="font-bold uppercase"
-                style={{
-                  letterSpacing: '.34em',
-                  fontSize: 9.5,
-                  color: 'rgb(var(--constellation-cyan-bright-rgb))',
-                }}
-              >
-                Guided Reflection
-              </div>
-              <div
-                className="font-orbitron"
-                style={{
-                  fontWeight: 700,
-                  fontSize: 17,
-                  color: 'rgb(var(--constellation-cyan-paler-rgb))',
-                  marginTop: 3,
-                }}
-              >
-                {area.name}
-              </div>
+            <div
+              className="font-orbitron"
+              style={{
+                fontWeight: 700,
+                fontSize: 17,
+                color: 'rgb(var(--constellation-cyan-paler-rgb))',
+                marginTop: 3,
+              }}
+            >
+              {area.name}
             </div>
           </div>
+        </div>
+
+        <div role="tablist" className="flex flex-wrap" style={{ marginTop: 18, gap: 8 }}>
+          <Tab
+            on={phase === 'questions'}
+            onClick={() => {
+              setQIdx(0);
+              setPhase('questions');
+            }}
+          >
+            Reflection
+          </Tab>
+          <Tab on={phase === 'insights'} onClick={showInsights}>
+            Recommendations
+            {world && (
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: 'rgb(var(--constellation-gold-rgb))',
+                  boxShadow: '0 0 8px rgb(var(--constellation-gold-rgb) / .9)',
+                }}
+              />
+            )}
+          </Tab>
+        </div>
+
+        {/* ── Growth insights ─────────────────────────────────────────────── */}
+        {phase === 'insights' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            style={{ marginTop: 20 }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 10,
+                marginBottom: 16,
+              }}
+            >
+              <SourceCard
+                label="Parent app"
+                text={
+                  answered > 0
+                    ? `${answered} of ${questions.length || 5} reflections answered`
+                    : 'No reflections yet'
+                }
+                filled={answered > 0}
+              />
+              <SourceCard
+                label="Child view"
+                text={
+                  world
+                    ? `${plural(world.tries, 'game round', 'game rounds')}, last ${daysAgo(world.at)}`
+                    : 'Games not played yet'
+                }
+                filled={world !== null}
+              />
+            </div>
+
+            {world ? (
+              <WorldResult world={world} />
+            ) : (
+              <div
+                style={{
+                  padding: '18px 20px',
+                  borderRadius: 16,
+                  border: '1px dashed rgb(var(--constellation-cyan-rgb) / .3)',
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  className="font-orbitron"
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 16,
+                    color: 'rgb(var(--constellation-cyan-paler-rgb))',
+                  }}
+                >
+                  {answered > 0 ? `${who}’s side is missing` : 'Nothing to go on yet'}
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 14.5,
+                    fontWeight: 600,
+                    lineHeight: 1.45,
+                    color: 'rgb(var(--constellation-slate-soft-rgb))',
+                  }}
+                >
+                  {answered > 0
+                    ? `${who} hasn’t played the ${area.name} games in child view yet. For now, these recommendations use your answers only.`
+                    : `Answer the reflection questions here and ask ${who} to play the ${area.name} games in child view. Recommendations will appear once either is done.`}
+                </div>
+              </div>
+            )}
+
+            {hasInput && (
+              <div
+                style={{
+                  marginTop: 18,
+                  borderTop: '1px solid rgb(var(--constellation-gold-rgb) / .22)',
+                  paddingTop: 18,
+                }}
+              >
+                <div className="flex flex-wrap items-baseline justify-between" style={{ gap: 14 }}>
+                  <div
+                    className="font-orbitron font-bold uppercase"
+                    style={{
+                      fontSize: 13.5,
+                      letterSpacing: '.14em',
+                      color: 'rgb(var(--constellation-gold-rgb))',
+                    }}
+                  >
+                    Recommendations
+                  </div>
+                  <div
+                    className="font-semibold uppercase"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: '.14em',
+                      color: 'rgb(var(--constellation-slate-rgb))',
+                    }}
+                  >
+                    {recsFrom}
+                  </div>
+                </div>
+
+                <div className="flex flex-col" style={{ gap: 9, marginTop: 14 }} aria-live="polite">
+                  {(recsPhase === 'loading' || recsPhase === 'idle') && (
+                    <div className="flex flex-col items-center gap-3 py-6">
+                      <motion.div
+                        {...SPINNER}
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          border: '2px solid rgb(var(--constellation-gold-rgb) / .2)',
+                          borderTopColor: 'rgb(var(--constellation-gold-rgb))',
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: 'rgb(var(--constellation-slate-soft-rgb))',
+                        }}
+                      >
+                        {fill('Writing recommendations for {name}…')}
+                      </div>
+                    </div>
+                  )}
+
+                  {recsPhase === 'error' && (
+                    <div
+                      className="flex flex-col items-center"
+                      style={{ gap: 12, padding: '8px 0' }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: 'rgb(var(--constellation-slate-soft-rgb))',
+                        }}
+                      >
+                        We couldn’t write the recommendations just now.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onRetryRecommendations}
+                        style={{ ...PILL, ...CTA, padding: '10px 24px' }}
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+
+                  {recsPhase === 'ready' &&
+                    recommendations.map((rec, i) => (
+                      <Recommendation key={i} rec={rec} index={i} childName={who} />
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <div
+              className="flex flex-wrap items-center justify-center"
+              style={{ gap: 12, marginTop: 18 }}
+            >
+              <button
+                type="button"
+                onClick={onClose}
+                style={{ ...PILL, ...CTA, padding: '11px 26px' }}
+              >
+                Done
+              </button>
+              <button
+                type="button"
+                onClick={onExploreTransform}
+                style={{
+                  ...PILL,
+                  padding: '11px 22px',
+                  background: 'rgb(var(--constellation-navy-deep-rgb) / .9)',
+                  border: '1px solid rgb(var(--constellation-gold-rgb) / .5)',
+                  color: 'rgb(var(--constellation-gold-pale-rgb))',
+                }}
+              >
+                Explore Transform
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  style={{ width: 14, height: 14 }}
+                >
+                  <path d="M5 12h13M12 6l6 6-6 6" />
+                </svg>
+              </button>
+            </div>
+          </motion.div>
         )}
 
-        {/* ── Phase: the parent's five reflections ────────────────────────── */}
-        {/* The sheet opens straight away and waits here, rather than holding the
-            map frozen — the parent sees the area they clicked while their
-            questions are written. */}
+        {/* ── Guided Reflection: the parent's five reflections ─────────────── */}
         {phase === 'questions' && questionsStatus !== 'ready' && (
           <SetGate
             status={questionsStatus}
             progress={questionsProgress}
             onRetry={onRetryQuestions}
-            waiting={fillTemplate('Writing questions about {name}…', childName, childGender)}
+            waiting={fill('Writing questions about {name}…')}
           />
         )}
 
@@ -608,7 +1036,7 @@ export default function GrowthAreaSheet({
                       color: 'rgb(var(--constellation-cyan-pale-rgb))',
                     }}
                   >
-                    {fillTemplate(currentQuestion.question, childName, childGender)}
+                    {fill(currentQuestion.question)}
                   </div>
                   <div
                     style={{
@@ -618,7 +1046,7 @@ export default function GrowthAreaSheet({
                       color: 'rgb(var(--constellation-slate-dark-rgb))',
                     }}
                   >
-                    {fillTemplate(currentQuestion.hint, childName, childGender)}
+                    {fill(currentQuestion.hint)}
                   </div>
                   <TextareaWithVoice
                     ref={textareaRef}
@@ -699,498 +1127,6 @@ export default function GrowthAreaSheet({
               </button>
             </div>
           </>
-        )}
-
-        {/* ── Phase: hand the device to the child ─────────────────────────── */}
-        {phase === 'handoff' && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: 'easeOut' }}
-            style={{ marginTop: 26, textAlign: 'center' }}
-          >
-            <div
-              className="flex items-center justify-center rounded-full"
-              style={{
-                width: 64,
-                height: 64,
-                margin: '0 auto',
-                background:
-                  'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
-                border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
-                boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .28)',
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="rgb(var(--constellation-gold-rgb))"
-                strokeWidth="1.7"
-                style={{ width: 28, height: 28 }}
-              >
-                <path d={HANDOFF_STAR_PATH} />
-              </svg>
-            </div>
-            <div
-              className="font-orbitron"
-              style={{
-                marginTop: 16,
-                fontWeight: 700,
-                fontSize: 18,
-                color: 'rgb(var(--constellation-cyan-paler-rgb))',
-              }}
-            >
-              {fillTemplate('Thank you. Now {name}’s turn.', childName, childGender)}
-            </div>
-            <div
-              style={{
-                marginTop: 9,
-                fontSize: 14.5,
-                fontWeight: 600,
-                color: 'rgb(var(--constellation-slate-soft-rgb))',
-                maxWidth: 400,
-                marginLeft: 'auto',
-                marginRight: 'auto',
-              }}
-            >
-              {fillTemplate(
-                // Spelled out, as the design has it — the round count is fixed by
-                // GAME_ROUNDS_PER_AREA, asserted above so the copy can't drift
-                // from a generated set.
-                `Hand the screen to {name}. Six quick choices, then {his} ${area.name} constellation appears.`,
-                childName,
-                childGender,
-              )}
-            </div>
-            {/* Where the second generation's wait is spent: the child's rounds
-                are being written from the answers the parent just gave, while the
-                parent reads the copy above. By the time they hand the screen over
-                it is almost always already done. */}
-            {roundsStatus === 'ready' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setRIdx(0);
-                  setPicks([]);
-                  setPhase('rounds');
-                }}
-                style={{
-                  ...PILL,
-                  ...CTA,
-                  display: 'inline-flex',
-                  marginTop: 20,
-                  padding: '12px 30px',
-                  fontSize: 13,
-                }}
-              >
-                I’m ready
-              </button>
-            ) : (
-              <SetGate
-                status={roundsStatus}
-                progress={roundsProgress}
-                onRetry={onRetryRounds}
-                waiting={fillTemplate('Building {name}’s choices…', childName, childGender)}
-              />
-            )}
-          </motion.div>
-        )}
-
-        {/* ── Phase: the child's six either/or rounds ─────────────────────── */}
-        {/* Reachable un-generated only via Play Again on an area finished before
-            its rounds were ever generated; the handoff gates every other route in. */}
-        {phase === 'rounds' && roundsStatus !== 'ready' && (
-          <SetGate
-            status={roundsStatus}
-            progress={roundsProgress}
-            onRetry={onRetryRounds}
-            waiting={fillTemplate('Building {name}’s choices…', childName, childGender)}
-          />
-        )}
-
-        {phase === 'rounds' && roundsStatus === 'ready' && currentRound && (
-          <motion.div
-            key={rIdx}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.34, ease: 'easeOut' }}
-            style={{ marginTop: 22 }}
-          >
-            <div className="flex items-baseline justify-between">
-              <div
-                className="font-orbitron"
-                style={{
-                  fontWeight: 500,
-                  fontSize: 16,
-                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
-                }}
-              >
-                Which would you rather do?
-              </div>
-              <div
-                className="whitespace-nowrap font-bold"
-                style={{
-                  fontSize: 11,
-                  letterSpacing: '.16em',
-                  color: 'rgb(var(--constellation-slate-dark-rgb))',
-                }}
-              >
-                Round {rIdx + 1} of {rounds.length}
-              </div>
-            </div>
-
-            <div
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 16 }}
-            >
-              {[currentRound.a, currentRound.b].map((option, side) => {
-                const wasPickedLastTime = picks[rIdx] === option.id;
-                return (
-                  <motion.button
-                    key={option.id}
-                    type="button"
-                    onClick={() => choose(option)}
-                    disabled={isSaving}
-                    whileHover={{ y: -3 }}
-                    whileTap={{ scale: 0.98 }}
-                    style={wasPickedLastTime ? CHOICE_TILE_PICKED : CHOICE_TILE}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke={
-                        side === 0
-                          ? 'rgb(var(--constellation-cyan-rgb))'
-                          : 'rgb(var(--constellation-gold-rgb))'
-                      }
-                      strokeWidth="1.7"
-                      style={{ width: 30, height: 30 }}
-                    >
-                      <path d={option.icon} />
-                    </svg>
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 14.5,
-                        lineHeight: 1.4,
-                        color: 'rgb(var(--constellation-cyan-pale-rgb))',
-                      }}
-                    >
-                      {option.text}
-                    </div>
-                    {wasPickedLastTime && (
-                      <div
-                        className="whitespace-nowrap font-bold uppercase"
-                        style={{
-                          fontSize: 9.5,
-                          letterSpacing: '.12em',
-                          color: 'rgb(var(--constellation-gold-rgb) / .9)',
-                        }}
-                      >
-                        Picked last time
-                      </div>
-                    )}
-                  </motion.button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {/* ── Phase: constellation + recommendations ──────────────────────── */}
-        {phase === 'result' && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: 'easeOut' }}
-            style={{ marginTop: 4, textAlign: 'center' }}
-          >
-            <div
-              className="font-bold uppercase"
-              style={{
-                letterSpacing: '.3em',
-                fontSize: 9.5,
-                color: 'rgb(var(--constellation-cyan-bright-rgb))',
-              }}
-            >
-              {fillTemplate('{name}’s ' + area.name + ' Constellation', childName, childGender)}
-            </div>
-            <div
-              className="font-orbitron"
-              style={{
-                marginTop: 8,
-                fontWeight: 700,
-                fontSize: 22,
-                color: 'rgb(var(--constellation-cyan-paler-rgb))',
-              }}
-            >
-              {archetype?.title ?? ''}
-            </div>
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 14.5,
-                fontWeight: 600,
-                color: 'rgb(var(--constellation-slate-soft-rgb))',
-                maxWidth: 430,
-                margin: '8px auto 0',
-              }}
-            >
-              {archetype ? fillTemplate(archetype.line, childName, childGender) : ''}
-            </div>
-
-            <div style={{ position: 'relative', height: 132, marginTop: 6 }}>
-              <svg
-                viewBox="0 0 560 130"
-                preserveAspectRatio="none"
-                className="pointer-events-none absolute inset-0 h-full w-full"
-              >
-                <path
-                  d={CONSTELLATION_PATH}
-                  fill="none"
-                  stroke="rgb(var(--constellation-gold-rgb) / .35)"
-                  strokeWidth="1"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </svg>
-              {CONSTELLATION_STARS.map((pos, i) => (
-                <div
-                  key={i}
-                  className="absolute flex flex-col items-center"
-                  style={{
-                    left: `${pos.left}%`,
-                    top: `${pos.top}%`,
-                    transform: 'translate(-50%,-50%)',
-                    gap: 6,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 11,
-                      height: 11,
-                      borderRadius: '50%',
-                      background: 'rgb(var(--constellation-gold-pale-rgb))',
-                      boxShadow: '0 0 14px rgb(var(--constellation-gold-rgb) / .9)',
-                    }}
-                  />
-                  <div
-                    className="whitespace-nowrap font-bold"
-                    style={{
-                      fontSize: 11,
-                      letterSpacing: '.06em',
-                      color: 'rgb(var(--constellation-cyan-frost-rgb))',
-                    }}
-                  >
-                    {pickedStars[i] ?? ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                marginTop: 4,
-                textAlign: 'left',
-                borderTop: '1px solid rgb(var(--constellation-gold-rgb) / .22)',
-                paddingTop: 18,
-              }}
-            >
-              <div className="flex flex-wrap items-baseline justify-between" style={{ gap: 14 }}>
-                <div
-                  className="font-orbitron font-bold uppercase"
-                  style={{
-                    fontSize: 13.5,
-                    letterSpacing: '.14em',
-                    color: 'rgb(var(--constellation-gold-rgb))',
-                  }}
-                >
-                  Recommendations
-                </div>
-                <div
-                  className="font-semibold uppercase"
-                  style={{
-                    fontSize: 10.5,
-                    letterSpacing: '.14em',
-                    color: 'rgb(var(--constellation-slate-rgb))',
-                  }}
-                >
-                  {fillTemplate(
-                    'From your five answers and {name}’s six choices',
-                    childName,
-                    childGender,
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-col" style={{ gap: 9, marginTop: 14 }}>
-                {recsPhase === 'loading' && (
-                  <div className="flex flex-col items-center gap-3 py-6">
-                    <div className="relative h-10 w-10">
-                      <div className="absolute inset-0 rounded-full border-[3px] border-[rgb(var(--constellation-gold-rgb)_/_.2)]" />
-                      <div className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-[rgb(var(--constellation-gold-rgb))]" />
-                    </div>
-                    <div
-                      className="text-center"
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        color: 'rgb(var(--constellation-slate-soft-rgb))',
-                      }}
-                    >
-                      {fillTemplate('Building {his} 3-month plan…', childName, childGender)}
-                    </div>
-                  </div>
-                )}
-
-                {recsPhase === 'error' && (
-                  <div
-                    className="text-center"
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: 'rgb(var(--constellation-slate-soft-rgb))',
-                      padding: '12px 0',
-                    }}
-                  >
-                    Could not generate recommendations. Play again to retry.
-                  </div>
-                )}
-
-                {recsPhase === 'ready' &&
-                  (recommendations.length > 0 ? (
-                    recommendations.map((rec, i) => (
-                      <div
-                        key={i}
-                        className="grid items-start"
-                        style={{
-                          gridTemplateColumns: '26px 1fr',
-                          gap: 12,
-                          borderRadius: 13,
-                          padding: '12px 14px',
-                          background:
-                            'linear-gradient(120deg,rgb(var(--constellation-navy-soft-rgb) / .55),rgb(var(--constellation-ink-navy-rgb) / .55))',
-                          border: '1px solid rgb(var(--constellation-gold-rgb) / .18)',
-                        }}
-                      >
-                        <div
-                          className="flex flex-col items-center"
-                          style={{ gap: 6, paddingTop: 2 }}
-                        >
-                          <div
-                            style={{
-                              width: 7,
-                              height: 7,
-                              borderRadius: '50%',
-                              background: 'rgb(var(--constellation-gold-pale-rgb))',
-                              boxShadow: '0 0 10px rgb(var(--constellation-gold-rgb) / .9)',
-                            }}
-                          />
-                          <div
-                            className="font-orbitron"
-                            style={{
-                              fontWeight: 700,
-                              fontSize: 10,
-                              color: 'rgb(var(--constellation-gold-rgb) / .6)',
-                            }}
-                          >
-                            {String(i + 1).padStart(2, '0')}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              fontSize: 14.5,
-                              lineHeight: 1.35,
-                              color: 'rgb(var(--constellation-cyan-pale-rgb))',
-                            }}
-                          >
-                            {rec.title}
-                          </div>
-                          {rec.detail && (
-                            <div
-                              style={{
-                                marginTop: 3,
-                                fontWeight: 600,
-                                fontSize: 13,
-                                lineHeight: 1.45,
-                                color: 'rgb(var(--constellation-slate-cool-rgb))',
-                              }}
-                            >
-                              {rec.detail}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div
-                      className="text-center"
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: 'rgb(var(--constellation-slate-soft-rgb))',
-                        padding: '12px 0',
-                      }}
-                    >
-                      No recommendations generated for this area yet.
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {(recsPhase === 'ready' || recsPhase === 'error') && (
-              <div
-                className="flex flex-wrap items-center justify-center"
-                style={{ gap: 12, marginTop: 18 }}
-              >
-                <button
-                  type="button"
-                  onClick={playAgain}
-                  style={{
-                    ...PILL,
-                    padding: '10px 22px',
-                    background: 'rgb(var(--constellation-overlay-rgb) / .85)',
-                    border: '1px solid rgb(var(--constellation-amber-rgb) / .35)',
-                    color: 'rgb(var(--constellation-amber-rgb))',
-                  }}
-                >
-                  Play again
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  style={{ ...PILL, ...CTA, padding: '11px 26px' }}
-                >
-                  Done
-                </button>
-                {/* Zero-size flex item — forces Explore Transform onto its own
-                    wrapped row below md without stretching the button itself. */}
-                <div className="w-full md:hidden" />
-                <button
-                  type="button"
-                  onClick={onExploreTransform}
-                  style={{
-                    ...PILL,
-                    padding: '11px 22px',
-                    background: 'rgb(var(--constellation-navy-deep-rgb) / .9)',
-                    border: '1px solid rgb(var(--constellation-gold-rgb) / .5)',
-                    color: 'rgb(var(--constellation-gold-pale-rgb))',
-                  }}
-                >
-                  Explore Transform
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    style={{ width: 14, height: 14 }}
-                  >
-                    <path d="M5 12h13M12 6l6 6-6 6" />
-                  </svg>
-                </button>
-              </div>
-            )}
-          </motion.div>
         )}
       </motion.div>
     </motion.div>

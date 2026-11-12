@@ -74,6 +74,8 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
         f"{API}/{{id}}",
         f"{API}/{{id}}/avatar/presign",
         f"{API}/{{id}}/connect/visit",
+        f"{API}/{{id}}/kids",
+        f"{API}/{{id}}/kids/events",
     }
     internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
     assert internal == {"/internal/ping", "/internal/children/{id}"}

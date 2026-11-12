@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { children, CHILD_ERRORS, type Child, type ChildIn } from '@/api/children';
@@ -17,6 +18,7 @@ export default function Onboarding() {
   const { childId: childIdParam } = useParams<{ childId?: string }>();
 
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
+  const queryClient = useQueryClient();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [childId, setChildId] = useState<string | undefined>(undefined);
@@ -55,6 +57,8 @@ export default function Onboarding() {
           if (cancelled) return;
           setChildComplete(child.progress.conversation);
           applyChildData(child);
+          // An existing child (resuming setup, or Edit profile): straight to the form.
+          setStep(2);
         } catch (err) {
           console.warn('[Onboarding] Could not load child data:', err);
           if (!cancelled) void navigate('/Home', { replace: true });
@@ -67,9 +71,27 @@ export default function Onboarding() {
       };
     }
 
-    if (!isAuthenticated || forceNew) {
+    if (!isAuthenticated) {
       setChecking(false);
       return;
+    }
+
+    // "+ Add Child": a new child. A parent adding another one has seen the welcome
+    // step already, so open at the profile form.
+    if (forceNew) {
+      void (async () => {
+        try {
+          const [existing] = await children.list('-created_at', 1);
+          if (!cancelled && existing) setStep(2);
+        } catch (err) {
+          console.warn('[Onboarding] Could not check for other children:', err);
+        } finally {
+          if (!cancelled) setChecking(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
 
     void (async () => {
@@ -131,10 +153,13 @@ export default function Onboarding() {
           targetId = (await children.create(fields)).id;
           setChildId(targetId);
         }
+        // The profile menu and Home list the children: show the new or renamed one now.
+        void queryClient.invalidateQueries({ queryKey: ['children'] });
 
         if (photoFile) {
           try {
             await children.uploadAvatar(targetId, photoFile, photoFile.type);
+            void queryClient.invalidateQueries({ queryKey: ['children'] });
           } catch (uploadErr) {
             console.warn('[Onboarding] Photo upload failed, continuing without photo:', uploadErr);
             toast.error(
@@ -144,6 +169,18 @@ export default function Onboarding() {
               })} The profile was saved without it.`,
             );
           }
+        }
+        // Edit profile on a finished child: the chat is done, so back to where the
+        // parent opened the form, or to the journey when the form was opened directly.
+        if (childIdParam && childComplete) {
+          if (location.key !== 'default') void navigate(-1);
+          else void navigate(`/PersonalityJourney/${targetId}`, { replace: true });
+          return;
+        }
+        // A child created here gets its own address in history, so Back from the chat
+        // reopens this child's form instead of an empty one that would add it again.
+        if (!childIdParam && targetId !== childId) {
+          void navigate(`/Onboarding/${targetId}`, { replace: true });
         }
         void navigate(`/ConversationalOnboarding/${targetId}`);
       } catch (err) {
@@ -158,7 +195,7 @@ export default function Onboarding() {
         setIsSaving(false);
       }
     },
-    [isAuthenticated, childId, childIdParam, childComplete, navigate],
+    [isAuthenticated, childId, childIdParam, childComplete, navigate, queryClient, location.key],
   );
 
   return (
@@ -184,6 +221,12 @@ export default function Onboarding() {
                   onContinue={(data, photoFile) => void handleProfileContinue(data, photoFile)}
                   initialData={prefillData}
                   isLoading={isSaving}
+                  {...(childIdParam &&
+                    childComplete && {
+                      submitLabel: 'Save changes',
+                      onViewAnswers: () =>
+                        void navigate(`/ConversationalOnboarding/${childIdParam}`),
+                    })}
                 />
               </motion.div>
             )}

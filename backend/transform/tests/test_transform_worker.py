@@ -45,6 +45,7 @@ from common.generation.llm import LlmClient, LlmConfig
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS, ONBOARDING_INPUTS, PERSONALITY_INPUTS
 from transform import worker
 from transform.app import generation, lifecycle
+from transform.app.quests import KID_QUESTS
 from transform.app.store import PLANS
 
 
@@ -54,6 +55,17 @@ def live(mongo_uri: str, test: Callable[[Running], Awaitable[None]]) -> None:
             await test(r)
 
     asyncio.run(go())
+
+
+async def _pick_quest(r: Running, child_id: str) -> None:
+    """The child picks an interest in child view: their kid_quests document."""
+    picked = await r.http.put(
+        _path(child_id, "/quests/current"),
+        params={"date": datetime.now(UTC).date().isoformat()},
+        json={"interest": "space"},
+        headers=auth_header(),
+    )
+    assert picked.status_code == 200
 
 
 def _path(child_id: str, rest: str = "") -> str:
@@ -437,14 +449,17 @@ def test_a_purged_child_is_deleted_with_its_plan_photos_and_jobs(mongo_uri):
             headers=auth_header(),
         )  # fmt: skip
         await r.http.patch(_path(kept), json={"ask": "x"}, headers=auth_header())
+        for c in (child, kept):
+            await _pick_quest(r, c)
         await seed_user_outbox(
             r.db, user_id=PARENT, child_id=child, other_user_id=OTHER, other_child_id=kept
         )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_child_deleted(r, child, 7))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"named", "other"}  # only the child's went
-        for name in (PLANS, CHILD_ACCESS, PERSONALITY_INPUTS):
+        for name in (PLANS, KID_QUESTS, CHILD_ACCESS, PERSONALITY_INPUTS):
             assert await r.db[name].find_one({"_id": child}) is None
+        assert await r.db[KID_QUESTS].find_one({"_id": kept}) is not None
         assert await r.db[GROWTH_INPUTS].count_documents({"child_id": child}) == 0
         assert await r.db[PLANS].find_one({"_id": kept}) is not None
         assert _keys(r) == {stays}
@@ -461,6 +476,7 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
         await r.http.patch(
             _path(child), json={"photos": {"x": [_photo(r, child)]}}, headers=auth_header()
         )
+        await _pick_quest(r, child)
         theirs = r.owners.add_child(user_id=OTHER)
         await r.copy(theirs, user_id=OTHER)
         await seed_user_outbox(
@@ -469,7 +485,7 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"other"}
-        for name in (PLANS, GROWTH_INPUTS, CHILD_ACCESS, PERSONALITY_INPUTS):
+        for name in (PLANS, KID_QUESTS, GROWTH_INPUTS, CHILD_ACCESS, PERSONALITY_INPUTS):
             assert await r.db[name].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILD_ACCESS].count_documents({"user_id": OTHER}) == 1
         assert _keys(r) == set()

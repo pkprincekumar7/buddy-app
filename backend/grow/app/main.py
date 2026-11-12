@@ -5,8 +5,10 @@ is internal (port 8001, Cloud Map only). Each endpoint is in docs/auth-users-spl
 
 - `GET /api/v1/children/{id}/growth-areas`: every area, in one query;
 - `PUT …/growth-areas/{area_id}`: the parent's progress through an area, and its completion;
-- `POST …/growth-areas/{area_id}/generation` (`kind`: `parent_questions`, `child_rounds`,
+- `POST …/growth-areas/{area_id}/generation` (`kind`: `parent_questions` or
   `recommendations`) and `GET …/generation/{job_id}`;
+- `GET …/growth-areas/worlds` and `POST …/worlds/{world}/runs`: the child's world runs in
+  child view (grow.app.worlds), the child's input to the area's recommendations;
 - `GET /internal/grow/children/{id}/status` (transform's confirm-before-deny) and `…/areas`
   (transform's and release's read-through of `growth_inputs`).
 
@@ -31,19 +33,20 @@ import bson
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from limits import parse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic.json_schema import SkipJsonSchema
 from pymongo import ASCENDING, ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import add_to_outbox, is_tombstoned, tombstone_key
+from common.events import add_to_outbox, is_tombstoned, tombstone_key, write_guards
 from common.generation.jobs import JobRefused, TargetRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
-from common.models import CHILD_ID_PATTERN, JOBS
+from common.models import CHILD_ID_PATTERN, JOBS, stage_done
 from common.routers import PolicyRouter, public
-from grow.app import generation
+from grow.app import generation, worlds
 from grow.app.access import (
     answers_for,
     child_for,
@@ -68,7 +71,6 @@ from grow.app.store import (
     RECOMMENDATIONS_MAX,
     RESERVED_PREFIXES,
     SCHEMA_VERSION,
-    SELECTIONS_MAX,
     STEP_MAX,
     SUMMARY_MAX,
     Kind,
@@ -232,6 +234,16 @@ async def _parents_child(runtime: Runtime, caller: Caller, child_id: str) -> dic
     return child
 
 
+async def _child_view_child(runtime: Runtime, caller: Caller, child_id: str) -> dict[str, Any]:
+    """The caller's own child for child view's routes, which open in child view's own order
+    (docs/child-view-build-plan.md): here only once the parent's chat is done; the children
+    service decides the rest."""
+    child = await child_for(runtime, child_id, location=caller.location, owner=caller.user_id)
+    if not stage_done(child, "conversation"):
+        raise error(403, "circle_locked", "Finish the chat about your child first.")
+    return child
+
+
 def _selector(child: Mapping[str, Any], area_id: str) -> dict[str, Any]:
     return {
         "_id": area_doc_id(child["_id"], area_id),
@@ -263,11 +275,10 @@ class ActivityResults(BaseModel):
 
 
 class ChildActivity(BaseModel):
-    """The child's picks (option ids from `child_rounds`) and, for older flows, results."""
+    """The child's activity results, carried by the area's events (`child_activity_results`)."""
 
     model_config = _Strict
 
-    selections: Annotated[list[_Item], Field(max_length=SELECTIONS_MAX)] | None = None
     results: ActivityResults | None = None
 
 
@@ -287,17 +298,30 @@ class AreaIn(BaseModel):
     feedback: Annotated[str, StringConstraints(max_length=FEEDBACK_MAX)] | None = None
 
 
+class Recommendation(BaseModel):
+    """One of the area's AI recommendations (grow.app.areas.normalize_recommendations)."""
+
+    title: str
+    detail: str
+    # What it's grounded in: the answers and the games, the games, the answers, the next
+    # step. Left out (never null) when the stored item has none.
+    source: Literal["both", "kid", "you", "step"] | SkipJsonSchema[None] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+
 class Area(BaseModel):
     area_id: str
     area_name: str
     status: Literal["in_progress", "completed"]
     step: str | None
     parent_questions: dict[str, Any] | None
-    child_rounds: dict[str, Any] | None
     answers: dict[str, str]
     child_activity: dict[str, Any] | None
     recommendations: list[str] | None
-    ai_three_month_recommendations: list[dict[str, str]] | None
+    ai_three_month_recommendations: list[Recommendation] | None
+    # The `at` of the world run the recommendations were written from; null without one.
+    recommendations_run_at: datetime | None
     feedback: str | None
     generating: list[Kind]
     completed_at: datetime | None
@@ -349,7 +373,7 @@ class AreaCopy(BaseModel):
     recommendations: list[str] | None
     ai_three_month_recommendations: list[dict[str, str]] | None
     reflections: list[dict[str, str]]
-    child_choices: list[str]
+    child_games: list[str]
     version: int
 
 
@@ -365,11 +389,11 @@ def _view(doc: Mapping[str, Any]) -> Area:
         status=doc["status"],
         step=doc.get("step"),
         parent_questions=doc.get("parent_questions"),
-        child_rounds=doc.get("child_rounds"),
         answers=doc.get("answers") or {},
         child_activity=doc.get("child_activity"),
         recommendations=doc.get("recommendations"),
         ai_three_month_recommendations=doc.get("ai_three_month_recommendations"),
+        recommendations_run_at=doc.get("recommendations_run_at"),
         feedback=doc.get("feedback"),
         generating=[KINDS[job_type] for job_type in JOB_TYPES.values() if running.get(job_type)],
         completed_at=doc.get("completed_at"),
@@ -550,8 +574,9 @@ async def save_area(
     responses={200: {"model": Started, "description": "The job already running"}},
     description="Generate one of the area's AI parts (`kind`). `parent_questions` on a new "
     "area creates it (with `area_name`). The question sets are generated once "
-    "(`409 already_generated`); recommendations need the answers saved (`409 needs_answers`) "
-    "and replace the last ones. The running job is returned with `200`. Counts against the "
+    "(`409 already_generated`). Recommendations need the parent's answers saved or a run of "
+    "the area's world (`409 needs_input`), are written from both, and replace the last ones; "
+    "the area's `recommendations_run_at` is the run they used. The running job is returned with `200`. Counts against the "
     "hourly LLM limit (`429 llm_limit`).",
 )
 async def start_generation(
@@ -574,7 +599,11 @@ async def start_generation(
     if kind in generation.GENERATED_ONCE and area and area.get(kind):
         raise error(409, "already_generated", f"The area's {kind} are already generated.")
     if kind == "recommendations" and not (area or {}).get("answers"):
-        raise error(409, "needs_answers", "Save the parent's answers first.")
+        played = await runtime.db[worlds.WORLD_RUNS].find_one(_runs_selector(child))
+        if not worlds.runs_for(played, area_id):
+            raise error(
+                409, "needs_input", "Save the parent's answers or play the area's games first."
+            )
     running = await generation.running_job(runtime, area, kind)
     if running is None:
         answers = await answers_for(runtime, child)
@@ -650,6 +679,128 @@ async def get_job(
         created_at=job["created_at"],
         completed_at=job.get("completed_at"),
     )
+
+
+# ── the child's worlds (child view) ────────────────────────────────────────────
+
+
+class WorldGame(BaseModel):
+    type: Literal["dash", "sort", "timing", "catch", "memory", "spark", "react"]
+    title: str
+    skill: str
+    how: str
+    tip: str
+    # The game's settings (its words, counts and timings), shaped by `type`.
+    cfg: dict[str, Any]
+
+
+class World(BaseModel):
+    name: str
+    icon: str
+    mission: str
+    hint: str
+    games: list[WorldGame]
+
+
+class Band(BaseModel):
+    min: int
+    label: str
+    color: Literal["gold", "cyan", "violet"]
+
+
+class WorldRun(BaseModel):
+    total: int
+    scores: list[int]
+    at: datetime
+
+
+class Worlds(BaseModel):
+    """The six worlds and their games, the score bands, and the child's runs per world
+    (`"0"`…`"5"`, oldest first, the last 10)."""
+
+    worlds: list[World]
+    bands: list[Band]
+    runs: dict[str, list[WorldRun]]
+
+
+Score = Annotated[int, Field(ge=0, le=100)]
+
+
+class RunIn(BaseModel):
+    model_config = _Strict
+    scores: Annotated[
+        list[Score],
+        Field(min_length=worlds.GAMES_PER_WORLD, max_length=worlds.GAMES_PER_WORLD),
+    ]
+
+
+WorldIndex = Annotated[int, Path(ge=0, le=worlds.WORLD_COUNT - 1, description="The world, 0 to 5")]
+
+
+def _runs_selector(child: Mapping[str, Any]) -> dict[str, Any]:
+    return {"_id": child["_id"], "location": child["location"], "user_id": child["user_id"]}
+
+
+async def _worlds_view(runtime: Runtime, child: Mapping[str, Any]) -> Worlds:
+    doc = await runtime.db[worlds.WORLD_RUNS].find_one(_runs_selector(child)) or {}
+    return Worlds(
+        worlds=[World(**w) for w in worlds.WORLDS],
+        bands=[Band(**b) for b in worlds.BANDS],
+        runs={k: [WorldRun(**r) for r in v] for k, v in doc.get("runs", {}).items()},
+    )
+
+
+@router.get(
+    "/worlds",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="Child view's six worlds with their games, the score bands, and the child's "
+    "last runs per world. Parents only (the parent's Growth page reads it too).",
+)
+async def get_worlds(id: ChildId, runtime: Ready, caller: SignedIn) -> Worlds:
+    child = await _child_view_child(runtime, caller, id)
+    return await _worlds_view(runtime, child)
+
+
+@router.post(
+    "/worlds/{world}/runs",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="A finished world: its three games' scores (0 to 100). The world keeps its "
+    "last 10 runs. Parents only.",
+)
+async def add_world_run(
+    id: ChildId, world: WorldIndex, body: RunIn, runtime: Ready, caller: SignedIn
+) -> Worlds:
+    child = await _child_view_child(runtime, caller, id)
+    db = runtime.db
+    selector = _runs_selector(child)
+    now = _now()
+    run = {"total": worlds.total(body.scores), "scores": body.scores, "at": now}
+
+    async def write(session: AsyncClientSession) -> None:
+        # Not for a child or account being deleted: their tombstones, behind their guards,
+        # so a deletion in flight and this write conflict and one runs again.
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", id)]
+        await write_guards(db, stones, location=child["location"], session=session)
+        if await is_tombstoned(db, stones, session, location=child["location"]):
+            raise not_found()
+        await db[worlds.WORLD_RUNS].update_one(
+            selector,
+            {"$setOnInsert": worlds.empty(id, child["user_id"], child["location"], now)},
+            upsert=True,
+            session=session,
+        )
+        await db[worlds.WORLD_RUNS].update_one(
+            selector,
+            {
+                "$push": {f"runs.{world}": {"$each": [run], "$slice": -worlds.RUNS_KEPT}},
+                "$set": {"updated_at": now},
+                "$inc": {"version": 1},
+            },
+            session=session,
+        )
+
+    await _transaction(runtime, write)
+    return await _worlds_view(runtime, child)
 
 
 app.include_router(health_router)

@@ -1,8 +1,8 @@
 // Grow, the six growth areas (build plan 7.6), through the generated client. One document
-// per area holds the parent's answers, the child's picks and the generated parts (the
-// parent's questions, the child's rounds, the three-month recommendations). Grow writes
-// the generated parts itself, from prompts it builds: the app only asks for a `kind` and
-// polls the job. Completing the first area makes Grow done, which unlocks Transform.
+// per area holds the parent's answers and the generated parts (the parent's questions and
+// the three-month recommendations, written from the answers and the child's latest run of
+// the area's world in child view). Grow writes the generated parts itself, from prompts
+// it builds: the app only asks for a `kind` and polls the job. Completing the first area makes Grow done, which unlocks Transform.
 
 import { ApiError } from './errors';
 import type { components } from './generated/grow';
@@ -107,7 +107,7 @@ export const GROW_ERRORS: Record<string, string> = {
   area_completed: 'This area is already complete.',
   area_too_large: 'That’s too much to save for one area. Please shorten your answers.',
   unknown_question: 'These answers don’t match the questions. Please reopen the area.',
-  needs_answers: 'Please answer the questions first.',
+  needs_input: 'Answer the questions, or have your child play this area’s games, first.',
   llm_limit: 'Lots of requests right now. Please try again in a little while.',
   generation_paused: 'Generating is paused for a little while. Please try again later.',
   generation_unavailable: 'We couldn’t start that just now. Please try again.',

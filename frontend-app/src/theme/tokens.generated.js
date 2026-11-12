@@ -294,6 +294,26 @@ module.exports = {
       180,
       196
     ],
+    "constellation-lavender": [
+      179,
+      170,
+      255
+    ],
+    "constellation-sky": [
+      143,
+      216,
+      255
+    ],
+    "constellation-lilac": [
+      195,
+      166,
+      255
+    ],
+    "constellation-mint": [
+      95,
+      232,
+      196
+    ],
     "constellation-cyan-frost": [
       207,
       233,
@@ -843,6 +863,146 @@ module.exports = {
       179,
       170,
       255
+    ],
+    "profile-pill": [
+      11,
+      18,
+      32
+    ],
+    "profile-pill-border": [
+      24,
+      34,
+      52
+    ],
+    "profile-parent-deep": [
+      138,
+      106,
+      58
+    ],
+    "kids-discover": [
+      75,
+      233,
+      255
+    ],
+    "kids-discover-shade": [
+      27,
+      138,
+      163
+    ],
+    "kids-grow": [
+      75,
+      233,
+      255
+    ],
+    "kids-grow-shade": [
+      27,
+      138,
+      163
+    ],
+    "kids-transform": [
+      255,
+      201,
+      75
+    ],
+    "kids-transform-shade": [
+      179,
+      134,
+      28
+    ],
+    "kids-connect": [
+      255,
+      143,
+      177
+    ],
+    "kids-connect-shade": [
+      179,
+      82,
+      111
+    ],
+    "kids-release": [
+      157,
+      140,
+      255
+    ],
+    "kids-release-shade": [
+      90,
+      74,
+      168
+    ],
+    "kids-teal": [
+      60,
+      225,
+      190
+    ],
+    "kids-teal-shade": [
+      29,
+      143,
+      119
+    ],
+    "kids-orange": [
+      255,
+      159,
+      90
+    ],
+    "kids-orange-shade": [
+      179,
+      100,
+      42
+    ],
+    "kids-area": [
+      75,
+      233,
+      255
+    ],
+    "kids-area-shade": [
+      27,
+      138,
+      163
+    ],
+    "kids-bg": [
+      6,
+      10,
+      24
+    ],
+    "kids-text": [
+      242,
+      251,
+      255
+    ],
+    "kids-body": [
+      198,
+      219,
+      230
+    ],
+    "kids-muted": [
+      169,
+      198,
+      212
+    ],
+    "kids-subtle": [
+      132,
+      160,
+      178
+    ],
+    "kids-ink": [
+      8,
+      16,
+      31
+    ],
+    "kids-off": [
+      26,
+      36,
+      66
+    ],
+    "kids-off-shade": [
+      12,
+      19,
+      40
+    ],
+    "kids-streak": [
+      255,
+      224,
+      138
     ]
   },
   "raw": {

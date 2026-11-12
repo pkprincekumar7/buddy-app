@@ -49,6 +49,7 @@ from common.models import (
     personality_inputs_fields,
 )
 from common.telemetry import current_traceparent
+from transform.app.quests import KID_QUESTS
 from transform.app.runtime import SERVICE, Runtime
 from transform.app.store import PLANS
 
@@ -146,14 +147,14 @@ async def copy_inputs(runtime: Runtime, received: ReceivedEvent) -> bool:
 
 
 async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
-    """A purged child's plan, copies, photos and jobs, and its tombstone."""
+    """A purged child's plan, quests, copies, photos and jobs, and its tombstone."""
     event = received.event
     child_id, location = event.aggregate_id, event.location
     if runtime.uploads is not None:  # S3 isn't transactional, and deleting again is harmless
         await runtime.uploads.delete_child(location, child_id, PHOTO_KIND)
 
     async def write(session: AsyncClientSession) -> None:
-        for name in (PLANS, *COPIES):
+        for name in (PLANS, KID_QUESTS, *COPIES):
             await runtime.db[name].delete_one(
                 {"_id": child_id, "location": location}, session=session
             )
@@ -203,7 +204,7 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
         child_ids = await runtime.db[CHILD_ACCESS].distinct(
             "_id", {"location": location, "user_id": user_id}, session=session
         )
-        for name in (PLANS, GROWTH_INPUTS, *COPIES):
+        for name in (PLANS, KID_QUESTS, GROWTH_INPUTS, *COPIES):
             await runtime.db[name].delete_many(
                 {"location": location, "user_id": user_id}, session=session
             )

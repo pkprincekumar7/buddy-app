@@ -16,6 +16,8 @@ import {
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { TtsProvider } from '@/lib/TtsContext';
+import { ViewModeProvider, useViewMode } from '@/lib/ViewModeContext';
+import { allowedInChildView, childViewHome } from '@/lib/childView';
 import { AmbientAudioProvider } from '@/lib/AmbientAudioContext';
 import { AppThemeProvider } from '@/lib/theme';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
@@ -24,6 +26,8 @@ import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
 
 const AdminAllowedEmails = lazy(() => import('./pages/AdminAllowedEmails'));
+// Not in pagesConfig.Pages: that would also serve a bare /Kids, which has no child.
+const KidsMode = lazy(() => import('./pages/KidsMode'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -140,6 +144,14 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
+      path="/Kids/:childId/:area"
+      element={
+        <LayoutWrapper currentPageName="Kids">
+          <KidsMode />
+        </LayoutWrapper>
+      }
+    />
+    <Route
       path="/PersonalityProfile/:childId"
       element={
         <LayoutWrapper currentPageName="PersonalityProfile">
@@ -216,6 +228,19 @@ function ScrollToTop() {
   return null;
 }
 
+/**
+ * In child view only the child's hub and kids page are open (docs/child-view-build-plan.md,
+ * 1.3); any other route, the browser's Back included, lands back on the child's circles.
+ */
+function ChildViewRoutes() {
+  const { view } = useViewMode();
+  const { pathname } = useLocation();
+  if (view.mode === 'child' && !allowedInChildView(pathname, view.childId)) {
+    return <Navigate to={childViewHome(view.childId)} replace />;
+  }
+  return <ProtectedRoutes />;
+}
+
 const AdminRoutes = () => (
   <Routes>
     <Route
@@ -287,7 +312,7 @@ function AppShell() {
     return <AdminRoutes />;
   }
 
-  return <ProtectedRoutes />;
+  return <ChildViewRoutes />;
 }
 
 function App() {
@@ -297,14 +322,16 @@ function App() {
         <Router>
           <ScrollToTop />
           <AuthProvider>
-            <NavigationTracker />
-            <TtsProvider>
-              <AmbientAudioProvider>
-                <ErrorBoundary>
-                  <AppShell />
-                </ErrorBoundary>
-              </AmbientAudioProvider>
-            </TtsProvider>
+            <ViewModeProvider>
+              <NavigationTracker />
+              <TtsProvider>
+                <AmbientAudioProvider>
+                  <ErrorBoundary>
+                    <AppShell />
+                  </ErrorBoundary>
+                </AmbientAudioProvider>
+              </TtsProvider>
+            </ViewModeProvider>
           </AuthProvider>
           <SonnerToaster position="bottom-center" />
         </Router>

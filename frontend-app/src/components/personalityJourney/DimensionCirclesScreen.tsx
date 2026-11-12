@@ -20,7 +20,8 @@ interface DimensionCirclesScreenProps {
   onGrow: () => void;
   onTransform: () => void;
   onRelease: () => void;
-  onStartAgain: () => void;
+  /** Hidden when absent (child view: a child can't delete their own journey). */
+  onStartAgain?: () => void;
   enabled: {
     grow: boolean;
     transform: boolean;
@@ -163,20 +164,22 @@ export default function DimensionCirclesScreen({
               icon={<Path d="M4 20V10M11 20V4M18 20v-7" />}
             />
 
-            {/* Start Again — bottom-center (always enabled) */}
-            <DimensionNode
-              center={NODE_CENTER.startAgain}
-              delay={0.85}
-              onPress={onStartAgain}
-              highlighted={false}
-              label="Start Again"
-              icon={
-                <>
-                  <Path d="M4 4v6h6M20 20v-6h-6" />
-                  <Path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
-                </>
-              }
-            />
+            {/* Start Again — bottom-center (always enabled; not in child view) */}
+            {onStartAgain ? (
+              <DimensionNode
+                center={NODE_CENTER.startAgain}
+                delay={0.85}
+                onPress={onStartAgain}
+                highlighted={false}
+                label="Start Again"
+                icon={
+                  <>
+                    <Path d="M4 4v6h6M20 20v-6h-6" />
+                    <Path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
+                  </>
+                }
+              />
+            ) : null}
           </View>
         </View>
 

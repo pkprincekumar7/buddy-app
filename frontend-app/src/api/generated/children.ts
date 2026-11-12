@@ -114,6 +114,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/children/{id}/kids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kid Activity
+         * @description What the child has done in child view (parents only): stars, Discover's flipped powers and best times, and the last 62 days' moods. `?date=` is the child's day.
+         */
+        get: operations["kid_activity_api_v1_children__id__kids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/children/{id}/kids/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Kid Event
+         * @description One thing the child did in child view (parents only; the child uses the parent's session). The server gives the stars, each once. Refused with `circle_locked` while the action's circle isn't open in child view: Discover once the chat is done, each other once the one before is done there (`circles_done`).
+         */
+        post: operations["kid_event_api_v1_children__id__kids_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -180,10 +220,116 @@ export interface components {
             /** Avatar Key */
             avatar_key?: string | null;
         };
+        /**
+         * FlipPower
+         * @description The child opened a Discover power: +1 the first time, +3 once all are open.
+         */
+        FlipPower: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "flip_power";
+            /** Power */
+            power: number;
+        };
+        /**
+         * GameBest
+         * @description A Discover mini game finished: kept when it's the child's best time. No stars.
+         */
+        GameBest: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "game_best";
+            /**
+             * Game
+             * @enum {string}
+             */
+            game: "focus" | "curious" | "order" | "draw" | "climb" | "voice" | "energy";
+            /** Seconds */
+            seconds: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** KidActivity */
+        KidActivity: {
+            /** Stars */
+            stars: number;
+            circles_done: components["schemas"]["KidCircles"];
+            /** Flipped Powers */
+            flipped_powers: number[];
+            /** Discover Badge */
+            discover_badge: boolean;
+            /**
+             * Tried Today
+             * @description Powers whose "Try this today" is done today.
+             */
+            tried_today: number[];
+            /** Best Times */
+            best_times: {
+                [key: string]: number;
+            };
+            /**
+             * Moods
+             * @description The last 62 days' moods, newest first.
+             */
+            moods: {
+                [key: string]: components["schemas"]["KidMood"];
+            };
+            /**
+             * Shown
+             * @description The wins "Show my grown-up" kept, by key.
+             */
+            shown?: {
+                [key: string]: components["schemas"]["ShownWin"];
+            };
+        };
+        /**
+         * KidCircles
+         * @description Which circles the child has done in child view; each opens the next.
+         */
+        KidCircles: {
+            /** Discover */
+            discover: boolean;
+            /** Grow */
+            grow: boolean;
+            /** Transform */
+            transform: boolean;
+            /** Release */
+            release: boolean;
+            /** Connect */
+            connect: boolean;
+        };
+        /** KidMood */
+        KidMood: {
+            /** Mood */
+            mood: string;
+            /** Note */
+            note: string | null;
+        };
+        /**
+         * MoodIn
+         * @description Release's check-in for the child's day: +1 once a day; a second one that day
+         *     replaces it.
+         */
+        MoodIn: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "mood";
+            /**
+             * Mood
+             * @enum {string}
+             */
+            mood: "great" | "good" | "okay" | "low" | "upset";
+            /** Note */
+            note?: string | null;
         };
         /** PresignIn */
         PresignIn: {
@@ -224,6 +370,62 @@ export interface components {
         ProgressOut: {
             progress: components["schemas"]["Progress"];
         };
+        /**
+         * QuestDone
+         * @description A Transform quest logged (transform keeps the count): +1 the first time each quest is.
+         */
+        QuestDone: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "quest";
+            /**
+             * Interest
+             * @enum {string}
+             */
+            interest: "football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games";
+            /** Quest */
+            quest: number;
+        };
+        /**
+         * ShowWin
+         * @description Connect's "Show my grown-up": keeps a win for the parent to share (P.2). No stars.
+         */
+        ShowWin: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "show_win";
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+        };
+        /** ShownWin */
+        ShownWin: {
+            /** Title */
+            title: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
+        /**
+         * TryPower
+         * @description The child did a power's "Try this today": +1 once a day per power.
+         */
+        TryPower: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "try_power";
+            /** Power */
+            power: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -236,6 +438,19 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * WorldDone
+         * @description A Grow world finished in child view (grow keeps the scores): Grow is done there.
+         */
+        WorldDone: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "world_done";
+            /** World */
+            world: number;
         };
     };
     responses: never;
@@ -492,6 +707,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProgressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kid_activity_api_v1_children__id__kids_get: {
+        parameters: {
+            query: {
+                /** @description The child's own day (their device's date), YYYY-MM-DD: within a day of the server's. */
+                date: string;
+            };
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidActivity"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kid_event_api_v1_children__id__kids_events_post: {
+        parameters: {
+            query: {
+                /** @description The child's own day (their device's date), YYYY-MM-DD: within a day of the server's. */
+                date: string;
+            };
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlipPower"] | components["schemas"]["TryPower"] | components["schemas"]["GameBest"] | components["schemas"]["WorldDone"] | components["schemas"]["MoodIn"] | components["schemas"]["QuestDone"] | components["schemas"]["ShowWin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidActivity"];
                 };
             };
             /** @description Validation Error */

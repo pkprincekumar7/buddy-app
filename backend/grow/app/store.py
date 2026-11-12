@@ -2,9 +2,13 @@
 
 `_id` is `{child_id}:{area_id}`, so the unique `{location, _id}` index (the future shard
 key) allows one per area. `status` is the parent's wizard (`in_progress` / `completed`);
-jobs never change it. The generated parts (`parent_questions`, `child_rounds`,
-`ai_three_month_recommendations`) are written by grow's jobs only, each under its own lock
-in `active_jobs` (one generation per kind per area). `version` counts the parent's saves
+jobs never change it. The generated parts (`parent_questions`,
+`ai_three_month_recommendations` with its `recommendations_run_at`) are written by grow's
+jobs only, each under its own lock in `active_jobs` (one generation per kind per area).
+`recommendations_run_at` is the `at` of the world run (grow.app.worlds) the recommendations
+were written from, or null when the child hadn't played the area's world; `child_games` is
+that run's games as `Played …` lines (empty without a run), the child evidence of
+Release's observations, sent in grow's area events and never on the public `Area`. `version` counts the parent's saves
 and the recommendations' results, and is carried by `grow.*` events (7.4).
 
 Everything here describes a child: never logged, deleted with the child or the account.
@@ -33,24 +37,22 @@ NAME_MAX = 100
 STEP_MAX = 100
 ANSWERS_MAX_KEYS = 100
 ANSWER_MAX = 1000
-SELECTIONS_MAX = 50
 SUMMARY_MAX = 2000
 LIST_MAX = 20
 RECOMMENDATIONS_MAX = 50
 FEEDBACK_MAX = 2000
+CHILD_GAMES_MAX = 3  # one line per game of the area's world (grow.app.worlds.game_lines)
 
 # The API's kinds and today's job types (4.1).
-Kind = Literal["parent_questions", "child_rounds", "recommendations"]
+Kind = Literal["parent_questions", "recommendations"]
 JOB_TYPES: Final[dict[Kind, str]] = {
     "parent_questions": "generate_growth_parent_questions",
-    "child_rounds": "generate_growth_child_rounds",
     "recommendations": "generate_recommendations",
 }
 KINDS: Final[dict[str, Kind]] = {job_type: kind for kind, job_type in JOB_TYPES.items()}
 # Where each kind's result goes on the area.
 FIELDS: Final[dict[Kind, str]] = {
     "parent_questions": "parent_questions",
-    "child_rounds": "child_rounds",
     "recommendations": "ai_three_month_recommendations",
 }
 
@@ -73,11 +75,16 @@ GROWTH_AREAS_VALIDATOR: dict[str, Any] = {
             "status": {"enum": ["in_progress", "completed"]},
             "step": {"bsonType": ["string", "null"], "maxLength": STEP_MAX},
             "parent_questions": {"bsonType": "object"},
-            "child_rounds": {"bsonType": "object"},
             "answers": {"bsonType": "object"},
             "child_activity": {"bsonType": ["object", "null"]},
             "recommendations": {"bsonType": ["array", "null"], "maxItems": RECOMMENDATIONS_MAX},
             "ai_three_month_recommendations": {"bsonType": "array"},
+            "recommendations_run_at": {"bsonType": ["date", "null"]},
+            "child_games": {
+                "bsonType": "array",
+                "maxItems": CHILD_GAMES_MAX,
+                "items": {"bsonType": "string"},
+            },
             "feedback": {"bsonType": ["string", "null"], "maxLength": FEEDBACK_MAX},
             "active_jobs": {"bsonType": "object"},
             "completed_at": _DATE,

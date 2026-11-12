@@ -1,27 +1,51 @@
 import { displayName } from '@/api/account';
-import React, { useEffect, useState } from 'react';
-import { AppState, Modal, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Modal, Platform, Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import {
+  ArrowLeft,
   House,
   LogOut,
-  Mail,
   RotateCcw,
   Settings,
   Volume2,
   VolumeX,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
 import { stopSpeech } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { navigate, type PageName } from '@/lib/router';
+import { navigate, resetTo, type PageName } from '@/lib/router';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { childViewHome } from '@/lib/childView';
 import { useStartOver } from '@/hooks/useStartOver';
+import { useChildren } from '@/hooks/useChildren';
+import { useDeleteChild } from '@/hooks/useDeleteChild';
+import type { Child } from '@/api/children';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
+import { startOverCopy } from '@/lib/startOverCopy';
+import ProfileChildren from '@/components/shared/ProfileChildren';
+import {
+  DESC,
+  DIVIDER,
+  DOT_TEXT,
+  HEADING,
+  LINK,
+  LINK_ACTIVE,
+  LINK_COLOR,
+  NAME,
+  PANEL,
+  CHILD_DOT,
+  PARENT_DOT,
+  PILL,
+  PILL_PRESSED,
+  ROW_PRESSED,
+  ROW_SELECTED,
+} from '@/components/layout/profilePalette';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
-import { cn } from '@/lib/utils';
 import { color, css, font, gradient, hsl, rgb } from '@/theme';
 
 // Maps a page to the seven-circle node label that leads to it, so the header
@@ -56,6 +80,33 @@ export default function AppHeader({
   const { doStartOver, isStartingOver } = useStartOver(childId);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // The Children group is for parents; admins have no children.
+  const isParent = isAuthenticated && user?.role === 'parent';
+  const kids = useChildren(isParent);
+  const currentChild = kids.list.find(c => c.id === childId);
+  const { deleteChild, deletingId } = useDeleteChild();
+  const [childToDelete, setChildToDelete] = useState<Child | null>(null);
+  // A delete asked for from the menu waits for the menu to close on iOS, which
+  // can't present the confirmation while the menu's Modal is still dismissing:
+  // the menu's onDismiss shows it. Android has nothing to wait for.
+  const pendingDeleteRef = useRef<Child | null>(null);
+  const showPendingDelete = useCallback(() => {
+    const pending = pendingDeleteRef.current;
+    pendingDeleteRef.current = null;
+    if (pending) setChildToDelete(pending);
+  }, []);
+  const requestDelete = useCallback((child: Child) => {
+    if (Platform.OS === 'ios') pendingDeleteRef.current = child;
+    else setChildToDelete(child);
+  }, []);
+
+  const confirmDelete = async (child: Child) => {
+    setChildToDelete(null);
+    // Deleting the child whose screen is open leaves nothing to show there.
+    if ((await deleteChild(child.id)) && child.id === childId) {
+      navigate('/Home', { replace: true });
+    }
+  };
 
   // Cancel any in-progress speech when TTS is disabled, and when the app is backgrounded
   // (web: speechSynthesis.cancel() on toggle-off and on visibilitychange → hidden).
@@ -71,7 +122,15 @@ export default function AppHeader({
   }, []);
 
   const circleLabel = CIRCLE_LABELS[currentPageName];
-  const initials = getInitials(displayName(user) ?? user?.email ?? '?');
+  // Child view (docs/child-view-build-plan.md, 1.2): the button and menu show the child.
+  const { view, enterChildView, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
+  const viewChild = childView
+    ? kids.list.find(c => c.id === view.childId)
+    : undefined;
+  const parentName = displayName(user) ?? 'You';
+  const profileName = childView ? viewChild?.name ?? 'Child' : parentName;
+  const profileInitial = getInitials(profileName).charAt(0);
 
   return (
     <View
@@ -139,7 +198,7 @@ export default function AppHeader({
             )}
           </HeaderIconButton>
 
-          {isAuthenticated && childId ? (
+          {isAuthenticated && childId && !childView ? (
             <HeaderIconButton
               label="Start Over"
               onPress={() => setConfirmingStartOver(true)}
@@ -154,13 +213,17 @@ export default function AppHeader({
               accessibilityRole="button"
               accessibilityLabel="Your profile"
               accessibilityState={{ expanded: profileOpen }}
-              className="h-9 w-9 items-center justify-center rounded-full"
-              style={({ pressed }) => [
-                { experimental_backgroundImage: avatarGradient },
-                pressed && { transform: [{ scale: 1.05 }] },
-              ]}
+              className="h-11 flex-row items-center rounded-full px-1.5"
+              style={({ pressed }) => [PILL, pressed && PILL_PRESSED]}
             >
-              <Text className="text-xs font-bold text-white">{initials}</Text>
+              {/* Dot only: the web shows the name and view from sm up, and a phone
+                  header has no room for them. */}
+              <AvatarDot
+                initial={profileInitial}
+                size={32}
+                fontSize={13}
+                child={childView}
+              />
             </Pressable>
           ) : null}
         </View>
@@ -172,6 +235,7 @@ export default function AppHeader({
         transparent
         animationType="none"
         onRequestClose={() => setProfileOpen(false)}
+        onDismiss={showPendingDelete}
       >
         <Pressable
           className="flex-1"
@@ -180,113 +244,122 @@ export default function AppHeader({
         >
           <Animated.View
             {...MODAL_BACKDROP}
-            className="absolute right-4 w-72 overflow-hidden rounded-2xl border border-border bg-surface-elevated"
-            style={{
-              top: insets.top + HEADER_HEIGHT + 8,
-              boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
-            }}
+            className="absolute right-4 w-72 overflow-hidden p-2"
+            style={[PANEL, { top: insets.top + HEADER_HEIGHT + 8 }]}
           >
             <Pressable
               accessibilityViewIsModal
               accessibilityLabel="User profile"
             >
               <Animated.View {...MODAL_SCALE}>
-                {/* Header gradient strip */}
-                <View
-                  className="px-5 py-4"
-                  style={{ experimental_backgroundImage: profileStripGradient }}
-                >
-                  <View className="flex-row items-center gap-3">
+                <Text className="px-2.5 pb-2 pt-1.5" style={HEADING}>
+                  Signed-in profile
+                </Text>
+
+                {childView ? (
+                  <>
+                    {/* Child view: only the child, and the way back to parent view. */}
                     <View
-                      className="h-12 w-12 shrink-0 items-center justify-center rounded-full"
-                      style={{
-                        experimental_backgroundImage: avatarGradient,
-                        boxShadow: '0 10px 15px rgba(0,0,0,0.25)',
-                      }}
+                      className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
+                      style={ROW_SELECTED}
                     >
-                      <Text className="text-lg font-bold text-white">
-                        {initials}
-                      </Text>
-                    </View>
-                    <View className="min-w-0 flex-1">
-                      <Text
-                        className="font-semibold text-card-foreground"
-                        numberOfLines={1}
-                      >
-                        {displayName(user) ?? 'User'}
-                      </Text>
-                      <View className="flex-row items-center gap-1">
-                        <Mail size={12} color={color['muted-foreground']} />
-                        <Text
-                          className="flex-1 text-xs text-muted-foreground"
-                          numberOfLines={1}
-                        >
-                          {user?.email ?? ''}
+                      <AvatarDot
+                        initial={profileInitial}
+                        size={28}
+                        fontSize={12}
+                        child
+                      />
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} style={NAME}>
+                          {profileName}
+                        </Text>
+                        <Text numberOfLines={1} style={DESC}>
+                          Child view
                         </Text>
                       </View>
                     </View>
-                  </View>
-                </View>
-
-                <View className="border-t border-border" />
-
-                <View className="p-2">
-                  <PanelRow
-                    icon={
-                      <House
-                        size={16}
-                        color={
-                          currentPageName === 'Home'
-                            ? color.primary
-                            : color['muted-foreground']
-                        }
+                    <View style={DIVIDER} />
+                    <PanelRow
+                      icon={ArrowLeft}
+                      label="Back to parent view"
+                      onPress={() => {
+                        setProfileOpen(false);
+                        const id = view.mode === 'child' ? view.childId : '';
+                        exitChildView();
+                        navigate(`/PersonalityJourney/${id}`);
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    {/* The signed-in parent: the profile this view belongs to. */}
+                    <View
+                      className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
+                      style={ROW_SELECTED}
+                    >
+                      <AvatarDot
+                        initial={profileInitial}
+                        size={28}
+                        fontSize={12}
                       />
-                    }
-                    label="Home"
-                    textClassName={
-                      currentPageName === 'Home'
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
-                    }
-                    onPress={() => {
-                      setProfileOpen(false);
-                      navigate('/Home');
-                    }}
-                  />
-                  <PanelRow
-                    icon={
-                      <Settings
-                        size={16}
-                        color={
-                          currentPageName === 'AccountSettings'
-                            ? color.primary
-                            : color['muted-foreground']
-                        }
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} style={NAME}>
+                          {profileName}
+                        </Text>
+                        <Text numberOfLines={1} style={DESC}>
+                          {isParent ? 'Parent · sees everything' : 'Admin'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {isParent ? (
+                      <ProfileChildren
+                        list={kids.list}
+                        isLoading={kids.isLoading}
+                        isLoadingError={kids.isLoadingError}
+                        isFetching={kids.isFetching}
+                        onRetry={() => void kids.refetch()}
+                        currentChildId={childId}
+                        onClose={() => setProfileOpen(false)}
+                        onDelete={requestDelete}
+                        onChildView={(child: Child) => {
+                          enterChildView(child.id);
+                          // The child's circles alone: nothing of the parent's under them.
+                          resetTo(childViewHome(child.id));
+                        }}
                       />
-                    }
-                    label="Account settings"
-                    textClassName={
-                      currentPageName === 'AccountSettings'
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
-                    }
-                    onPress={() => {
-                      setProfileOpen(false);
-                      navigate('/AccountSettings');
-                    }}
-                  />
-                  <PanelRow
-                    icon={
-                      <LogOut size={16} color={color['muted-foreground']} />
-                    }
-                    label="Sign out"
-                    textClassName="text-muted-foreground"
-                    onPress={() => {
-                      setProfileOpen(false);
-                      void logout(true);
-                    }}
-                  />
-                </View>
+                    ) : null}
+
+                    <View style={DIVIDER} />
+
+                    <PanelRow
+                      icon={House}
+                      label="Home"
+                      active={currentPageName === 'Home'}
+                      onPress={() => {
+                        setProfileOpen(false);
+                        navigate('/Home');
+                      }}
+                    />
+                    <PanelRow
+                      icon={Settings}
+                      label="Account settings"
+                      active={currentPageName === 'AccountSettings'}
+                      onPress={() => {
+                        setProfileOpen(false);
+                        navigate('/AccountSettings');
+                      }}
+                    />
+                    <PanelRow
+                      icon={LogOut}
+                      label="Sign out"
+                      onPress={() => {
+                        setProfileOpen(false);
+                        void logout(true);
+                      }}
+                    />
+                  </>
+                )}
               </Animated.View>
             </Pressable>
           </Animated.View>
@@ -301,17 +374,24 @@ export default function AppHeader({
           void doStartOver();
         }}
         isStartingOver={isStartingOver}
+        {...startOverCopy(currentChild?.name)}
+      />
+
+      <ConfirmModal
+        open={childToDelete !== null}
+        onCancel={() => setChildToDelete(null)}
+        onConfirm={() => {
+          if (childToDelete) void confirmDelete(childToDelete);
+        }}
+        isStartingOver={deletingId !== null}
+        title={
+          childToDelete ? `Delete ${childToDelete.name}?` : 'Delete child?'
+        }
+        description="Their profile, chat, results and plan are deleted for good."
       />
     </View>
   );
 }
-
-const avatarGradient = css(
-  'linear-gradient(to bottom right, hsl(var(--primary-medium)), hsl(var(--success)))',
-);
-const profileStripGradient = css(
-  'linear-gradient(to right, hsl(var(--primary-dark) / 0.3), hsl(var(--success-strong) / 0.2))',
-);
 
 function HeaderIconButton({
   label,
@@ -337,25 +417,57 @@ function HeaderIconButton({
   );
 }
 
+/** The avatar dot with an initial: the parent's gold, or a child's cyan (web `.avatar-dot-*`). */
+function AvatarDot({
+  initial,
+  size,
+  fontSize,
+  child = false,
+}: {
+  initial: string;
+  size: number;
+  fontSize: number;
+  /** The child's cyan dot instead of the parent's gold one. */
+  child?: boolean;
+}) {
+  return (
+    <View
+      importantForAccessibility="no-hide-descendants"
+      className="items-center justify-center rounded-full"
+      style={{
+        width: size,
+        height: size,
+        experimental_backgroundImage: child ? CHILD_DOT : PARENT_DOT,
+      }}
+    >
+      <Text style={[DOT_TEXT, { fontSize }]}>{initial}</Text>
+    </View>
+  );
+}
+
+/** Home, Account settings, Sign out (web `.profile-link`). */
 function PanelRow({
-  icon,
+  icon: Icon,
   label,
-  textClassName,
+  active = false,
   onPress,
 }: {
-  icon: React.ReactNode;
+  icon: LucideIcon;
   label: string;
-  textClassName: string;
+  active?: boolean;
   onPress: () => void;
 }) {
+  const tint = active ? LINK_ACTIVE : LINK_COLOR;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      className="w-full flex-row items-center gap-2.5 rounded-xl px-3 py-2.5 active:bg-accent"
+      accessibilityState={{ selected: active }}
+      className="w-full flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
+      style={({ pressed }) => (pressed ? ROW_PRESSED : undefined)}
     >
-      {icon}
-      <Text className={cn('text-sm', textClassName)}>{label}</Text>
+      <Icon size={16} color={tint} />
+      <Text style={[LINK, { color: tint }]}>{label}</Text>
     </Pressable>
   );
 }

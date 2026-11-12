@@ -6,6 +6,9 @@ import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
 import Spinner from '@/components/shared/Spinner';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { daysAgo } from '@/api/kidWorlds';
+import { STAR_PATH } from '@/components/kids/icons';
 import { Button } from '@/components/ui/button';
 
 import {
@@ -86,16 +89,28 @@ export default function Connect() {
   }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   const isNarrow = useMediaQuery('(max-width: 859px)');
+  // The wins the child chose in child view ("Show my grown-up", P.2), newest first, ahead of
+  // the page's own: the parent shares them from here.
+  const { activity: kidActivity } = useKidActivity(childId);
 
-  const items = useMemo(
-    () =>
-      BASE_ITEMS.map((it) =>
-        it.title.includes('{name}')
-          ? { ...it, title: it.title.replace('{name}', childName || 'Your child') }
-          : it,
+  const items = useMemo(() => {
+    const who = childName || 'Your child';
+    const shown = Object.values(kidActivity?.shown ?? {})
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .map((w) => ({
+        kind: `From ${who}`,
+        when: daysAgo(w.at),
+        title: w.title,
+        caption: `${who} chose to show you this in child view.`,
+        icon: STAR_PATH,
+      }));
+    return [
+      ...shown,
+      ...BASE_ITEMS.map((it) =>
+        it.title.includes('{name}') ? { ...it, title: it.title.replace('{name}', who) } : it,
       ),
-    [childName],
-  );
+    ];
+  }, [childName, kidActivity]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [editing, setEditing] = useState(false);

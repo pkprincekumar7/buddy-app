@@ -1,21 +1,25 @@
-"""A growth area's three generations (docs/auth-users-split.md, 8; API: POST …/generation).
+"""A growth area's two generations (docs/auth-users-split.md, 8; API: POST …/generation).
 
 | kind | job type | writes | once? |
 |---|---|---|---|
 | `parent_questions` | `generate_growth_parent_questions` | `parent_questions` | yes |
-| `child_rounds` | `generate_growth_child_rounds` | `child_rounds` | yes |
-| `recommendations` | `generate_recommendations` | `ai_three_month_recommendations` | no |
+| `recommendations` | `generate_recommendations` | `ai_three_month_recommendations`, `recommendations_run_at`, `child_games` | no |
 
 - `start`: through common.generation.jobs.start_job, one lock per kind per area
   (`active_jobs.<job type>`). The area's `status` is the parent's, so the job never sets
   or fails it (`target_status=None`); `parent_questions` on a new area creates it
   `in_progress`.
-- `process`: builds the kind's prompt from the area and grow's copies, calls the LLM,
-  runs the answer through today's normaliser (grow.app.areas), and stores the result. An
-  answer the normaliser rejects, a failed call or a copy not there yet is retried with
-  backoff, then the job fails; the area keeps whatever it had. Recommendations bump the
-  area's `version` and, for a completed area, publish `grow.area_updated` in the same
-  transaction: transform's Life Pathway prefers them, as today.
+- `process`: builds the kind's prompt from the area, grow's copies and, for
+  recommendations, the child's latest run of the area's world (grow.app.worlds); calls the
+  LLM, runs the answer through today's normaliser (grow.app.areas), and stores the result.
+  An answer the normaliser rejects, a failed call or a copy not there yet is retried with
+  backoff, then the job fails; the area keeps whatever it had. Recommendations store that
+  run's `at` as `recommendations_run_at` (null without a run): the apps regenerate when
+  the latest run's `at` differs. With it goes `child_games`, that run's games as
+  `Played …` lines (grow.app.worlds.game_lines; empty without a run), which the area
+  events carry as Release's child evidence. They also bump the area's `version` and, for a completed
+  area, publish `grow.area_updated` in the same transaction: transform's Life Pathway
+  prefers them, as today.
 - `report_jobs`: `PendingJobCount` and `OldestRunningJobAgeSeconds` from one leader per
   region, in the HTTP runtime (15.5).
 """
@@ -25,7 +29,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pymongo import ReturnDocument
@@ -38,16 +43,8 @@ from common.generation.llm import LlmClient, LlmConfigError
 from common.metrics import RegionLeader
 from common.models import CHILD_ACCESS, JOBS, ONBOARDING_INPUTS, PERSONALITY_INPUTS
 from common.telemetry import current_traceparent
-from grow.app import prompts
-from grow.app.areas import (
-    AREAS,
-    fill_template,
-    normalize_questions,
-    normalize_recommendations,
-    normalize_rounds,
-    picked_options,
-    top_archetype,
-)
+from grow.app import prompts, worlds
+from grow.app.areas import AREAS, fit_sources, normalize_questions, normalize_recommendations
 from grow.app.runtime import SERVICE, Runtime
 from grow.app.store import FIELDS, GROWTH_AREAS, JOB_TYPES, KINDS, Kind
 
@@ -79,20 +76,6 @@ def reflections(doc: Mapping[str, Any]) -> list[dict[str, str]]:
     return [{"question": "", "answer": str(v).strip()} for v in answers.values() if str(v).strip()]
 
 
-def child_choices(doc: Mapping[str, Any]) -> list[str]:
-    """The child's picks as "Chose “X” over “Y”" lines, one per round played
-    (release's buildChildActivityContext): the rejected option is half the meaning."""
-    rounds = (doc.get("child_rounds") or {}).get("rounds") or []
-    picks = (doc.get("child_activity") or {}).get("selections") or []
-    lines = []
-    for round_ in rounds:
-        a, b = round_["a"], round_["b"]
-        chose, over = (a, b) if a["id"] in picks else (b, a) if b["id"] in picks else (None, None)
-        if chose is not None and over is not None:
-            lines.append(f"Chose “{chose['text']}” over “{over['text']}”")
-    return lines
-
-
 def area_payload(doc: Mapping[str, Any]) -> dict[str, Any]:
     """`grow.area_completed` / `grow.area_updated`: what transform and release copy (7.6)."""
     activity = doc.get("child_activity") or {}
@@ -105,7 +88,7 @@ def area_payload(doc: Mapping[str, Any]) -> dict[str, Any]:
         "recommendations": doc.get("recommendations"),
         "ai_three_month_recommendations": doc.get("ai_three_month_recommendations"),
         "reflections": reflections(doc),
-        "child_choices": child_choices(doc),
+        "child_games": doc.get("child_games") or [],
     }
 
 
@@ -135,7 +118,7 @@ async def running_job(runtime: Runtime, area: Mapping[str, Any] | None, kind: Ki
 
 
 # Kinds generated once per area; recommendations replace the last ones.
-GENERATED_ONCE = ("parent_questions", "child_rounds")
+GENERATED_ONCE = ("parent_questions",)
 
 
 async def start(
@@ -196,6 +179,7 @@ def _prompt(
     child: Mapping[str, Any],
     answers: Mapping[str, Any] | None,
     personality: Mapping[str, Any] | None,
+    runs: Sequence[Mapping[str, Any]],
 ) -> tuple[str, dict[str, Any]]:
     info = area_info(area["area_id"], area["area_name"])
     if kind == "parent_questions":
@@ -203,31 +187,18 @@ def _prompt(
             prompts.parent_questions_prompt(child, answers, personality, info),
             prompts.parent_questions_schema(),
         )
-    if kind == "child_rounds":
-        return (
-            prompts.child_rounds_prompt(
-                child, answers, personality, info, _reflections(area, hints=False)
-            ),
-            prompts.child_rounds_schema(area["area_id"]),
-        )
-    rounds = (area.get("child_rounds") or {}).get("rounds") or []
-    selections = (area.get("child_activity") or {}).get("selections")
-    archetype = top_archetype(area["area_id"], rounds, selections)
-    pattern = (
-        {
-            "title": archetype["title"],
-            "line": fill_template(archetype["line"], child.get("name"), child.get("gender")),
-        }
-        if archetype
-        else None
-    )
     return (
         prompts.recommendations_prompt(
             child,
             info,
             _reflections(area, hints=True),
-            [option["text"] for option in picked_options(rounds, selections)],
-            pattern,
+            worlds.latest_run(
+                area["area_id"],
+                runs,
+                datetime.now(UTC),
+                name=child.get("name"),
+                gender=child.get("gender"),
+            ),
             area.get("feedback"),
         ),
         prompts.recommendations_schema(),
@@ -239,9 +210,6 @@ def _normalised(kind: Kind, area_id: str, raw: Any) -> Any:
     if kind == "parent_questions":
         questions = normalize_questions(raw, area_id)
         return {"questions": questions} if questions else None
-    if kind == "child_rounds":
-        rounds = normalize_rounds(raw, area_id)
-        return {"rounds": rounds} if rounds else None
     return (
         normalize_recommendations(raw.get("recommendations") if isinstance(raw, dict) else raw)
         or None
@@ -281,7 +249,13 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
     personality = await db[PERSONALITY_INPUTS].find_one(
         {"_id": job["child_id"], "location": location}
     )
-    prompt, schema = _prompt(kind, area, child, answers, personality)
+    runs: list[Mapping[str, Any]] = []
+    if kind == "recommendations":  # the child's input: their runs of the area's world
+        played = await db[worlds.WORLD_RUNS].find_one(
+            {"_id": job["child_id"], "location": location}
+        )
+        runs = worlds.runs_for(played, area["area_id"])
+    prompt, schema = _prompt(kind, area, child, answers, personality, runs)
     try:
         result = await llm.invoke(prompt, schema=schema)
     except LlmConfigError as exc:
@@ -291,6 +265,10 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
     value = _normalised(kind, area["area_id"], result.data)
     if value is None:
         return await give_up(f"the answer couldn't be used as {kind}")
+    if kind == "recommendations":
+        # A tag the inputs can't back ("kid" with no games played) is fixed, not stored.
+        answered = any(str(v).strip() for v in (area.get("answers") or {}).values())
+        value = fit_sources(value, answered=answered, played=bool(runs))
 
     async def after(session: AsyncClientSession) -> None:
         if kind != "recommendations":
@@ -304,8 +282,12 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
         if updated is not None and updated["status"] == "completed":
             await add_to_outbox(db, area_event(runtime, "grow.area_updated", updated), session)
 
+    update: dict[str, Any] = {FIELDS[kind]: value}
+    if kind == "recommendations":
+        update["recommendations_run_at"] = runs[-1]["at"] if runs else None
+        update["child_games"] = worlds.game_lines(area["area_id"], runs[-1]) if runs else []
     stored = await jobs.complete_job(
-        db, runtime.client, job, target_update={FIELDS[kind]: value}, in_transaction=after
+        db, runtime.client, job, target_update=update, in_transaction=after
     )
     return "completed" if stored else "dropped"
 

@@ -13,6 +13,9 @@ type Schemas = components['schemas'];
 
 export type Personality = Schemas['Personality'];
 export type PersonalityJob = Schemas['Job'];
+/** Child view's powers (docs/child-view-build-plan.md, 2.5): the archetype and seven powers. */
+export type KidPowers = Schemas['Powers'];
+export type KidPower = Schemas['Power'];
 
 /** The view model's shape: `{type, scores, profile}`, as the Discover pages render it. */
 export interface PersonalityViewModel {
@@ -50,6 +53,14 @@ export const discover = {
     unwrap(
       services.discover.POST(
         '/api/v1/children/{id}/personality/viewed',
+        byId(childId),
+      ),
+    ),
+  /** Child view's powers; `404 personality_not_ready` until the personality is ready. */
+  powers: (childId: string): Promise<KidPowers> =>
+    unwrap(
+      services.discover.GET(
+        '/api/v1/children/{id}/personality/powers',
         byId(childId),
       ),
     ),

@@ -8,6 +8,8 @@ internal (port 8001, Cloud Map only). Each endpoint is in docs/auth-users-split-
 - `PATCH …/transform`: the parent's work on the plan, including the Day-90 event and photos;
 - `POST …/transform/generation` (`kind`: `life_pathway`, `plan`, `event_tracker`) and
   `GET …/generation/{job_id}`; `POST …/transform/photos/presign`;
+- `GET …/transform/quests`, `PUT …/quests/current` and `POST …/quests/log`: the child's
+  quests in child view (transform.app.quests);
 - `GET /internal/transform/children/{id}/status`: release's confirm-before-deny.
 
 **Access** follows the circle rules (transform.app.access): the child's parent, or an admin
@@ -37,14 +39,14 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from common import upload_tracking
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import is_tombstoned, tombstone_key
+from common.events import is_tombstoned, tombstone_key, write_guards
 from common.generation.jobs import JobRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
-from common.models import CHILD_ID_PATTERN, GROWTH_INPUTS, JOBS, growth_inputs_id
+from common.models import CHILD_ID_PATTERN, GROWTH_INPUTS, JOBS, growth_inputs_id, stage_done
 from common.routers import PolicyRouter, public
 from common.uploads import UploadError
-from transform.app import generation
+from transform.app import generation, quests
 from transform.app.access import (
     areas_for,
     child_for,
@@ -201,6 +203,16 @@ async def _parents_child(runtime: Runtime, caller: Caller, child_id: str) -> dic
     """The caller's own child, unlocked (the circle rules for a write)."""
     child = await child_for(runtime, child_id, location=caller.location, owner=caller.user_id)
     await require_unlocked(runtime, child)
+    return child
+
+
+async def _child_view_child(runtime: Runtime, caller: Caller, child_id: str) -> dict[str, Any]:
+    """The caller's own child for child view's routes, which open in child view's own order
+    (docs/child-view-build-plan.md): here only once the parent's chat is done; the children
+    service decides the rest."""
+    child = await child_for(runtime, child_id, location=caller.location, owner=caller.user_id)
+    if not stage_done(child, "conversation"):
+        raise error(403, "circle_locked", "Finish the chat about your child first.")
     return child
 
 
@@ -655,6 +667,182 @@ async def presign_photo(
     return PresignOut(
         upload_url=upload_url, upload_fields=upload_fields, photo_key=key, photo_url=photo_url
     )
+
+
+# ── the child's quests (child view) ────────────────────────────────────────────
+
+QuestInterest = quests.QuestInterest
+ChildDay = Annotated[
+    str,
+    Query(alias="date", pattern=r"^\d{4}-\d{2}-\d{2}$", description="The child's day, YYYY-MM-DD"),
+]
+
+
+class QuestIn(BaseModel):
+    target: int
+    title: str
+    how: str
+
+
+class QuestInterestView(BaseModel):
+    key: QuestInterest
+    label: str
+    quests: list[QuestIn]
+
+
+class KidQuests(BaseModel):
+    """The child's quests: the parent's plan's interest (`default_interest`, null when the
+    `ask` names none), the ones the child added, the one on screen, and the counts."""
+
+    default_interest: QuestInterest | None
+    interests: list[QuestInterest]
+    current: QuestInterest | None
+    logs: dict[str, int]
+    # Each quest's last log, as the child's day: the parent's LifePathway shows when.
+    last_logged: dict[str, str]
+    logged_today: list[str]
+    catalog: list[QuestInterestView]
+
+
+class CurrentIn(BaseModel):
+    model_config = _Strict
+    interest: QuestInterest
+
+
+class QuestLog(BaseModel):
+    model_config = _Strict
+    interest: QuestInterest
+    quest: Annotated[int, Field(ge=0, le=quests.QUESTS_PER_INTEREST - 1)]
+
+
+def _quest_day(day: str, now: datetime) -> str:
+    try:
+        return quests.check_day(day, now).isoformat()
+    except ValueError as exc:
+        raise error(422, "bad_date", "That isn't today's date.") from exc
+
+
+async def _quest_view(runtime: Runtime, child: Mapping[str, Any], day: str) -> KidQuests:
+    selector = _selector(child)
+    doc = await runtime.db[quests.KID_QUESTS].find_one(selector) or {}
+    plan = await runtime.db[PLANS].find_one(selector, {"ask": 1}) or {}
+    return KidQuests(
+        default_interest=quests.default_interest(plan.get("ask")),
+        interests=doc.get("interests", []),
+        current=doc.get("current"),
+        logs=doc.get("logs", {}),
+        last_logged=doc.get("log_days", {}),
+        logged_today=quests.logged_on(doc.get("log_days", {}), day),
+        catalog=[QuestInterestView(**i) for i in quests.catalog()],
+    )
+
+
+async def _quest_write(
+    runtime: Runtime,
+    child: Mapping[str, Any],
+    change: Callable[[AsyncClientSession, datetime], Awaitable[None]],
+) -> None:
+    """`change` inside a transaction, after the child's and the account's tombstones (behind
+    their guards, so a deletion in flight and this write conflict) and with the doc made."""
+    db = runtime.db
+    now = _now()
+
+    async def write(session: AsyncClientSession) -> None:
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", child["_id"])]
+        await write_guards(db, stones, location=child["location"], session=session)
+        if await is_tombstoned(db, stones, session, location=child["location"]):
+            raise not_found()
+        await db[quests.KID_QUESTS].update_one(
+            _selector(child),
+            {"$setOnInsert": quests.empty(child["_id"], child["user_id"], child["location"], now)},
+            upsert=True,
+            session=session,
+        )
+        await change(session, now)
+
+    async with runtime.client.start_session() as session:
+        await session.with_transaction(write)
+
+
+@router.get(
+    "/quests",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="The child's quests in child view: the interests, the quests and their "
+    "counts, and which were logged on the child's `date`. Parents only.",
+)
+async def get_quests(id: ChildId, day: ChildDay, runtime: Ready, caller: SignedIn) -> KidQuests:
+    child = await _child_view_child(runtime, caller, id)
+    return await _quest_view(runtime, child, _quest_day(day, _now()))
+
+
+@router.put(
+    "/quests/current",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="Show an interest's quests: the plan's own, or one the child adds (kept in "
+    "`interests`). Parents only.",
+)
+async def put_current_interest(
+    id: ChildId, day: ChildDay, body: CurrentIn, runtime: Ready, caller: SignedIn
+) -> KidQuests:
+    child = await _child_view_child(runtime, caller, id)
+    today = _quest_day(day, _now())
+    plan = await runtime.db[PLANS].find_one(_selector(child), {"ask": 1}) or {}
+    added = body.interest != quests.default_interest(plan.get("ask"))
+
+    async def change(session: AsyncClientSession, now: datetime) -> None:
+        update: dict[str, Any] = {
+            "$set": {"current": body.interest, "updated_at": now},
+            "$inc": {"version": 1},
+        }
+        if added:
+            update["$addToSet"] = {"interests": body.interest}
+        await runtime.db[quests.KID_QUESTS].update_one(_selector(child), update, session=session)
+
+    await _quest_write(runtime, child, change)
+    return await _quest_view(runtime, child, today)
+
+
+@router.post(
+    "/quests/log",
+    dependencies=[Depends(per_user("120/minute"))],
+    description="The child did a quest today: `+1` to its count, once a day (a day after the "
+    "last one logged) and up to its target (anything more changes nothing). The interest must be the plan's or one the "
+    "child added (`409 interest_not_picked`). Parents only.",
+)
+async def log_quest(
+    id: ChildId, day: ChildDay, body: QuestLog, runtime: Ready, caller: SignedIn
+) -> KidQuests:
+    child = await _child_view_child(runtime, caller, id)
+    today = _quest_day(day, _now())
+    selector = _selector(child)
+    plan = await runtime.db[PLANS].find_one(selector, {"ask": 1}) or {}
+    doc = await runtime.db[quests.KID_QUESTS].find_one(selector, {"interests": 1}) or {}
+    picked = {quests.default_interest(plan.get("ask")), *doc.get("interests", [])}
+    if body.interest not in picked:
+        raise error(409, "interest_not_picked", "Pick this interest first.")
+    key = quests.log_key(body.interest, body.quest)
+    goal = quests.target(body.interest, body.quest)
+
+    async def change(session: AsyncClientSession, now: datetime) -> None:
+        # The filter carries both limits, so two logs at once count once. A day counts only
+        # when it's after the last one logged (ISO dates compare as strings): the server
+        # takes any day within one of its own, so alternating two dates, or a clock moved
+        # back, would otherwise log one real day twice.
+        await runtime.db[quests.KID_QUESTS].update_one(
+            {
+                **selector,
+                f"log_days.{key}": {"$not": {"$gte": today}},
+                "$or": [{f"logs.{key}": {"$exists": False}}, {f"logs.{key}": {"$lt": goal}}],
+            },
+            {
+                "$inc": {f"logs.{key}": 1, "version": 1},
+                "$set": {f"log_days.{key}": today, "updated_at": now},
+            },
+            session=session,
+        )
+
+    await _quest_write(runtime, child, change)
+    return await _quest_view(runtime, child, today)
 
 
 app.include_router(health_router)
