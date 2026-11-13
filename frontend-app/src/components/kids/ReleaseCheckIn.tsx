@@ -23,11 +23,11 @@ const ROWS = Array.from({ length: Math.ceil(MOODS.length / 2) }, (_, r) =>
   MOODS.slice(2 * r, 2 * r + 2),
 );
 
-/** The web textarea's box: py-4, text-xl's line height, three rows tall (3 × 28 + 2 × 16 + 2 × 3). */
+/** The textarea's box: py-3, a 16px line's height, three rows tall (3 × 24 + 2 × 12 + 2 × 3). */
 const NOTE_BOX: TextStyle = {
-  paddingVertical: 16,
-  lineHeight: 28,
-  minHeight: 3 * 28 + 2 * 16 + 2 * 3,
+  paddingVertical: 12,
+  lineHeight: 24,
+  minHeight: 3 * 24 + 2 * 12 + 2 * 3,
 };
 
 interface ReleaseCheckInProps {
@@ -68,24 +68,24 @@ export default function ReleaseCheckIn({
   return (
     <View>
       <Text
-        className="text-center text-base uppercase"
+        className="text-center text-xs uppercase"
         style={[
           text.label,
-          { color: color('release'), letterSpacing: 16 * 0.3 },
+          { color: color('release'), letterSpacing: 12 * 0.3 },
         ]}
       >
         Daily check-in
       </Text>
       <Text
         accessibilityRole="header"
-        className="mt-3 text-center text-4xl"
-        style={[text.heading, { lineHeight: 36 * 1.25 }]}
+        className="mt-2.5 text-center text-3xl"
+        style={[text.heading, { lineHeight: 30 * 1.25 }]}
       >
         How do you feel today?
       </Text>
       <Text
-        className="mt-4 text-center text-2xl"
-        style={[text.body, { lineHeight: 24 * 1.375 }]}
+        className="mt-3 text-center text-[17px]"
+        style={[text.body, { lineHeight: 17 * 1.375 }]}
       >
         There is no wrong answer.
       </Text>
@@ -93,10 +93,10 @@ export default function ReleaseCheckIn({
       <View
         accessibilityRole="radiogroup"
         accessibilityLabel="How you feel"
-        className="mt-8 gap-4"
+        className="mt-6 gap-3"
       >
         {ROWS.map(row => (
-          <View key={row.map(m => m.key).join()} className="flex-row gap-4">
+          <View key={row.map(m => m.key).join()} className="flex-row gap-3">
             {row.map(m => {
               const on = m.key === mood;
               return (
@@ -109,11 +109,11 @@ export default function ReleaseCheckIn({
                   accessibilityRole="radio"
                   accessibilityLabel={m.label}
                   accessibilityState={{ checked: on }}
-                  className="min-h-[170px] flex-1 items-center justify-center gap-3"
+                  className="min-h-[120px] flex-1 items-center justify-center gap-2"
                   style={({ pressed }) => tile(m.color, on, pressed)}
                 >
-                  <MoodFace mood={m.key} size={64} />
-                  <Text className="text-lg" style={text.heading}>
+                  <MoodFace mood={m.key} size={40} />
+                  <Text className="text-base" style={text.heading}>
                     {m.label}
                   </Text>
                 </Pressable>
@@ -125,11 +125,11 @@ export default function ReleaseCheckIn({
       </View>
 
       {picked ? (
-        <View className="mt-7" style={card('release')}>
-          <Text className="text-2xl" style={text.heading}>
+        <View className="mt-6" style={card('release')}>
+          <Text className="text-lg" style={text.heading}>
             Want to tell more?
           </Text>
-          <Text className="mt-1 text-lg" style={text.muted}>
+          <Text className="mt-1 text-[15px]" style={text.muted}>
             You can skip this.
           </Text>
           <TextInput
@@ -145,13 +145,13 @@ export default function ReleaseCheckIn({
             placeholder="What happened today?"
             placeholderTextColor={color('muted')}
             accessibilityLabel="What happened today?"
-            className="mt-4"
+            className="mt-3"
             style={[input('release', focused), NOTE_BOX]}
           />
-          <View className="mt-5 flex-row flex-wrap items-center justify-between gap-4">
+          <View className="mt-4 flex-row flex-wrap items-center justify-between gap-3">
             <Text
               accessibilityLiveRegion="polite"
-              className="text-xl"
+              className="text-[15px]"
               style={[
                 text.label,
                 { color: justSaved ? color('teal') : color('body') },
@@ -166,14 +166,14 @@ export default function ReleaseCheckIn({
               disabled={sending}
               accessibilityRole="button"
               accessibilityLabel={sending ? 'Saving' : 'Save'}
-              className="h-16 items-center justify-center px-10"
+              className="h-11 items-center justify-center px-6"
               style={({ pressed }) => [
                 button('release', pressed),
                 sending && { opacity: 0.5 },
               ]}
             >
               <Text
-                className="text-lg"
+                className="text-sm"
                 style={[text.heading, { color: color('ink') }]}
               >
                 {sending ? 'Saving…' : 'Save'}
@@ -183,8 +183,8 @@ export default function ReleaseCheckIn({
         </View>
       ) : null}
 
-      <View className="mt-7 flex-row items-center justify-center gap-3">
-        <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+      <View className="mt-6 flex-row items-center justify-center gap-2">
+        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
           <Path
             d={FLAME_PATH}
             stroke={color('transform')}
@@ -194,7 +194,7 @@ export default function ReleaseCheckIn({
           />
         </Svg>
         <Text
-          className="text-xl"
+          className="text-base"
           style={[text.heading, { color: color('streak') }]}
         >
           {streakLine(streak)}

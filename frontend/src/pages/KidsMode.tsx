@@ -95,23 +95,27 @@ export default function KidsMode() {
           onHome={home}
           onToggleReadAloud={toggleTts}
         />
-        <main key={area} className="kids-enter-up px-4 pb-16 pt-8 sm:px-7">
+        <main key={area} className="kids-enter-up px-4 pb-12 pt-6 sm:px-7">
           {!isOpen(area) ? (
             <div className="kids-card mx-auto max-w-xl text-center">
-              <Lock className="mx-auto h-10 w-10 text-kids-area" aria-hidden="true" />
-              <h1 className="mt-3 font-orbitron text-3xl font-black text-kids-text">
+              <Lock className="mx-auto h-8 w-8 text-kids-area" aria-hidden="true" />
+              <h1 className="mt-3 font-orbitron text-xl font-black text-kids-text md:text-2xl">
                 {AREA_NAMES[area]} opens later
               </h1>
-              <p className="mt-3 text-xl font-semibold text-kids-body">Keep going!</p>
+              <p className="mt-3 text-[15px] font-semibold text-kids-body md:text-lg">
+                Keep going!
+              </p>
             </div>
           ) : kid.isLoadingError || !kid.activity ? (
             <div className="kids-card mx-auto max-w-xl text-center">
-              <p className="text-xl font-semibold text-kids-body">We couldn&apos;t load this.</p>
+              <p className="text-[15px] font-semibold text-kids-body md:text-lg">
+                We couldn&apos;t load this.
+              </p>
               <button
                 type="button"
                 onClick={() => void kid.refetch()}
                 disabled={kid.isFetching}
-                className="kids-btn mt-5 h-14 px-8 text-lg"
+                className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
               >
                 {kid.isFetching ? 'Trying…' : 'Try again'}
               </button>
@@ -129,7 +133,7 @@ export default function KidsMode() {
               />
             ) : (
               <div className="kids-card mx-auto max-w-xl text-center">
-                <p className="text-xl font-semibold text-kids-body">
+                <p className="text-[15px] font-semibold text-kids-body md:text-lg">
                   {powers.notReady
                     ? 'Your powers are still on their way.'
                     : "We couldn't load your powers."}
@@ -138,7 +142,7 @@ export default function KidsMode() {
                   type="button"
                   onClick={() => void powers.refetch()}
                   disabled={powers.isFetching}
-                  className="kids-btn mt-5 h-14 px-8 text-lg"
+                  className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
                 >
                   {powers.isFetching ? 'Looking…' : 'Look again'}
                 </button>
@@ -156,14 +160,14 @@ export default function KidsMode() {
               />
             ) : (
               <div className="kids-card mx-auto max-w-xl text-center">
-                <p className="text-xl font-semibold text-kids-body">
+                <p className="text-[15px] font-semibold text-kids-body md:text-lg">
                   We couldn&apos;t load the worlds.
                 </p>
                 <button
                   type="button"
                   onClick={() => void growWorlds.refetch()}
                   disabled={growWorlds.isFetching}
-                  className="kids-btn mt-5 h-14 px-8 text-lg"
+                  className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
                 >
                   {growWorlds.isFetching ? 'Trying…' : 'Try again'}
                 </button>
@@ -182,14 +186,14 @@ export default function KidsMode() {
               />
             ) : (
               <div className="kids-card mx-auto max-w-xl text-center">
-                <p className="text-xl font-semibold text-kids-body">
+                <p className="text-[15px] font-semibold text-kids-body md:text-lg">
                   We couldn&apos;t load your quests.
                 </p>
                 <button
                   type="button"
                   onClick={() => void quests.refetch()}
                   disabled={quests.isFetching}
-                  className="kids-btn mt-5 h-14 px-8 text-lg"
+                  className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
                 >
                   {quests.isFetching ? 'Trying…' : 'Try again'}
                 </button>

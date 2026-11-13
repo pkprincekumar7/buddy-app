@@ -47,17 +47,17 @@ export default function DiscoverPowers({
           <span className="truncate">Hey {firstName}, your superpowers are here!</span>
           <span className="kids-twinkle [animation-delay:0.5s]" aria-hidden="true" />
         </p>
-        <h1 className="mt-3.5 text-balance font-orbitron text-[clamp(34px,5.4vw,56px)] font-bold leading-[1.08] tracking-[0.02em] text-kids-text">
+        <h1 className="mt-3.5 text-balance font-orbitron text-[clamp(28px,4vw,44px)] font-bold leading-[1.08] tracking-[0.02em] text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
           You are <span className="text-kids-discover">The {powers.style}</span>
         </h1>
         {powers.style_line && (
-          <p className="mx-auto mt-4 max-w-[540px] text-pretty text-[22px] font-semibold leading-snug text-kids-subtle">
+          <p className="mx-auto mt-3 max-w-[540px] text-pretty text-[17px] font-semibold leading-snug text-kids-subtle md:text-xl">
             {powers.style_line}
           </p>
         )}
       </section>
 
-      <div className="relative mx-auto mt-[30px] aspect-square w-full max-w-[660px]">
+      <div className="relative mx-auto mt-6 aspect-square w-full max-w-[560px]">
         <div className="kids-orbit-glow" />
         <div className="kids-orbit-ring inset-[14%]" />
         <div className="kids-orbit-ring kids-orbit-ring-dashed inset-[6%] motion-safe:animate-[spin_60s_linear_infinite]" />
@@ -76,7 +76,7 @@ export default function DiscoverPowers({
           </div>
         ))}
         <div className="kids-photo-ring kids-enter-pop">
-          <div className="kids-photo text-[clamp(40px,8vw,64px)]">
+          <div className="kids-photo text-[clamp(32px,6.4vw,52px)]">
             {avatarUrl ? (
               <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -110,7 +110,7 @@ export default function DiscoverPowers({
             >
               <span className="kids-power-face">
                 <span
-                  className="kids-float flex flex-col items-center gap-[5px]"
+                  className="kids-float flex flex-col items-center gap-1"
                   style={{ animationDelay: `${i * 0.8}s` }}
                 >
                   <svg
@@ -121,7 +121,7 @@ export default function DiscoverPowers({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     aria-hidden="true"
-                    className="h-[clamp(18px,3.8vw,30px)] w-[clamp(18px,3.8vw,30px)]"
+                    className="h-[clamp(14px,2.8vw,21px)] w-[clamp(14px,2.8vw,21px)]"
                   >
                     <path d={POWER_ICONS[p.game]} />
                   </svg>

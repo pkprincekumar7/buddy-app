@@ -133,6 +133,11 @@ app's existing theme rules ([frontend/CLAUDE.md](../frontend/CLAUDE.md) "Tailwin
 - **Radii, spacing and type sizes from the Tailwind scale** (`rounded-full`, `rounded-2xl`,
   `p-4`, `text-sm`…), at the nearest step to the prototype's pixels, not arbitrary `[18px]`
   values, unless the nearest step visibly breaks the layout.
+- **Sizes follow the parent pages' scale** (2026-11-13), not the prototype's child-sized ones, so
+  switching views doesn't jump: design sizes on phones and about ×1.2 from `md` (eyebrow
+  `text-xs md:text-sm`, h1 `clamp(28px,4vw,44px)` → `clamp(34px,4.8vw,53px)`, lead `17px md:text-xl`,
+  body `15px md:text-lg`, buttons `h-11 md:h-12 text-sm md:text-base`, tiles `min-h-[120px]
+  md:min-h-[136px]`, the kids bar no taller than the app bar). The game play areas keep their size.
 - **Reuse before adding.** Many prototype colours are already tokens, from the hub and the
   circle pages:
 

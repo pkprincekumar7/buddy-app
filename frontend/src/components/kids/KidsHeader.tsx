@@ -19,20 +19,23 @@ export default function KidsHeader({
   onToggleReadAloud,
 }: KidsHeaderProps) {
   return (
-    <header className="sticky top-16 z-10 flex flex-wrap items-center justify-between gap-3 bg-kids-bg/80 px-4 py-4 backdrop-blur-md sm:px-7">
+    <header className="sticky top-16 z-10 flex flex-wrap items-center justify-between gap-3 bg-kids-bg/80 px-4 py-3 backdrop-blur-md sm:px-7">
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onHome}
           aria-label="Back to home"
-          className="kids-btn kids-btn-off h-14 pl-4 pr-5 text-xl"
+          className="kids-btn kids-btn-off h-10 pl-3 pr-4 text-sm md:text-base"
         >
-          <House className="h-6 w-6" aria-hidden="true" />
+          <House className="h-[18px] w-[18px]" aria-hidden="true" />
           Home
         </button>
         <div className="kids-chip">
-          <span aria-hidden="true" className="kids-glow-dot h-3 w-3 rounded-full bg-kids-area" />
-          <span className="font-orbitron text-base font-black uppercase tracking-wider text-kids-text">
+          <span
+            aria-hidden="true"
+            className="kids-glow-dot h-2.5 w-2.5 rounded-full bg-kids-area"
+          />
+          <span className="font-orbitron text-sm font-black uppercase tracking-wider text-kids-text">
             {areaName}
           </span>
         </div>
@@ -41,9 +44,12 @@ export default function KidsHeader({
         type="button"
         onClick={onToggleReadAloud}
         aria-pressed={readAloud}
-        className={cn('h-14 px-5 text-base', readAloud ? 'kids-btn' : 'kids-btn kids-btn-off')}
+        className={cn(
+          'h-10 px-4 text-sm md:text-base',
+          readAloud ? 'kids-btn' : 'kids-btn kids-btn-off',
+        )}
       >
-        <Volume2 className="h-5 w-5" aria-hidden="true" />
+        <Volume2 className="h-[18px] w-[18px]" aria-hidden="true" />
         Read to me
       </button>
     </header>

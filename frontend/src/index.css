@@ -1203,19 +1203,19 @@
   }
   /* A panel tinted with the open circle's colour. */
   .kids-card {
-    @apply rounded-[28px] p-6;
+    @apply rounded-[24px] p-5;
     background: rgb(var(--kids-area-rgb) / 0.12);
     border: 3px solid rgb(var(--kids-area-rgb) / 0.45);
   }
   /* The circle's name chip in the header. */
   .kids-chip {
-    @apply inline-flex items-center gap-2.5 rounded-full px-4 py-2.5;
+    @apply inline-flex items-center gap-2 rounded-full px-3 py-1.5;
     background: rgb(var(--kids-area-rgb) / 0.14);
     border: 2px solid rgb(var(--kids-area-rgb));
   }
   /* A big pickable tile (a mood, a power): its own colour pair, set where used. */
   .kids-tile {
-    @apply flex flex-col items-center justify-center gap-3 rounded-[26px] font-orbitron font-black transition-transform duration-100;
+    @apply flex flex-col items-center justify-center gap-2 rounded-[22px] font-orbitron font-black transition-transform duration-100;
     color: rgb(var(--kids-text-rgb));
     background: rgb(var(--kids-off-rgb) / 0.6);
     border: 3px solid rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.3);
@@ -1233,7 +1233,7 @@
   }
   /* A text box on the kids page. */
   .kids-input {
-    @apply w-full rounded-[18px] px-4 py-4 font-rajdhani text-xl font-semibold outline-none;
+    @apply w-full rounded-[16px] px-4 py-3 font-rajdhani text-base font-semibold outline-none;
     color: rgb(var(--kids-text-rgb));
     background: rgb(var(--kids-bg-rgb) / 0.7);
     border: 3px solid rgb(var(--kids-area-rgb) / 0.35);
@@ -1322,12 +1322,12 @@
     box-shadow: 0 0 40px rgb(var(--kids-discover-rgb) / 0.55);
   }
   .kids-power-label {
-    @apply max-w-[90%] text-center font-rajdhani font-bold uppercase leading-none tracking-[0.1em];
-    font-size: clamp(10px, 1.8vw, 14px);
+    @apply max-w-[90%] text-center font-rajdhani font-bold uppercase leading-none tracking-[0.06em];
+    font-size: clamp(8px, 1.35vw, 11px);
   }
   /* "Click here to enjoy the game", over a bubble while it's hovered or focused. */
   .kids-power-tip {
-    @apply pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-xl px-3.5 py-2 font-rajdhani text-[15px] font-bold tracking-[0.06em] group-hover:block group-focus-visible:block;
+    @apply pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-xl px-3 py-1.5 font-rajdhani text-[13px] font-bold tracking-[0.06em] group-hover:block group-focus-visible:block;
     color: rgb(var(--kids-text-rgb));
     background: rgb(var(--kids-bg-rgb));
     border: 1px solid rgb(var(--kids-discover-rgb));
@@ -1336,8 +1336,7 @@
   /* Discover's heading pieces: the gold eyebrow with its twinkling dots, the glow round the
      orbit, a spoke to each power, the child's photo in its cyan ring and their name. */
   .kids-eyebrow {
-    @apply inline-flex max-w-full items-center gap-2.5 rounded-full px-[18px] py-2 font-rajdhani font-bold uppercase;
-    font-size: clamp(11px, 2.2vw, 16px);
+    @apply inline-flex max-w-full items-center gap-2 rounded-full px-4 py-1.5 font-rajdhani text-xs font-bold uppercase md:text-sm;
     letter-spacing: clamp(0.04em, 0.6vw, 0.12em);
     color: rgb(var(--kids-streak-rgb));
     border: 1px solid rgb(var(--kids-streak-rgb) / 0.55);
@@ -1370,7 +1369,7 @@
     background: linear-gradient(90deg, transparent 40%, rgb(var(--kids-discover-rgb) / 0.8));
   }
   .kids-photo-ring {
-    @apply absolute inset-[34%] rounded-full p-1.5;
+    @apply absolute inset-[36%] rounded-full p-1.5;
     background: conic-gradient(
       from 200deg,
       rgb(var(--kids-discover-rgb)),
@@ -1386,16 +1385,14 @@
     background: rgb(var(--kids-discover-shade-rgb) / 0.6);
   }
   .kids-name-pill {
-    @apply pointer-events-none absolute left-1/2 top-[66%] whitespace-nowrap rounded-full px-[18px] py-1.5 font-orbitron font-semibold uppercase tracking-[0.18em];
+    @apply pointer-events-none absolute left-1/2 top-[66%] whitespace-nowrap rounded-full px-4 py-1 font-orbitron text-sm font-semibold uppercase tracking-[0.18em];
     transform: translate(-50%, -20%);
-    font-size: clamp(12px, 2vw, 15px);
     color: rgb(var(--kids-text-rgb));
     background: rgb(var(--kids-bg-rgb) / 0.92);
     border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
   }
   .kids-count-pill {
-    @apply inline-block whitespace-nowrap rounded-full px-[22px] py-2.5 font-orbitron font-bold tracking-[0.08em];
-    font-size: clamp(14px, 2.4vw, 18px);
+    @apply inline-block whitespace-nowrap rounded-full px-[18px] py-2 font-orbitron text-sm font-bold tracking-[0.08em];
     color: rgb(var(--kids-text-rgb));
     border: 1px solid rgb(var(--kids-discover-rgb));
     background: linear-gradient(
@@ -1647,7 +1644,7 @@
   }
   /* A quest's progress (3.2): a dot per time it's to be done, filled up to the count. */
   .kids-quest-dot {
-    @apply h-5 w-5 rounded-full;
+    @apply h-4 w-4 rounded-full;
     border: 2px solid rgb(var(--kids-tile-rgb) / 0.4);
   }
   .kids-quest-dot-on {
@@ -1656,7 +1653,7 @@
   }
   /* A quest's card: its own pair, teal once it's done. */
   .kids-quest {
-    @apply rounded-[26px] p-5;
+    @apply rounded-[22px] p-4 md:p-5;
     background: rgb(var(--kids-tile-rgb) / 0.1);
     border: 3px solid rgb(var(--kids-tile-rgb) / 0.5);
   }

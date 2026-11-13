@@ -346,6 +346,8 @@ Recorded in [child-view-build-plan.md](child-view-build-plan.md), not to be chan
   runs (10 kept), best times (0.5–600 s); the interest from the plan's text, or the picker.
 - Tokens instead of hex; Tailwind-scale sizes; no sounds in the games; the Grow insight box not
   built; Grow's report contents (total, trend, strongest, keep practising, mission).
+- Type, buttons, tiles and spacing follow the parent pages' size scale (2026-11-13), not the
+  prototype's larger child sizes; the game play areas keep their size (build plan, **Theming**).
 - The profile menu's real rows, "Add Child", and opening a child's view at the circles.
 
 ## 5. Web and mobile

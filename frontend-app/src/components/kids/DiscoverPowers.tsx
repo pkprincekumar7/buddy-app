@@ -137,15 +137,18 @@ export default function DiscoverPowers({
   const reduced = useReducedMotion();
   // The web's clamp(…vw…) type sizes, from the window's width.
   const vw = useWindowDimensions().width / 100;
-  const eyebrowSize = clamp(11, 2.2 * vw, 16);
-  const nameSize = clamp(12, 2 * vw, 15);
-  const countSize = clamp(14, 2.4 * vw, 18);
-  const labelSize = clamp(10, 1.8 * vw, 14);
-  const iconSize = clamp(18, 3.8 * vw, 30);
-  const initialSize = clamp(40, 8 * vw, 64);
-  // `.kids-name-pill`: its top at 66%, raised a fifth of its own height (6px padding, a
+  // The child view's type scale, matched to the parent pages: a 12px eyebrow, the h1 at
+  // clamp(28px, 4vw, 44px), 14px name and count pills.
+  const eyebrowSize = 12;
+  const titleSize = clamp(28, 4 * vw, 44);
+  const nameSize = 14;
+  const countSize = 14;
+  const labelSize = clamp(8, 1.35 * vw, 11);
+  const iconSize = clamp(14, 2.8 * vw, 21);
+  const initialSize = clamp(32, 6.4 * vw, 52);
+  // `.kids-name-pill`: its top at 66%, raised a fifth of its own height (4px padding, a
   // 1.5 line and a 1px border on each side).
-  const pillHeight = nameSize * 1.5 + 14;
+  const pillHeight = nameSize * 1.5 + 10;
 
   // Each power unfolds from the centre of the orbit to its place (web kids-unfold).
   const unfold = useMemo(
@@ -213,14 +216,21 @@ export default function DiscoverPowers({
         </View>
         <Text
           accessibilityRole="header"
-          className="mt-3.5"
-          style={[d.title, TITLE]}
+          className="mt-3"
+          style={[
+            d.title,
+            {
+              fontSize: titleSize,
+              lineHeight: titleSize * 1.08,
+              letterSpacing: titleSize * 0.02,
+            },
+          ]}
         >
           You are{' '}
           <Text style={{ color: color('discover') }}>The {powers.style}</Text>
         </Text>
         {powers.style_line ? (
-          <Text className="mt-4" style={[d.line, LINE]}>
+          <Text className="mt-3" style={[d.line, LINE]}>
             {powers.style_line}
           </Text>
         ) : null}
@@ -289,7 +299,7 @@ export default function DiscoverPowers({
               style={[
                 d.photoRing,
                 PHOTO_RING,
-                around(at(34)),
+                around(at(36)),
                 enter('pop', 0, reduced),
               ]}
             >
@@ -396,7 +406,7 @@ export default function DiscoverPowers({
                           {
                             fontSize: labelSize,
                             lineHeight: labelSize,
-                            letterSpacing: labelSize * 0.1,
+                            letterSpacing: labelSize * 0.06,
                             color: ink,
                           },
                         ]}
@@ -413,7 +423,7 @@ export default function DiscoverPowers({
       </View>
 
       <Animated.View
-        className="mt-1.5"
+        className="mt-1"
         style={[d.countPill, COUNT_PILL, enter('pop', 2.4, reduced)]}
       >
         <Text
@@ -445,25 +455,19 @@ export default function DiscoverPowers({
 }
 
 // The web's sizes at phone width, over the shared discoverPage styles.
-/** `.kids-eyebrow`: px-[18px] py-2 gap-2.5. */
-const EYEBROW = { paddingHorizontal: 18, paddingVertical: 8, gap: 10 } as const;
-/** `.kids-twinkle`: h-2 w-2. */
-const TWINKLE_DOT = { width: 8, height: 8, borderRadius: 4 } as const;
-/** clamp(34px, 5.4vw, 56px) is 34 below 630px; leading 1.08. */
-const TITLE = {
-  fontSize: 34,
-  lineHeight: 34 * 1.08,
-  letterSpacing: 34 * 0.02,
-} as const;
-/** text-[22px] leading-snug, max-w-[540px]. */
+/** `.kids-eyebrow`: px-3.5 py-1.5 gap-2. */
+const EYEBROW = { paddingHorizontal: 14, paddingVertical: 6, gap: 8 } as const;
+/** `.kids-twinkle`: h-1.5 w-1.5. */
+const TWINKLE_DOT = { width: 6, height: 6, borderRadius: 3 } as const;
+/** The lead line: 17px leading-snug, max-w-[540px]. */
 const LINE = {
-  fontSize: 22,
-  lineHeight: 22 * 1.375,
+  fontSize: 17,
+  lineHeight: 17 * 1.375,
   maxWidth: 540,
   alignSelf: 'center',
 } as const;
-/** mt-[30px] max-w-[660px]. */
-const ORBIT = { marginTop: 30, maxWidth: 660 } as const;
+/** mt-6 max-w-[560px]. */
+const ORBIT = { marginTop: 24, maxWidth: 560 } as const;
 /** `.kids-orbit-ring-faint`. */
 const FAINT_RING = { borderColor: rgb('kids-discover', 0.12) } as const;
 /** The spoke's line inside its rotated holder, grown from the centre. */
@@ -479,13 +483,13 @@ const PHOTO_RING = {
 } as const;
 /** `.kids-photo`'s letter: Orbitron bold. */
 const INITIAL = { ...font('orbitron', 700), color: rgb('kids-text') } as const;
-/** `.kids-name-pill`: px-[18px] py-1.5. */
-const NAME_PILL = { paddingHorizontal: 18, paddingVertical: 6 } as const;
+/** `.kids-name-pill`: px-3.5 py-1. */
+const NAME_PILL = { paddingHorizontal: 14, paddingVertical: 4 } as const;
 /** A power's icon and name (gap-[5px]), the label at most 90% across. */
 const FLOATING = {
   alignItems: 'center',
   gap: 5,
   maxWidth: '90%',
 } as const;
-/** `.kids-count-pill`: px-[22px] py-2.5. */
-const COUNT_PILL = { paddingHorizontal: 22, paddingVertical: 10 } as const;
+/** `.kids-count-pill`: px-[18px] py-2. */
+const COUNT_PILL = { paddingHorizontal: 18, paddingVertical: 8 } as const;

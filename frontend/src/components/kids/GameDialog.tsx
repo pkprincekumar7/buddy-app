@@ -84,13 +84,13 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
             strokeLinecap="round"
             strokeLinejoin="round"
             aria-hidden="true"
-            className="h-7 w-7 stroke-kids-discover"
+            className="h-6 w-6 stroke-kids-discover"
           >
             <path d={POWER_ICONS[power.game]} />
           </svg>
           <h2
             id="kids-game-title"
-            className="flex-1 font-orbitron text-2xl font-bold text-kids-text"
+            className="flex-1 font-orbitron text-lg font-bold text-kids-text md:text-xl"
           >
             {power.name}
           </h2>
@@ -99,7 +99,7 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="kids-btn-off flex h-11 w-11 items-center justify-center"
+            className="kids-btn-off flex h-10 w-10 items-center justify-center"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -107,27 +107,37 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
 
         {result && note ? (
           <div className="py-4 text-center" role="status">
-            <p className="font-orbitron text-3xl font-bold text-kids-text">You did it!</p>
+            <p className="font-orbitron text-2xl font-bold text-kids-text">You did it!</p>
             <p className="mt-3 flex items-baseline justify-center gap-2 text-kids-streak">
-              <span className="font-orbitron text-5xl font-bold">{result.secs.toFixed(1)}</span>
-              <span className="text-xl font-bold uppercase tracking-[0.18em]">sec</span>
+              <span className="font-orbitron text-4xl font-bold">{result.secs.toFixed(1)}</span>
+              <span className="text-base font-bold uppercase tracking-[0.18em] md:text-lg">
+                sec
+              </span>
             </p>
-            <p className="mt-2 text-xl font-bold text-kids-teal">{note.text}</p>
-            <p className="mt-3 text-xl font-semibold text-kids-body">
+            <p className="mt-2 text-[15px] font-bold text-kids-teal md:text-lg">{note.text}</p>
+            <p className="mt-3 text-[15px] font-semibold text-kids-body md:text-lg">
               {winLine(power.game, result.secs)}
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <button type="button" onClick={again} className="kids-btn h-14 px-8 text-lg">
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={again}
+                className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
+              >
                 Play again
               </button>
-              <button type="button" onClick={onClose} className="kids-btn-off h-14 px-8 text-lg">
+              <button
+                type="button"
+                onClick={onClose}
+                className="kids-btn-off h-11 px-6 text-sm md:h-12 md:text-base"
+              >
                 Done
               </button>
             </div>
           </div>
         ) : (
           <>
-            <p className="my-4 text-xl font-bold leading-snug text-kids-body">
+            <p className="my-3 text-[15px] font-bold leading-snug text-kids-body md:text-lg">
               {GAME_PLAY[power.game]}
             </p>
             <KidsGame key={round} game={power.game} onWin={win} />

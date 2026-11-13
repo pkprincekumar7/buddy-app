@@ -46,26 +46,26 @@ export default function TransformQuests({
     return (
       <div className="mx-auto max-w-4xl">
         <section className="text-center">
-          <p className="text-base font-bold uppercase tracking-[0.3em] text-kids-area">
+          <p className="text-xs font-bold uppercase tracking-[0.3em] text-kids-area md:text-sm">
             Your quests
           </p>
-          <h1 className="mt-3 font-orbitron text-4xl font-black leading-tight text-kids-text md:text-5xl">
+          <h1 className="mt-3 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-tight text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
             {interest ? 'Add another one' : 'What are you into?'}
           </h1>
-          <p className="mx-auto mt-4 max-w-xl text-2xl font-semibold leading-snug text-kids-body">
+          <p className="mx-auto mt-3 max-w-xl text-[17px] font-semibold leading-snug text-kids-body md:text-xl">
             Pick one. You get quests for it.
           </p>
           {interest && (
             <button
               type="button"
               onClick={() => setAdding(false)}
-              className="kids-btn-off mt-5 h-12 px-6 text-base"
+              className="kids-btn-off mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
             >
               Back to my quests
             </button>
           )}
         </section>
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {others.map((it, i) => (
             <button
               key={it.key}
@@ -77,7 +77,7 @@ export default function TransformQuests({
                 })
               }
               style={tileVars(questColor(i))}
-              className="kids-tile min-h-[110px] text-xl"
+              className="kids-tile min-h-[120px] text-base md:min-h-[136px] md:text-lg"
             >
               {it.label}
             </button>
@@ -90,16 +90,16 @@ export default function TransformQuests({
   return (
     <div className="mx-auto max-w-4xl">
       <section className="text-center">
-        <p className="text-base font-bold uppercase tracking-[0.3em] text-kids-area">
+        <p className="text-xs font-bold uppercase tracking-[0.3em] text-kids-area md:text-sm">
           {interest.label}
         </p>
-        <h1 className="mt-3 font-orbitron text-4xl font-black leading-tight text-kids-text md:text-5xl">
+        <h1 className="mt-3 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-tight text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
           Your quests
         </h1>
       </section>
 
       <div
-        className="mt-6 flex flex-wrap justify-center gap-3"
+        className="mt-5 flex flex-wrap justify-center gap-2.5"
         role="group"
         aria-label="Your interests"
       >
@@ -119,8 +119,8 @@ export default function TransformQuests({
                 on ? 'bg-kids-area text-kids-ink' : 'text-kids-streak',
               )}
             >
-              <span className="font-orbitron text-lg font-black">{it.label}</span>
-              <span className="text-xs font-bold uppercase tracking-[0.15em] opacity-80">
+              <span className="font-orbitron text-sm font-black md:text-base">{it.label}</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.15em] opacity-80 md:text-[13px]">
                 {key === quests.default_interest ? 'From your parent' : 'You added'}
               </span>
             </button>
@@ -130,14 +130,14 @@ export default function TransformQuests({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="kids-chip text-lg font-bold text-kids-text"
+            className="kids-chip text-sm font-bold text-kids-text"
           >
-            <Plus className="h-5 w-5" aria-hidden="true" /> Add another
+            <Plus className="h-4 w-4" aria-hidden="true" /> Add another
           </button>
         )}
       </div>
 
-      <div className="mt-8 grid gap-5">
+      <div className="mt-6 grid gap-4">
         {interest.quests.map((q, i) => {
           const key = questKey(interest.key, i);
           const count = Math.min(quests.logs[key] ?? 0, q.target);
@@ -154,15 +154,17 @@ export default function TransformQuests({
               style={tileVars(questColor(i))}
               className={cn('kids-quest', done && 'kids-quest-done')}
             >
-              <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="font-orbitron text-sm font-black uppercase tracking-[0.2em] text-kids-muted">
+                  <p className="font-orbitron text-[11px] font-black uppercase tracking-[0.2em] text-kids-muted md:text-[13px]">
                     Quest {i + 1}
                   </p>
-                  <h2 className="mt-1 font-orbitron text-2xl font-black text-kids-text">
+                  <h2 className="mt-1 font-orbitron text-lg font-black text-kids-text md:text-xl">
                     {q.title}
                   </h2>
-                  <p className="mt-2 text-xl font-semibold text-kids-body">{q.how}</p>
+                  <p className="mt-2 text-[15px] font-semibold text-kids-body md:text-lg">
+                    {q.how}
+                  </p>
                 </div>
                 <div
                   role="img"
@@ -177,17 +179,20 @@ export default function TransformQuests({
                   ))}
                 </div>
               </div>
-              <div className="mt-4">
+              <div className="mt-3">
                 {done ? (
-                  <p className="flex items-center gap-2 text-xl font-bold text-kids-teal">
-                    <Check className="h-6 w-6" aria-hidden="true" /> Quest done!
+                  <p className="flex items-center gap-2 text-[15px] font-bold text-kids-teal md:text-lg">
+                    <Check className="h-5 w-5" aria-hidden="true" /> Quest done!
                   </p>
                 ) : (
                   <button
                     type="button"
                     disabled={sending || today}
                     onClick={() => void doIt()}
-                    className={cn('h-14 px-8 text-lg', today ? 'kids-btn-off' : 'kids-btn')}
+                    className={cn(
+                      'h-11 px-6 text-sm md:h-12 md:text-base',
+                      today ? 'kids-btn-off' : 'kids-btn',
+                    )}
                   >
                     {today ? 'Done today' : 'I did it today'}
                   </button>

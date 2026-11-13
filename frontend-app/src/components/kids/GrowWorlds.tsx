@@ -31,63 +31,57 @@ const worldColor = (i: number) =>
 /** Grow's circle colour: the web's --kids-area on this tab (.kids-btn, .kids-card, text-kids-area). */
 const AREA = 'grow';
 
-/** The web's classes at phone width, in px (Tailwind text-* sizes and line heights). */
+/** The child view's type scale (matched to the parent pages at phone width), in px. */
 const s = {
-  // text-base font-bold uppercase tracking-[0.3em] text-kids-area
+  // text-xs font-bold uppercase tracking-[0.3em] text-kids-area
   eyebrow: {
     ...font('rajdhani', 700),
-    fontSize: 16,
-    lineHeight: 24,
-    letterSpacing: 16 * 0.3,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 12 * 0.3,
     textTransform: 'uppercase',
     textAlign: 'center',
     color: color(AREA),
   },
-  // font-orbitron text-4xl font-black leading-tight
+  // font-orbitron text-3xl font-black leading-tight
   title: {
     ...font('orbitron', 900),
-    fontSize: 36,
-    lineHeight: 45,
+    fontSize: 30,
+    lineHeight: 30 * 1.25,
     textAlign: 'center',
     color: color('text'),
   },
-  // max-w-xl text-2xl font-semibold leading-snug text-kids-body
+  // max-w-xl text-[17px] font-semibold leading-snug text-kids-body
   lead: {
     ...font('rajdhani', 600),
-    fontSize: 24,
-    lineHeight: 33,
+    fontSize: 17,
+    lineHeight: 17 * 1.375,
     maxWidth: 576,
     alignSelf: 'center',
     textAlign: 'center',
     color: color('body'),
   },
-  // text-sm font-bold uppercase tracking-[0.2em] text-kids-muted
+  // text-[11px] font-bold uppercase tracking-[0.2em] text-kids-muted
   label: {
     ...font('rajdhani', 700),
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 14 * 0.2,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 11 * 0.2,
     textTransform: 'uppercase',
     color: color('muted'),
   },
-  // .kids-btn text-lg / text-xl
+  // .kids-btn text-sm
   btn: {
     ...font('orbitron', 900),
-    fontSize: 18,
-    lineHeight: 28,
+    fontSize: 14,
+    lineHeight: 20,
     color: color('ink'),
   },
-  btnXl: {
-    ...font('orbitron', 900),
-    fontSize: 20,
-    lineHeight: 28,
-    color: color('ink'),
-  },
-  // .kids-btn-off text-lg
+  // .kids-btn-off text-sm
   btnOff: {
     ...font('rajdhani', 700),
-    fontSize: 18,
-    lineHeight: 28,
+    fontSize: 14,
+    lineHeight: 20,
     color: color('text'),
   },
   orbitron: (size: number, lineHeight: number) =>
@@ -106,7 +100,7 @@ const s = {
     } satisfies TextStyle),
 } satisfies Record<string, TextStyle | ((...a: number[]) => TextStyle)>;
 
-/** The web's `grid grid-cols-2 gap-4`: rows of two equal cells, 16px apart. */
+/** The web's `grid grid-cols-2 gap-3`: rows of two equal cells, 12px apart. */
 function TwoColumns<T>({
   items,
   children,
@@ -120,9 +114,9 @@ function TwoColumns<T>({
     else rows[rows.length - 1]?.push(i);
   });
   return (
-    <View className="mt-8 gap-4">
+    <View className="mt-6 gap-3">
       {rows.map(row => (
-        <View key={row[0]} className="flex-row gap-4">
+        <View key={row[0]} className="flex-row gap-3">
           {row.map(i => {
             const item = items[i];
             return item === undefined ? null : (
@@ -185,10 +179,10 @@ export default function GrowWorlds({
     return (
       <View>
         <Text style={s.eyebrow}>Grow</Text>
-        <Text accessibilityRole="header" className="mt-3" style={s.title}>
+        <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
           Pick a <Text style={{ color: color(AREA) }}>world</Text>
         </Text>
-        <Text className="mt-4" style={s.lead}>
+        <Text className="mt-3" style={s.lead}>
           Play three quick games right here.
         </Text>
         <TwoColumns items={worlds.worlds}>
@@ -201,10 +195,10 @@ export default function GrowWorlds({
                 onPress={() => start(i)}
                 accessibilityRole="button"
                 accessibilityLabel={w.name}
-                className="min-h-[170px] flex-1 items-center justify-center gap-3 px-3"
+                className="min-h-[120px] flex-1 items-center justify-center gap-2 px-3"
                 style={({ pressed }) => tile(c, false, pressed)}
               >
-                <Svg width={48} height={48} viewBox="0 0 24 24" fill="none">
+                <Svg width={40} height={40} viewBox="0 0 24 24" fill="none">
                   <Path
                     d={w.icon}
                     stroke={color(c)}
@@ -213,11 +207,11 @@ export default function GrowWorlds({
                     strokeLinejoin="round"
                   />
                 </Svg>
-                <Text style={[s.orbitron(18, 28), { textAlign: 'center' }]}>
+                <Text style={[s.orbitron(16, 22), { textAlign: 'center' }]}>
                   {w.name}
                 </Text>
                 <Text
-                  style={[s.rajdhani(16, 24, 700), { color: color('muted') }]}
+                  style={[s.rajdhani(15, 21, 700), { color: color('muted') }]}
                 >
                   {last ? `Last: ${last.total}` : '3 games'}
                 </Text>
@@ -225,9 +219,9 @@ export default function GrowWorlds({
                   <View
                     accessible
                     accessibilityLabel="Played"
-                    className="absolute right-3 top-3"
+                    className="absolute right-2.5 top-2.5"
                   >
-                    <Check size={24} color={color('teal')} />
+                    <Check size={20} color={color('teal')} />
                   </View>
                 ) : null}
               </Pressable>
@@ -249,22 +243,22 @@ export default function GrowWorlds({
     return (
       <View>
         <Text style={s.eyebrow}>{W.name} report</Text>
-        <Text accessibilityRole="header" className="mt-3" style={s.title}>
+        <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
           World <Text style={{ color: color(AREA) }}>complete!</Text>
         </Text>
         <View
           accessibilityLiveRegion="polite"
-          className="mt-7 items-center"
+          className="mt-6 items-center"
           style={card(AREA)}
         >
-          <Text style={[s.orbitron(60, 60), { color: color('streak') }]}>
+          <Text style={[s.orbitron(48, 48), { color: color('streak') }]}>
             {report.total}
           </Text>
           {band ? (
             <Text
               className="mt-2"
               style={[
-                s.orbitron(20, 28),
+                s.orbitron(16, 22),
                 { color: color(BAND_COLOR[band.color]) },
               ]}
             >
@@ -273,12 +267,12 @@ export default function GrowWorlds({
           ) : null}
           <Text
             className="mt-2"
-            style={[s.rajdhani(18, 28, 700), { textAlign: 'center' }]}
+            style={[s.rajdhani(15, 21, 700), { textAlign: 'center' }]}
           >
             {trendLine(report.total, report.previous)}
           </Text>
         </View>
-        <View className="mt-6 gap-3">
+        <View className="mt-5 gap-2.5">
           {W.games.map((g, j) => {
             const r = results[j];
             const b = bandFor(r?.score ?? 0, worlds.bands);
@@ -286,62 +280,62 @@ export default function GrowWorlds({
             const bar = scoreBar(bc, r?.score ?? 0);
             return (
               <View key={g.title} style={card(AREA)}>
-                <View className="flex-row items-baseline justify-between gap-3">
-                  <Text className="flex-1" style={s.orbitron(18, 28)}>
+                <View className="flex-row items-baseline justify-between gap-2.5">
+                  <Text className="flex-1" style={s.orbitron(16, 22)}>
                     {g.title}
                   </Text>
-                  <Text style={[s.orbitron(24, 32), { color: color(bc) }]}>
+                  <Text style={[s.orbitron(20, 26), { color: color(bc) }]}>
                     {r?.score ?? 0}
                   </Text>
                 </View>
                 <Text
                   className="mt-1"
-                  style={[s.rajdhani(16, 24), { color: color('muted') }]}
+                  style={[s.rajdhani(15, 21), { color: color('muted') }]}
                 >
                   {r?.line}
                 </Text>
-                <View className="mt-3" style={bar.track}>
+                <View className="mt-2.5" style={bar.track}>
                   <View style={bar.fill} />
                 </View>
               </View>
             );
           })}
         </View>
-        <View className="mt-6 gap-3">
+        <View className="mt-5 gap-2.5">
           <View style={card(AREA)}>
             <Text style={s.label}>Strongest</Text>
-            <Text className="mt-1" style={s.orbitron(20, 28)}>
+            <Text className="mt-1" style={s.orbitron(16, 22)}>
               {strongest?.skill}
             </Text>
           </View>
           <View style={card(AREA)}>
             <Text style={s.label}>Keep practising</Text>
-            <Text className="mt-1" style={s.orbitron(20, 28)}>
+            <Text className="mt-1" style={s.orbitron(16, 22)}>
               {weakest?.skill}
             </Text>
-            <Text className="mt-1" style={s.rajdhani(16, 24)}>
+            <Text className="mt-1" style={s.rajdhani(15, 21)}>
               {weakest?.tip}
             </Text>
           </View>
         </View>
-        <View className="mt-6" style={card(AREA)}>
+        <View className="mt-5" style={card(AREA)}>
           <Text style={s.label}>Your mission</Text>
           <Text
             className="mt-1"
-            style={[s.rajdhani(20, 28, 700), { color: color('text') }]}
+            style={[s.rajdhani(16, 22, 700), { color: color('text') }]}
           >
             {W.mission}
           </Text>
-          <Text className="mt-1" style={s.rajdhani(16, 24)}>
+          <Text className="mt-1" style={s.rajdhani(15, 21)}>
             {W.hint}
           </Text>
         </View>
-        <View className="mt-7 flex-row flex-wrap justify-center gap-3">
+        <View className="mt-6 flex-row flex-wrap justify-center gap-2.5">
           <Pressable
             onPress={() => start(world)}
             accessibilityRole="button"
             accessibilityLabel="Play again"
-            className="h-14 items-center justify-center px-8"
+            className="h-11 items-center justify-center px-6"
             style={({ pressed }) => button(AREA, pressed)}
           >
             <Text style={s.btn}>Play again</Text>
@@ -350,7 +344,7 @@ export default function GrowWorlds({
             onPress={back}
             accessibilityRole="button"
             accessibilityLabel="Pick another world"
-            className="h-14 items-center justify-center px-8"
+            className="h-11 items-center justify-center px-6"
             style={({ pressed }) => buttonOff(pressed)}
           >
             <Text style={s.btnOff}>Pick another world</Text>
@@ -391,10 +385,10 @@ export default function GrowWorlds({
           onPress={back}
           accessibilityRole="button"
           accessibilityLabel="Back to worlds"
-          className="h-11 w-11 items-center justify-center"
+          className="h-10 w-10 items-center justify-center"
           style={({ pressed }) => buttonOff(pressed)}
         >
-          <ArrowLeft size={20} color={color('text')} />
+          <ArrowLeft size={18} color={color('text')} />
         </Pressable>
         <View
           accessible
@@ -405,7 +399,7 @@ export default function GrowWorlds({
           {[0, 1, 2].map(j => (
             <View
               key={j}
-              className="h-3 w-10 rounded-full"
+              className="h-2.5 w-8 rounded-full"
               style={{
                 backgroundColor:
                   j < step
@@ -419,13 +413,13 @@ export default function GrowWorlds({
         </View>
       </View>
       <Text
-        className="mt-6"
+        className="mt-5"
         style={[
           s.eyebrow,
           {
-            fontSize: 14,
-            lineHeight: 20,
-            letterSpacing: 14 * 0.25,
+            fontSize: 11,
+            lineHeight: 16,
+            letterSpacing: 11 * 0.25,
             textAlign: 'left',
           },
         ]}
@@ -435,31 +429,31 @@ export default function GrowWorlds({
       <Text
         accessibilityRole="header"
         className="mt-2"
-        style={s.orbitron(30, 36)}
+        style={s.orbitron(24, 30)}
       >
         {G.title}
       </Text>
-      <Text className="mt-3" style={s.rajdhani(20, 28)}>
+      <Text className="mt-2.5" style={s.rajdhani(15, 21)}>
         {G.how}
       </Text>
 
       {phase === 'intro' ? (
-        <View className="mt-6 items-center" style={card(AREA)}>
+        <View className="mt-5 items-center" style={card(AREA)}>
           <Text style={[s.label, { textAlign: 'center' }]}>{G.skill}</Text>
           <Pressable
             onPress={replay}
             accessibilityRole="button"
             accessibilityLabel="Play"
-            className="mt-4 h-16 flex-row items-center justify-center gap-2 px-10"
+            className="mt-3 h-11 flex-row items-center justify-center gap-1.5 px-6"
             style={({ pressed }) => button(AREA, pressed)}
           >
-            <Play size={24} color={color('ink')} />
-            <Text style={s.btnXl}>Play</Text>
+            <Play size={16} color={color('ink')} />
+            <Text style={s.btn}>Play</Text>
           </Pressable>
         </View>
       ) : null}
       {phase === 'play' ? (
-        <View className="mt-6">
+        <View className="mt-5">
           <GrowGame
             key={round}
             type={G.type}
@@ -478,13 +472,13 @@ export default function GrowWorlds({
       {phase === 'result' && result ? (
         <View
           accessibilityLiveRegion="polite"
-          className="mt-6 items-center"
+          className="mt-5 items-center"
           style={card(AREA)}
         >
-          <Text style={s.orbitron(24, 32)}>Well done!</Text>
+          <Text style={s.orbitron(20, 26)}>Well done!</Text>
           <Text
             className="mt-2"
-            style={[s.orbitron(48, 48), { color: color('streak') }]}
+            style={[s.orbitron(36, 36), { color: color('streak') }]}
           >
             {result.score}
           </Text>
@@ -492,7 +486,7 @@ export default function GrowWorlds({
             <Text
               className="mt-1"
               style={[
-                s.orbitron(18, 28),
+                s.orbitron(16, 22),
                 { color: color(BAND_COLOR[resultBand.color]) },
               ]}
             >
@@ -501,11 +495,11 @@ export default function GrowWorlds({
           ) : null}
           <Text
             className="mt-2"
-            style={[s.rajdhani(18, 28), { textAlign: 'center' }]}
+            style={[s.rajdhani(15, 21), { textAlign: 'center' }]}
           >
             {result.line}
           </Text>
-          <View className="mt-5 flex-row flex-wrap justify-center gap-3">
+          <View className="mt-4 flex-row flex-wrap justify-center gap-2.5">
             {step < 2 ? (
               <Pressable
                 onPress={() => {
@@ -514,7 +508,7 @@ export default function GrowWorlds({
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Next game"
-                className="h-14 items-center justify-center px-8"
+                className="h-11 items-center justify-center px-6"
                 style={({ pressed }) => button(AREA, pressed)}
               >
                 <Text style={s.btn}>Next game</Text>
@@ -526,7 +520,7 @@ export default function GrowWorlds({
                 accessibilityRole="button"
                 accessibilityLabel={saving ? 'Saving' : 'Finish world'}
                 accessibilityState={{ disabled: saving }}
-                className="h-14 items-center justify-center px-8"
+                className="h-11 items-center justify-center px-6"
                 style={({ pressed }) => [
                   button(AREA, pressed),
                   saving && { opacity: 0.5 },
@@ -539,7 +533,7 @@ export default function GrowWorlds({
               onPress={replay}
               accessibilityRole="button"
               accessibilityLabel="Try again"
-              className="h-14 items-center justify-center px-8"
+              className="h-11 items-center justify-center px-6"
               style={({ pressed }) => buttonOff(pressed)}
             >
               <Text style={s.btnOff}>Try again</Text>

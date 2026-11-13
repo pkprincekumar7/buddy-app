@@ -40,13 +40,13 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
   return (
     <div className="mx-auto max-w-4xl">
       <section className="text-center">
-        <p className="text-base font-bold uppercase tracking-[0.3em] text-kids-area">
+        <p className="text-xs font-bold uppercase tracking-[0.3em] text-kids-area md:text-sm">
           Daily check-in
         </p>
-        <h1 className="mt-3 font-orbitron text-4xl font-black leading-tight text-kids-text md:text-5xl">
+        <h1 className="mt-3 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-tight text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
           How do you feel today?
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-2xl font-semibold leading-snug text-kids-body">
+        <p className="mx-auto mt-3 max-w-xl text-[17px] font-semibold leading-snug text-kids-body md:text-xl">
           There is no wrong answer.
         </p>
       </section>
@@ -54,7 +54,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
       <div
         role="radiogroup"
         aria-label="How you feel"
-        className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5"
+        className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
       >
         {MOODS.map((m) => {
           const on = m.key === mood;
@@ -69,9 +69,12 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
                 setJustSaved(false);
               }}
               style={tileVars(m.color)}
-              className={cn('kids-tile min-h-[170px] text-lg', on && 'kids-tile-on')}
+              className={cn(
+                'kids-tile min-h-[120px] text-base md:min-h-[136px] md:text-lg',
+                on && 'kids-tile-on',
+              )}
             >
-              <MoodFace mood={m.key} className="h-16 w-16" />
+              <MoodFace mood={m.key} className="h-10 w-10 md:h-12 md:w-12" />
               {m.label}
             </button>
           );
@@ -79,9 +82,13 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
       </div>
 
       {picked && (
-        <div className="kids-card mt-7">
-          <p className="font-orbitron text-2xl font-black text-kids-text">Want to tell more?</p>
-          <p className="mt-1 text-lg font-semibold text-kids-muted">You can skip this.</p>
+        <div className="kids-card mt-6">
+          <p className="font-orbitron text-lg font-black text-kids-text md:text-xl">
+            Want to tell more?
+          </p>
+          <p className="mt-1 text-[15px] font-semibold text-kids-muted md:text-lg">
+            You can skip this.
+          </p>
           <label htmlFor="kids-mood-note" className="sr-only">
             What happened today?
           </label>
@@ -95,12 +102,15 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
             }}
             rows={3}
             placeholder="What happened today?"
-            className="kids-input mt-4 resize-y"
+            className="kids-input mt-3 resize-y"
           />
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <p
               role="status"
-              className={cn('text-xl font-bold', justSaved ? 'text-kids-teal' : 'text-kids-body')}
+              className={cn(
+                'text-[15px] font-bold md:text-lg',
+                justSaved ? 'text-kids-teal' : 'text-kids-body',
+              )}
             >
               {justSaved
                 ? 'Saved. Thanks for telling us.'
@@ -110,7 +120,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
               type="button"
               onClick={() => void save()}
               disabled={sending}
-              className="kids-btn h-16 px-10 text-lg"
+              className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
             >
               {sending ? 'Saving…' : 'Save'}
             </button>
@@ -118,7 +128,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
         </div>
       )}
 
-      <div className="mt-7 flex items-center justify-center gap-3">
+      <div className="mt-6 flex items-center justify-center gap-2.5">
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -126,11 +136,13 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden="true"
-          className="h-7 w-7 stroke-kids-transform"
+          className="h-[22px] w-[22px] stroke-kids-transform"
         >
           <path d={FLAME_PATH} />
         </svg>
-        <p className="font-orbitron text-xl font-black text-kids-streak">{streakLine(streak)}</p>
+        <p className="font-orbitron text-base font-black text-kids-streak md:text-lg">
+          {streakLine(streak)}
+        </p>
       </div>
     </div>
   );

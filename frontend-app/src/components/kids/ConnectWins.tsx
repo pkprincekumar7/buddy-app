@@ -51,34 +51,34 @@ export default function ConnectWins({
   return (
     <View>
       <Text
-        className="text-center text-base uppercase"
+        className="text-center text-xs uppercase"
         style={[
           text.label,
-          { color: color('connect'), letterSpacing: 16 * 0.3 },
+          { color: color('connect'), letterSpacing: 12 * 0.3 },
         ]}
       >
         Connect
       </Text>
       <Text
         accessibilityRole="header"
-        className="mt-3 text-center text-4xl"
-        style={[text.heading, { lineHeight: 36 * 1.25 }]}
+        className="mt-2.5 text-center text-3xl"
+        style={[text.heading, { lineHeight: 30 * 1.25 }]}
       >
         Your wins
       </Text>
       <Text
-        className="mt-4 text-center text-2xl"
-        style={[text.body, { lineHeight: 24 * 1.375 }]}
+        className="mt-3 text-center text-[17px]"
+        style={[text.body, { lineHeight: 17 * 1.375 }]}
       >
         Pick a win. Show it to your grown-up.
       </Text>
 
       {!win ? (
-        <View className="mt-8" style={card('connect')}>
-          <Text className="text-center text-2xl" style={text.heading}>
+        <View className="mt-6" style={card('connect')}>
+          <Text className="text-center text-base" style={text.heading}>
             No wins yet
           </Text>
-          <Text className="mt-2 text-center text-xl" style={text.body}>
+          <Text className="mt-2 text-center text-[15px]" style={text.body}>
             Open your powers, finish a quest or play a world. Your wins show up
             here.
           </Text>
@@ -88,7 +88,7 @@ export default function ConnectWins({
           <View
             accessibilityRole="radiogroup"
             accessibilityLabel="Your wins"
-            className="mt-8 gap-3"
+            className="mt-6 gap-2.5"
           >
             {wins.map((w, i) => {
               const on = i === picked;
@@ -100,18 +100,18 @@ export default function ConnectWins({
                   accessibilityRole="radio"
                   accessibilityLabel={w.title}
                   accessibilityState={{ checked: on }}
-                  className="flex-row items-center gap-3 px-5 py-4"
+                  className="flex-row items-center gap-2.5 px-4 py-3"
                   style={({ pressed }) => tile(c, on, pressed)}
                 >
                   <View
-                    className="h-3 w-3 rounded-full"
+                    className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: color(c) }}
                   />
-                  <Text className="flex-1 text-base" style={text.heading}>
+                  <Text className="flex-1 text-sm" style={text.heading}>
                     {w.title}
                   </Text>
                   {activity.shown?.[w.key] ? (
-                    <Check size={20} color={color('teal')} />
+                    <Check size={18} color={color('teal')} />
                   ) : null}
                 </Pressable>
               );
@@ -120,34 +120,34 @@ export default function ConnectWins({
 
           <View
             accessibilityLiveRegion="polite"
-            className="mt-6 items-center"
+            className="mt-5 items-center"
             style={card('connect')}
           >
             <View className="flex-row items-center gap-2">
-              <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Svg width={16} height={16} viewBox="0 0 24 24">
                 <Path d={STAR_PATH} fill={color('streak')} />
               </Svg>
               <Text
-                className="text-sm uppercase"
+                className="text-[11px] uppercase"
                 style={[
                   text.label,
-                  { color: color('muted'), letterSpacing: 14 * 0.3 },
+                  { color: color('muted'), letterSpacing: 11 * 0.3 },
                 ]}
               >
                 Superpower
               </Text>
             </View>
             <Text
-              className="mt-5 text-center text-3xl"
-              style={[text.heading, { lineHeight: 30 * 1.25 }]}
+              className="mt-4 text-center text-xl"
+              style={[text.heading, { lineHeight: 20 * 1.25 }]}
             >
               {win.title}
             </Text>
-            <View className="mt-6 flex-row items-center gap-3">
+            <View className="mt-5 flex-row items-center gap-2.5">
               <View
                 style={[
                   avatar('connect'),
-                  { position: 'relative', width: 56, height: 56 },
+                  { position: 'relative', width: 48, height: 48 },
                 ]}
               >
                 {avatarUrl ? (
@@ -157,13 +157,13 @@ export default function ConnectWins({
                     className="h-full w-full"
                   />
                 ) : (
-                  <Text className="text-2xl" style={text.heading}>
+                  <Text className="text-xl" style={text.heading}>
                     {getInitials(childName).charAt(0)}
                   </Text>
                 )}
               </View>
               <Text
-                className="text-xl"
+                className="text-base"
                 style={[text.label, { color: color('body') }]}
               >
                 {firstName}
@@ -180,7 +180,7 @@ export default function ConnectWins({
               shown ? 'Your grown-up can see it' : 'Show my grown-up'
             }
             accessibilityState={{ disabled: sending || shown }}
-            className="mt-5 h-16 items-center justify-center"
+            className="mt-4 h-11 items-center justify-center px-6"
             style={({ pressed }) =>
               shown
                 ? buttonOff(false)
@@ -188,7 +188,7 @@ export default function ConnectWins({
             }
           >
             <Text
-              className="text-lg"
+              className="text-sm"
               style={
                 shown ? text.label : [text.heading, { color: color('ink') }]
               }
@@ -196,7 +196,7 @@ export default function ConnectWins({
               {shown ? 'Your grown-up can see it' : 'Show my grown-up'}
             </Text>
           </Pressable>
-          <Text className="mt-3 text-center text-base" style={text.muted}>
+          <Text className="mt-2.5 text-center text-[15px]" style={text.muted}>
             Only your first name goes on the card.
           </Text>
         </>

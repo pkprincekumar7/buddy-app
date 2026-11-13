@@ -20,5 +20,5 @@ export const POWER_SLOTS: readonly { x: number; y: number }[] = Array.from(
 
 /** A power's bubble size, in percent of the orbit's box: bigger for a higher level. */
 export function powerSize(level: number): number {
-  return 15 + level * 1.6;
+  return 13 + level * 1.4;
 }

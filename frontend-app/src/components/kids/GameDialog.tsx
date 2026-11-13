@@ -32,8 +32,8 @@ const DIALOG = {
   padding: 20,
 } as const;
 /** Orbitron bold (the dialog's headings and the time; web font-bold, not black). */
-/** The how-to-play line: text-xl font-bold leading-snug text-kids-body. */
-const PLAY_LINE = { color: rgb('kids-body'), lineHeight: 20 * 1.375 } as const;
+/** The how-to-play line: text-[15px] font-bold leading-snug text-kids-body. */
+const PLAY_LINE = { color: rgb('kids-body'), lineHeight: 15 * 1.375 } as const;
 const BOLD = { ...font('orbitron', 700), color: rgb('kids-text') } as const;
 
 interface GameDialogProps {
@@ -108,8 +108,8 @@ export default function GameDialog({
           style={[game.dialog, DIALOG]}
         >
           <ScrollView bounces={false}>
-            <View className="flex-row items-center gap-3">
-              <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+            <View className="flex-row items-center gap-2.5">
+              <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
                 <Path
                   d={POWER_ICONS[power.game]}
                   stroke={color('discover')}
@@ -120,7 +120,7 @@ export default function GameDialog({
               </Svg>
               <Text
                 accessibilityRole="header"
-                className="flex-1 text-2xl"
+                className="flex-1 text-lg"
                 style={BOLD}
               >
                 {power.name}
@@ -129,57 +129,60 @@ export default function GameDialog({
                 onPress={onClose}
                 accessibilityRole="button"
                 accessibilityLabel="Close"
-                className="h-11 w-11 items-center justify-center"
+                className="h-10 w-10 items-center justify-center"
                 style={({ pressed }) => buttonOff(pressed)}
               >
-                <X size={20} color={color('text')} />
+                <X size={18} color={color('text')} />
               </Pressable>
             </View>
 
             {result && note ? (
               <View
                 accessibilityLiveRegion="polite"
-                className="items-center py-4"
+                className="items-center py-3"
               >
-                <Text className="text-3xl" style={BOLD}>
+                <Text className="text-2xl" style={BOLD}>
                   You did it!
                 </Text>
-                <View className="mt-3 flex-row items-baseline gap-2">
+                <View className="mt-2.5 flex-row items-baseline gap-1.5">
                   <Text
-                    className="text-5xl"
+                    className="text-4xl"
                     style={[BOLD, { color: color('streak') }]}
                   >
                     {result.secs.toFixed(1)}
                   </Text>
                   <Text
-                    className="text-xl uppercase"
+                    className="text-base uppercase"
                     style={[
                       text.label,
-                      { color: color('streak'), letterSpacing: 20 * 0.18 },
+                      { color: color('streak'), letterSpacing: 16 * 0.18 },
                     ]}
                   >
                     sec
                   </Text>
                 </View>
                 <Text
-                  className="mt-2 text-xl"
+                  className="mt-2 text-[15px]"
                   style={[text.label, { color: color('teal') }]}
                 >
                   {note.text}
                 </Text>
-                <Text className="mt-3 text-center text-xl" style={text.body}>
+                <Text
+                  className="mt-2.5 text-center text-[15px]"
+                  style={text.body}
+                >
                   {winLine(power.game, result.secs)}
                 </Text>
-                <View className="mt-6 flex-row flex-wrap justify-center gap-3">
+                <View className="mt-5 flex-row flex-wrap justify-center gap-2.5">
                   <Pressable
                     onPress={again}
                     accessibilityRole="button"
                     accessibilityLabel="Play again"
-                    className="h-14 items-center justify-center px-8"
+                    className="h-11 items-center justify-center px-6"
                     style={({ pressed }) => button('discover', pressed)}
                   >
                     <Text
-                      className="text-lg"
+                      className="text-sm"
                       style={[text.heading, { color: color('ink') }]}
                     >
                       Play again
@@ -189,11 +192,11 @@ export default function GameDialog({
                     onPress={onClose}
                     accessibilityRole="button"
                     accessibilityLabel="Done"
-                    className="h-14 items-center justify-center px-8"
+                    className="h-11 items-center justify-center px-6"
                     style={({ pressed }) => buttonOff(pressed)}
                   >
                     {/* `.kids-btn-off`: Rajdhani bold. */}
-                    <Text className="text-lg" style={text.label}>
+                    <Text className="text-sm" style={text.label}>
                       Done
                     </Text>
                   </Pressable>
@@ -201,7 +204,10 @@ export default function GameDialog({
               </View>
             ) : (
               <>
-                <Text className="my-4 text-xl" style={[text.label, PLAY_LINE]}>
+                <Text
+                  className="my-3 text-[15px]"
+                  style={[text.label, PLAY_LINE]}
+                >
                   {GAME_PLAY[power.game]}
                 </Text>
                 <KidsGame key={round} game={power.game} onWin={win} />

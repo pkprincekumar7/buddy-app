@@ -28,105 +28,105 @@ const questColor = (i: number) =>
 /** Transform's circle colour: the web's --kids-area on this tab (.kids-btn, .kids-chip, text-kids-area). */
 const AREA = 'transform';
 
-/** The web's classes at phone width, in px (Tailwind text-* sizes and line heights). */
+/** The child view's type scale (matched to the parent pages at phone width), in px. */
 const s = {
-  // text-base font-bold uppercase tracking-[0.3em] text-kids-area
+  // text-xs font-bold uppercase tracking-[0.3em] text-kids-area
   eyebrow: {
     ...font('rajdhani', 700),
-    fontSize: 16,
-    lineHeight: 24,
-    letterSpacing: 16 * 0.3,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 12 * 0.3,
     textTransform: 'uppercase',
     textAlign: 'center',
     color: color(AREA),
   },
-  // font-orbitron text-4xl font-black leading-tight
+  // font-orbitron text-3xl font-black leading-tight
   title: {
     ...font('orbitron', 900),
-    fontSize: 36,
-    lineHeight: 45,
+    fontSize: 30,
+    lineHeight: 30 * 1.25,
     textAlign: 'center',
     color: color('text'),
   },
-  // max-w-xl text-2xl font-semibold leading-snug text-kids-body
+  // max-w-xl text-[17px] font-semibold leading-snug text-kids-body
   lead: {
     ...font('rajdhani', 600),
-    fontSize: 24,
-    lineHeight: 33,
+    fontSize: 17,
+    lineHeight: 17 * 1.375,
     maxWidth: 576,
     alignSelf: 'center',
     textAlign: 'center',
     color: color('body'),
   },
-  // .kids-tile text-xl
+  // .kids-tile text-base
   tile: {
     ...font('orbitron', 900),
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 16,
+    lineHeight: 22,
     textAlign: 'center',
     color: color('text'),
   },
-  // An interest chip: font-orbitron text-lg font-black, then text-xs font-bold
+  // An interest chip: font-orbitron text-sm font-black, then text-[11px] font-bold
   // uppercase tracking-[0.15em] opacity-80.
-  chipLabel: { ...font('orbitron', 900), fontSize: 18, lineHeight: 28 },
+  chipLabel: { ...font('orbitron', 900), fontSize: 14, lineHeight: 20 },
   chipFrom: {
     ...font('rajdhani', 700),
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 12 * 0.15,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 11 * 0.15,
     textTransform: 'uppercase',
     opacity: 0.8,
   },
-  // .kids-chip text-lg font-bold text-kids-text
+  // .kids-chip text-sm font-bold text-kids-text
   chipAdd: {
     ...font('rajdhani', 700),
-    fontSize: 18,
-    lineHeight: 28,
-    color: color('text'),
-  },
-  // font-orbitron text-sm font-black uppercase tracking-[0.2em] text-kids-muted
-  questNo: {
-    ...font('orbitron', 900),
     fontSize: 14,
     lineHeight: 20,
-    letterSpacing: 14 * 0.2,
+    color: color('text'),
+  },
+  // font-orbitron text-[11px] font-black uppercase tracking-[0.2em] text-kids-muted
+  questNo: {
+    ...font('orbitron', 900),
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 11 * 0.2,
     textTransform: 'uppercase',
     color: color('muted'),
   },
   questTitle: {
     ...font('orbitron', 900),
-    fontSize: 24,
-    lineHeight: 32,
+    fontSize: 18,
+    lineHeight: 24,
     color: color('text'),
   },
   questHow: {
     ...font('rajdhani', 600),
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 15,
+    lineHeight: 21,
     color: color('body'),
   },
   questDone: {
     ...font('rajdhani', 700),
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 15,
+    lineHeight: 21,
     color: color('teal'),
   },
-  // .kids-btn / .kids-btn-off text-lg
+  // .kids-btn / .kids-btn-off text-sm
   btn: {
     ...font('orbitron', 900),
-    fontSize: 18,
-    lineHeight: 28,
+    fontSize: 14,
+    lineHeight: 20,
     color: color('ink'),
   },
   btnOff: {
     ...font('rajdhani', 700),
-    fontSize: 18,
-    lineHeight: 28,
+    fontSize: 14,
+    lineHeight: 20,
     color: color('text'),
   },
 } satisfies Record<string, TextStyle>;
 
-/** The web's `grid grid-cols-2 gap-4`: rows of two equal cells, 16px apart. */
+/** The web's `grid grid-cols-2 gap-3`: rows of two equal cells, 12px apart. */
 function TwoColumns<T>({
   items,
   children,
@@ -140,9 +140,9 @@ function TwoColumns<T>({
     else rows[rows.length - 1]?.push(i);
   });
   return (
-    <View className="mt-8 gap-4">
+    <View className="mt-6 gap-3">
       {rows.map(row => (
-        <View key={row[0]} className="flex-row gap-4">
+        <View key={row[0]} className="flex-row gap-3">
           {row.map(i => {
             const item = items[i];
             return item === undefined ? null : (
@@ -196,10 +196,10 @@ export default function TransformQuests({
     return (
       <View>
         <Text style={s.eyebrow}>Your quests</Text>
-        <Text accessibilityRole="header" className="mt-3" style={s.title}>
+        <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
           {interest ? 'Add another one' : 'What are you into?'}
         </Text>
-        <Text className="mt-4" style={s.lead}>
+        <Text className="mt-3" style={s.lead}>
           Pick one. You get quests for it.
         </Text>
         {interest ? (
@@ -207,12 +207,10 @@ export default function TransformQuests({
             onPress={() => setAdding(false)}
             accessibilityRole="button"
             accessibilityLabel="Back to my quests"
-            className="mt-5 h-12 items-center justify-center self-center px-6"
+            className="mt-4 h-11 items-center justify-center self-center px-6"
             style={({ pressed }) => buttonOff(pressed)}
           >
-            <Text style={[s.btnOff, { fontSize: 16, lineHeight: 24 }]}>
-              Back to my quests
-            </Text>
+            <Text style={s.btnOff}>Back to my quests</Text>
           </Pressable>
         ) : null}
         <TwoColumns items={others}>
@@ -227,7 +225,7 @@ export default function TransformQuests({
               accessibilityRole="button"
               accessibilityLabel={it.label}
               accessibilityState={{ disabled: sending }}
-              className="min-h-[110px] flex-1 items-center justify-center"
+              className="min-h-[120px] flex-1 items-center justify-center"
               style={({ pressed }) => tile(questColor(i), false, pressed)}
             >
               <Text style={s.tile}>{it.label}</Text>
@@ -241,13 +239,13 @@ export default function TransformQuests({
   return (
     <View>
       <Text style={s.eyebrow}>{interest.label}</Text>
-      <Text accessibilityRole="header" className="mt-3" style={s.title}>
+      <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
         Your quests
       </Text>
 
       <View
         accessibilityLabel="Your interests"
-        className="mt-6 flex-row flex-wrap justify-center gap-3"
+        className="mt-5 flex-row flex-wrap justify-center gap-2.5"
       >
         {mine.map(key => {
           const it = quests.catalog.find(c => c.key === key);
@@ -262,7 +260,7 @@ export default function TransformQuests({
               accessibilityRole="button"
               accessibilityLabel={it.label}
               accessibilityState={{ selected: on, disabled: sending || on }}
-              className="items-start px-4 py-2.5"
+              className="items-start px-3.5 py-2"
               style={({ pressed }) => [
                 chip(AREA),
                 on && { backgroundColor: color(AREA) },
@@ -283,16 +281,16 @@ export default function TransformQuests({
             onPress={() => setAdding(true)}
             accessibilityRole="button"
             accessibilityLabel="Add another"
-            className="flex-row items-center gap-2.5 px-4 py-2.5"
+            className="flex-row items-center gap-2 px-3.5 py-2"
             style={({ pressed }) => [chip(AREA), pressScale(pressed)]}
           >
-            <Plus size={20} color={color('text')} />
+            <Plus size={16} color={color('text')} />
             <Text style={s.chipAdd}>Add another</Text>
           </Pressable>
         ) : null}
       </View>
 
-      <View className="mt-8 gap-5">
+      <View className="mt-6 gap-4">
         {interest.quests.map((q, i) => {
           const key = questKey(interest.key, i);
           const count = Math.min(quests.logs[key] ?? 0, q.target);
@@ -307,7 +305,7 @@ export default function TransformQuests({
           return (
             <View key={key} style={questCard(c, done)}>
               {/* Web: the text grows on the left, the progress dots sit top-right. */}
-              <View className="flex-row items-start justify-between gap-4">
+              <View className="flex-row items-start justify-between gap-3">
                 <View className="min-w-0 flex-1">
                   <Text style={s.questNo}>Quest {i + 1}</Text>
                   <Text
@@ -328,20 +326,14 @@ export default function TransformQuests({
                   className="flex-row flex-wrap gap-1.5"
                 >
                   {Array.from({ length: q.target }, (_, n) => (
-                    <View
-                      key={n}
-                      style={[
-                        questDot(c, n < count),
-                        { width: 20, height: 20, borderRadius: 10 },
-                      ]}
-                    />
+                    <View key={n} style={questDot(c, n < count)} />
                   ))}
                 </View>
               </View>
-              <View className="mt-4">
+              <View className="mt-3">
                 {done ? (
                   <View className="flex-row items-center gap-2">
-                    <Check size={24} color={color('teal')} />
+                    <Check size={20} color={color('teal')} />
                     <Text style={s.questDone}>Quest done!</Text>
                   </View>
                 ) : (
@@ -351,7 +343,7 @@ export default function TransformQuests({
                     accessibilityRole="button"
                     accessibilityLabel={today ? 'Done today' : 'I did it today'}
                     accessibilityState={{ disabled: sending || today }}
-                    className="h-14 items-center justify-center self-start px-8"
+                    className="h-11 items-center justify-center self-start px-6"
                     style={({ pressed }) =>
                       today
                         ? buttonOff(false)

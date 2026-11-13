@@ -44,8 +44,8 @@ export function card(c: KidsColor): ViewStyle {
     backgroundColor: fill(c, 0.12),
     borderWidth: 3,
     borderColor: fill(c, 0.45),
-    borderRadius: 28,
-    padding: 24,
+    borderRadius: 24,
+    padding: 20,
   };
 }
 
@@ -65,7 +65,7 @@ export function tile(c: KidsColor, on: boolean, pressed = false): ViewStyle {
     backgroundColor: on ? fill(c, 0.22) : rgb('kids-off', 0.6),
     borderWidth: 3,
     borderColor: on ? fill(c) : fill(c, 0.3),
-    borderRadius: 26,
+    borderRadius: 22,
     boxShadow: `0 7px 0 ${shade(c)}`,
     transform: [{ translateY: pressed ? 6 : 0 }],
   };
@@ -75,15 +75,15 @@ export function tile(c: KidsColor, on: boolean, pressed = false): ViewStyle {
 export function input(c: KidsColor, focused: boolean): TextStyle {
   return {
     ...font('rajdhani', 600),
-    fontSize: 20,
+    fontSize: 16,
     color: rgb('kids-text'),
     backgroundColor: rgb('kids-bg', 0.7),
     borderWidth: 3,
     borderColor: focused ? fill(c) : fill(c, 0.35),
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 110,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 90,
     textAlignVertical: 'top',
   };
 }
@@ -178,8 +178,8 @@ export const discoverPage = {
   } satisfies ViewStyle,
   eyebrowText: {
     ...font('rajdhani', 700),
-    fontSize: 11,
-    letterSpacing: 11 * 0.06,
+    fontSize: 12,
+    letterSpacing: 12 * 0.06,
     textTransform: 'uppercase',
     color: rgb('kids-streak'),
   } satisfies TextStyle,
@@ -192,16 +192,16 @@ export const discoverPage = {
   } satisfies ViewStyle,
   title: {
     ...font('orbitron', 700),
-    fontSize: 32,
-    lineHeight: 36,
-    letterSpacing: 32 * 0.02,
+    fontSize: 28,
+    lineHeight: 28 * 1.08,
+    letterSpacing: 28 * 0.02,
     textAlign: 'center',
     color: rgb('kids-text'),
   } satisfies TextStyle,
   line: {
     ...font('rajdhani', 600),
-    fontSize: 19,
-    lineHeight: 26,
+    fontSize: 17,
+    lineHeight: 17 * 1.375,
     textAlign: 'center',
     color: rgb('kids-subtle'),
   } satisfies TextStyle,
@@ -246,8 +246,8 @@ export const discoverPage = {
   } satisfies ViewStyle,
   nameText: {
     ...font('orbitron', 600),
-    fontSize: 12,
-    letterSpacing: 12 * 0.18,
+    fontSize: 14,
+    letterSpacing: 14 * 0.18,
     textTransform: 'uppercase',
     color: rgb('kids-text'),
   } satisfies TextStyle,
@@ -272,8 +272,8 @@ export const discoverPage = {
   } satisfies ViewStyle,
   countText: {
     ...font('orbitron', 700),
-    fontSize: 15,
-    letterSpacing: 15 * 0.08,
+    fontSize: 14,
+    letterSpacing: 14 * 0.08,
     color: rgb('kids-text'),
   } satisfies TextStyle,
 };
@@ -294,8 +294,8 @@ export function spoke(length: number, on: boolean): ViewStyle {
 /** `.kids-quest` / `-done`: a quest's card in `c`, teal once it's done. */
 export function questCard(c: KidsColor, done: boolean): ViewStyle {
   return {
-    borderRadius: 26,
-    padding: 20,
+    borderRadius: 22,
+    padding: 16,
     borderWidth: 3,
     backgroundColor: done ? fill('teal', 0.12) : fill(c, 0.1),
     borderColor: done ? fill('teal') : fill(c, 0.5),
@@ -305,9 +305,9 @@ export function questCard(c: KidsColor, done: boolean): ViewStyle {
 /** `.kids-quest-dot` / `-on`: one time a quest is to be done. */
 export function questDot(c: KidsColor, on: boolean): ViewStyle {
   return {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: on ? fill(c) : fill(c, 0.4),
     backgroundColor: on ? fill(c) : undefined,
@@ -662,7 +662,7 @@ export const color = (
     | 'off',
 ) => rgb(`kids-${c}`);
 
-/** Text styles (web Orbitron/Rajdhani with the prototype's sizes). */
+/** Text styles (web Orbitron/Rajdhani; sizes are set where used, on the parent pages' scale). */
 export const text = {
   heading: {
     ...font('orbitron', 900),

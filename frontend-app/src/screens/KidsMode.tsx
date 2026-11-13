@@ -128,26 +128,29 @@ export default function KidsMode() {
           />
           <Animated.View
             key={area}
-            className="px-4 pb-16 pt-8"
+            className="px-4 pb-14 pt-6"
             style={enter('up', 0, reduced)}
           >
             {!isOpen(area) ? (
               <View className="items-center" style={card(area)}>
-                <Lock size={40} color={color(area)} />
+                <Lock size={32} color={color(area)} />
                 <Text
                   accessibilityRole="header"
-                  className="mt-3 text-center text-3xl"
+                  className="mt-2.5 text-center text-xl"
                   style={text.heading}
                 >
                   {AREA_NAMES[area]} opens later
                 </Text>
-                <Text className="mt-3 text-center text-xl" style={text.body}>
+                <Text
+                  className="mt-2.5 text-center text-[15px]"
+                  style={text.body}
+                >
                   Keep going!
                 </Text>
               </View>
             ) : kid.isLoadingError || !kid.activity ? (
               <View className="items-center" style={card(area)}>
-                <Text className="text-center text-xl" style={text.body}>
+                <Text className="text-center text-[15px]" style={text.body}>
                   We couldn&apos;t load this.
                 </Text>
                 <Pressable
@@ -155,11 +158,11 @@ export default function KidsMode() {
                   disabled={kid.isFetching}
                   accessibilityRole="button"
                   accessibilityLabel="Try again"
-                  className="mt-5 h-14 items-center justify-center px-8"
+                  className="mt-4 h-11 items-center justify-center px-6"
                   style={({ pressed }) => button(area, pressed)}
                 >
                   <Text
-                    className="text-lg"
+                    className="text-sm"
                     style={[text.heading, { color: color('ink') }]}
                   >
                     {kid.isFetching ? 'Trying…' : 'Try again'}
@@ -179,7 +182,7 @@ export default function KidsMode() {
                 />
               ) : (
                 <View className="items-center" style={card(area)}>
-                  <Text className="text-center text-xl" style={text.body}>
+                  <Text className="text-center text-[15px]" style={text.body}>
                     {powers.notReady
                       ? 'Your powers are still on their way.'
                       : 'We couldn’t load your powers.'}
@@ -189,11 +192,11 @@ export default function KidsMode() {
                     disabled={powers.isFetching}
                     accessibilityRole="button"
                     accessibilityLabel="Look again"
-                    className="mt-5 h-14 items-center justify-center px-8"
+                    className="mt-4 h-11 items-center justify-center px-6"
                     style={({ pressed }) => button(area, pressed)}
                   >
                     <Text
-                      className="text-lg"
+                      className="text-sm"
                       style={[text.heading, { color: color('ink') }]}
                     >
                       {powers.isFetching ? 'Looking…' : 'Look again'}
@@ -213,7 +216,7 @@ export default function KidsMode() {
                 />
               ) : (
                 <View className="items-center" style={card(area)}>
-                  <Text className="text-center text-xl" style={text.body}>
+                  <Text className="text-center text-[15px]" style={text.body}>
                     We couldn’t load the worlds.
                   </Text>
                   <Pressable
@@ -221,11 +224,11 @@ export default function KidsMode() {
                     disabled={growWorlds.isFetching}
                     accessibilityRole="button"
                     accessibilityLabel="Try again"
-                    className="mt-5 h-14 items-center justify-center px-8"
+                    className="mt-4 h-11 items-center justify-center px-6"
                     style={({ pressed }) => button(area, pressed)}
                   >
                     <Text
-                      className="text-lg"
+                      className="text-sm"
                       style={[text.heading, { color: color('ink') }]}
                     >
                       {growWorlds.isFetching ? 'Trying…' : 'Try again'}
@@ -246,7 +249,7 @@ export default function KidsMode() {
                 />
               ) : (
                 <View className="items-center" style={card(area)}>
-                  <Text className="text-center text-xl" style={text.body}>
+                  <Text className="text-center text-[15px]" style={text.body}>
                     We couldn’t load your quests.
                   </Text>
                   <Pressable
@@ -254,11 +257,11 @@ export default function KidsMode() {
                     disabled={quests.isFetching}
                     accessibilityRole="button"
                     accessibilityLabel="Try again"
-                    className="mt-5 h-14 items-center justify-center px-8"
+                    className="mt-4 h-11 items-center justify-center px-6"
                     style={({ pressed }) => button(area, pressed)}
                   >
                     <Text
-                      className="text-lg"
+                      className="text-sm"
                       style={[text.heading, { color: color('ink') }]}
                     >
                       {quests.isFetching ? 'Trying…' : 'Try again'}

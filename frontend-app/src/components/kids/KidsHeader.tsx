@@ -40,36 +40,36 @@ export default function KidsHeader({
   const ink = readAloud ? color('ink') : color('text');
   return (
     <View
-      className="flex-row flex-wrap items-center justify-between gap-3 px-4 py-4"
+      className="flex-row flex-wrap items-center justify-between gap-2.5 px-4 py-2.5"
       style={BAR}
     >
-      <View className="flex-row items-center gap-3">
+      <View className="flex-row items-center gap-2.5">
         <Pressable
           onPress={onHome}
           accessibilityRole="button"
           accessibilityLabel="Back to home"
-          className="h-14 flex-row items-center justify-center gap-2 pl-4 pr-5"
+          className="h-10 flex-row items-center justify-center gap-1.5 pl-3 pr-4"
           style={({ pressed }) => [buttonOff(pressed), pressed && PRESSED]}
         >
-          <House size={24} color={color('text')} />
-          <Text className="text-xl" style={text.label}>
+          <House size={18} color={color('text')} />
+          <Text className="text-sm" style={text.label}>
             Home
           </Text>
         </Pressable>
         <View
-          className="flex-row items-center gap-2.5 px-4 py-2.5"
+          className="flex-row items-center gap-2 px-3 py-1.5"
           style={chip(area)}
         >
           <View
-            className="h-3 w-3 rounded-full"
+            className="h-2.5 w-2.5 rounded-full"
             style={{
               backgroundColor: color(area),
-              boxShadow: `0 0 12px ${color(area)}`,
+              boxShadow: `0 0 10px ${color(area)}`,
             }}
           />
           <Text
-            className="text-base uppercase"
-            style={[text.heading, { letterSpacing: 16 * 0.05 }]}
+            className="text-sm uppercase"
+            style={[text.heading, { letterSpacing: 14 * 0.05 }]}
           >
             {areaName}
           </Text>
@@ -80,17 +80,17 @@ export default function KidsHeader({
         accessibilityRole="button"
         accessibilityLabel="Read to me"
         accessibilityState={{ selected: readAloud }}
-        className="h-14 flex-row items-center justify-center gap-2 px-5"
+        className="h-10 flex-row items-center justify-center gap-1.5 px-4"
         style={({ pressed }) =>
           readAloud
             ? button(area, pressed)
             : [buttonOff(pressed), pressed && PRESSED]
         }
       >
-        <Volume2 size={20} color={ink} />
+        <Volume2 size={18} color={ink} />
         {/* On it's `.kids-btn` (Orbitron black); off, `.kids-btn-off` (Rajdhani bold). */}
         <Text
-          className="text-base"
+          className="text-sm"
           style={[readAloud ? text.heading : text.label, { color: ink }]}
         >
           Read to me
