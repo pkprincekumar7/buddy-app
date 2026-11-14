@@ -650,8 +650,11 @@ export default function GrowthAreas() {
                               style={{
                                 ...LABEL,
                                 // Under the name (LABEL is absolute): its gap plus one line.
+                                // The prototype's 10.5 px, uppercase, .16em (reads "KIDS 78").
                                 marginTop: gafs(30),
-                                fontSize: gafs(11.5),
+                                fontSize: gafs(10.5),
+                                letterSpacing: '.16em',
+                                textTransform: 'uppercase',
                                 color: 'rgb(var(--constellation-gold-rgb))',
                               }}
                             >

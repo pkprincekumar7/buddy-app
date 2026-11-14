@@ -47,6 +47,7 @@ import {
 } from '@/components/layout/profilePalette';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import { color, css, font, gradient, hsl, rgb } from '@/theme';
+import { childSubtitle } from '@/lib/childPaths';
 
 // Maps a page to the seven-circle node label that leads to it, so the header
 // shows the same text as the circle the user tapped (web Layout CIRCLE_LABELS).
@@ -274,7 +275,7 @@ export default function AppHeader({
                           {profileName}
                         </Text>
                         <Text numberOfLines={1} style={DESC}>
-                          Child view
+                          {viewChild ? childSubtitle(viewChild) : 'Child view'}
                         </Text>
                       </View>
                     </View>

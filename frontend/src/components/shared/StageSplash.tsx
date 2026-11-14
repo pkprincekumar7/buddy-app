@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 /**
  * Full-screen stage splash — image for most stages, video for stages 1, 2, 4, and 7.
@@ -18,10 +19,16 @@ const VIDEO_STAGES = new Set([1, 2, 4, 7]);
 
 interface StageSplashProps {
   stage: number;
+  /** Discover's portal (the prototype's): the video fills the screen, tinted, with a cyan
+   *  glow over it, and onReady fires at 3 s even if it runs longer. */
+  portal?: boolean;
   onReady?: () => void;
 }
 
-export default function StageSplash({ stage, onReady }: StageSplashProps) {
+/** How long the Discover portal plays before it moves on. */
+const PORTAL_MS = 3000;
+
+export default function StageSplash({ stage, portal = false, onReady }: StageSplashProps) {
   const padded = String(stage).padStart(2, '0');
   const isVideo = VIDEO_STAGES.has(stage);
   const theme = 'dark';
@@ -35,7 +42,11 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
       className="fixed inset-0 z-[100] bg-background"
     >
       {isVideo ? (
-        <VideoSplash src={`/app-assets/avatars/stage-${padded}-${theme}.mp4`} onReady={onReady} />
+        <VideoSplash
+          src={`/app-assets/avatars/stage-${padded}-${theme}.mp4`}
+          portal={portal}
+          onReady={onReady}
+        />
       ) : (
         <ImageSplash
           src={`/app-assets/avatars/stage-${padded}-${theme}.png`}
@@ -49,7 +60,15 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
 
 // ─── Video variant ────────────────────────────────────────────────────────────
 
-function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
+function VideoSplash({
+  src,
+  portal,
+  onReady,
+}: {
+  src: string;
+  portal: boolean;
+  onReady?: () => void;
+}) {
   const firedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
@@ -73,7 +92,14 @@ function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
     });
   }, [handleEnded]);
 
-  return (
+  // The portal moves on at 3 s, as the prototype's does, however long the video is.
+  useEffect(() => {
+    if (!portal) return;
+    const id = setTimeout(handleEnded, PORTAL_MS);
+    return () => clearTimeout(id);
+  }, [portal, handleEnded]);
+
+  const video = (
     <video
       ref={videoRef}
       src={src}
@@ -87,8 +113,15 @@ function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
         opacity: videoReady ? 1 : 0,
         transition: 'opacity 0.4s ease',
       }}
-      className="h-full w-full object-contain"
+      className={cn('h-full w-full', portal ? 'stage-portal-video' : 'object-contain')}
     />
+  );
+  if (!portal) return video;
+  return (
+    <>
+      {video}
+      <div className="stage-portal-glow" aria-hidden="true" />
+    </>
   );
 }
 

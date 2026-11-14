@@ -134,6 +134,9 @@ export default function GrowWorlds({
     total: number;
     previous: number | null;
   } | null>(null);
+  // The finished world didn't save: the child stays on the last game to try again, so the
+  // report only ever shows a total that was kept.
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const back = () => {
     setWorld(null);
@@ -141,6 +144,7 @@ export default function GrowWorlds({
     setPhase('intro');
     setResults([]);
     setReport(null);
+    setSaveFailed(false);
   };
   const start = (w: number) => {
     back();
@@ -406,19 +410,20 @@ export default function GrowWorlds({
     const runs = runsOf(worlds, world);
     const previous = runs[runs.length - 1]?.total ?? null;
     const scores = results.map(r => r.score);
+    setSaveFailed(false);
     const saved = await addRun(world, scores);
-    if (saved) awaitProgress(activity => activity.circles_done.grow);
-    const mine = saved ? runsOf(saved, world) : [];
-    setReport({
-      total:
-        mine[mine.length - 1]?.total ??
-        Math.round(scores.reduce((a, b) => a + b, 0) / 3),
-      previous,
-    });
+    const run = saved ? runsOf(saved, world).at(-1) : undefined;
+    if (!run) {
+      setSaveFailed(true);
+      return;
+    }
+    awaitProgress(activity => activity.circles_done.grow);
+    setReport({ total: run.total, previous });
   };
   const replay = () => {
     setRound(r => r + 1);
     setPhase('play');
+    setSaveFailed(false);
   };
 
   return (
@@ -592,6 +597,15 @@ export default function GrowWorlds({
               <Text style={[v.btnText, v.btnLineText]}>Try again</Text>
             </Pressable>
           </View>
+          {saveFailed && (
+            <Text
+              accessibilityRole="alert"
+              className="mt-3 text-center text-sm font-semibold"
+              style={{ color: color('wrong') }}
+            >
+              That world didn&apos;t save. Tap Finish world to try again.
+            </Text>
+          )}
         </>
       ) : null}
     </Animated.View>

@@ -709,7 +709,10 @@ export default function GrowthAreas() {
                                   width: LABEL_W,
                                   textAlign: 'center',
                                   fontWeight: '700',
-                                  fontSize: 11.5,
+                                  // The prototype's 10.5px, uppercase, .16em (reads "KIDS 78").
+                                  fontSize: 10.5,
+                                  letterSpacing: 10.5 * 0.16,
+                                  textTransform: 'uppercase',
                                   color: rgb('constellation-gold'),
                                 }}
                               >

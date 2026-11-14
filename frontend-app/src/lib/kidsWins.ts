@@ -17,8 +17,13 @@ export interface Win {
   title: string;
 }
 
-/** A streak worth a win. */
-export const STREAK_WIN = 3;
+/** The streaks worth a win, longest last. A win is the longest one reached, so each can be
+ * shown to the grown-up once (60 is the most: the moods go back 62 days). */
+export const STREAK_MILESTONES = [3, 7, 14, 30, 60] as const;
+
+/** The longest milestone a `streak` has reached, or 0. */
+export const streakMilestone = (streak: number): number =>
+  STREAK_MILESTONES.reduce<number>((top, m) => (streak >= m ? m : top), 0);
 
 export function winsFrom({
   activity,
@@ -70,12 +75,12 @@ export function winsFrom({
       title: `Opened ${activity.flipped_powers.length} superpowers`,
     });
   }
-  const streak = moodStreak(activity.moods, day);
-  if (streak >= STREAK_WIN) {
+  const milestone = streakMilestone(moodStreak(activity.moods, day));
+  if (milestone > 0) {
     wins.push({
-      key: `streak:${streak}`,
+      key: `streak:${milestone}`,
       kind: 'streak',
-      title: `${streak}-day check-in streak`,
+      title: `${milestone}-day check-in streak`,
     });
   }
   return wins;

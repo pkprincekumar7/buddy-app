@@ -77,6 +77,7 @@ describe('kidQuests', () => {
       count: 2,
       target: 2,
       lastLogged: '2026-11-02',
+      how: '',
     });
     expect(anyLogged(logged)).toBe(true);
   });

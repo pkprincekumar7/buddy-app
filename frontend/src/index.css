@@ -335,6 +335,14 @@
     --constellation-gold-glow2-rgb: 255 214 130; /* PersonalityJourney ring glow accent */
     --constellation-slate-warm-rgb: 127 151 168; /* #7f97a8 — LifePathway body text */
     --constellation-slate-mute-rgb: 111 134 151; /* #6f8697 — LifePathway label text */
+    /* LifePathway's child quests (the prototype's): the panel, a ring's core, done (teal),
+       a finished count, a not-started status and pill text. */
+    --constellation-panel-rgb: 7 13 25; /* #070d19 */
+    --constellation-ring-core-rgb: 8 16 30; /* #08101e */
+    --constellation-teal-rgb: 60 225 190; /* #3ce1be */
+    --constellation-teal-pale-rgb: 143 232 212; /* #8fe8d4 */
+    --constellation-slate-dim-rgb: 95 118 134; /* #5f7686 */
+    --constellation-slate-pale-rgb: 157 178 192; /* #9db2c0 */
     --constellation-gold-cream2-rgb: 255 246 226; /* #fff6e2 — LifePathway gradient stop */
     --constellation-gold-warm-rgb: 255 216 154; /* #ffd89a — LifePathway gradient stop */
     --constellation-cyan-mid-rgb: 137 217 238; /* #89d9ee — LifePathway accent */
@@ -1249,6 +1257,40 @@
   }
   .kids-confetti-piece {
     @apply absolute left-1/2 top-[46%] opacity-0;
+  }
+  /* The hub's Discover tip (the prototype's), to the circle's right with a small arrow. */
+  .hub-tip {
+    @apply pointer-events-none absolute left-full top-1/2 z-[6] ml-3.5 whitespace-nowrap rounded-[9px] px-3.5 py-2 text-[12.5px] leading-[1.35];
+    translate: 0 -50%;
+    color: rgb(var(--constellation-text-frost-rgb));
+    background: rgb(var(--constellation-overlay-rgb) / 0.95);
+    border: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+    box-shadow:
+      0 8px 24px rgb(var(--constellation-void-deep-rgb) / 0.55),
+      0 0 18px rgb(var(--constellation-cyan-rgb) / 0.18);
+    animation: kids-fade 0.18s ease both;
+  }
+  .hub-tip::before {
+    @apply absolute -left-[5px] top-1/2 h-[9px] w-[9px];
+    content: '';
+    transform: translateY(-50%) rotate(45deg);
+    background: rgb(var(--constellation-overlay-rgb) / 0.95);
+    border-left: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+    border-bottom: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+  }
+  /* Discover's portal video (the prototype's): fills the screen, tinted, with a cyan glow. */
+  .stage-portal-video {
+    object-fit: cover;
+    filter: hue-rotate(-8deg) saturate(1.15) contrast(1.05);
+  }
+  .stage-portal-glow {
+    @apply pointer-events-none absolute inset-0;
+    background: radial-gradient(
+      circle at 50% 50%,
+      rgb(var(--constellation-cyan-rgb) / 0.1),
+      rgb(var(--constellation-void-deep-rgb) / 0.75) 78%
+    );
+    mix-blend-mode: screen;
   }
   /* "Read to me" while on: always cyan (any circle), dark ink, pushed down 4 px with its
      shade unchanged (the prototype's). */

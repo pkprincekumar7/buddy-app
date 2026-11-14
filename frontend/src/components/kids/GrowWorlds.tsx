@@ -44,6 +44,9 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
   const [round, setRound] = useState(0);
   const [results, setResults] = useState<GrowResult[]>([]);
   const [report, setReport] = useState<{ total: number; previous: number | null } | null>(null);
+  // The finished world didn't save: the child stays on the last game to try again, so the
+  // report only ever shows a total that was kept.
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const back = () => {
     setWorld(null);
@@ -51,6 +54,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
     setPhase('intro');
     setResults([]);
     setReport(null);
+    setSaveFailed(false);
   };
   const start = (w: number) => {
     back();
@@ -260,13 +264,15 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
     const runs = runsOf(worlds, world);
     const previous = runs[runs.length - 1]?.total ?? null;
     const scores = results.map((r) => r.score);
+    setSaveFailed(false);
     const saved = await addRun(world, scores);
-    if (saved) awaitProgress((activity) => activity.circles_done.grow);
-    const mine = saved ? runsOf(saved, world) : [];
-    setReport({
-      total: mine[mine.length - 1]?.total ?? Math.round(scores.reduce((a, b) => a + b, 0) / 3),
-      previous,
-    });
+    const run = saved ? runsOf(saved, world).at(-1) : undefined;
+    if (!run) {
+      setSaveFailed(true);
+      return;
+    }
+    awaitProgress((activity) => activity.circles_done.grow);
+    setReport({ total: run.total, previous });
   };
 
   return (
@@ -395,12 +401,18 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
               onClick={() => {
                 setRound((r) => r + 1);
                 setPhase('play');
+                setSaveFailed(false);
               }}
               className="kids-btn-line h-11 px-6 text-sm md:h-12 md:text-base"
             >
               Try again
             </button>
           </div>
+          {saveFailed && (
+            <p role="alert" className="mt-3 text-sm font-semibold text-kids-wrong md:text-base">
+              That world didn&apos;t save. Tap Finish world to try again.
+            </p>
+          )}
         </>
       )}
     </div>

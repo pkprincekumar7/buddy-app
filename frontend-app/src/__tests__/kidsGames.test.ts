@@ -30,7 +30,7 @@ describe('kidsGames', () => {
     expect(bestNote(3.9, 4)).toEqual({ isBest: true, text: 'New best!' });
     expect(bestNote(4, 4)).toEqual({ isBest: false, text: 'Best: 4.0s' });
     expect(winLine('energy', 7.25)).toBe(
-      'You popped 10 bubbles in 7.3 seconds!',
+      'You popped 10 bubbles in 7.3 seconds. So much Energy!',
     );
   });
 

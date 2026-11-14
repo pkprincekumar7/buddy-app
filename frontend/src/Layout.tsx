@@ -20,6 +20,7 @@ import { useDeleteChild } from '@/hooks/useDeleteChild';
 import { useStartOver } from '@/hooks/useStartOver';
 import { useViewMode } from '@/lib/ViewModeContext';
 import { childViewHome } from '@/lib/childView';
+import { childSubtitle } from '@/lib/childPaths';
 
 interface LayoutProps {
   children: ReactNode;
@@ -269,7 +270,9 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                             </span>
                             <span className="min-w-0">
                               <span className="profile-name block">{profileName}</span>
-                              <span className="profile-desc block">Child view</span>
+                              <span className="profile-desc block">
+                                {viewChild ? childSubtitle(viewChild) : 'Child view'}
+                              </span>
                             </span>
                           </div>
                           <div className="profile-divider" />
@@ -380,8 +383,9 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
       </nav>
 
       {/* Back — below the header, navigates to the previous route. Not on the kids page,
-          whose own header has the Back to the circles. */}
-      {currentPageName !== 'Kids' && (
+          whose own header has the Back to the circles, nor on the journey in child view: it's
+          the child's home, with nowhere to go back to. */}
+      {currentPageName !== 'Kids' && !(childView && currentPageName === 'PersonalityJourney') && (
         <div className="px-4 pt-4 sm:px-6 lg:px-10">
           <Button
             variant="ghost"

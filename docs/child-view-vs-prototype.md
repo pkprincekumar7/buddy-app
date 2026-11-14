@@ -26,29 +26,7 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 
 ## 1. Safe to apply
 
-### Hub (circles) — `pages/PersonalityJourney.tsx`
-
-- **H1.** The Discover hover tooltip: "Explore {name}'s personality analysis results" (the prototype
-  names Rahul; use the real child). Web only (no hover on mobile).
-- **H2.** A ring on the tapped circle before it opens (the prototype's `sel` box-shadow).
-- **H3.** The Discover portal video: `object-cover` with the prototype's filter
-  (`hue-rotate(-8deg) saturate(1.15) contrast(1.05)`) and radial overlay, cut at 3000 ms.
-
-### Profile menu — `Layout.tsx`, `ProfileChildren.tsx`
-
-- **P1.** In child view, the child's row reads "Child · age N" (now "Child view").
-
-### Parent pages
-
-- **PP1.** Growth map "Kids N" label: 10.5 px, uppercase, .16em, margin-top 3 px (reads "KIDS 78").
-- **PP2.** Life Pathway quests section: the "{n}/3 quests done" / "Not started" chip and the
-  "{n} of 3 quests done" count; subtitle "Your topic: {Interest} · done in child view"; Orbitron
-  700 17 px #f2fdff title.
-- **PP3.** Its header stats "Logged" and "Finished n/3" ("Seen by you" needs decision Q1).
-- **PP4.** Its empty state: the topic name, a "Not started" pill, "When {name} logs a {topic}
-  quest in child view, it shows up here."
-- **PP5.** Each row: a 48 px conic progress ring with "ct/tgt" (teal when done), a "Done" (teal) /
-  "In progress" (gold) status, and relative dates ("today", "yesterday", "N days ago").
+(All of section 1 is applied; see [section 6](#6-fixed-since-the-comparison).)
 
 ---
 
@@ -56,31 +34,11 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 
 ### Behaviour
 
-- **B1. Release streak.** The app keeps yesterday's streak until the day ends (a child who hasn't
-  checked in yet today still sees "4-day streak"); the prototype shows 0 until today's check-in.
-  Same on the parent's Observations moods. Changing it is one rule in `lib/kidsDay.ts`
-  (`moodStreak`) in both apps.
-- **B2. Read-aloud on content change.** The app reads once per area; the prototype re-reads at each
-  Grow game ("{title}. {how}"), on the report ("World complete! Well done."), and the whole quest
-  list. More speech for a child who can't read yet, more interruption for one who can.
-- **B3. "Start Again" in child view.** Hidden in the app; the prototype shows it grey and disabled,
-  "Completed". Showing it tells the child the parent's journey is done; hiding it keeps the hub to
-  the child's five circles.
-- **B4. "Back to parent view".** The app goes to the orb screen; the prototype stays on the screen
-  it was on. Staying would land the parent on the kids page in parent view, which the app doesn't
-  have.
-- **B5. The hub's "Back" button and "Superpower" eyebrow in child view.** The app shows the app
-  bar's wordmark and a "Back" ghost button; the prototype has an eyebrow and no Back. In child
-  view, Back from the hub goes nowhere useful.
-- **B6. "Month 1 · {Interest}".** The prototype's quests eyebrow names a month, but child-view
-  quests aren't tied to the plan's months. Show the plan's current month, or keep "{Interest}".
+(B1–B6 decided on 2026-11-14: B1, B2, B4 and B6 kept as the app has them, in [section 4](#4-already-decided); B3 and B5 applied, in [section 6](#6-fixed-since-the-comparison).)
 
 ### Copy
 
-- **W1. Win lines' power tags.** The prototype ends each line with its power: "with super Focus!",
-  "That's real Curiosity!", "Pure Imagination!", "He Never Gives Up!", "Brave Voice!", "So much
-  Energy!", "all on his own!". Bringing them back needs second-person versions without pronouns
-  ("You never give up!", "All on your own!").
+(W1 applied on 2026-11-14; see [section 6](#6-fixed-since-the-comparison).)
 
 ### Privacy and data
 
@@ -88,27 +46,14 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
   "Acknowledge" / "Seen" toggle, a "How is it going?" panel (Going well, Too hard, Too easy, No time
   this week, Loved it), "Next month" options (Keep going, Raise the target, Make it easier, Try a new
   quest), a note, and a "Next step" line, plus "Seen by you n/3". New stored fields in transform,
-  and a question of whether the feedback feeds the next plan's prompt.
-- **Q2. Photo upload in child view** (Discover's "Add photo" / "Remove photo", Connect's "Add your
-  photo"). The child would change their own photo from child view: storage is the existing upload
-  flow, but whether a child may replace the parent-chosen photo, and the gold toasts that go with it
-  ("Photo added", "Photo removed"), are product questions.
-- **Q3. Zero-count quests on the parent page.** The app lists all three quests of each interest,
-  including "0 of N · not yet"; the prototype lists only quests the child has logged.
-- **Q4. Full name on the parent's Connect.** "From {full name}" there, first name on the child's
-  card. The prototype has no equivalent; pick one.
+  and a question of whether the feedback feeds the next plan's prompt. **Deferred (2026-11-14):**
+  to be planned as its own piece of work, not part of this comparison.
+
+(Q2, Q3 and Q4 decided; see [section 4](#4-already-decided) and [section 6](#6-fixed-since-the-comparison).)
 
 ### App issues found during the comparison (not prototype differences)
 
-- **A1. Grow save failure.** If "Finish world" fails to save, the report still shows a total
-  computed on the device, so the child sees a result that wasn't kept. (Since 2026-11-12 a saved
-  run and Grow's progress can't disagree: grow publishes `grow.world_played` with the run.)
-- **A2. Streak wins can be shown again.** A streak win's key is `streak:N`, which changes every day,
-  so a child can "Show my grown-up" a longer streak again (up to the 60 cap).
-- **A3. Parent Connect list shifts.** Shown wins load after the page and are put first, so the list
-  moves and per-card edits (kept by position) land on other items.
-- **A4. Parent Connect row keys.** Rows are keyed by title, so a shown win with the same title as
-  another item would collide.
+(A1–A4 fixed on 2026-11-14; see [section 6](#6-fixed-since-the-comparison).)
 
 ---
 
@@ -186,6 +131,14 @@ Recorded in [child-view-build-plan.md](child-view-build-plan.md), not to be chan
 - Type, buttons, tiles and spacing follow the parent pages' size scale (2026-11-13), not the
   prototype's larger child sizes; the game play areas keep their size (build plan, **Theming**).
 - The profile menu's real rows, "Add Child", and opening a child's view at the circles.
+- Decided on 2026-11-14 (was Q2): no photo upload in child view; the photo stays the one the
+  parent chose, and the gold "Photo added" / "Photo removed" toasts aren't built.
+- Decided earlier (was Q3): the parent page lists all three quests of each interest, "0 of N"
+  ones included.
+- Decided on 2026-11-14 (was B1, B2, B4, B6): the Release streak keeps yesterday's count until
+  the day ends; read-aloud once per area, not again at each Grow game, report or quest list;
+  "Back to parent view" goes to the orb screen; the quests eyebrow stays "{Interest}" (child-view
+  quests aren't tied to the plan's months).
 
 ## 5. Web and mobile
 
@@ -248,8 +201,8 @@ Applying an item from group 1 means changing both apps the same way.
   tinted cyan circle, the name in Orbitron .04em, × in an outlined circle; the instruction line
   larger and brighter; on a win the four twinkling dots, the pulsing check medallion, "You did
   it!" and the time in glowing gold; "New best!" as a solid gold pill that pops in a moment later,
-  "Best: X.Xs" / "First try!" as an outlined grey pill; the win line in a dashed box (its words
-  are still decision W1); "Play again" outlined cyan and "Done" as the cyan gradient. Sizes follow
+  "Best: X.Xs" / "First try!" as an outlined grey pill; the win line in a dashed box (its power tags
+  came later, W1); "Play again" outlined cyan and "Done" as the cyan gradient. Sizes follow
   the parent pages' scale (the prototype's from `md`), buttons 44/48 px rather than 46 px.
 - Discover (was D1–D8), applied on 2026-11-14 to both apps: the eyebrow pops (.6 s), the name
   pill rises in after .5 s, the count pill pops for .6 s; the hover tip fades in with its small
@@ -312,3 +265,51 @@ Applying an item from group 1 means changing both apps the same way.
   ring and 46 pieces flung from the middle, each time Discover opens and over the orb of a
   finished Grow world's report, none under reduced motion. Sizes follow the parent pages' scale
   (the prototype's 56 px bar buttons stay 40 px).
+- The hub and profile menu (was H1–H3, P1), applied on 2026-11-14 to both apps: Discover's
+  hover tip "Explore {first name}'s personality analysis results" with its arrow (web, on
+  devices that hover, also on keyboard focus); a tapped circle ringed (the prototype's `sel`
+  glow) for 200 ms before its page opens; the Discover portal video filling the screen with the
+  prototype's tint and cyan glow and moving on at 3 s (`StageSplash` `portal`; the tint is
+  Android-only on mobile, as React Native's `filter` is); in child view, the profile menu's
+  child row reads "Child · age N" (`childSubtitle`). The hub is shared, so these show in parent
+  view too, as in the prototype.
+- The parent pages (was PP1–PP5), applied on 2026-11-14 to both apps: the Growth map's "Kids N"
+  label at 10.5 px, uppercase, .16em ("KIDS 78"); Life Pathway's quests as the prototype's panel:
+  "{name}'s quests" with a "{n}/3 quests done" / "Not started" chip, "Your topic: {interest} ·
+  done in child view", the plan topic's "Logged" and "Finished n/3" ("Seen by you" waits on Q1),
+  its empty state (the topic, "Not started", "When {name} logs a {topic} quest in child view, it
+  shows up here."; shown until anything is logged, in the topic or an added interest), and each
+  quest's 48 px progress ring ("ct/tgt", teal when done), "Done" /
+  "In progress" / "Not started" status and "Last logged today / yesterday / N days ago" (the
+  how-to before the first log); an interest the child added follows with its own label. Kept
+  as the app has them: all three quests per interest (Q3), and the dashboard's own chips, which
+  count the parent's plan (the prototype puts the child's quest counts there). New tokens:
+  `--constellation-panel-rgb`, `-ring-core-rgb`, `-teal-rgb`, `-teal-pale-rgb`,
+  `-slate-dim-rgb`, `-slate-pale-rgb`; helpers `daysAgo` and `questTotals` (tested).
+- The hub in child view and the win lines (was B3, B5, W1), applied on 2026-11-14 to both apps:
+  in child view the hub shows Start Again greyed out and disabled (the locked circle's look, a
+  tick badge, "Start Again" over "Completed"), only the parent starting over; the app bar's Back
+  is hidden on the journey (it's the child's home) and a "Superpower" eyebrow sits on top
+  (Rajdhani 700, 12 px, .4em, cyan-bright, fading up at .5 s). Parent view keeps Back and the
+  working Start Again. Each win line ends with its power in the second person: "with super
+  Focus!", "That's real Curiosity!", "all on your own!", "Pure Imagination!", "You never give
+  up!", "Brave Voice!", "So much Energy!".
+- The parent's Connect list (was A3, A4), fixed on 2026-11-14 in both apps: each item has a
+  stable id (a shown win's is `shown:{key}`, the page's own a fixed name), and the picked card,
+  the parent's edits and the row keys use it, so wins loading after the page no longer move a
+  pick or an edit onto another item, and two items with one title no longer collide. The list
+  is built by `connectItems` (components/connect/shared, tested on mobile).
+- Streak wins (was A2), fixed on 2026-11-14 in both apps: a streak's win is the longest
+  milestone it has reached, 3, 7, 14, 30 or 60 days (`STREAK_MILESTONES`, `streakMilestone` in
+  lib/kidsWins, tested on mobile), keyed `streak:{milestone}`, so a 9-day streak is the "7-day
+  check-in streak" win and each milestone is shown to the grown-up once. No server change: the
+  key's format is unchanged.
+- Grow's failed save (was A1), fixed on 2026-11-14 in both apps: when "Finish world" doesn't
+  save, the child stays on the last game's result with "That world didn't save. Tap Finish
+  world to try again." (and the toast as before), so the report only ever shows the total the
+  server kept; nothing is worked out on the device any more. Tested on mobile (a failed save,
+  then a retry to the report).
+- The name on the parent's Connect (was Q4), applied on 2026-11-14 to both apps: the shown wins
+  read "From {first name}" and "{first name} chose to show you this in child view.", as the
+  child's card uses the first name ("Your child" without one); `connectItems` takes the child's
+  name and uses its first word (tested on mobile).

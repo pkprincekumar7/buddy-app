@@ -68,6 +68,8 @@ export interface QuestProgress {
   target: number;
   /** The child's day of the last log, YYYY-MM-DD; null before the first. */
   lastLogged: string | null;
+  /** What to do (shown until the first log). */
+  how: string;
 }
 
 /**
@@ -88,6 +90,7 @@ export function questSummary(
           count: Math.min(q.logs[k] ?? 0, quest.target),
           target: quest.target,
           lastLogged: q.last_logged[k] ?? null,
+          how: quest.how,
         };
       });
       const fromParent = key === q.default_interest;
@@ -106,4 +109,27 @@ export function shortDay(day: string): string {
   const [y, m, d] = day.split('-').map(Number);
   if (!y || !m || !d) return day;
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+/** "today", "yesterday" or "N days ago" for a YYYY-MM-DD day, against `today` (YYYY-MM-DD). */
+export function daysAgo(day: string, today: string): string {
+  const utc = (d: string) => {
+    const [y, m, dd] = d.split('-').map(Number);
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, dd ?? 1);
+  };
+  const n = Math.round((utc(today) - utc(day)) / 86_400_000);
+  return n <= 0 ? 'today' : n === 1 ? 'yesterday' : `${n} days ago`;
+}
+
+/** An interest's totals on the parent's page: times logged, quests finished, and how many. */
+export function questTotals(quests: QuestProgress[]): {
+  logged: number;
+  finished: number;
+  total: number;
+} {
+  return {
+    logged: quests.reduce((n, q) => n + q.count, 0),
+    finished: quests.filter((q) => q.count >= q.target).length,
+    total: quests.length,
+  };
 }

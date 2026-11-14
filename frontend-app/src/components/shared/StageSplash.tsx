@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, StyleSheet } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import { rgb } from '@/theme';
 import { Portal } from '@/components/ui/portal';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { useEventListener } from 'expo';
@@ -31,10 +32,21 @@ const CONTAINER_OUT = new Keyframe({
 
 interface StageSplashProps {
   stage: number;
+  /** Discover's portal (web, the prototype's): the video fills the screen, tinted (Android;
+   *  React Native's `filter` is Android-only), with a cyan glow over it, and onReady fires at
+   *  3 s even if it runs longer. */
+  portal?: boolean;
   onReady?: () => void;
 }
 
-export default function StageSplash({ stage, onReady }: StageSplashProps) {
+/** How long the Discover portal plays before it moves on. */
+const PORTAL_MS = 3000;
+
+export default function StageSplash({
+  stage,
+  portal = false,
+  onReady,
+}: StageSplashProps) {
   const padded = String(stage).padStart(2, '0');
   const isVideo = VIDEO_STAGES.has(stage);
   const theme = 'dark';
@@ -51,7 +63,7 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
         className="flex-1 bg-background"
       >
         {isVideo ? (
-          <VideoSplash uri={`${base}.mp4`} onReady={onReady} />
+          <VideoSplash uri={`${base}.mp4`} portal={portal} onReady={onReady} />
         ) : (
           <ImageSplash uri={`${base}.png`} stage={stage} onReady={onReady} />
         )}
@@ -60,7 +72,32 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
   );
 }
 
-function VideoSplash({ uri, onReady }: { uri: string; onReady?: () => void }) {
+/** web .stage-portal-video's tint (applied on Android) and .stage-portal-glow. */
+const PORTAL_TINT = {
+  filter: [{ hueRotate: '-8deg' }, { saturate: 1.15 }, { contrast: 1.05 }],
+} as const;
+const PORTAL_GLOW = {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  experimental_backgroundImage: `radial-gradient(circle at 50% 50%, ${rgb(
+    'constellation-cyan',
+    0.1,
+  )}, ${rgb('constellation-void-deep', 0.75)} 78%)`,
+  mixBlendMode: 'screen',
+} as const;
+
+function VideoSplash({
+  uri,
+  portal,
+  onReady,
+}: {
+  uri: string;
+  portal: boolean;
+  onReady?: () => void;
+}) {
   const firedRef = useRef(false);
   const [videoReady, setVideoReady] = useState(false);
 
@@ -84,6 +121,12 @@ function VideoSplash({ uri, onReady }: { uri: string; onReady?: () => void }) {
   useEventListener(player, 'statusChange', ({ status }) => {
     if (status === 'error') handleEnded();
   });
+  // The portal moves on at 3 s, as the prototype's does, however long the video is.
+  useEffect(() => {
+    if (!portal) return;
+    const id = setTimeout(handleEnded, PORTAL_MS);
+    return () => clearTimeout(id);
+  }, [portal, handleEnded]);
 
   return (
     <Animated.View
@@ -98,10 +141,11 @@ function VideoSplash({ uri, onReady }: { uri: string; onReady?: () => void }) {
     >
       <VideoView
         player={player}
-        style={StyleSheet.absoluteFill}
-        contentFit="contain"
+        style={[StyleSheet.absoluteFill, portal && PORTAL_TINT]}
+        contentFit={portal ? 'cover' : 'contain'}
         nativeControls={false}
       />
+      {portal ? <View pointerEvents="none" style={PORTAL_GLOW} /> : null}
     </Animated.View>
   );
 }

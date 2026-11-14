@@ -29,13 +29,15 @@ export const GAME_PLAY: Record<GameKey, string> = {
 
 /** The line after a win; `{s}` is the time. */
 export const GAME_WIN_LINE: Record<GameKey, string> = {
-  focus: 'You caught the moving light 5 times in {s} seconds!',
-  curious: 'You found all 3 hidden planets in {s} seconds!',
-  order: 'You joined 6 stars in the right order in {s} seconds!',
-  draw: 'You filled the whole sky with light in {s} seconds!',
-  climb: 'You climbed to the top in {s} seconds!',
-  voice: 'You made your voice big and loud in {s} seconds!',
-  energy: 'You popped 10 bubbles in {s} seconds!',
+  focus: 'You caught the moving light 5 times in {s} seconds with super Focus!',
+  curious:
+    "You found all 3 hidden planets in {s} seconds. That's real Curiosity!",
+  order:
+    'You joined 6 stars in the right order in {s} seconds, all on your own!',
+  draw: 'You filled the whole sky with light in {s} seconds. Pure Imagination!',
+  climb: 'You climbed to the top in {s} seconds. You never give up!',
+  voice: 'You made your voice big and loud in {s} seconds. Brave Voice!',
+  energy: 'You popped 10 bubbles in {s} seconds. So much Energy!',
 };
 
 /** The server's limits on a best time (children kids.BEST_MIN_SECONDS / BEST_MAX_SECONDS). */

@@ -108,6 +108,49 @@ describe('GrowWorlds', () => {
     expect(getByText('Self Care')).toBeTruthy();
   });
 
+  it("stays on the last game when the world doesn't save, and saves on a retry", async () => {
+    const saved: KidWorlds = {
+      ...WORLDS,
+      runs: {
+        '0': [
+          ...(WORLDS.runs['0'] ?? []),
+          { total: 71, scores: [70, 70, 70], at: '2026-11-11T10:00:00Z' },
+        ],
+      },
+    };
+    const addRun = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(saved);
+    const awaitProgress = jest.fn();
+    const { getByLabelText, getByText, queryByText } = render(
+      <GrowWorlds
+        worlds={WORLDS}
+        saving={false}
+        addRun={addRun}
+        awaitProgress={awaitProgress}
+      />,
+    );
+    fireEvent.press(getByLabelText('Self Care, completed, last 60'));
+    mockScore = 70;
+    for (const i of [0, 1, 2]) {
+      fireEvent.press(getByLabelText('Play'));
+      fireEvent.press(getByLabelText('Finish this game'));
+      fireEvent.press(getByLabelText(i < 2 ? 'Next game' : 'Finish world'));
+    }
+    const note = "That world didn't save. Tap Finish world to try again.";
+    await waitFor(() => expect(getByText(note)).toBeTruthy());
+    // No report: the last game's result stays, with Finish world to try again.
+    expect(queryByText('Pick another world')).toBeNull();
+    expect(awaitProgress).not.toHaveBeenCalled();
+    fireEvent.press(getByLabelText('Finish world'));
+    // The report shows the kept total (the server's), not one worked out on the device.
+    await waitFor(() => expect(getByText('71')).toBeTruthy());
+    expect(addRun).toHaveBeenCalledTimes(2);
+    expect(awaitProgress).toHaveBeenCalledTimes(1);
+    expect(queryByText(note)).toBeNull();
+  });
+
   it('shows each game score and band, and plays a game again', () => {
     mockScore = 90;
     const { getByLabelText, getByText, queryByText } = render(

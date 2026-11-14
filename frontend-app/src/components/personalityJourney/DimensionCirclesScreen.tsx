@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View, type LayoutChangeEvent } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { Circle, Path } from 'react-native-svg';
@@ -11,6 +11,17 @@ import { NODE_CENTER, ringScaleFor, type ActiveDimension } from './geometry';
 import type { JourneyViewport } from './viewport';
 
 const FOOTER_FADE = fadeIn(0.8, 1.2, 'ease');
+/** web fadeUp .7s ease .5s: up 12px as it fades in. */
+const EYEBROW_IN = {
+  animationName: {
+    from: { opacity: 0, transform: [{ translateY: 12 }] },
+    to: { opacity: 1, transform: [{ translateY: 0 }] },
+  },
+  animationDuration: '0.7s',
+  animationDelay: '0.5s',
+  animationTimingFunction: 'ease',
+  animationFillMode: 'both',
+} as const;
 
 interface DimensionCirclesScreenProps {
   childName: string;
@@ -22,6 +33,8 @@ interface DimensionCirclesScreenProps {
   onRelease: () => void;
   /** Hidden when absent (child view: a child can't delete their own journey). */
   onStartAgain?: () => void;
+  /** Child view: the "Superpower" eyebrow on top, and Start Again greyed out, "Completed". */
+  childView?: boolean;
   enabled: {
     grow: boolean;
     transform: boolean;
@@ -32,6 +45,9 @@ interface DimensionCirclesScreenProps {
   viewport: JourneyViewport;
 }
 
+/** How long a tapped circle shows its ring before its page opens (web). */
+const SELECT_MS = 200;
+
 /** Phase 2 — the seven-circle constellation around the center HUD. */
 export default function DimensionCirclesScreen({
   onConnect,
@@ -41,12 +57,30 @@ export default function DimensionCirclesScreen({
   onTransform,
   onRelease,
   onStartAgain,
+  childView = false,
   enabled,
   current,
   viewport,
 }: DimensionCirclesScreenProps) {
   const { width, vh } = viewport;
   const [ringScale, setRingScale] = useState(1);
+
+  // A tapped circle shows its ring for a moment, then opens (web, the prototype's `sel`).
+  const [selected, setSelected] = useState<string | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => () => clearTimeout(openTimer.current), []);
+  const pick = (key: string, open: () => void) => () => {
+    if (selected) return;
+    setSelected(key);
+    openTimer.current = setTimeout(() => {
+      open();
+      // Cleared once it's opening: the stack keeps this screen mounted under the circle's
+      // page, so coming back must find every circle ready to tap again.
+      setSelected(null);
+    }, SELECT_MS);
+  };
 
   // web watchRing: scale the 700px ring box to fit the ring area.
   const onRingAreaLayout = useCallback((e: LayoutChangeEvent) => {
@@ -70,6 +104,20 @@ export default function DimensionCirclesScreen({
           SCOPE_FOCUS,
         ]}
       >
+        {childView && (
+          <Animated.View style={[{ paddingTop: 18 }, EYEBROW_IN]}>
+            <Text
+              className="uppercase text-constellation-cyan-bright"
+              style={[
+                font('rajdhani', 700),
+                { fontSize: 12, letterSpacing: 12 * 0.4 },
+              ]}
+            >
+              Superpower
+            </Text>
+          </Animated.View>
+        )}
+
         {/* Ring area */}
         <View
           onLayout={onRingAreaLayout}
@@ -95,7 +143,8 @@ export default function DimensionCirclesScreen({
             <DimensionNode
               center={NODE_CENTER.connect}
               delay={0.55}
-              onPress={onConnect}
+              onPress={pick('connect', onConnect)}
+              selected={selected === 'connect'}
               locked={!enabled.connect}
               highlighted={current === 'connect'}
               label="Connect"
@@ -108,7 +157,8 @@ export default function DimensionCirclesScreen({
             <DimensionNode
               center={NODE_CENTER.discover}
               delay={0.45}
-              onPress={onDiscover}
+              onPress={pick('discover', onDiscover)}
+              selected={selected === 'discover'}
               highlighted={current === 'discover'}
               label="Discover"
               labelColor={rgb('constellation-cyan-paler')}
@@ -125,7 +175,8 @@ export default function DimensionCirclesScreen({
             <DimensionNode
               center={NODE_CENTER.transform}
               delay={0.65}
-              onPress={onTransform}
+              onPress={pick('transform', onTransform)}
+              selected={selected === 'transform'}
               locked={!enabled.transform}
               highlighted={current === 'transform'}
               label="Transform"
@@ -141,7 +192,8 @@ export default function DimensionCirclesScreen({
             <DimensionNode
               center={NODE_CENTER.release}
               delay={0.75}
-              onPress={onRelease}
+              onPress={pick('release', onRelease)}
+              selected={selected === 'release'}
               locked={!enabled.release}
               highlighted={current === 'release'}
               label="Release"
@@ -157,12 +209,32 @@ export default function DimensionCirclesScreen({
             <DimensionNode
               center={NODE_CENTER.grow}
               delay={0.8}
-              onPress={onGrow}
+              onPress={pick('grow', onGrow)}
+              selected={selected === 'grow'}
               locked={!enabled.grow}
               highlighted={current === 'grow'}
               label="Grow"
               icon={<Path d="M4 20V10M11 20V4M18 20v-7" />}
             />
+
+            {/* Start Again in child view: greyed out and "Completed" (only the parent starts over) */}
+            {childView && (
+              <DimensionNode
+                center={NODE_CENTER.startAgain}
+                delay={0.85}
+                onPress={() => undefined}
+                locked
+                done
+                highlighted={false}
+                label="Start Again"
+                icon={
+                  <>
+                    <Path d="M4 4v6h6M20 20v-6h-6" />
+                    <Path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
+                  </>
+                }
+              />
+            )}
 
             {/* Start Again — bottom-center (always enabled; not in child view) */}
             {onStartAgain ? (

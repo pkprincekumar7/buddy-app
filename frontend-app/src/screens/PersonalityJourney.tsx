@@ -33,7 +33,8 @@ import { kidsPath, type KidsArea } from '@/lib/childView';
 type Phase = 1 | 2;
 
 const ORB_VOICE = require('../../assets/audio/orb-voice.mp3');
-/** Height of the Layout's Back row (pt-4 + h-8 sm button) above the page content. */
+/** Height of the Layout's Back row (pt-4 + h-8 sm button) above the page content; none in
+ * child view (the journey is the child's home). */
 const BACK_ROW_H = 48;
 const NAVY_DEEP = rgb('constellation-navy-deep');
 const AMBIENT_BLOB = css(
@@ -291,7 +292,7 @@ export default function PersonalityJourney() {
   if (status === 'loading') {
     return (
       <View className="flex-1 bg-background">
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View
           className="flex-1 items-center justify-center"
           style={{ backgroundColor: NAVY_DEEP }}
@@ -310,7 +311,7 @@ export default function PersonalityJourney() {
   if (status === 'error') {
     return (
       <View className="flex-1 bg-background">
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View className="flex-1 items-center justify-center gap-4 px-4">
           <Text className="text-center text-muted-foreground">
             {journey.status === 'failed'
@@ -343,7 +344,7 @@ export default function PersonalityJourney() {
   return (
     <View className="flex-1 bg-background">
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View
           style={{
             minHeight: vh,
@@ -357,7 +358,7 @@ export default function PersonalityJourney() {
             style={{
               position: 'absolute',
               left: width / 2 - 350,
-              top: vh / 2 - 64 - BACK_ROW_H - 350,
+              top: vh / 2 - 64 - (childView ? 0 : BACK_ROW_H) - 350,
               width: 700,
               height: 700,
               borderRadius: 350,
@@ -412,6 +413,7 @@ export default function PersonalityJourney() {
                 {...(!childView && {
                   onStartAgain: () => setConfirmingStartOver(true),
                 })}
+                childView={childView}
                 enabled={{
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
@@ -430,7 +432,7 @@ export default function PersonalityJourney() {
       {isEntering && <WarpOverlay />}
 
       {showDiscoverSplash && (
-        <StageSplash stage={2} onReady={handleDiscoverSplashReady} />
+        <StageSplash stage={2} portal onReady={handleDiscoverSplashReady} />
       )}
 
       <StartOverConfirmModal

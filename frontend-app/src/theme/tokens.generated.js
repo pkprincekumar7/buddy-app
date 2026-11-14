@@ -275,9 +275,9 @@ module.exports = {
       32
     ],
     "constellation-slate-pale": [
-      168,
-      193,
-      209
+      157,
+      178,
+      192
     ],
     "constellation-card": [
       9,
@@ -360,9 +360,9 @@ module.exports = {
       249
     ],
     "constellation-slate-dim": [
-      92,
+      95,
       118,
-      136
+      134
     ],
     "constellation-ink": [
       8,
@@ -433,6 +433,26 @@ module.exports = {
       111,
       134,
       151
+    ],
+    "constellation-panel": [
+      7,
+      13,
+      25
+    ],
+    "constellation-ring-core": [
+      8,
+      16,
+      30
+    ],
+    "constellation-teal": [
+      60,
+      225,
+      190
+    ],
+    "constellation-teal-pale": [
+      143,
+      232,
+      212
     ],
     "constellation-gold-cream2": [
       255,

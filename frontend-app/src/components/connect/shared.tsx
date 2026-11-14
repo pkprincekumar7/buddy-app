@@ -5,6 +5,7 @@
  * `--cx-type-scale` is 1 below 768px, so `cfs(px)` is just `px` here.
  */
 import React, { useState, type ReactNode } from 'react';
+import { STAR_PATH } from '@/components/kids/icons';
 import {
   Linking,
   ScrollView,
@@ -134,6 +135,8 @@ const IC = {
 };
 
 export interface AccomplishmentItem {
+  /** Stable across loads: the selection and the parent's edits are kept by it. */
+  id: string;
   kind: string;
   when: string;
   title: string;
@@ -143,6 +146,7 @@ export interface AccomplishmentItem {
 
 export const BASE_ITEMS: AccomplishmentItem[] = [
   {
+    id: 'relay',
     kind: 'Sport',
     when: '2 days ago',
     title: 'First in the district relay',
@@ -150,6 +154,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.sport,
   },
   {
+    id: 'build',
     kind: 'Milestone',
     when: 'Last week',
     title: 'He finished his first build',
@@ -157,6 +162,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.build,
   },
   {
+    id: 'science',
     kind: 'School',
     when: 'Last week',
     title: 'Science project picked for the fair',
@@ -164,6 +170,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.school,
   },
   {
+    id: 'speaking',
     kind: 'Growth',
     when: 'This month',
     title: 'Speaking up, +26 this year',
@@ -171,6 +178,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.mic,
   },
   {
+    id: 'friends',
     kind: 'Friendship',
     when: 'This month',
     title: 'Two new friends at the club',
@@ -178,6 +186,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.friends,
   },
   {
+    id: 'plan',
     kind: 'Progress',
     when: 'Ongoing',
     title: 'Six weeks of the 90-day plan',
@@ -185,6 +194,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.chart,
   },
   {
+    id: 'personality',
     kind: 'Personality',
     when: 'Profile',
     title: '{name} is The Thinker',
@@ -192,6 +202,7 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.star,
   },
   {
+    id: 'kindness',
     kind: 'Kindness',
     when: 'Last month',
     title: 'Stood up for a boy in his class',
@@ -199,6 +210,37 @@ export const BASE_ITEMS: AccomplishmentItem[] = [
     icon: IC.kind,
   },
 ];
+
+/** The parent's list: the wins the child chose to show (newest first), then the page's own,
+ * with the child's first name ("Your child" without one) on the wins and in place of {name}.
+ * Each keeps its id (a shown win's is its key), so the list can grow without moving another
+ * item's edits. */
+export function connectItems(
+  shown: Record<string, { title: string; at: string }>,
+  childName: string,
+  when: (at: string) => string,
+): AccomplishmentItem[] {
+  const first = childName.trim().split(/\s+/)[0] ?? '';
+  const who = first.length > 0 ? first : 'Your child';
+  const wins = Object.entries(shown)
+    .sort(([, a], [, b]) => b.at.localeCompare(a.at))
+    .map(([key, w]) => ({
+      id: `shown:${key}`,
+      kind: `From ${who}`,
+      when: when(w.at),
+      title: w.title,
+      caption: `${who} chose to show you this in child view.`,
+      icon: STAR_PATH,
+    }));
+  return [
+    ...wins,
+    ...BASE_ITEMS.map(it =>
+      it.title.includes('{name}')
+        ? { ...it, title: it.title.replace('{name}', who) }
+        : it,
+    ),
+  ];
+}
 
 export interface WaContact {
   name: string;

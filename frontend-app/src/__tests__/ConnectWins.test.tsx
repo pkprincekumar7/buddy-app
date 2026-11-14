@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import ConnectWins from '@/components/kids/ConnectWins';
-import { winsFrom } from '@/lib/kidsWins';
+import { streakMilestone, winsFrom } from '@/lib/kidsWins';
 import type { KidActivity } from '@/api/kids';
 import type { KidQuests } from '@/api/kidQuests';
 import type { KidWorlds } from '@/api/kidWorlds';
@@ -94,6 +94,42 @@ describe('winsFrom', () => {
     expect(
       winsFrom({ activity: activity(), quests: null, worlds: null, day: DAY }),
     ).toEqual([]);
+  });
+});
+
+describe('streak wins', () => {
+  /** `n` good days in a row, ending on DAY. */
+  const days = (n: number) =>
+    Object.fromEntries(
+      Array.from({ length: n }, (_, i) => {
+        const d = new Date(`${DAY}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() - i);
+        return [d.toISOString().slice(0, 10), { mood: 'good', note: null }];
+      }),
+    ) as KidActivity['moods'];
+  const streakWin = (n: number) =>
+    winsFrom({
+      activity: activity({ moods: days(n) }),
+      quests: null,
+      worlds: null,
+      day: DAY,
+    }).find(w => w.kind === 'streak');
+
+  it('takes the longest milestone reached', () => {
+    expect(
+      [2, 3, 6, 7, 13, 14, 29, 30, 59, 60, 62].map(streakMilestone),
+    ).toEqual([0, 3, 3, 7, 7, 14, 14, 30, 30, 60, 60]);
+  });
+
+  it('keeps one key per milestone, so a longer streak is the same win until the next', () => {
+    expect(streakWin(2)).toBeUndefined();
+    expect(streakWin(9)).toEqual({
+      key: 'streak:7',
+      kind: 'streak',
+      title: '7-day check-in streak',
+    });
+    expect(streakWin(10)?.key).toBe('streak:7');
+    expect(streakWin(14)?.key).toBe('streak:14');
   });
 });
 
