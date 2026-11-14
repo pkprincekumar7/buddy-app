@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import Svg, { G, Path } from 'react-native-svg';
 import { css, font, rgb } from '@/theme';
 import {
@@ -132,6 +132,9 @@ export default function DimensionNode({
   done = false,
 }: DimensionNodeProps) {
   const glowing = !locked && highlighted && !selected;
+  // The disc grows a little while pressed (web .hub-disc's hover, the prototype's).
+  const [pressed, setPressed] = useState(false);
+  const reduced = useReducedMotion();
   return (
     <Animated.View
       style={[
@@ -148,6 +151,8 @@ export default function DimensionNode({
     >
       <Pressable
         onPress={locked ? undefined : onPress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
         disabled={locked}
         accessibilityRole="button"
         accessibilityLabel={done ? `${label}, completed` : label}
@@ -239,23 +244,31 @@ export default function DimensionNode({
             />
           </>
         )}
-        <View
+        <Animated.View
           pointerEvents="none"
-          style={{
-            width: INNER,
-            height: INNER,
-            borderRadius: INNER / 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-            experimental_backgroundImage: locked ? INACTIVE_BG : ACTIVE_BG,
-            boxShadow: locked
-              ? INACTIVE_SHADOW
-              : selected
-              ? SELECTED_GLOW
-              : glowing
-              ? undefined
-              : ACTIVE_SHADOW,
-          }}
+          style={[
+            {
+              width: INNER,
+              height: INNER,
+              borderRadius: INNER / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+              experimental_backgroundImage: locked ? INACTIVE_BG : ACTIVE_BG,
+              boxShadow: locked
+                ? INACTIVE_SHADOW
+                : selected
+                ? SELECTED_GLOW
+                : glowing
+                ? undefined
+                : ACTIVE_SHADOW,
+              transform: [{ scale: pressed && !locked ? 1.08 : 1 }],
+            },
+            !reduced && {
+              transitionProperty: 'transform',
+              transitionDuration: 200,
+              transitionTimingFunction: 'ease',
+            },
+          ]}
         >
           <Svg width={23} height={23} viewBox="0 0 24 24">
             <G
@@ -266,7 +279,7 @@ export default function DimensionNode({
               {icon}
             </G>
           </Svg>
-        </View>
+        </Animated.View>
 
         {done && (
           <View pointerEvents="none" style={TICK_BADGE}>

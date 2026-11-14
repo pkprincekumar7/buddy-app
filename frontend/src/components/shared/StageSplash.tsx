@@ -19,8 +19,9 @@ const VIDEO_STAGES = new Set([1, 2, 4, 7]);
 
 interface StageSplashProps {
   stage: number;
-  /** Discover's portal (the prototype's): the video fills the screen, tinted, with a cyan
-   *  glow over it, and onReady fires at 3 s even if it runs longer. */
+  /** Discover's portal (the prototype's): the video tinted, with a cyan glow over it, and
+   *  onReady fires at 3 s even if it runs longer. Fitted like every stage video (not the
+   *  prototype's cover, which zooms it). */
   portal?: boolean;
   onReady?: () => void;
 }
@@ -113,7 +114,7 @@ function VideoSplash({
         opacity: videoReady ? 1 : 0,
         transition: 'opacity 0.4s ease',
       }}
-      className={cn('h-full w-full', portal ? 'stage-portal-video' : 'object-contain')}
+      className={cn('h-full w-full object-contain', portal && 'stage-portal-video')}
     />
   );
   if (!portal) return video;

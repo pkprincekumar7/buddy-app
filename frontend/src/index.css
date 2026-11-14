@@ -1258,6 +1258,12 @@
   .kids-confetti-piece {
     @apply absolute left-1/2 top-[46%] opacity-0;
   }
+  /* A live hub circle's disc grows a little under the pointer (the prototype's hover). */
+  @media (hover: hover) {
+    .hub-disc:hover {
+      transform: scale(1.08);
+    }
+  }
   /* The hub's Discover tip (the prototype's), to the circle's right with a small arrow. */
   .hub-tip {
     @apply pointer-events-none absolute left-full top-1/2 z-[6] ml-3.5 whitespace-nowrap rounded-[9px] px-3.5 py-2 text-[12.5px] leading-[1.35];
@@ -1278,9 +1284,8 @@
     border-left: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
     border-bottom: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
   }
-  /* Discover's portal video (the prototype's): fills the screen, tinted, with a cyan glow. */
+  /* Discover's portal video (the prototype's): tinted, with a cyan glow. */
   .stage-portal-video {
-    object-fit: cover;
     filter: hue-rotate(-8deg) saturate(1.15) contrast(1.05);
   }
   .stage-portal-glow {
@@ -2667,6 +2672,9 @@
   }
 }
 @media (prefers-reduced-motion: no-preference) {
+  .hub-disc {
+    transition: transform 0.2s ease;
+  }
   .kids-enter-up {
     animation: kids-up 0.5s ease both;
   }

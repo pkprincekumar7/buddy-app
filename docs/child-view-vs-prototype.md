@@ -268,8 +268,8 @@ Applying an item from group 1 means changing both apps the same way.
 - The hub and profile menu (was H1–H3, P1), applied on 2026-11-14 to both apps: Discover's
   hover tip "Explore {first name}'s personality analysis results" with its arrow (web, on
   devices that hover, also on keyboard focus); a tapped circle ringed (the prototype's `sel`
-  glow) for 200 ms before its page opens; the Discover portal video filling the screen with the
-  prototype's tint and cyan glow and moving on at 3 s (`StageSplash` `portal`; the tint is
+  glow) for 200 ms before its page opens; the Discover portal video with the prototype's tint and
+  cyan glow (fitted like the other stage videos, not the prototype's zooming cover) and moving on at 3 s (`StageSplash` `portal`; the tint is
   Android-only on mobile, as React Native's `filter` is); in child view, the profile menu's
   child row reads "Child · age N" (`childSubtitle`). The hub is shared, so these show in parent
   view too, as in the prototype.
@@ -313,3 +313,7 @@ Applying an item from group 1 means changing both apps the same way.
   read "From {first name}" and "{first name} chose to show you this in child view.", as the
   child's card uses the first name ("Your child" without one); `connectItems` takes the child's
   name and uses its first word (tested on mobile).
+- The hub circles' hover (2026-11-14, both apps): a live circle's disc grows to 1.08 over .2 s
+  under the pointer, as the prototype's (web `.hub-disc`, on devices that hover); on mobile, while
+  it's pressed. The pulses already matched (2.6 s single ring; the next circle's 1.7 s double ring
+  and glow, on the child's next circle rather than always on Discover, as decided in section 3).

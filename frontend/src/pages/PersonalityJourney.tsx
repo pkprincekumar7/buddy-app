@@ -450,6 +450,7 @@ function DimensionNode({
         />
       )}
       <div
+        className={locked ? undefined : 'hub-disc'}
         style={
           locked
             ? INACTIVE_INNER
@@ -1057,6 +1058,7 @@ function DimensionCirclesScreen({
               }}
             />
             <div
+              className="hub-disc"
               style={
                 selected === 'discover'
                   ? { ...ACTIVE_INNER, boxShadow: SELECTED_GLOW }
@@ -1275,6 +1277,7 @@ function DimensionCirclesScreen({
                 }}
               />
               <div
+                className="hub-disc"
                 style={{
                   ...ACTIVE_INNER,
                   boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',

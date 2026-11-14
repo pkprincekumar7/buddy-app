@@ -32,9 +32,9 @@ const CONTAINER_OUT = new Keyframe({
 
 interface StageSplashProps {
   stage: number;
-  /** Discover's portal (web, the prototype's): the video fills the screen, tinted (Android;
-   *  React Native's `filter` is Android-only), with a cyan glow over it, and onReady fires at
-   *  3 s even if it runs longer. */
+  /** Discover's portal (web, the prototype's): the video tinted (Android; React Native's
+   *  `filter` is Android-only), with a cyan glow over it, and onReady fires at 3 s even if it
+   *  runs longer. Fitted like every stage video (not the prototype's cover, which zooms it). */
   portal?: boolean;
   onReady?: () => void;
 }
@@ -142,7 +142,7 @@ function VideoSplash({
       <VideoView
         player={player}
         style={[StyleSheet.absoluteFill, portal && PORTAL_TINT]}
-        contentFit={portal ? 'cover' : 'contain'}
+        contentFit="contain"
         nativeControls={false}
       />
       {portal ? <View pointerEvents="none" style={PORTAL_GLOW} /> : null}
