@@ -12,14 +12,14 @@ jsonschema==4.25.1
 httpx==0.28.1
 limits==5.8.0
 pydantic-settings==2.7.1
-opentelemetry-api==1.45.1
-opentelemetry-sdk==1.45.1
-opentelemetry-exporter-otlp-proto-http==1.45.1
-opentelemetry-instrumentation-fastapi==0.66b1
-opentelemetry-instrumentation-pymongo==0.66b1
-opentelemetry-instrumentation-httpx==0.66b1
-opentelemetry-instrumentation-botocore==0.66b1
-opentelemetry-instrumentation-redis==0.66b1
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2
+opentelemetry-instrumentation-fastapi==0.66b2
+opentelemetry-instrumentation-pymongo==0.66b2
+opentelemetry-instrumentation-httpx==0.66b2
+opentelemetry-instrumentation-botocore==0.66b2
+opentelemetry-instrumentation-redis==0.66b2
 
 # The worker's SNS and SQS clients (users/worker.py), as in the other services.
 boto3==1.35.49
