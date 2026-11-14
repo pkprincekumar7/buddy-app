@@ -47,6 +47,8 @@ const config: Config = {
           wrong: 'rgb(var(--kids-wrong-rgb) / <alpha-value>)',
           white: 'rgb(var(--kids-white-rgb) / <alpha-value>)',
           'world-name': 'rgb(var(--kids-world-name-rgb) / <alpha-value>)',
+          empty: 'rgb(var(--kids-empty-rgb) / <alpha-value>)',
+          'orb-cyan-lo': 'rgb(var(--kids-orb-cyan-lo-rgb) / <alpha-value>)',
           ink: 'rgb(var(--kids-ink-rgb) / <alpha-value>)',
           off: 'rgb(var(--kids-off-rgb) / <alpha-value>)',
           'off-shade': 'rgb(var(--kids-off-shade-rgb) / <alpha-value>)',

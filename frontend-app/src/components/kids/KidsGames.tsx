@@ -3,12 +3,21 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type GestureResponderEvent,
 } from 'react-native';
-import Animated, { useReducedMotion } from 'react-native-reanimated';
+import Animated, {
+  useReducedMotion,
+  type CSSAnimationKeyframes,
+} from 'react-native-reanimated';
 import Svg, {
   Circle,
+  Defs,
   Ellipse,
+  FeGaussianBlur,
+  FeMerge,
+  FeMergeNode,
+  Filter,
   Line,
   Path,
   Polygon,
@@ -47,7 +56,14 @@ import {
   type GameKey,
 } from '@/lib/kidsGames';
 import { POWER_ICONS } from '@/components/kids/icons';
-import { color, game, gameBox, gameNode } from '@/components/kids/palette';
+import {
+  color,
+  game,
+  gameBox,
+  gameNode,
+  voiceMic,
+} from '@/components/kids/palette';
+import { FLOAT, loop } from '@/components/kids/enter';
 import {
   Bar,
   CAPTION_TEXT,
@@ -79,9 +95,58 @@ const WAVE_GLOW = {
   boxShadow: `0 0 8px ${rgb('kids-discover', 0.7)}`,
   transformOrigin: 'bottom',
 } as const;
-const FOUND_GLOW = {
-  boxShadow: `0 0 26px ${rgb('kids-streak', 0.35)}`,
-} as const;
+// web kids-twinkle, kids-pulse (a glow layer's opacity), kids-float, kids-flip and the
+// shake, only where motion is welcome.
+const TWINKLE: CSSAnimationKeyframes = {
+  '0%': { opacity: 0.25 },
+  '50%': { opacity: 1 },
+  '100%': { opacity: 0.25 },
+};
+const PULSE: CSSAnimationKeyframes = {
+  '0%': { opacity: 0 },
+  '50%': { opacity: 1 },
+  '100%': { opacity: 0 },
+};
+const FLIP: CSSAnimationKeyframes = {
+  from: {
+    transform: [{ perspective: 400 }, { rotateY: '90deg' }, { scale: 0.8 }],
+  },
+  to: { transform: [{ perspective: 400 }, { rotateY: '0deg' }, { scale: 1 }] },
+};
+/** A wrong star's shake, 12% of its width each way (web kids-card-shake). */
+const SHAKE: CSSAnimationKeyframes = {
+  '0%': { transform: [{ translateX: '0%' }] },
+  '25%': { transform: [{ translateX: '-12%' }] },
+  '75%': { transform: [{ translateX: '12%' }] },
+  '100%': { transform: [{ translateX: '0%' }] },
+};
+
+/** A line that glows in its own colour: its blur under it. `id` is unique per game. */
+function GlowFilter({ id, blur }: { id: string; blur: number }) {
+  return (
+    <Defs>
+      <Filter id={id} x="-20%" y="-20%" width="140%" height="140%">
+        <FeGaussianBlur stdDeviation={blur} result="glow" />
+        <FeMerge>
+          <FeMergeNode in="glow" />
+          <FeMergeNode in="SourceGraphic" />
+        </FeMerge>
+      </Filter>
+    </Defs>
+  );
+}
+
+/** A pulsing piece's glow (web kids-pulse over `seconds`); none for reduced motion. */
+function Pulse({ seconds }: { seconds: number }) {
+  const reduced = useReducedMotion();
+  if (reduced) return null;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[game.pulseGlow, loop(PULSE, seconds, 0, 'ease-in-out', false)]}
+    />
+  );
+}
 
 // ── the games ──────────────────────────────────────────────────────────────────
 
@@ -115,11 +180,12 @@ function FocusGame({ onWin }: GameProps) {
               at(size, spot.x, spot.y, 17),
               !reduced && {
                 transitionProperty: 'transform',
-                transitionDuration: 1000,
+                transitionDuration: 1100,
                 transitionTimingFunction: 'ease-in-out',
               },
             ]}
           >
+            <Pulse seconds={1} />
             <Pressable
               onPressIn={catchIt}
               accessibilityRole="button"
@@ -157,6 +223,10 @@ function CuriousGame({ onWin }: GameProps) {
   const [planets] = useState(() => hidePlanets());
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const found = planetsFound(planets, opened);
+  const reduced = useReducedMotion();
+  const { width: vw } = useWindowDimensions();
+  // web clamp(22px, 6vw, 34px).
+  const mark = Math.min(34, Math.max(22, 0.06 * vw));
   useWinOnce(found >= CURIOUS_GOAL, onWin);
   return (
     <Frame>
@@ -168,43 +238,69 @@ function CuriousGame({ onWin }: GameProps) {
             const planet = planets.includes(i);
             const cell = boxCell(i, size);
             return (
-              <Pressable
+              // Closed boxes float at their own pace; an opened one turns over.
+              <Animated.View
                 key={i}
-                disabled={open}
-                onPressIn={() => setOpened(new Set(opened).add(i))}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  open ? (planet ? 'A planet!' : 'Empty') : `Box ${i + 1}`
-                }
                 style={[
-                  gameBox(open, open && planet),
                   cell,
-                  open && planet && FOUND_GLOW,
+                  !open
+                    ? loop(FLOAT, 2.4 + i * 0.2, 0, 'ease-in-out', reduced)
+                    : reduced
+                    ? null
+                    : {
+                        animationName: FLIP,
+                        animationDuration: '0.4s',
+                        animationTimingFunction: 'ease',
+                      },
                 ]}
               >
-                {!open ? (
-                  <Text style={[game.number, { fontSize: 30 }]}>?</Text>
-                ) : planet ? (
-                  <Svg width="62%" height="62%" viewBox="0 0 40 40">
-                    <Ellipse
-                      cx={20}
-                      cy={20}
-                      rx={18}
-                      ry={6}
-                      fill="none"
-                      stroke={color('streak')}
-                      strokeWidth={2}
-                      transform="rotate(-20 20 20)"
+                <Pressable
+                  disabled={open}
+                  onPressIn={() => setOpened(new Set(opened).add(i))}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    open ? (planet ? 'A planet!' : 'Empty') : `Box ${i + 1}`
+                  }
+                  style={[
+                    gameBox(open, open && planet),
+                    { width: '100%', height: '100%', aspectRatio: undefined },
+                  ]}
+                >
+                  {!open ? (
+                    <Text
+                      style={[
+                        game.number,
+                        {
+                          fontSize: mark,
+                          lineHeight: mark * 1.2,
+                          color: color('world-name'),
+                        },
+                      ]}
+                    >
+                      ?
+                    </Text>
+                  ) : planet ? (
+                    <Svg width="62%" height="62%" viewBox="0 0 40 40">
+                      <Ellipse
+                        cx={20}
+                        cy={20}
+                        rx={18}
+                        ry={6}
+                        fill="none"
+                        stroke={color('gold')}
+                        strokeWidth={2}
+                        transform="rotate(-20 20 20)"
+                      />
+                      <Circle cx={20} cy={20} r={10} fill={color('gold')} />
+                    </Svg>
+                  ) : (
+                    <View
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: rgb('kids-empty') }}
                     />
-                    <Circle cx={20} cy={20} r={10} fill={color('streak')} />
-                  </Svg>
-                ) : (
-                  <View
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: color('off') }}
-                  />
-                )}
-              </Pressable>
+                  )}
+                </Pressable>
+              </Animated.View>
             );
           })}
         </>
@@ -216,6 +312,10 @@ function CuriousGame({ onWin }: GameProps) {
 function OrderGame({ onWin }: GameProps) {
   const [done, setDone] = useState(0);
   const [wrong, setWrong] = useState(-1);
+  const reduced = useReducedMotion();
+  const { width: vw } = useWindowDimensions();
+  // web clamp(16px, 4.4vw, 24px).
+  const num = Math.min(24, Math.max(16, 0.044 * vw));
   useWinOnce(done >= ORDER_STARS.length, onWin);
   useEffect(() => {
     if (wrong < 0) return;
@@ -240,10 +340,12 @@ function OrderGame({ onWin }: GameProps) {
             viewBox="0 0 100 100"
             style={{ position: 'absolute' }}
           >
+            <GlowFilter id="order-glow" blur={0.5} />
             <Polyline
               points={polyline(ORDER_STARS.slice(0, done))}
               fill="none"
               stroke={color('discover')}
+              filter="url(#order-glow)"
               strokeWidth={0.8}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -252,35 +354,58 @@ function OrderGame({ onWin }: GameProps) {
           {ORDER_STARS.map((s, i) => {
             const d = (14 / 100) * size;
             return (
-              <Pressable
+              // Placed by the outer view, so a wrong star's shake (and the next one's glow)
+              // can move it.
+              <Animated.View
                 key={i}
-                onPressIn={() => tap(i)}
-                accessibilityRole="button"
-                accessibilityLabel={`Star ${i + 1}`}
                 style={[
-                  gameNode(
-                    i < done
-                      ? 'done'
-                      : i === wrong
-                      ? 'wrong'
-                      : i === done
-                      ? 'next'
-                      : 'waiting',
-                  ),
                   {
+                    position: 'absolute',
                     width: d,
                     height: d,
                     left: (s.x / 100) * size - d / 2,
                     top: (s.y / 100) * size - d / 2,
                   },
+                  i === wrong && !reduced
+                    ? {
+                        animationName: SHAKE,
+                        animationDuration: '0.35s',
+                        animationTimingFunction: 'ease',
+                      }
+                    : null,
                 ]}
               >
-                <Text
-                  style={[game.number, i < done && { color: color('ink') }]}
+                {i === done ? <Pulse seconds={1.1} /> : null}
+                <Pressable
+                  onPressIn={() => tap(i)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Star ${i + 1}`}
+                  style={[
+                    gameNode(
+                      i < done
+                        ? 'done'
+                        : i === wrong
+                        ? 'wrong'
+                        : i === done
+                        ? 'next'
+                        : 'waiting',
+                    ),
+                    { left: 0, top: 0, width: d, height: d },
+                  ]}
                 >
-                  {i + 1}
-                </Text>
-              </Pressable>
+                  <Text
+                    style={[
+                      game.number,
+                      { fontSize: num, lineHeight: num * 1.25 },
+                      {
+                        color: color(i < done ? 'world-deep' : 'world-name'),
+                      },
+                    ]}
+                  >
+                    {i + 1}
+                  </Text>
+                </Pressable>
+              </Animated.View>
             );
           })}
         </>
@@ -330,10 +455,12 @@ function DrawGame({ onWin }: GameProps) {
         viewBox="0 0 100 100"
         style={{ position: 'absolute' }}
       >
+        <GlowFilter id="draw-glow" blur={0.6} />
         <Polyline
           points={line}
           fill="none"
-          stroke={color('transform')}
+          stroke={color('gold')}
+          filter="url(#draw-glow)"
           strokeWidth={2.2}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -341,7 +468,7 @@ function DrawGame({ onWin }: GameProps) {
         <Polyline
           points={line}
           fill="none"
-          stroke={color('text')}
+          stroke={color('world-name')}
           strokeWidth={0.7}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -366,7 +493,7 @@ function ClimbGame({ onWin }: GameProps) {
   const tap = () => {
     if (height >= 100) return;
     setHeight(climbTap);
-    setBursts(b => addBurst(b, spot.x, spot.y));
+    setBursts(b => addBurst(b, spot.x, spot.y, 'cyan'));
   };
   return (
     <Pressable
@@ -389,7 +516,7 @@ function ClimbGame({ onWin }: GameProps) {
             >
               <Polygon
                 points="0,100 50,18 100,100"
-                fill={color('discover-shade')}
+                fill={rgb('kids-orb-cyan-lo')}
                 fillOpacity={0.55}
                 stroke={color('discover')}
                 strokeOpacity={0.5}
@@ -405,7 +532,7 @@ function ClimbGame({ onWin }: GameProps) {
                 y1={86}
                 x2={50}
                 y2={20}
-                stroke={color('streak')}
+                stroke={color('gold')}
                 strokeOpacity={0.35}
                 strokeWidth={0.6}
                 strokeDasharray="2 2"
@@ -415,11 +542,28 @@ function ClimbGame({ onWin }: GameProps) {
                 y1={18}
                 x2={50}
                 y2={6}
-                stroke={color('streak')}
+                stroke={color('gold')}
                 strokeWidth={0.8}
               />
-              <Polygon points="50,6 60,9 50,12" fill={color('streak')} />
             </Svg>
+            {/* The flag twinkles (its own layer, so only it fades). */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                {
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  width: size,
+                  height: size,
+                },
+                loop(TWINKLE, 1, 0, 'ease-in-out', reduced),
+              ]}
+            >
+              <Svg width={size} height={size} viewBox="0 0 100 100">
+                <Polygon points="50,6 60,9 50,12" fill={color('gold')} />
+              </Svg>
+            </Animated.View>
             <Bursts list={bursts} size={size} />
             {/* Web translate(-50%, -80%): 30% of its own height above centre. */}
             <Animated.View
@@ -429,7 +573,7 @@ function ClimbGame({ onWin }: GameProps) {
                 at(size, spot.x, spot.y - 0.3 * 11, 11),
                 !reduced && {
                   transitionProperty: 'transform',
-                  transitionDuration: 100,
+                  transitionDuration: 120,
                   transitionTimingFunction: 'linear',
                 },
               ]}
@@ -498,9 +642,8 @@ function VoiceGame({ onWin }: GameProps) {
               })}
               <View
                 pointerEvents="none"
-                className="items-center justify-center"
                 style={[
-                  game.orb,
+                  voiceMic(s),
                   {
                     width: mic,
                     height: mic,
@@ -520,7 +663,7 @@ function VoiceGame({ onWin }: GameProps) {
                 >
                   <Path
                     d={POWER_ICONS.voice}
-                    stroke={color('ink')}
+                    stroke={color('world-name')}
                     strokeWidth={1.8}
                     strokeLinecap="round"
                   />
@@ -528,8 +671,8 @@ function VoiceGame({ onWin }: GameProps) {
               </View>
               <View
                 pointerEvents="none"
-                className="absolute left-0 right-0 flex-row items-end justify-center gap-1"
-                style={{ bottom: '14%', height: '12%' }}
+                className="absolute left-0 right-0 flex-row items-end justify-center"
+                style={{ bottom: '14%', height: '12%', gap: 5 }}
               >
                 {Array.from({ length: 9 }, (_, i) => (
                   <View
@@ -589,7 +732,7 @@ function EnergyGame({ onWin }: GameProps) {
   useWinOnce(popped >= ENERGY_GOAL, onWin);
   const pop = (b: Bubble) => {
     setBubbles(list => list.filter(x => x.id !== b.id));
-    setBursts(list => addBurst(list, b.x, b.y));
+    setBursts(list => addBurst(list, b.x, b.y, 'cyan'));
     setPopped(n => n + 1);
   };
   return (

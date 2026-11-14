@@ -56,7 +56,7 @@ export function Bursts({ list }: { list: Burst[] }) {
     <span
       key={b.key}
       aria-hidden="true"
-      className={cn('kids-game-burst', b.wrong && 'kids-game-burst-wrong')}
+      className={cn('kids-game-burst', b.tone !== 'gold' && `kids-game-burst-${b.tone}`)}
       style={{ left: `${b.x}%`, top: `${b.y}%` }}
     />
   ));

@@ -49,18 +49,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **S5.** Confetti: 46 pieces plus a cyan and a gold ring each time Discover opens, and on the Grow
   report (the plan already promises it at lines ~77, 199 and 512). Off under reduced motion.
 
-### Discover mini games — `KidsGames.tsx`, `GamePieces.tsx`
-
-- **M3.** Bursts: cyan for climb and energy (the .4 → 2.6 scale is applied).
-- **M4.** Focus: the light pulses (`kPulse 1s`), moves in 1.1 s, gradient ends #0a5b74.
-- **M5.** Curious: closed boxes float, an opened box flips; "?" clamp(22–34 px); empty dot #3c5568.
-- **M6.** Order: the line glows; the next star pulses; a wrong tap shakes; numbers clamp(16–24 px);
-  a done number #05131a.
-- **M7.** Draw: stroke #ffd98a with a glow.
-- **M8.** Climb: the flag twinkles; the climber moves in .12 s; mountain #0a5b74.
-- **M9.** Voice: dark-cyan mic circle (#1ec4e8 → #0a5b74) with a light mic, a gold border above
-  90%, glow 20 → 70 px; wave bars 5 px apart.
-
 ### Transform — `TransformQuests.tsx`
 
 - **T1.** Picker subtitle in the "add another" state: "Pick what else you are into. You get new
@@ -330,3 +318,12 @@ Applying an item from group 1 means changing both apps the same way.
   50% 35% (web; React Native's Image can't set it); the bubbles deep teal, lit cyan-bright to
   #0a5b74 with light ink; the name pill and tip on #05131a with #eafdff text; the count pill
   cyan-bright to #0a5b74. The name pill centres with `translate`, so its rise can't move it.
+- Discover's mini games (was M3–M9), applied on 2026-11-14 to both apps: cyan rings for climb
+  and energy; Focus's light pulsing (1 s), gliding in 1.1 s, its gradient ending #0a5b74;
+  Curious's closed boxes floating (each at its own pace), an opened one flipping, a larger "?",
+  the empty dot #3c5568 (`--kids-empty-rgb`) and a gold planet; Order's glowing line, the next
+  star pulsing, a wrong one shaking, larger numbers and a dark number on a done (gold) star;
+  Draw's gold stroke with a glow; Climb's twinkling flag, the climber's .12 s step, the mountain
+  #0a5b74; Voice's dark-cyan mic with a light icon, gold-edged above 90%, its glow 20 → 70 px,
+  the wave bars 5 px apart. The stars centre with `translate`, so their pulse and shake can't
+  move them; the line glows are SVG blur filters.

@@ -508,6 +508,7 @@
     --kids-gold-shade-rgb: 138 100 32; /* #8a6420 gold's shade (a gold memory pad, sort side) */
     --kids-wrong-rgb: 255 122 122; /* #ff7a7a a wrong answer, "Miss", "Too soon!" */
     --kids-white-rgb: 255 255 255; /* a lit memory pad's centre, a spark stroke's core */
+    --kids-empty-rgb: 60 85 104; /* #3c5568 an empty box's dot in Discover's Curious game */
     --kids-orb-cyan-hi-rgb: 234 253 255; /* #eafdff */
     --kids-orb-cyan-rgb: 75 233 255; /* #4be9ff */
     --kids-orb-cyan-lo-rgb: 10 91 116; /* #0a5b74 */
@@ -1556,13 +1557,14 @@
      these centring transforms and jump them to the bottom-right: they keep their own. */
   .kids-power:not(:disabled):active,
   .kids-game-orb:not(:disabled):active,
-  .kids-game-node:not(:disabled):active,
   .kids-game-bubble:not(:disabled):active,
   .kids-game-pill:not(:disabled):active {
     transform: translate(-50%, -50%);
   }
-  /* Grow's light centres with `translate`, so its pop-in can scale it: no press shrink. */
-  .kids-game-light:not(:disabled):active {
+  /* Grow's light and Order's stars centre with `translate`, so their pop, pulse or shake can
+     use transform: no press shrink. */
+  .kids-game-light:not(:disabled):active,
+  .kids-game-node:not(:disabled):active {
     transform: none;
   }
   /* A whole game frame you tap or hold (climb, voice, timing) stays still. */
@@ -1719,50 +1721,53 @@
     transform: translate(-50%, -50%);
     background: radial-gradient(
       circle at 40% 35%,
-      rgb(var(--kids-text-rgb)),
+      rgb(var(--kids-world-name-rgb)),
       rgb(var(--kids-discover-rgb)) 45%,
-      rgb(var(--kids-discover-shade-rgb))
+      rgb(var(--kids-orb-cyan-lo-rgb))
     );
     box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.8);
   }
   .kids-game-box {
-    @apply flex items-center justify-center rounded-[18px] font-orbitron text-3xl font-bold;
-    color: rgb(var(--kids-text-rgb));
+    @apply flex items-center justify-center rounded-[18px] font-orbitron text-[clamp(22px,6vw,34px)] font-bold;
+    color: rgb(var(--kids-world-name-rgb));
     border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
     background: linear-gradient(
       160deg,
-      rgb(var(--kids-discover-rgb) / 0.35),
-      rgb(var(--kids-discover-shade-rgb) / 0.5)
+      rgb(var(--kids-orb-sky-rgb) / 0.35),
+      rgb(var(--kids-orb-cyan-lo-rgb) / 0.5)
     );
   }
   .kids-game-box-open {
-    background: rgb(var(--kids-bg-rgb) / 0.7);
+    background: rgb(var(--kids-world-deep-rgb) / 0.7);
   }
   .kids-game-box-found {
-    border-color: rgb(var(--kids-streak-rgb));
+    border-color: rgb(var(--kids-gold-rgb));
     background: radial-gradient(
       circle,
-      rgb(var(--kids-streak-rgb) / 0.25),
-      rgb(var(--kids-bg-rgb) / 0.9)
+      rgb(var(--kids-gold-rgb) / 0.25),
+      rgb(var(--kids-world-deep-rgb) / 0.9)
     );
-    box-shadow: 0 0 26px rgb(var(--kids-streak-rgb) / 0.35);
+    box-shadow: 0 0 26px rgb(var(--kids-gold-rgb) / 0.45);
   }
+  /* Order's stars centre with `translate`, so the next one's pulse and a wrong one's shake
+     can use transform. */
   .kids-game-node {
-    @apply absolute flex items-center justify-center rounded-full font-orbitron text-xl font-bold;
-    transform: translate(-50%, -50%);
-    color: rgb(var(--kids-text-rgb));
+    @apply absolute flex items-center justify-center rounded-full font-orbitron text-[clamp(16px,4.4vw,24px)] font-bold;
+    translate: -50% -50%;
+    color: rgb(var(--kids-world-name-rgb));
     border: 2px solid rgb(var(--kids-discover-rgb) / 0.35);
-    background: rgb(var(--kids-bg-rgb) / 0.85);
+    background: rgb(var(--kids-world-deep-rgb) / 0.85);
+    transition: background 0.2s ease;
   }
   .kids-game-node-next {
     border-color: rgb(var(--kids-discover-rgb));
   }
   .kids-game-node-done {
-    color: rgb(var(--kids-ink-rgb));
-    border-color: rgb(var(--kids-streak-rgb));
+    color: rgb(var(--kids-world-deep-rgb));
+    border-color: rgb(var(--kids-gold-rgb));
     background: radial-gradient(
       circle,
-      rgb(var(--kids-streak-rgb)),
+      rgb(var(--kids-gold-rgb)),
       rgb(var(--kids-transform-shade-rgb))
     );
   }
@@ -1789,10 +1794,27 @@
   .kids-game-burst-wrong {
     border-color: rgb(var(--kids-wrong-rgb));
   }
+  .kids-game-burst-cyan {
+    border-color: rgb(var(--kids-discover-rgb));
+  }
   .kids-game-ring {
     @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
     transform: translate(-50%, -50%);
     border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  /* Voice's mic: a dark-cyan circle, gold-edged once the voice is nearly full. */
+  .kids-game-mic {
+    @apply pointer-events-none absolute left-1/2 top-1/2 flex h-[26%] w-[26%] items-center justify-center rounded-full;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+  }
+  .kids-game-mic-full {
+    border-color: rgb(var(--kids-gold-rgb));
   }
   .kids-game-wave {
     @apply w-1.5 rounded-full;
@@ -2372,6 +2394,15 @@
     transform: scaleX(1);
   }
 }
+/* An opened Curious box turning over (the prototype's kFlip). */
+@keyframes kids-flip {
+  from {
+    transform: rotateY(90deg) scale(0.8);
+  }
+  to {
+    transform: none;
+  }
+}
 /* Grow's sort card: pops in, shakes when wrong, flies off toward its side when right. */
 @keyframes kids-card-shake {
   0%,
@@ -2474,6 +2505,26 @@
   }
   .kids-game-light {
     animation: kids-pop 0.18s ease both;
+  }
+  /* Discover's games: the focus light and the next star pulse, a wrong star shakes, closed boxes
+     float and an opened one flips, the climb's flag twinkles. */
+  .kids-game-orb-pulse {
+    animation: kids-pulse 1s ease-in-out infinite;
+  }
+  .kids-game-node-next {
+    animation: kids-pulse 1.1s ease-in-out infinite;
+  }
+  .kids-game-node-wrong {
+    animation: kids-card-shake 0.35s ease;
+  }
+  .kids-game-box {
+    animation: kids-float var(--float, 2.4s) ease-in-out infinite;
+  }
+  .kids-game-box-open {
+    animation: kids-flip 0.4s ease both;
+  }
+  .kids-game-flag {
+    animation: kids-twinkle 1s ease-in-out infinite;
   }
   /* A wrong memory tap: the frame flashes (fades back in). */
   .kids-game-flash {

@@ -1049,6 +1049,11 @@ module.exports = {
       255,
       255
     ],
+    "kids-empty": [
+      60,
+      85,
+      104
+    ],
     "kids-orb-cyan-hi": [
       234,
       253,

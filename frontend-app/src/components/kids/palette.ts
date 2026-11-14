@@ -374,9 +374,20 @@ export const game = {
     top: 0,
     borderRadius: 9999,
     experimental_backgroundImage: `radial-gradient(circle at 40% 35%, ${rgb(
-      'kids-text',
-    )}, ${fill('discover')} 45%, ${shade('discover')})`,
+      'kids-world-name',
+    )}, ${fill('discover')} 45%, ${rgb('kids-orb-cyan-lo')})`,
     boxShadow: `0 0 24px ${fill('discover', 0.8)}`,
+  } satisfies ViewStyle,
+  /** A pulsing piece's breathing glow, a layer under it (web kids-pulse; RN can't animate
+   * box-shadow). */
+  pulseGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 9999,
+    boxShadow: `0 0 46px ${fill('discover', 0.95)}`,
   } satisfies ViewStyle,
   bubble: {
     position: 'absolute',
@@ -1127,19 +1138,20 @@ export function gameBox(open: boolean, found: boolean): ViewStyle {
     borderWidth: found ? 2 : 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderColor: found ? rgb('kids-streak') : fill('discover', 0.4),
+    borderColor: found ? rgb('kids-gold') : fill('discover', 0.4),
     experimental_backgroundImage: found
-      ? `radial-gradient(circle, ${rgb('kids-streak', 0.25)}, ${rgb(
-          'kids-bg',
+      ? `radial-gradient(circle, ${rgb('kids-gold', 0.25)}, ${rgb(
+          'kids-world-deep',
           0.9,
         )})`
       : open
       ? undefined
-      : `linear-gradient(160deg, ${fill('discover', 0.35)}, ${rgb(
-          'kids-discover-shade',
+      : `linear-gradient(160deg, ${rgb('kids-orb-sky', 0.35)}, ${rgb(
+          'kids-orb-cyan-lo',
           0.5,
         )})`,
-    backgroundColor: open && !found ? rgb('kids-bg', 0.7) : undefined,
+    backgroundColor: open && !found ? rgb('kids-world-deep', 0.7) : undefined,
+    boxShadow: found ? `0 0 26px ${rgb('kids-gold', 0.45)}` : undefined,
   };
 }
 
@@ -1155,7 +1167,7 @@ export function gameNode(
     justifyContent: 'center',
     borderColor:
       state === 'done'
-        ? rgb('kids-streak')
+        ? rgb('kids-gold')
         : state === 'next'
         ? fill('discover')
         : state === 'wrong'
@@ -1163,11 +1175,29 @@ export function gameNode(
         : fill('discover', 0.35),
     experimental_backgroundImage:
       state === 'done'
-        ? `radial-gradient(circle, ${rgb('kids-streak')}, ${shade(
-            'transform',
-          )})`
+        ? `radial-gradient(circle, ${rgb('kids-gold')}, ${shade('transform')})`
         : undefined,
-    backgroundColor: state === 'done' ? undefined : rgb('kids-bg', 0.85),
+    backgroundColor:
+      state === 'done' ? undefined : rgb('kids-world-deep', 0.85),
+  };
+}
+
+/** Voice's mic (web .kids-game-mic, -full): a dark-cyan circle, gold-edged once the voice is
+ * nearly full, its glow growing with the voice (20 → 70 px). */
+export function voiceMic(level: number): ViewStyle {
+  return {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: level > 0.9 ? rgb('kids-gold') : fill('discover'),
+    experimental_backgroundImage: `radial-gradient(circle at 50% 35%, ${rgb(
+      'kids-orb-sky',
+    )}, ${rgb('kids-orb-cyan-lo')})`,
+    boxShadow: `0 0 ${20 + level * 50}px ${fill('discover', 0.8)}`,
   };
 }
 

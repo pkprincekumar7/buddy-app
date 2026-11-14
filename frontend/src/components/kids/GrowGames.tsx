@@ -109,7 +109,10 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
         const { hits, ...next } = catchTick(s.items, basketRef.current, s.tally, s.nextId, cfg);
         tallyRef.current = next.tally;
         // A gold ring for a good word caught, a red one for a bad one.
-        const bursts = hits.reduce((l, h) => addBurst(l, h.x, 84, !h.good), s.bursts);
+        const bursts = hits.reduce(
+          (l, h) => addBurst(l, h.x, 84, h.good ? 'gold' : 'wrong'),
+          s.bursts,
+        );
         return { ...next, bursts };
       });
     }, CATCH_TICK_MS);

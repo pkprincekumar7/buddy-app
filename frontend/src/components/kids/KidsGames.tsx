@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ComponentType, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ComponentType,
+  type PointerEvent,
+} from 'react';
 import { useWinOnce } from '@/hooks/useWinOnce';
 import {
   CLIMB_TICK_MS,
@@ -43,6 +51,24 @@ export interface GameProps {
   onWin: () => void;
 }
 
+/** A line that glows in its own colour: its blur under it (an SVG filter; CSS drop-shadow on
+ * SVG strokes doesn't render in Chrome). `id` must be unique on the page. */
+function GlowFilter({ id, blur }: { id: string; blur: number }) {
+  return (
+    <defs>
+      <filter id={id} x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation={blur} result="glow" />
+        <feMerge>
+          <feMergeNode in="glow" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+  );
+}
+/** useId, made safe for url(#…). */
+const useSvgId = (name: string) => `${name}-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
 /** Where a pointer is in the box, in percent. */
 function pointIn(e: PointerEvent<HTMLElement>, box: HTMLElement) {
   const r = box.getBoundingClientRect();
@@ -76,7 +102,7 @@ function FocusGame({ onWin }: GameProps) {
         aria-label="The light"
         onPointerDown={catchIt}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && catchIt()}
-        className="kids-game-orb h-[17%] w-[17%] transition-[left,top] duration-1000 ease-in-out motion-reduce:transition-none"
+        className="kids-game-orb kids-game-orb-pulse h-[17%] w-[17%] transition-[left,top] ease-in-out [transition-duration:1100ms] motion-reduce:transition-none"
         style={{ left: `${spot.x}%`, top: `${spot.y}%` }}
       />
       <p className="kids-game-caption" aria-live="polite">
@@ -112,6 +138,8 @@ function CuriousGame({ onWin }: GameProps) {
               open && 'kids-game-box-open',
               open && planet && 'kids-game-box-found',
             )}
+            // Each closed box floats at its own pace.
+            style={{ '--float': `${2.4 + i * 0.2}s` } as CSSProperties}
           >
             {!open ? (
               '?'
@@ -126,12 +154,12 @@ function CuriousGame({ onWin }: GameProps) {
                   stroke="currentColor"
                   strokeWidth="2"
                   transform="rotate(-20 20 20)"
-                  className="text-kids-streak"
+                  className="text-kids-gold"
                 />
-                <circle cx="20" cy="20" r="10" className="fill-kids-streak" />
+                <circle cx="20" cy="20" r="10" className="fill-kids-gold" />
               </svg>
             ) : (
-              <span className="h-2 w-2 rounded-full bg-kids-off" aria-hidden="true" />
+              <span className="h-2 w-2 rounded-full bg-kids-empty" aria-hidden="true" />
             )}
           </button>
         );
@@ -143,6 +171,7 @@ function CuriousGame({ onWin }: GameProps) {
 function OrderGame({ onWin }: GameProps) {
   const [done, setDone] = useState(0);
   const [wrong, setWrong] = useState(-1);
+  const glowId = useSvgId('order-glow');
   useWinOnce(done >= ORDER_STARS.length, onWin);
   useEffect(() => {
     if (wrong < 0) return;
@@ -163,10 +192,12 @@ function OrderGame({ onWin }: GameProps) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 h-full w-full"
       >
+        <GlowFilter id={glowId} blur={0.5} />
         <polyline
           points={polyline(ORDER_STARS.slice(0, done))}
           fill="none"
           stroke={tileColor('discover')}
+          filter={`url(#${glowId})`}
           strokeWidth="0.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -198,6 +229,7 @@ function DrawGame({ onWin }: GameProps) {
   const box = useRef<HTMLDivElement>(null);
   const down = useRef(false);
   const [state, setState] = useState<DrawState>(DRAW_START);
+  const glowId = useSvgId('draw-glow');
   useWinOnce(state.length >= DRAW_GOAL, onWin);
   const move = (e: PointerEvent<HTMLDivElement>, stroke: boolean) => {
     if (!down.current || !box.current) return;
@@ -231,10 +263,12 @@ function DrawGame({ onWin }: GameProps) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 h-full w-full"
       >
+        <GlowFilter id={glowId} blur={0.6} />
         <polyline
           points={line}
           fill="none"
-          stroke={tileColor('transform')}
+          stroke={tileColor('gold')}
+          filter={`url(#${glowId})`}
           strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -242,7 +276,7 @@ function DrawGame({ onWin }: GameProps) {
         <polyline
           points={line}
           fill="none"
-          className="stroke-kids-text"
+          className="stroke-kids-world-name"
           strokeWidth="0.7"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -267,7 +301,7 @@ function ClimbGame({ onWin }: GameProps) {
   const tap = () => {
     if (height >= 100) return;
     setHeight(climbTap);
-    setBursts((b) => addBurst(b, spot.x, spot.y));
+    setBursts((b) => addBurst(b, spot.x, spot.y, 'cyan'));
   };
   return (
     <button
@@ -286,7 +320,7 @@ function ClimbGame({ onWin }: GameProps) {
       >
         <polygon
           points="0,100 50,18 100,100"
-          className="fill-kids-discover-shade/55 stroke-kids-discover/50"
+          className="fill-kids-orb-cyan-lo/55 stroke-kids-discover/50"
           strokeWidth="0.6"
         />
         <polygon points="42,31 50,18 58,31 54,28 50,32 46,28" className="fill-kids-text/80" />
@@ -295,17 +329,17 @@ function ClimbGame({ onWin }: GameProps) {
           y1="86"
           x2="50"
           y2="20"
-          className="stroke-kids-streak/35"
+          className="stroke-kids-gold/35"
           strokeWidth="0.6"
           strokeDasharray="2 2"
         />
-        <line x1="50" y1="18" x2="50" y2="6" className="stroke-kids-streak" strokeWidth="0.8" />
-        <polygon points="50,6 60,9 50,12" className="fill-kids-streak" />
+        <line x1="50" y1="18" x2="50" y2="6" className="stroke-kids-gold" strokeWidth="0.8" />
+        <polygon points="50,6 60,9 50,12" className="kids-game-flag fill-kids-gold" />
       </svg>
       <Bursts list={bursts} />
       <span
         aria-hidden="true"
-        className="kids-game-orb pointer-events-none h-[11%] w-[11%] transition-[left,top] duration-100 ease-linear"
+        className="kids-game-orb pointer-events-none h-[11%] w-[11%] transition-[left,top] ease-linear [transition-duration:120ms]"
         style={{ left: `${spot.x}%`, top: `${spot.y}%`, transform: 'translate(-50%, -80%)' }}
       />
       <span className="kids-game-caption">{height >= 100 ? 'Top!' : 'Tap tap tap!'}</span>
@@ -359,22 +393,26 @@ function VoiceGame({ onWin }: GameProps) {
       ))}
       <span
         aria-hidden="true"
-        className="kids-game-orb pointer-events-none left-1/2 top-1/2 flex h-[26%] w-[26%] items-center justify-center"
-        style={{ transform: `translate(-50%, -50%) scale(${1 + s * 0.25})` }}
+        className={cn('kids-game-mic', s > 0.9 && 'kids-game-mic-full')}
+        style={{
+          transform: `translate(-50%, -50%) scale(${1 + s * 0.25})`,
+          // The glow grows with the voice, 20 → 70 px.
+          boxShadow: `0 0 ${20 + s * 50}px rgb(var(--kids-discover-rgb) / 0.8)`,
+        }}
       >
         <svg
           viewBox="0 0 24 24"
           fill="none"
           strokeWidth="1.8"
           strokeLinecap="round"
-          className="h-1/2 w-1/2 stroke-kids-ink"
+          className="h-1/2 w-1/2 stroke-current"
         >
           <path d={POWER_ICONS.voice} />
         </svg>
       </span>
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-[14%] left-1/2 flex h-[12%] -translate-x-1/2 items-end gap-1"
+        className="pointer-events-none absolute bottom-[14%] left-1/2 flex h-[12%] -translate-x-1/2 items-end gap-[5px]"
       >
         {Array.from({ length: 9 }, (_, i) => (
           <span
@@ -411,7 +449,7 @@ function EnergyGame({ onWin }: GameProps) {
   useWinOnce(popped >= ENERGY_GOAL, onWin);
   const pop = (b: Bubble) => {
     setBubbles((list) => list.filter((x) => x.id !== b.id));
-    setBursts((list) => addBurst(list, b.x, b.y));
+    setBursts((list) => addBurst(list, b.x, b.y, 'cyan'));
     setPopped((n) => n + 1);
   };
   return (

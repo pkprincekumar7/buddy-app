@@ -120,7 +120,7 @@ const BURST: CSSAnimationKeyframes = {
   to: { opacity: 0, transform: [{ scale: 2.6 }] },
 };
 
-/** The bursts (lib/kidsBursts) in a `size`-wide frame: gold, or red for a wrong catch. None
+/** The bursts (lib/kidsBursts) in a `size`-wide frame: gold, red or cyan by tone. None
  * when the device asks for reduced motion, as the web hides them. */
 export function Bursts({ list, size }: { list: Burst[]; size: number }) {
   const reduced = useReducedMotion();
@@ -134,7 +134,15 @@ export function Bursts({ list, size }: { list: Burst[]; size: number }) {
         position: 'absolute',
         borderRadius: 9999,
         borderWidth: 3,
-        borderColor: b.wrong ? rgb('kids-wrong') : rgb('kids-gold'),
+        borderColor: rgb(
+          `kids-${
+            b.tone === 'wrong'
+              ? 'wrong'
+              : b.tone === 'cyan'
+              ? 'discover'
+              : 'gold'
+          }`,
+        ),
         width: d,
         height: d,
         left: (b.x / 100) * size - d / 2,
