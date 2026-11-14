@@ -31,7 +31,8 @@ import {
 } from '@/lib/kidsGames';
 import { cn } from '@/lib/utils';
 import { POWER_ICONS } from '@/components/kids/icons';
-import { Bar, Sky } from '@/components/kids/GamePieces';
+import { Bar, Sky, Bursts } from '@/components/kids/GamePieces';
+import { addBurst, type Burst } from '@/lib/kidsBursts';
 import { tileColor } from '@/components/kids/palette';
 
 /**
@@ -41,26 +42,6 @@ import { tileColor } from '@/components/kids/palette';
 export interface GameProps {
   onWin: () => void;
 }
-
-interface Burst {
-  key: number;
-  x: number;
-  y: number;
-}
-function Bursts({ list }: { list: Burst[] }) {
-  return list.map((b) => (
-    <span
-      key={b.key}
-      aria-hidden="true"
-      className="kids-game-burst"
-      style={{ left: `${b.x}%`, top: `${b.y}%` }}
-    />
-  ));
-}
-const addBurst = (list: Burst[], x: number, y: number) => [
-  ...list.slice(-3),
-  { key: Date.now() + Math.random(), x, y },
-];
 
 /** Where a pointer is in the box, in percent. */
 function pointIn(e: PointerEvent<HTMLElement>, box: HTMLElement) {

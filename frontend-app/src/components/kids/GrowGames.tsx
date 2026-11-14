@@ -1,6 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View, type GestureResponderEvent } from 'react-native';
-import Svg, { G, Polyline } from 'react-native-svg';
+import Animated, {
+  useReducedMotion,
+  type CSSAnimationKeyframes,
+  type CSSAnimationProperties,
+} from 'react-native-reanimated';
+import Svg, {
+  Defs,
+  FeGaussianBlur,
+  FeMerge,
+  FeMergeNode,
+  Filter,
+  G,
+  Polyline,
+} from 'react-native-svg';
 import { Pressable } from '@/components/ui/pressable';
 import { css, font } from '@/theme';
 import type { GrowGameType } from '@/api/kidWorlds';
@@ -16,7 +29,6 @@ import {
   MEMORY_START,
   MEMORY_TOP,
   SORT_PAUSE_MS,
-  SPARK_COLORS,
   SPARK_SECONDS,
   TIMING_GAP_MS,
   TIMING_LEAD_MS,
@@ -47,7 +59,6 @@ import {
   type SortItem,
 } from '@/lib/kidsGrow';
 import {
-  chip,
   color,
   game,
   grow,
@@ -55,15 +66,19 @@ import {
   sortCard,
   sortSide,
   timingTarget,
+  type KidsPair,
 } from '@/components/kids/palette';
 import {
   Bar,
+  Bursts,
   Caption,
   Frame,
   Hud,
   Sky,
   at,
 } from '@/components/kids/GamePieces';
+import { enter } from '@/components/kids/enter';
+import { addBurst, type Burst } from '@/lib/kidsBursts';
 
 /**
  * Grow's seven game types (web components/kids/GrowGames; docs/child-view-build-plan.md, 3.5).
@@ -75,7 +90,54 @@ interface GrowGameProps {
   onDone: (result: GrowResult) => void;
 }
 
-const PAD_COLORS = ['discover', 'transform', 'teal', 'release'] as const;
+/** The memory pads' colours and Spark's strokes, as the prototype's (gold, not Transform's). */
+const PAD_COLORS: readonly KidsPair[] = ['discover', 'gold', 'teal', 'release'];
+const SPARK_INKS = ['gold', 'discover', 'teal', 'release', 'connect'] as const;
+
+/** A flashed word's glow in its own colour (web .kids-game-word's text-shadow). */
+const glow = (c: string) => ({
+  color: c,
+  textShadowColor: c,
+  textShadowOffset: { width: 0, height: 0 },
+  textShadowRadius: 20,
+});
+
+/** The sort card's shake (web kids-card-shake) and fly-off toward its side (kids-card-fly-*),
+ * `w` its width; only where motion is welcome. */
+function cardMotion(
+  feedback: { ok: boolean; side: boolean } | null,
+  w: number,
+  reduced: boolean,
+): CSSAnimationProperties | null {
+  if (reduced || !feedback) return null;
+  if (!feedback.ok) {
+    const shake: CSSAnimationKeyframes = {
+      '0%': { transform: [{ translateX: 0 }] },
+      '25%': { transform: [{ translateX: -0.12 * w }] },
+      '75%': { transform: [{ translateX: 0.12 * w }] },
+      '100%': { transform: [{ translateX: 0 }] },
+    };
+    return {
+      animationName: shake,
+      animationDuration: '0.35s',
+      animationTimingFunction: 'ease',
+    };
+  }
+  const dir = feedback.side ? 1 : -1;
+  const fly: CSSAnimationKeyframes = {
+    from: { opacity: 1, transform: [{ translateX: 0 }, { rotate: '0deg' }] },
+    to: {
+      opacity: 0,
+      transform: [{ translateX: dir * 0.7 * w }, { rotate: `${dir * 14}deg` }],
+    },
+  };
+  return {
+    animationName: fly,
+    animationDuration: '0.45s',
+    animationTimingFunction: 'ease',
+    animationFillMode: 'forwards',
+  };
+}
 
 /** Where the web's .kids-game-* pieces differ from the shared ones at phone width. */
 const piece = {
@@ -100,18 +162,10 @@ const piece = {
   target: {
     backgroundColor: 'transparent',
     experimental_backgroundImage: css(
-      'radial-gradient(circle, rgb(var(--kids-streak-rgb) / 0.3), rgb(var(--kids-streak-rgb) / 0.05))',
+      'radial-gradient(circle, rgb(var(--kids-gold-rgb) / 0.3), rgb(var(--kids-gold-rgb) / 0.05))',
     ),
   },
   closing: { boxShadow: css('0 0 24px rgb(var(--kids-discover-rgb) / 0.7)') },
-  // .kids-chip px-2.5 py-1 font-rajdhani text-sm font-bold text-kids-streak (Grow's circle).
-  chip: { paddingHorizontal: 10, paddingVertical: 4 },
-  chipText: {
-    ...font('rajdhani', 700),
-    fontSize: 14,
-    lineHeight: 20,
-    color: color('streak'),
-  },
 } as const;
 
 /** A word centred at (x%, y%) of a `size`-wide frame, by transform only. */
@@ -155,7 +209,13 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
     items: Falling[];
     tally: CatchTally;
     nextId: number;
-  }>({ items: [], tally: { caught: 0, oops: 0, missed: 0 }, nextId: 1 });
+    bursts: Burst[];
+  }>({
+    items: [],
+    tally: { caught: 0, oops: 0, missed: 0 },
+    nextId: 1,
+    bursts: [],
+  });
   const tallyRef = useRef(state.tally);
   const left = useCountdown(CATCH_SECONDS, () => {
     done.current = true;
@@ -165,7 +225,7 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
     const id = setInterval(() => {
       if (done.current) return;
       setState(s => {
-        const next = catchTick(
+        const { hits, ...next } = catchTick(
           s.items,
           basketRef.current,
           s.tally,
@@ -173,7 +233,12 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
           cfg as CatchCfg,
         );
         tallyRef.current = next.tally;
-        return next;
+        // A gold ring for a good word caught, a red one for a bad one.
+        const bursts = hits.reduce(
+          (l, h) => addBurst(l, h.x, 84, !h.good),
+          s.bursts,
+        );
+        return { ...next, bursts };
       });
     }, CATCH_TICK_MS);
     return () => clearInterval(id);
@@ -199,7 +264,7 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
       onResponderGrant={move}
       onResponderMove={move}
     >
-      <Frame>
+      <Frame grow>
         {size => (
           <>
             <Sky />
@@ -208,6 +273,7 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
               left={`★ ${state.tally.caught}`}
               right={`${Math.ceil(left)}s`}
             />
+            <Bursts list={state.bursts} size={size} />
             {state.items.map(o => (
               <View
                 key={o.id}
@@ -248,13 +314,23 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
 function SortGame({ cfg, onDone }: GrowGameProps) {
   const [cards] = useState(() => sortCards(cfg.items as SortItem[]));
   const [i, setI] = useState(0);
-  const [feedback, setFeedback] = useState<boolean | null>(null);
+  const [feedback, setFeedback] = useState<{
+    ok: boolean;
+    side: boolean;
+  } | null>(null);
+  const reduced = useReducedMotion();
   const right = useRef(0);
   const times = useRef<number[]>([]);
   const shownAt = useRef(Date.now());
   const locked = useRef(false);
   const later = useLater();
   const card = cards[Math.min(i, cards.length - 1)];
+  const [cardWidth, setCardWidth] = useState(0);
+  // The same keyframes while the feedback stands, so a re-render doesn't restart them.
+  const motion = useMemo(
+    () => cardMotion(feedback, cardWidth, reduced),
+    [feedback, cardWidth, reduced],
+  );
 
   const pick = (side: boolean) => {
     if (locked.current || i >= cards.length || !card) return;
@@ -262,7 +338,7 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
     const ok = card.right === side;
     if (ok) right.current += 1;
     times.current.push(Date.now() - shownAt.current);
-    setFeedback(ok);
+    setFeedback({ ok, side });
     later(() => {
       locked.current = false;
       setFeedback(null);
@@ -274,7 +350,7 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
   };
 
   return (
-    <Frame>
+    <Frame grow>
       {size => (
         <>
           <Sky />
@@ -289,28 +365,35 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
             className="absolute justify-center"
             style={{ left: '11%', right: '11%', top: 0, height: '88%' }}
           >
-            <View
-              accessibilityLiveRegion="polite"
-              style={[
-                sortCard(
-                  feedback === true
-                    ? 'right'
-                    : feedback === false
-                    ? 'wrong'
-                    : 'shown',
-                ),
-                piece.card,
-                {
-                  position: 'relative',
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  minHeight: size * 0.34,
-                },
-              ]}
-            >
-              <Text style={[grow.cardText, piece.cardText]}>{card?.text}</Text>
-            </View>
+            {/* Each new card pops in (web kids-pop .35 s); then it shakes or flies off. */}
+            <Animated.View key={i} style={enter('pop', 0, reduced, 0.35)}>
+              <Animated.View
+                accessibilityLiveRegion="polite"
+                onLayout={e => setCardWidth(e.nativeEvent.layout.width)}
+                style={[
+                  sortCard(
+                    feedback?.ok === true
+                      ? 'right'
+                      : feedback?.ok === false
+                      ? 'wrong'
+                      : 'shown',
+                  ),
+                  piece.card,
+                  {
+                    position: 'relative',
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    minHeight: size * 0.34,
+                  },
+                  motion,
+                ]}
+              >
+                <Text style={[grow.cardText, piece.cardText]}>
+                  {card?.text}
+                </Text>
+              </Animated.View>
+            </Animated.View>
           </View>
           <View
             className="absolute flex-row gap-3"
@@ -320,10 +403,7 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
               onPress={() => pick(false)}
               accessibilityRole="button"
               accessibilityLabel={String(cfg.left)}
-              style={({ pressed }) => [
-                sortSide('transform', pressed),
-                piece.side,
-              ]}
+              style={({ pressed }) => [sortSide('left', pressed), piece.side]}
             >
               <Text style={[grow.sideText, piece.sideText]}>
                 ← {String(cfg.left)}
@@ -333,10 +413,7 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
               onPress={() => pick(true)}
               accessibilityRole="button"
               accessibilityLabel={String(cfg.right)}
-              style={({ pressed }) => [
-                sortSide('discover', pressed),
-                piece.side,
-              ]}
+              style={({ pressed }) => [sortSide('right', pressed), piece.side]}
             >
               <Text style={[grow.sideText, piece.sideText]}>
                 {String(cfg.right)} →
@@ -419,7 +496,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
       ? 'Oops! Watch again'
       : 'Nice!';
   return (
-    <Frame>
+    <Frame grow flash={oops}>
       {size => (
         <>
           <Sky />
@@ -460,7 +537,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
                   style={[
                     game.number,
                     piece.padText,
-                    lit === j && { color: color('ink') },
+                    { color: color(lit === j ? 'world-deep' : 'world-name') },
                   ]}
                 >
                   {p}
@@ -470,7 +547,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
           </View>
           <Caption>
             {phase === 'input' ? (
-              <Text style={{ color: color('streak') }}>{caption}</Text>
+              <Text style={{ color: color('gold') }}>{caption}</Text>
             ) : (
               caption
             )}
@@ -492,13 +569,14 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
   });
   const done = useRef(false);
   const [now, setNow] = useState(Date.now());
-  const [flash, setFlash] = useState<Beat | null>(null);
+  const [flash, setFlash] = useState<{ beat: Beat; key: number } | null>(null);
+  const reduced = useReducedMotion();
 
   const record = (b: Beat) => {
     const B = beat.current;
     B.beats.push(b);
     B.start = Date.now() + TIMING_GAP_MS;
-    setFlash(b);
+    setFlash({ beat: b, key: B.beats.length });
     if (B.beats.length >= total && !done.current) {
       done.current = true;
       setTimeout(() => onDone(timingResult(B.beats, total)), 450);
@@ -527,7 +605,7 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
       accessibilityRole="button"
       accessibilityLabel={`${String(cfg.label)}: tap when the rings meet`}
     >
-      <Frame>
+      <Frame grow>
         {size => {
           const ring = (ringSize(ms, per) / 100) * size;
           return (
@@ -549,7 +627,7 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
                   style={[
                     game.number,
                     piece.targetText,
-                    { color: color('streak') },
+                    { color: color('gold') },
                   ]}
                 >
                   {String(cfg.label)}
@@ -572,27 +650,27 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
                 />
               ) : null}
               {flash ? (
-                <View
+                <Animated.View
+                  key={flash.key}
                   pointerEvents="none"
                   className="absolute left-0 right-0 items-center"
-                  style={{ top: '22%' }}
+                  style={[{ top: '22%' }, enter('pop', 0, reduced, 0.4)]}
                 >
                   <Text
                     style={[
                       grow.word,
-                      {
-                        color:
-                          flash === 'miss' ? color('connect') : color('streak'),
-                      },
+                      glow(
+                        flash.beat === 'miss' ? color('wrong') : color('gold'),
+                      ),
                     ]}
                   >
-                    {flash === 'perfect'
+                    {flash.beat === 'perfect'
                       ? 'Perfect!'
-                      : flash === 'good'
+                      : flash.beat === 'good'
                       ? 'Good'
                       : 'Miss'}
                   </Text>
-                </View>
+                </Animated.View>
               ) : null}
               <Caption>Tap when the rings meet</Caption>
             </>
@@ -613,6 +691,8 @@ function DashGame({ cfg, onDone }: GrowGameProps) {
     items: [],
     nextId: 1,
   });
+  const [bursts, setBursts] = useState<Burst[]>([]);
+  const reduced = useReducedMotion();
   const [count, setCount] = useState(0);
   const left = useCountdown(DASH_SECONDS, () => {
     done.current = true;
@@ -628,15 +708,17 @@ function DashGame({ cfg, onDone }: GrowGameProps) {
     if (done.current) return;
     setState(s => ({ ...s, items: s.items.filter(x => x.id !== o.id) }));
     picked.current = [...picked.current, { text: o.text, kind: o.kind }];
+    setBursts(list => addBurst(list, o.x, o.y));
     setCount(picked.current.length);
   };
   return (
-    <Frame>
+    <Frame grow>
       {size => (
         <>
           <Sky />
           <Bar value={left / DASH_SECONDS} />
           <Hud left={`★ ${count}`} right={`${Math.ceil(left)}s`} />
+          <Bursts list={bursts} size={size} />
           {state.items.map(o => (
             <Pressable
               key={o.id}
@@ -656,9 +738,12 @@ function DashGame({ cfg, onDone }: GrowGameProps) {
             style={{ left: '5%', right: '5%', bottom: '5%' }}
           >
             {picked.current.slice(-5).map((p, j) => (
-              <View key={`${j}-${p.text}`} style={[chip('grow'), piece.chip]}>
-                <Text style={piece.chipText}>{p.text}</Text>
-              </View>
+              <Animated.View
+                key={`${j}-${p.text}`}
+                style={[grow.chip, enter('pop', 0, reduced, 0.3)]}
+              >
+                <Text style={grow.chipText}>{p.text}</Text>
+              </Animated.View>
             ))}
           </View>
         </>
@@ -681,6 +766,7 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
     msg: string;
   }>({ phase: 'wait', x: 50, y: 50, msg: '' });
   const later = useLater();
+  const reduced = useReducedMotion();
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const arm = (msg = '') => {
     clearTimeout(timer.current);
@@ -713,7 +799,7 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
       accessibilityRole="button"
       accessibilityLabel="Wait for the light"
     >
-      <Frame>
+      <Frame grow>
         {size => (
           <>
             <Sky />
@@ -723,41 +809,62 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
               right={`${times.current.length} / ${total}`}
             />
             {st.phase === 'go' ? (
-              <Pressable
-                onPressIn={hit}
-                accessibilityRole="button"
-                accessibilityLabel={String(cfg.label)}
-                style={[grow.light, at(size, st.x, st.y, 22)]}
+              // Positioned by the outer view, so the light's own pop (.18 s) can scale it.
+              <View
+                key={times.current.length}
+                pointerEvents="box-none"
+                style={[
+                  { position: 'absolute', left: 0, top: 0 },
+                  at(size, st.x, st.y, 22),
+                ]}
               >
-                <Text
+                <Animated.View
                   style={[
-                    game.number,
-                    piece.lightText,
-                    { color: color('ink') },
+                    { width: '100%', height: '100%' },
+                    enter('pop', 0, reduced, 0.18),
                   ]}
                 >
-                  {String(cfg.label)}
-                </Text>
-              </Pressable>
+                  <Pressable
+                    onPressIn={hit}
+                    accessibilityRole="button"
+                    accessibilityLabel={String(cfg.label)}
+                    style={[grow.light, { width: '100%', height: '100%' }]}
+                  >
+                    <Text
+                      style={[
+                        game.number,
+                        piece.lightText,
+                        { color: color('world-deep') },
+                      ]}
+                    >
+                      {String(cfg.label)}
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              </View>
             ) : null}
             {st.msg ? (
               <View
                 pointerEvents="none"
                 className="absolute inset-0 items-center justify-center"
               >
-                <Text
-                  style={[
-                    grow.word,
-                    {
-                      color:
-                        st.msg === 'Too soon!'
-                          ? color('connect')
-                          : color('discover'),
-                    },
-                  ]}
+                <Animated.View
+                  key={`${st.msg}-${times.current.length}`}
+                  style={enter('pop', 0, reduced, 0.3)}
                 >
-                  {st.msg}
-                </Text>
+                  <Text
+                    style={[
+                      grow.word,
+                      glow(
+                        st.msg === 'Too soon!'
+                          ? color('wrong')
+                          : color('discover'),
+                      ),
+                    ]}
+                  >
+                    {st.msg}
+                  </Text>
+                </Animated.View>
               </View>
             ) : null}
             <Caption>
@@ -824,7 +931,7 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
         if (width.current) add(point(e));
       }}
     >
-      <Frame>
+      <Frame grow>
         {size => (
           <>
             <Sky />
@@ -840,6 +947,22 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
               viewBox="0 0 100 100"
               style={{ position: 'absolute' }}
             >
+              <Defs>
+                {/* Each stroke glows in its own colour: its blur under it. */}
+                <Filter
+                  id="spark-glow"
+                  x="-20%"
+                  y="-20%"
+                  width="140%"
+                  height="140%"
+                >
+                  <FeGaussianBlur stdDeviation={0.6} result="glow" />
+                  <FeMerge>
+                    <FeMergeNode in="glow" />
+                    <FeMergeNode in="SourceGraphic" />
+                  </FeMerge>
+                </Filter>
+              </Defs>
               {strokes.map((points, j) => {
                 const line = points
                   .map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`)
@@ -850,16 +973,17 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
                       points={line}
                       fill="none"
                       stroke={color(
-                        SPARK_COLORS[j % SPARK_COLORS.length] ?? 'transform',
+                        SPARK_INKS[j % SPARK_INKS.length] ?? 'gold',
                       )}
                       strokeWidth={2.6}
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      filter="url(#spark-glow)"
                     />
                     <Polyline
                       points={line}
                       fill="none"
-                      stroke={color('text')}
+                      stroke={color('white')}
                       strokeWidth={0.7}
                       strokeLinecap="round"
                       strokeLinejoin="round"

@@ -161,7 +161,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
             </div>
           </div>
         </section>
-        <div className="kids-card mt-5 text-center" role="status">
+        <div className="kids-report-card mt-5 text-center" role="status">
           <p className="font-orbitron text-5xl font-black text-kids-streak">{report.total}</p>
           {band && (
             <p
@@ -182,7 +182,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
             return (
               <li
                 key={g.title}
-                className="kids-card"
+                className="kids-report-card"
                 style={tileVars(b ? BAND_COLOR[b.color] : 'discover')}
               >
                 <div className="flex items-baseline justify-between gap-3">
@@ -204,7 +204,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
           })}
         </ul>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <div className="kids-card" style={tileVars('transform')}>
+          <div className="kids-report-card">
             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-kids-muted md:text-[13px]">
               Strongest
             </p>
@@ -212,7 +212,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
               {strongest?.skill}
             </p>
           </div>
-          <div className="kids-card" style={tileVars('release')}>
+          <div className="kids-report-card">
             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-kids-muted md:text-[13px]">
               Keep practising
             </p>
@@ -224,7 +224,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
             </p>
           </div>
         </div>
-        <div className="kids-card mt-5">
+        <div className="kids-report-card mt-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-kids-muted md:text-[13px]">
             Your mission
           </p>

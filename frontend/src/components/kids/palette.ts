@@ -25,8 +25,11 @@ export function areaVars(area: KidsArea): CSSProperties {
   } as CSSProperties;
 }
 
+/** A pair of the kids palette: the circles' and powers' colours, and Grow's gold. */
+export type KidsPair = KidsColor | 'gold';
+
 /** A tile's own pair (a mood, a power), read by .kids-tile. */
-export function tileVars(color: KidsColor): CSSProperties {
+export function tileVars(color: KidsPair): CSSProperties {
   return {
     '--kids-tile-rgb': `var(--kids-${color}-rgb)`,
     '--kids-tile-shade-rgb': `var(--kids-${color}-shade-rgb)`,
@@ -34,6 +37,6 @@ export function tileVars(color: KidsColor): CSSProperties {
 }
 
 /** A tile's colour for an SVG stroke or fill. */
-export function tileColor(color: KidsColor): string {
+export function tileColor(color: KidsPair): string {
   return `rgb(var(--kids-${color}-rgb))`;
 }

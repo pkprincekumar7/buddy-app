@@ -5,10 +5,7 @@ import {
   View,
   type GestureResponderEvent,
 } from 'react-native';
-import Animated, {
-  useReducedMotion,
-  type CSSAnimationKeyframes,
-} from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import Svg, {
   Circle,
   Ellipse,
@@ -59,7 +56,9 @@ import {
   Sky,
   at,
   useFrameWidth,
+  Bursts,
 } from '@/components/kids/GamePieces';
+import { addBurst, type Burst } from '@/lib/kidsBursts';
 
 /**
  * The seven games' views (web components/kids/KidsGames; docs/child-view-build-plan.md,
@@ -71,53 +70,6 @@ export interface GameProps {
 }
 
 // ── shared pieces ──────────────────────────────────────────────────────────────
-
-interface Burst {
-  key: number;
-  x: number;
-  y: number;
-}
-/** `.kids-game-burst`'s kids-burst: a gold ring that grows and fades where a thing was hit. */
-const BURST: CSSAnimationKeyframes = {
-  from: { opacity: 1, transform: [{ scale: 0.3 }] },
-  to: { opacity: 0, transform: [{ scale: 1.6 }] },
-};
-const BURST_RING = {
-  position: 'absolute',
-  borderRadius: 9999,
-  borderWidth: 3,
-  borderColor: rgb('kids-streak'),
-} as const;
-/** The bursts in a `size`-wide frame (none when the device asks for reduced motion, as the
- * web hides them). */
-function Bursts({ list, size }: { list: Burst[]; size: number }) {
-  const reduced = useReducedMotion();
-  if (reduced) return null;
-  const d = 0.16 * size;
-  return list.map(b => (
-    <Animated.View
-      key={b.key}
-      pointerEvents="none"
-      style={[
-        BURST_RING,
-        {
-          width: d,
-          height: d,
-          left: (b.x / 100) * size - d / 2,
-          top: (b.y / 100) * size - d / 2,
-          animationName: BURST,
-          animationDuration: '0.6s',
-          animationTimingFunction: 'ease-out',
-          animationFillMode: 'forwards',
-        },
-      ]}
-    />
-  ));
-}
-const addBurst = (list: Burst[], x: number, y: number) => [
-  ...list.slice(-3),
-  { key: Date.now() + Math.random(), x, y },
-];
 
 /** The glows the shared game styles leave out (web .kids-game-bubble, -wave, -box-found). */
 const BUBBLE_GLOW = {

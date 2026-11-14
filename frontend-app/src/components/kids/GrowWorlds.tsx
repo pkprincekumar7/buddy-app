@@ -20,12 +20,12 @@ import type { KidActivity } from '@/api/kids';
 import type { GrowResult } from '@/lib/kidsGrow';
 import {
   WORLD_ORBS,
-  card,
   color,
   scoreBar,
   worldCard,
   worldOrb,
   worldPick as pick,
+  reportCard,
   growView as v,
   stepDot,
   playOrb,
@@ -42,9 +42,6 @@ const PULSE: CSSAnimationKeyframes = {
   '50%': { opacity: 1 },
   '100%': { opacity: 0 },
 };
-
-/** Grow's circle colour: the web's --kids-area on this tab (.kids-btn, .kids-card, text-kids-area). */
-const AREA = 'grow';
 
 /** The child view's type scale (matched to the parent pages at phone width), in px. */
 const s = {
@@ -73,7 +70,7 @@ const s = {
     } satisfies TextStyle),
 } satisfies Record<string, TextStyle | ((...a: number[]) => TextStyle)>;
 
-/** The web's `grid grid-cols-2 gap-3`: rows of two equal cells, 12px apart. */
+/** The web's phone grid (`mt-7 grid grid-cols-2 gap-3`): rows of two equal cells, 12px apart. */
 function TwoColumns<T>({
   items,
   children,
@@ -87,7 +84,7 @@ function TwoColumns<T>({
     else rows[rows.length - 1]?.push(i);
   });
   return (
-    <View className="mt-6 gap-3">
+    <View className="mt-7 gap-3">
       {rows.map(row => (
         <View key={row[0]} className="flex-row gap-3">
           {row.map(i => {
@@ -290,7 +287,7 @@ export default function GrowWorlds({
         <View
           accessibilityLiveRegion="polite"
           className="mt-6 items-center"
-          style={card(AREA)}
+          style={reportCard}
         >
           <Text style={[s.orbitron(48, 48), { color: color('streak') }]}>
             {report.total}
@@ -320,7 +317,7 @@ export default function GrowWorlds({
             const bc = b ? BAND_COLOR[b.color] : 'discover';
             const bar = scoreBar(bc, r?.score ?? 0);
             return (
-              <View key={g.title} style={card(AREA)}>
+              <View key={g.title} style={reportCard}>
                 <View className="flex-row items-baseline justify-between gap-2.5">
                   <Text className="flex-1" style={s.orbitron(16, 22)}>
                     {g.title}
@@ -343,13 +340,13 @@ export default function GrowWorlds({
           })}
         </View>
         <View className="mt-5 gap-2.5">
-          <View style={card(AREA)}>
+          <View style={reportCard}>
             <Text style={s.label}>Strongest</Text>
             <Text className="mt-1" style={s.orbitron(16, 22)}>
               {strongest?.skill}
             </Text>
           </View>
-          <View style={card(AREA)}>
+          <View style={reportCard}>
             <Text style={s.label}>Keep practising</Text>
             <Text className="mt-1" style={s.orbitron(16, 22)}>
               {weakest?.skill}
@@ -359,7 +356,7 @@ export default function GrowWorlds({
             </Text>
           </View>
         </View>
-        <View className="mt-5" style={card(AREA)}>
+        <View className="mt-5" style={reportCard}>
           <Text style={s.label}>Your mission</Text>
           <Text
             className="mt-1"
@@ -524,7 +521,7 @@ export default function GrowWorlds({
             <Animated.View style={[v.checkOrb, enter('pop', 0, reduced)]}>
               <Check size={40} strokeWidth={3} color={pick.ink} />
             </Animated.View>
-            <Text className="mt-4" style={[s.orbitron(30, 36), v.goldGlow]}>
+            <Text className="mt-4" style={[s.orbitron(28, 34), v.goldGlow]}>
               Well done!
             </Text>
             <Text className="mt-2" style={v.score}>

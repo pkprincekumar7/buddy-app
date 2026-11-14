@@ -1034,6 +1034,21 @@ module.exports = {
       217,
       138
     ],
+    "kids-gold-shade": [
+      138,
+      100,
+      32
+    ],
+    "kids-wrong": [
+      255,
+      122,
+      122
+    ],
+    "kids-white": [
+      255,
+      255,
+      255
+    ],
     "kids-orb-cyan-hi": [
       234,
       253,

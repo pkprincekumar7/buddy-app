@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import type { Burst } from '@/lib/kidsBursts';
+import { cn } from '@/lib/utils';
 
 /**
  * The pieces every kids mini game draws (Discover's, 2.6, and Grow's, 3.5): the night sky,
@@ -15,13 +17,14 @@ const SKY = [
   [8, 48],
 ] as const;
 
+/** The sky's seven stars, each twinkling at its own pace (1.4 s, then .3 s slower each). */
 export function Sky() {
-  return SKY.map(([x, y]) => (
+  return SKY.map(([x, y], i) => (
     <span
       key={`${x}-${y}`}
       aria-hidden="true"
       className="kids-game-sky"
-      style={{ left: `${x}%`, top: `${y}%` }}
+      style={{ left: `${x}%`, top: `${y}%`, '--twinkle': `${1.4 + i * 0.3}s` } as CSSProperties}
     />
   ));
 }
@@ -41,8 +44,20 @@ export function Bar({ value }: { value: number }) {
 export function Hud({ left, right }: { left: ReactNode; right: ReactNode }) {
   return (
     <>
-      <span className="kids-game-hud left-[6%] text-kids-text">{left}</span>
-      <span className="kids-game-hud right-[6%] text-kids-streak">{right}</span>
+      <span className="kids-game-hud left-[6%]">{left}</span>
+      <span className="kids-game-hud kids-game-hud-gold right-[6%]">{right}</span>
     </>
   );
+}
+
+/** The bursts (lib/kidsBursts) in the frame. */
+export function Bursts({ list }: { list: Burst[] }) {
+  return list.map((b) => (
+    <span
+      key={b.key}
+      aria-hidden="true"
+      className={cn('kids-game-burst', b.wrong && 'kids-game-burst-wrong')}
+      style={{ left: `${b.x}%`, top: `${b.y}%` }}
+    />
+  ));
 }

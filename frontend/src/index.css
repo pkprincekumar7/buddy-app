@@ -505,6 +505,9 @@
     --kids-world-deep-rgb: 5 19 26; /* #05131a card bottom, the orb's icon, the marker's edge */
     --kids-world-shadow-rgb: 2 6 15; /* #02060f */
     --kids-gold-rgb: 255 217 138; /* #ffd98a the gold orb, "Completed", the played marker */
+    --kids-gold-shade-rgb: 138 100 32; /* #8a6420 gold's shade (a gold memory pad, sort side) */
+    --kids-wrong-rgb: 255 122 122; /* #ff7a7a a wrong answer, "Miss", "Too soon!" */
+    --kids-white-rgb: 255 255 255; /* a lit memory pad's centre, a spark stroke's core */
     --kids-orb-cyan-hi-rgb: 234 253 255; /* #eafdff */
     --kids-orb-cyan-rgb: 75 233 255; /* #4be9ff */
     --kids-orb-cyan-lo-rgb: 10 91 116; /* #0a5b74 */
@@ -1439,6 +1442,12 @@
     );
     box-shadow: 0 0 40px rgb(var(--kids-gold-rgb) / 0.55);
   }
+  /* A card on Grow's report: the prototype's report rows, dark navy with a thin gold edge. */
+  .kids-report-card {
+    @apply rounded-[22px] px-5 py-4 md:py-5;
+    background: rgb(var(--kids-world-deep-rgb) / 0.7);
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.35);
+  }
   /* The report's world orb: the world's gradient, a dark edge and a cyan glow. */
   .kids-report-orb {
     border: 4px solid rgb(var(--kids-world-deep-rgb));
@@ -1549,9 +1558,12 @@
   .kids-game-orb:not(:disabled):active,
   .kids-game-node:not(:disabled):active,
   .kids-game-bubble:not(:disabled):active,
-  .kids-game-light:not(:disabled):active,
   .kids-game-pill:not(:disabled):active {
     transform: translate(-50%, -50%);
+  }
+  /* Grow's light centres with `translate`, so its pop-in can scale it: no press shrink. */
+  .kids-game-light:not(:disabled):active {
+    transform: none;
   }
   /* A whole game frame you tap or hold (climb, voice, timing) stays still. */
   .kids-game:not(:disabled):active {
@@ -1665,9 +1677,14 @@
     border: 1px solid rgb(var(--kids-discover-rgb) / 0.3);
     background: radial-gradient(
       circle at 50% 40%,
-      rgb(var(--kids-discover-shade-rgb) / 0.45),
-      rgb(var(--kids-bg-rgb)) 78%
+      rgb(var(--kids-world-card-rgb)),
+      rgb(var(--kids-world-deep-rgb)) 78%
     );
+  }
+  /* Grow's frame: up to 540 px, and short enough to fit under its header. */
+  .kids-game-grow {
+    max-width: min(100%, 540px, calc(100vh - 300px));
+    min-width: 260px;
   }
   .kids-game-bar {
     @apply pointer-events-none absolute left-[6%] right-[6%] top-[5%] z-10 h-2 overflow-hidden rounded;
@@ -1675,16 +1692,16 @@
   }
   .kids-game-bar-fill {
     @apply h-full rounded transition-[width] duration-200;
-    background: linear-gradient(90deg, rgb(var(--kids-discover-rgb)), rgb(var(--kids-streak-rgb)));
+    background: linear-gradient(90deg, rgb(var(--kids-orb-sky-rgb)), rgb(var(--kids-gold-rgb)));
     box-shadow: 0 0 12px rgb(var(--kids-discover-rgb) / 0.7);
   }
   .kids-game-sky {
     @apply pointer-events-none absolute h-[3px] w-[3px] rounded-full;
-    background: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-world-name-rgb));
   }
   .kids-game-caption {
     @apply pointer-events-none absolute bottom-[5%] left-1/2 -translate-x-1/2 whitespace-nowrap font-rajdhani text-lg font-bold uppercase tracking-[0.22em];
-    color: rgb(var(--kids-muted-rgb));
+    color: rgb(var(--kids-subtle-rgb));
   }
   .kids-game-orb {
     @apply absolute rounded-full;
@@ -1755,8 +1772,11 @@
   }
   .kids-game-burst {
     @apply pointer-events-none absolute h-[16%] w-[16%] rounded-full;
-    border: 3px solid rgb(var(--kids-streak-rgb));
+    border: 3px solid rgb(var(--kids-gold-rgb));
     animation: kids-burst 0.6s ease-out forwards;
+  }
+  .kids-game-burst-wrong {
+    border-color: rgb(var(--kids-wrong-rgb));
   }
   .kids-game-ring {
     @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
@@ -1772,6 +1792,10 @@
      card and its sides, the memory pads, the timing target and the reaction light. */
   .kids-game-hud {
     @apply pointer-events-none absolute top-[9%] z-10 font-orbitron text-base font-bold;
+    color: rgb(var(--kids-world-name-rgb));
+  }
+  .kids-game-hud-gold {
+    color: rgb(var(--kids-gold-rgb));
   }
   .kids-game-pill {
     @apply absolute whitespace-nowrap rounded-full px-4 py-2.5 font-orbitron text-sm font-bold sm:text-base;
@@ -1788,55 +1812,70 @@
   .kids-game-basket {
     @apply pointer-events-none absolute top-[87%] h-[8%] w-[28%];
     transform: translate(-50%, -50%);
-    border: 3px solid rgb(var(--kids-streak-rgb));
+    border: 3px solid rgb(var(--kids-gold-rgb));
     border-top: none;
     border-radius: 0 0 9999px 9999px;
-    background: linear-gradient(180deg, transparent, rgb(var(--kids-streak-rgb) / 0.35));
+    background: linear-gradient(180deg, transparent, rgb(var(--kids-gold-rgb) / 0.35));
+    box-shadow: 0 8px 26px rgb(var(--kids-gold-rgb) / 0.35);
   }
+  /* The sort card centres with `translate`, so its pop, shake and fly-off can use transform. */
   .kids-game-card {
     @apply absolute left-1/2 top-[44%] flex min-h-[34%] w-[78%] items-center justify-center rounded-[26px] px-5 py-6 text-center font-orbitron text-lg font-bold leading-snug sm:text-2xl;
-    transform: translate(-50%, -50%);
-    color: rgb(var(--kids-text-rgb));
+    translate: -50% -50%;
+    color: rgb(var(--kids-world-name-rgb));
     border: 2px solid rgb(var(--kids-discover-rgb) / 0.5);
     background: linear-gradient(
       180deg,
-      rgb(var(--kids-discover-shade-rgb) / 0.6),
-      rgb(var(--kids-bg-rgb))
+      rgb(var(--kids-world-card-rgb) / 0.95),
+      rgb(var(--kids-world-deep-rgb) / 0.98)
     );
+    box-shadow: 0 0 34px rgb(var(--kids-discover-rgb) / 0.25);
   }
   .kids-game-card-right {
-    border-color: rgb(var(--kids-streak-rgb));
+    border-color: rgb(var(--kids-gold-rgb));
   }
   .kids-game-card-wrong {
-    border-color: rgb(var(--kids-connect-rgb));
+    border-color: rgb(var(--kids-wrong-rgb));
+    box-shadow: 0 0 34px rgb(var(--kids-wrong-rgb) / 0.4);
   }
+  /* The sort sides: the left gold, the right cyan. */
   .kids-game-side {
     @apply flex min-h-16 flex-1 items-center justify-center gap-2 rounded-[20px] font-rajdhani text-base font-bold uppercase tracking-[0.12em] sm:text-lg;
-    color: rgb(var(--kids-text-rgb));
-    border: 1px solid rgb(var(--kids-tile-rgb));
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.7);
     background: linear-gradient(
       180deg,
-      rgb(var(--kids-tile-rgb) / 0.35),
-      rgb(var(--kids-tile-shade-rgb) / 0.6)
+      rgb(var(--kids-gold-rgb) / 0.25),
+      rgb(var(--kids-gold-shade-rgb) / 0.45)
+    );
+  }
+  .kids-game-side-cyan {
+    border-color: rgb(var(--kids-discover-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-orb-sky-rgb) / 0.45),
+      rgb(var(--kids-orb-cyan-lo-rgb) / 0.7)
     );
   }
   .kids-game-pad {
-    @apply flex aspect-square w-full items-center justify-center rounded-full font-orbitron text-sm font-bold transition-transform duration-100 sm:text-lg;
-    color: rgb(var(--kids-text-rgb));
+    @apply flex aspect-square w-full items-center justify-center rounded-full font-orbitron text-sm font-bold sm:text-lg;
+    color: rgb(var(--kids-world-name-rgb));
     border: 2px solid rgb(var(--kids-tile-rgb) / 0.6);
     background: radial-gradient(
       circle at 40% 35%,
       rgb(var(--kids-tile-rgb) / 0.35),
-      rgb(var(--kids-bg-rgb) / 0.9) 75%
+      rgb(var(--kids-world-deep-rgb) / 0.9) 75%
     );
+    box-shadow: 0 0 14px rgb(var(--kids-tile-rgb) / 0.2);
+    transition: all 0.12s ease;
   }
   .kids-game-pad-lit {
     transform: scale(1.06);
-    color: rgb(var(--kids-ink-rgb));
-    border-color: rgb(var(--kids-text-rgb));
+    color: rgb(var(--kids-world-deep-rgb));
+    border-color: rgb(var(--kids-white-rgb));
     background: radial-gradient(
       circle at 40% 35%,
-      rgb(var(--kids-text-rgb)),
+      rgb(var(--kids-white-rgb)),
       rgb(var(--kids-tile-rgb)) 55%
     );
     box-shadow: 0 0 50px rgb(var(--kids-tile-rgb));
@@ -1844,17 +1883,18 @@
   .kids-game-target {
     @apply pointer-events-none absolute left-1/2 top-1/2 flex h-[26%] w-[26%] items-center justify-center rounded-full font-orbitron text-base font-bold sm:text-xl;
     transform: translate(-50%, -50%);
-    color: rgb(var(--kids-streak-rgb));
-    border: 3px dashed rgb(var(--kids-streak-rgb));
+    color: rgb(var(--kids-gold-rgb));
+    border: 3px dashed rgb(var(--kids-gold-rgb));
     background: radial-gradient(
       circle,
-      rgb(var(--kids-streak-rgb) / 0.3),
-      rgb(var(--kids-streak-rgb) / 0.05)
+      rgb(var(--kids-gold-rgb) / 0.3),
+      rgb(var(--kids-gold-rgb) / 0.05)
     );
+    box-shadow: 0 0 20px rgb(var(--kids-gold-rgb) / 0.3);
   }
   .kids-game-target-near {
-    border-color: rgb(var(--kids-text-rgb));
-    box-shadow: 0 0 40px rgb(var(--kids-streak-rgb) / 0.8);
+    border-color: rgb(var(--kids-white-rgb));
+    box-shadow: 0 0 40px rgb(var(--kids-gold-rgb) / 0.8);
   }
   .kids-game-closing {
     @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
@@ -1862,20 +1902,36 @@
     border: 4px solid rgb(var(--kids-discover-rgb));
     box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.7);
   }
+  /* React's light (centres with `translate`, so its pop can scale it). */
   .kids-game-light {
     @apply absolute flex h-[22%] w-[22%] items-center justify-center rounded-full font-orbitron text-base font-black sm:text-xl;
-    transform: translate(-50%, -50%);
-    color: rgb(var(--kids-ink-rgb));
+    translate: -50% -50%;
+    color: rgb(var(--kids-world-deep-rgb));
     background: radial-gradient(
       circle at 40% 35%,
-      rgb(var(--kids-text-rgb)),
-      rgb(var(--kids-streak-rgb)) 45%,
-      rgb(var(--kids-transform-shade-rgb))
+      rgb(var(--kids-orb-gold-hi-rgb)),
+      rgb(var(--kids-orb-gold-rgb)) 45%,
+      rgb(var(--kids-orb-gold-lo-rgb))
     );
-    box-shadow: 0 0 50px rgb(var(--kids-streak-rgb) / 0.8);
+    box-shadow: 0 0 50px rgb(var(--kids-gold-rgb) / 0.8);
   }
+  /* A flashed word ("Perfect!", "Too soon!"), glowing in its colour; centred with `translate`
+     so it can pop in. -mid: in the middle of the frame. */
   .kids-game-word {
-    @apply pointer-events-none absolute left-1/2 top-[22%] -translate-x-1/2 font-orbitron text-2xl font-black sm:text-3xl;
+    @apply pointer-events-none absolute left-1/2 top-[22%] whitespace-nowrap font-orbitron text-2xl font-black sm:text-3xl;
+    translate: -50% 0;
+    text-shadow: 0 0 20px currentColor;
+  }
+  .kids-game-word-mid {
+    top: 50%;
+    translate: -50% -50%;
+  }
+  /* A word picked in Dash: a gold chip. */
+  .kids-game-chip {
+    @apply rounded-full px-2.5 py-1 font-rajdhani text-sm font-bold;
+    color: rgb(var(--kids-gold-rgb));
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.6);
+    background: rgb(var(--kids-gold-rgb) / 0.15);
   }
   /* A score's bar in the world report, in its band's colour. */
   .kids-score-bar {
@@ -1887,15 +1943,76 @@
     background: rgb(var(--kids-tile-rgb));
   }
   /* The game's dialog over the kids page. */
+  /* A power's game dialog (the prototype's): a blurred dark veil, and a teal-to-navy panel. */
   .kids-dialog-backdrop {
-    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
-    background: rgb(var(--kids-bg-rgb) / 0.8);
+    @apply fixed inset-0 z-50 flex items-center justify-center p-5;
+    background: rgb(var(--kids-world-shadow-rgb) / 0.84);
+    backdrop-filter: blur(6px);
   }
   .kids-dialog {
-    @apply max-h-full w-full max-w-xl overflow-y-auto rounded-[28px] p-5;
-    background: rgb(var(--kids-bg-rgb));
-    border: 2px solid rgb(var(--kids-discover-rgb) / 0.4);
-    box-shadow: 0 0 60px rgb(var(--kids-discover-rgb) / 0.25);
+    @apply max-h-full w-full max-w-[540px] overflow-y-auto rounded-[32px] px-5 pb-[18px] pt-4;
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb)),
+      rgb(var(--kids-world-deep-rgb)) 60%
+    );
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+    box-shadow:
+      0 30px 80px rgb(var(--kids-world-shadow-rgb) / 0.6),
+      0 0 60px rgb(var(--kids-orb-sky-rgb) / 0.2);
+  }
+  /* The power's icon in a tinted cyan circle, and × in an outlined one. */
+  .kids-dialog-icon {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full md:h-12 md:w-12;
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: rgb(var(--kids-orb-sky-rgb) / 0.15);
+  }
+  .kids-dialog-close {
+    @apply ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full md:h-12 md:w-12;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* The win: four twinkling dots, the pulsing check medallion, the time in gold. */
+  .kids-win-dot {
+    @apply pointer-events-none absolute rounded-full;
+  }
+  .kids-win-medal {
+    @apply mx-auto flex h-16 w-16 items-center justify-center rounded-full md:h-[72px] md:w-[72px];
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  .kids-win-time {
+    color: rgb(var(--kids-gold-rgb));
+    text-shadow: 0 0 24px rgb(var(--kids-gold-rgb) / 0.5);
+  }
+  /* "New best!" a solid gold pill; "Best: X.Xs" / "First try!" an outlined one in grey. */
+  .kids-win-pill {
+    @apply whitespace-nowrap rounded-full px-3 py-1 font-rajdhani text-sm font-bold uppercase;
+    letter-spacing: 0.2em;
+    color: rgb(var(--kids-subtle-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+  }
+  .kids-win-pill-best {
+    color: rgb(var(--kids-world-deep-rgb));
+    background: rgb(var(--kids-gold-rgb));
+    border-color: rgb(var(--kids-gold-rgb));
+  }
+  /* The win line in a dashed box. */
+  .kids-win-line {
+    @apply mx-auto max-w-[400px] rounded-[18px] px-4 py-2.5 font-rajdhani text-base font-semibold leading-snug md:text-[19px];
+    color: rgb(var(--kids-heading-rgb));
+    background: rgb(var(--kids-world-deep-rgb) / 0.7);
+    border: 1px dashed rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* The dialog's "Play again": outlined in full cyan. */
+  .kids-btn-line-strong {
+    border-color: rgb(var(--kids-discover-rgb));
   }
   /* A quest's progress (3.2): a dot per time it's to be done, filled up to the count. */
   .kids-quest-dot {
@@ -2162,11 +2279,11 @@
 @keyframes kids-burst {
   from {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(0.3);
+    transform: translate(-50%, -50%) scale(0.4);
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1.6);
+    transform: translate(-50%, -50%) scale(2.6);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2244,6 +2361,31 @@
     transform: scaleX(1);
   }
 }
+/* Grow's sort card: pops in, shakes when wrong, flies off toward its side when right. */
+@keyframes kids-card-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateX(-12%);
+  }
+  75% {
+    transform: translateX(12%);
+  }
+}
+@keyframes kids-card-fly-left {
+  to {
+    opacity: 0;
+    transform: translateX(-70%) rotate(-14deg);
+  }
+}
+@keyframes kids-card-fly-right {
+  to {
+    opacity: 0;
+    transform: translateX(70%) rotate(14deg);
+  }
+}
 /* The round Play's glow breathing (the prototype's kPulse). */
 @keyframes kids-pulse {
   0%,
@@ -2292,6 +2434,58 @@
   }
   .kids-pulse {
     animation: kids-pulse 1.6s ease-in-out infinite;
+  }
+  /* Grow's games (the prototype's): the sky twinkles (each star its own --twinkle), the sort
+     card pops in, shakes or flies off, words, chips and the light pop in. */
+  .kids-game-sky {
+    animation: kids-twinkle var(--twinkle, 1.4s) ease-in-out infinite;
+  }
+  .kids-game-card {
+    animation: kids-pop 0.35s ease both;
+  }
+  .kids-game-card-wrong {
+    animation: kids-card-shake 0.35s ease;
+  }
+  .kids-game-card-fly-left {
+    animation: kids-card-fly-left 0.45s ease forwards;
+  }
+  .kids-game-card-fly-right {
+    animation: kids-card-fly-right 0.45s ease forwards;
+  }
+  .kids-game-word {
+    animation: kids-pop 0.4s ease both;
+  }
+  .kids-game-word-quick {
+    animation-duration: 0.3s;
+  }
+  .kids-game-chip {
+    animation: kids-pop 0.3s ease both;
+  }
+  .kids-game-light {
+    animation: kids-pop 0.18s ease both;
+  }
+  /* A wrong memory tap: the frame flashes (fades back in). */
+  .kids-game-flash {
+    animation: kids-fade 0.3s ease;
+  }
+  /* The game dialog: the veil rises in (.25 s), the panel pops (.35 s); on a win the dots
+     twinkle, the medallion pops and pulses, "New best!" pops a moment later. */
+  .kids-dialog-backdrop {
+    animation: kids-up 0.25s ease both;
+  }
+  .kids-dialog {
+    animation: kids-pop 0.35s ease both;
+  }
+  .kids-win-dot {
+    animation: kids-twinkle var(--twinkle, 1.2s) var(--twinkle-delay, 0s) ease-in-out infinite;
+  }
+  .kids-win-medal {
+    animation:
+      kids-pop 0.5s ease both,
+      kids-pulse 1.6s ease-in-out infinite;
+  }
+  .kids-win-pill-best {
+    animation: kids-pop 0.5s 0.3s ease backwards;
   }
   .kids-enter-unfold-y {
     animation: kids-unfold-y 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) backwards;

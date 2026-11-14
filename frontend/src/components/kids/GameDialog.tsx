@@ -1,12 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Check, X } from 'lucide-react';
 import type { KidPower } from '@/api/discover';
 import { GAME_PLAY, bestNote, gameSeconds, winLine } from '@/lib/kidsGames';
 import { POWER_ICONS } from '@/components/kids/icons';
 import KidsGame from '@/components/kids/KidsGames';
+import { cn } from '@/lib/utils';
 
 /** How long the finished game stays on screen before "You did it!". */
 const WIN_PAUSE_MS = 500;
+
+/** The four twinkling dots round the win (the prototype's): where, how big, gold or cyan, and
+ * their own pace. */
+const WIN_DOTS = [
+  { at: { left: '12%', top: '10%' }, size: 10, gold: true, secs: 1.2, delay: 0 },
+  { at: { right: '14%', top: '18%' }, size: 8, gold: false, secs: 1, delay: 0.3 },
+  { at: { left: '22%', top: '46%' }, size: 6, gold: false, secs: 1.4, delay: 0.6 },
+  { at: { right: '20%', top: '52%' }, size: 9, gold: true, secs: 1.1, delay: 0.2 },
+] as const;
 
 interface GameDialogProps {
   power: KidPower;
@@ -55,6 +65,8 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
   };
 
   const note = result ? bestNote(result.secs, result.previous) : null;
+  // "New best!" (gold) beats a time from before; a first try is no record yet.
+  const newBest = !!note?.isBest && result?.previous !== undefined;
 
   return (
     <div
@@ -76,21 +88,22 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
         className="kids-dialog"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            className="h-6 w-6 stroke-kids-discover"
-          >
-            <path d={POWER_ICONS[power.game]} />
-          </svg>
+        <div className="flex items-center gap-3.5">
+          <span className="kids-dialog-icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[22px] w-[22px] stroke-kids-discover md:h-[26px] md:w-[26px]"
+            >
+              <path d={POWER_ICONS[power.game]} />
+            </svg>
+          </span>
           <h2
             id="kids-game-title"
-            className="flex-1 font-orbitron text-lg font-bold text-kids-text md:text-xl"
+            className="min-w-0 font-orbitron text-lg font-black tracking-[0.04em] text-kids-world-name md:text-[22px]"
           >
             {power.name}
           </h2>
@@ -99,37 +112,62 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="kids-btn-off flex h-10 w-10 items-center justify-center"
+            className="kids-dialog-close"
           >
-            <X className="h-5 w-5" aria-hidden="true" />
+            <X className="h-5 w-5" strokeWidth={2.4} aria-hidden="true" />
           </button>
         </div>
 
         {result && note ? (
-          <div className="py-4 text-center" role="status">
-            <p className="font-orbitron text-2xl font-bold text-kids-text">You did it!</p>
-            <p className="mt-3 flex items-baseline justify-center gap-2 text-kids-streak">
-              <span className="font-orbitron text-4xl font-bold">{result.secs.toFixed(1)}</span>
-              <span className="text-base font-bold uppercase tracking-[0.18em] md:text-lg">
+          <div className="relative px-1.5 pb-1 pt-3 text-center" role="status">
+            {WIN_DOTS.map((d, i) => (
+              <span
+                key={i}
+                aria-hidden="true"
+                className={cn('kids-win-dot', d.gold ? 'bg-kids-gold' : 'bg-kids-discover')}
+                style={
+                  {
+                    ...d.at,
+                    width: d.size,
+                    height: d.size,
+                    '--twinkle': `${d.secs}s`,
+                    '--twinkle-delay': `${d.delay}s`,
+                  } as CSSProperties
+                }
+              />
+            ))}
+            <div className="kids-win-medal" aria-hidden="true">
+              <Check className="h-9 w-9 md:h-10 md:w-10" strokeWidth={2.6} />
+            </div>
+            <p className="mt-3 font-orbitron text-2xl font-black text-kids-world-name md:text-[28px]">
+              You did it!
+            </p>
+            <p className="kids-win-time mt-2.5 flex items-baseline justify-center gap-2">
+              <span className="font-orbitron text-4xl font-black leading-none md:text-[44px]">
+                {result.secs.toFixed(1)}
+              </span>
+              <span className="font-rajdhani text-base font-bold uppercase tracking-[0.18em] md:text-xl">
                 sec
               </span>
             </p>
-            <p className="mt-2 text-[15px] font-bold text-kids-teal md:text-lg">{note.text}</p>
-            <p className="mt-3 text-[15px] font-semibold text-kids-body md:text-lg">
-              {winLine(power.game, result.secs)}
-            </p>
-            <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <div className="mt-2 flex min-h-[26px] justify-center gap-2">
+              <span className={cn('kids-win-pill', newBest && 'kids-win-pill-best')}>
+                {note.text}
+              </span>
+            </div>
+            <p className="kids-win-line mt-3">{winLine(power.game, result.secs)}</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2.5">
               <button
                 type="button"
                 onClick={again}
-                className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
+                className="kids-btn-line kids-btn-line-strong h-11 px-5 text-sm md:h-12 md:text-base"
               >
                 Play again
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="kids-btn-off h-11 px-6 text-sm md:h-12 md:text-base"
+                className="kids-btn-glow h-11 px-6 text-sm md:h-12 md:text-base"
               >
                 Done
               </button>
@@ -137,7 +175,7 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
           </div>
         ) : (
           <>
-            <p className="my-3 text-[15px] font-bold leading-snug text-kids-body md:text-lg">
+            <p className="mb-4 mt-3.5 text-pretty text-[17px] font-bold leading-[1.3] text-kids-heading md:text-[21px]">
               {GAME_PLAY[power.game]}
             </p>
             <KidsGame key={round} game={power.game} onWin={win} />

@@ -1,7 +1,13 @@
 import React, { useState, type ReactNode } from 'react';
 import { Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import Animated, {
+  useReducedMotion,
+  type CSSAnimationKeyframes,
+} from 'react-native-reanimated';
 import { rgb } from '@/theme';
+import type { Burst } from '@/lib/kidsBursts';
 import { color, game } from '@/components/kids/palette';
+import { loop } from '@/components/kids/enter';
 
 /**
  * The pieces every kids mini game draws (Discover's, 2.6, and Grow's, 3.5; web
@@ -20,38 +26,85 @@ const SKY = [
 ] as const;
 
 /** `.kids-game`'s width: centred, at most `min(100%, 100vh - 260px)`, at least 220px, so
- * the dialog fits on screen. For the frame and for a Pressable that wraps one. */
-export function useFrameWidth(): ViewStyle {
+ * the dialog fits on screen; Grow's (`.kids-game-grow`) at most `min(100%, 540px, 100vh -
+ * 300px)`, at least 260px. For the frame and for a Pressable that wraps one. */
+export function useFrameWidth(grow = false): ViewStyle {
   const { height } = useWindowDimensions();
-  return {
-    width: '100%',
-    maxWidth: Math.max(220, height - 260),
-    minWidth: 220,
-    alignSelf: 'center',
-  };
+  return grow
+    ? {
+        width: '100%',
+        maxWidth: Math.max(260, Math.min(540, height - 300)),
+        minWidth: 260,
+        alignSelf: 'center',
+      }
+    : {
+        width: '100%',
+        maxWidth: Math.max(220, height - 260),
+        minWidth: 220,
+        alignSelf: 'center',
+      };
 }
 
-/** The square a game is played in; `children` gets its width in points. */
-export function Frame({ children }: { children: (size: number) => ReactNode }) {
+/** A wrong memory tap: the frame fades back in (web .kids-game-flash). */
+const FLASH: CSSAnimationKeyframes = {
+  from: { opacity: 0 },
+  to: { opacity: 1 },
+};
+
+/** The square a game is played in; `children` gets its width in points. `grow`: Grow's size;
+ * `flash`: fades it back in (a wrong memory tap). */
+export function Frame({
+  children,
+  grow = false,
+  flash = false,
+}: {
+  children: (size: number) => ReactNode;
+  grow?: boolean;
+  flash?: boolean;
+}) {
   const [size, setSize] = useState(0);
-  const width = useFrameWidth();
+  const width = useFrameWidth(grow);
+  const reduced = useReducedMotion();
   return (
-    <View
+    <Animated.View
       testID="kids-game"
-      style={[game.frame, width]}
+      style={[
+        game.frame,
+        width,
+        flash && !reduced
+          ? {
+              animationName: FLASH,
+              animationDuration: '0.3s',
+              animationTimingFunction: 'ease',
+            }
+          : null,
+      ]}
       onLayout={e => setSize(e.nativeEvent.layout.width)}
     >
       {size > 0 ? children(size) : null}
-    </View>
+    </Animated.View>
   );
 }
 
+/** web kids-twinkle. */
+const TWINKLE: CSSAnimationKeyframes = {
+  '0%': { opacity: 0.25 },
+  '50%': { opacity: 1 },
+  '100%': { opacity: 0.25 },
+};
+
+/** The sky's seven stars, each twinkling at its own pace (1.4 s, then .3 s slower each). */
 export function Sky() {
-  return SKY.map(([x, y]) => (
-    <View
+  const reduced = useReducedMotion();
+  return SKY.map(([x, y], i) => (
+    <Animated.View
       key={`${x}-${y}`}
       pointerEvents="none"
-      style={[game.sky, { left: `${x}%`, top: `${y}%` }]}
+      style={[
+        game.sky,
+        { left: `${x}%`, top: `${y}%` },
+        loop(TWINKLE, 1.4 + i * 0.3, 0, 'ease-in-out', reduced),
+      ]}
     />
   ));
 }
@@ -60,6 +113,40 @@ export function Sky() {
 const BAR_GLOW = {
   boxShadow: `0 0 12px ${rgb('kids-discover', 0.7)}`,
 } as const;
+
+/** web kids-burst: a ring that grows from .4 to 2.6 times its size as it fades. */
+const BURST: CSSAnimationKeyframes = {
+  from: { opacity: 1, transform: [{ scale: 0.4 }] },
+  to: { opacity: 0, transform: [{ scale: 2.6 }] },
+};
+
+/** The bursts (lib/kidsBursts) in a `size`-wide frame: gold, or red for a wrong catch. None
+ * when the device asks for reduced motion, as the web hides them. */
+export function Bursts({ list, size }: { list: Burst[]; size: number }) {
+  const reduced = useReducedMotion();
+  if (reduced) return null;
+  const d = 0.16 * size;
+  return list.map(b => (
+    <Animated.View
+      key={b.key}
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        borderRadius: 9999,
+        borderWidth: 3,
+        borderColor: b.wrong ? rgb('kids-wrong') : rgb('kids-gold'),
+        width: d,
+        height: d,
+        left: (b.x / 100) * size - d / 2,
+        top: (b.y / 100) * size - d / 2,
+        animationName: BURST,
+        animationDuration: '0.6s',
+        animationTimingFunction: 'ease-out',
+        animationFillMode: 'forwards',
+      }}
+    />
+  ));
+}
 
 export function Bar({ value }: { value: number }) {
   return (
@@ -118,7 +205,13 @@ export function Hud({ left, right }: { left: ReactNode; right: ReactNode }) {
         pointerEvents="none"
         style={[
           game.number,
-          { position: 'absolute', left: '6%', top: '9%', fontSize: 16 },
+          {
+            position: 'absolute',
+            left: '6%',
+            top: '9%',
+            fontSize: 16,
+            color: color('world-name'),
+          },
         ]}
       >
         {left}
@@ -132,7 +225,7 @@ export function Hud({ left, right }: { left: ReactNode; right: ReactNode }) {
             right: '6%',
             top: '9%',
             fontSize: 16,
-            color: color('streak'),
+            color: color('gold'),
           },
         ]}
       >

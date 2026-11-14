@@ -64,27 +64,9 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **D7.** Name pill and tip background #05131a, text #eafdff (now #060a18 / #f2fbff).
 - **D8.** Count pill gradient cyan-bright → #0a5b74 (now cyan → #1b8aa3).
 
-### Game dialog — `GameDialog.tsx`
-
-- **G1.** Backdrop rgba(2,6,15,.84) with 6 px blur (web only), padding 20, a .25 s rise-in.
-- **G2.** Panel 540 px, radius 32, gradient #0e3a4a → #05131a, 1 px border, two shadows, pops in.
-- **G3.** Title row: the icon inside a 48 px circle (cyan border, tinted fill) at 26 px; title
-  Orbitron 700 22 px, .04em, #eafdff; close as a 48 px outlined circle.
-- **G4.** Instruction line #e7f5f9, 21 px.
-- **G5.** Win screen: the four twinkling dots, the 72 px pulsing check medallion; "You did it!"
-  28 px; the seconds 44 px with a gold glow.
-- **G6.** "New best!" as a solid gold pill that pops in; "Best: X.Xs" and "First try!" as an
-  outlined cyan pill in grey.
-- **G7.** The win line in the prototype's dashed box (navy fill, dashed cyan border, radius 18,
-  19 px). For the words, see decision W1.
-- **G8.** "Play again" outlined cyan, 46 px, uppercase Rajdhani; "Done" as a cyan gradient with a
-  glow, uppercase.
-
 ### Discover mini games — `KidsGames.tsx`, `GamePieces.tsx`
 
-- **M1.** Frame max `calc(100vh - 260px)`; background #0e3a4a → #05131a; captions #84a0b2.
-- **M2.** The seven sky stars twinkle (1.4 s + 0.3 s per star), #eafdff.
-- **M3.** Bursts: cyan for climb and energy, scale .4 → 2.6.
+- **M3.** Bursts: cyan for climb and energy (the .4 → 2.6 scale is applied).
 - **M4.** Focus: the light pulses (`kPulse 1s`), moves in 1.1 s, gradient ends #0a5b74.
 - **M5.** Curious: closed boxes float, an opened box flips; "?" clamp(22–34 px); empty dot #3c5568.
 - **M6.** Order: the line glows; the next star pulses; a wrong tap shakes; numbers clamp(16–24 px);
@@ -93,25 +75,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **M8.** Climb: the flag twinkles; the climber moves in .12 s; mountain #0a5b74.
 - **M9.** Voice: dark-cyan mic circle (#1ec4e8 → #0a5b74) with a light mic, a gold border above
   90%, glow 20 → 70 px; wave bars 5 px apart.
-
-### Grow — the games — `GrowGames.tsx`, `GamePieces.tsx`
-
-- **GG1.** Frame `min(100%, 540px, 100vh - 300px)`, min 260; radial #0e3a4a → #05131a; twinkling
-  sky; bar fill #1ec4e8 → #ffd98a; HUD #ffd98a; captions #84a0b2.
-- **GG2.** Catch: gold bursts for good words, red #ff7a7a for bad; the basket #ffd98a with its glow.
-- **GG3.** Sort: a right answer flies off toward its side (±14°, .45 s fade); a wrong one shakes
-  with a red glow; each new card pops in; right border #ffd98a, wrong #ff7a7a; card
-  rgba(14,58,74,.95) → rgba(5,19,26,.98); left side gold #ffd98a .25 → #8a6420 .45, right side
-  cyan .45 → #0a5b74 .7.
-- **GG4.** Memory: second pad #ffd98a; the frame flashes on a wrong tap.
-- **GG5.** Timing: "Miss" red #ff7a7a; "Perfect!" / "Good" #ffd98a with a glow and a pop; target
-  #ffd98a.
-- **GG6.** Dash: a burst on each grab; picked words as gold chips (.6 border on .15 fill, Rajdhani
-  14) that pop in.
-- **GG7.** React: "Too soon!" red #ff7a7a; light gradient #fff6dc / #ffd98a / #8a6420.
-- **GG8.** Spark: strokes glow; colours #ffd98a, #4be9ff, #3ce1be, #9d8cff, #ff8fb1; inner line white.
-
-A red token for "wrong" doesn't exist yet: add one (e.g. `--kids-wrong-rgb`) for GG2, GG3, GG5, GG7.
 
 ### Transform — `TransformQuests.tsx`
 
@@ -353,3 +316,24 @@ Applying an item from group 1 means changing both apps the same way.
   orb, "Play again" outlined and "Pick another world" as a text link. Each view rises or pops in
   as the prototype's. Buttons stay on the parent pages' height (44/48 px, not 62 px); R2's
   confetti stays with S5.
+- Grow's games (was GG1–GG8), applied on 2026-11-14 to both apps: Grow's frame size
+  (`min(100%, 540px, 100vh - 300px)`, at least 260 px); the frame, bar, sky and readouts as the
+  prototype's; Catch's gold or red burst per catch and the glowing gold basket; Sort's card that
+  pops in, shakes red when wrong and flies off toward its side when right, with the gold and cyan
+  sides; Memory's gold second pad, white-lit pads and the frame flashing on a wrong tap; Timing's
+  gold target and glowing, popping "Perfect!" / "Good" / red "Miss"; Dash's burst per grab and
+  gold chips; React's gold light (popping in) and red "Too soon!"; Spark's gold-first colours,
+  glowing strokes and white core. New tokens: `--kids-wrong-rgb`, `--kids-white-rgb`,
+  `--kids-gold-shade-rgb`. The prototype centres the popping pieces with `transform`, which its
+  pop would override (they'd jump off centre); the app centres them with `translate`. The stroke
+  glow is an SVG blur filter (CSS `drop-shadow` on SVG strokes doesn't render in Chrome).
+- Through the shared frame pieces, Discover's mini games got M1 (frame and caption colours) and
+  M2 (twinkling sky), and M3's burst size.
+- The game dialog (was G1–G8), applied on 2026-11-14 to both apps: a dark veil (blurred on the
+  web) that rises in; a teal-to-navy panel, 540 px, radius 32, that pops in; the power's icon in a
+  tinted cyan circle, the name in Orbitron .04em, × in an outlined circle; the instruction line
+  larger and brighter; on a win the four twinkling dots, the pulsing check medallion, "You did
+  it!" and the time in glowing gold; "New best!" as a solid gold pill that pops in a moment later,
+  "Best: X.Xs" / "First try!" as an outlined grey pill; the win line in a dashed box (its words
+  are still decision W1); "Play again" outlined cyan and "Done" as the cyan gradient. Sizes follow
+  the parent pages' scale (the prototype's from `md`), buttons 44/48 px rather than 46 px.

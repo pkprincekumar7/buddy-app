@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType, type PointerEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentType, type PointerEvent } from 'react';
 import type { GrowGameType } from '@/api/kidWorlds';
 import { useCountdown } from '@/hooks/useCountdown';
 import {
@@ -12,7 +12,6 @@ import {
   MEMORY_START,
   MEMORY_TOP,
   SORT_PAUSE_MS,
-  SPARK_COLORS,
   SPARK_SECONDS,
   TIMING_GAP_MS,
   TIMING_LEAD_MS,
@@ -42,8 +41,9 @@ import {
   type SortItem,
 } from '@/lib/kidsGrow';
 import { cn } from '@/lib/utils';
-import { tileColor, tileVars } from '@/components/kids/palette';
-import { Bar, Hud, Sky } from '@/components/kids/GamePieces';
+import { tileColor, tileVars, type KidsPair } from '@/components/kids/palette';
+import { Bar, Bursts, Hud, Sky } from '@/components/kids/GamePieces';
+import { addBurst, type Burst } from '@/lib/kidsBursts';
 
 /**
  * Grow's seven game types (docs/child-view-build-plan.md, 3.5). The rules and scoring are
@@ -55,7 +55,9 @@ interface GrowGameProps {
   onDone: (result: GrowResult) => void;
 }
 
-const PAD_COLORS = ['discover', 'transform', 'teal', 'release'] as const;
+/** The memory pads' colours and Spark's strokes, as the prototype's (gold, not Transform's). */
+const PAD_COLORS: readonly KidsPair[] = ['discover', 'gold', 'teal', 'release'];
+const SPARK_INKS: readonly KidsPair[] = ['gold', 'discover', 'teal', 'release', 'connect'];
 
 function pointIn(e: PointerEvent<HTMLElement>, box: HTMLElement) {
   const r = box.getBoundingClientRect();
@@ -89,11 +91,12 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
   const done = useRef(false);
   const [basket, setBasket] = useState(50);
   const basketRef = useRef(50);
-  const [state, setState] = useState<{ items: Falling[]; tally: CatchTally; nextId: number }>({
-    items: [],
-    tally: { caught: 0, oops: 0, missed: 0 },
-    nextId: 1,
-  });
+  const [state, setState] = useState<{
+    items: Falling[];
+    tally: CatchTally;
+    nextId: number;
+    bursts: Burst[];
+  }>({ items: [], tally: { caught: 0, oops: 0, missed: 0 }, nextId: 1, bursts: [] });
   const tallyRef = useRef(state.tally);
   const left = useCountdown(CATCH_SECONDS, () => {
     done.current = true;
@@ -103,9 +106,11 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
     const id = setInterval(() => {
       if (done.current) return;
       setState((s) => {
-        const next = catchTick(s.items, basketRef.current, s.tally, s.nextId, cfg);
+        const { hits, ...next } = catchTick(s.items, basketRef.current, s.tally, s.nextId, cfg);
         tallyRef.current = next.tally;
-        return next;
+        // A gold ring for a good word caught, a red one for a bad one.
+        const bursts = hits.reduce((l, h) => addBurst(l, h.x, 84, !h.good), s.bursts);
+        return { ...next, bursts };
       });
     }, CATCH_TICK_MS);
     return () => clearInterval(id);
@@ -133,11 +138,12 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
         if (e.key === 'ArrowLeft') nudge(-8);
         if (e.key === 'ArrowRight') nudge(8);
       }}
-      className="kids-game cursor-ew-resize"
+      className="kids-game kids-game-grow cursor-ew-resize"
     >
       <Sky />
       <Bar value={left / CATCH_SECONDS} />
       <Hud left={`★ ${state.tally.caught}`} right={`${Math.ceil(left)}s`} />
+      <Bursts list={state.bursts} />
       {state.items.map((o) => (
         <span
           key={o.id}
@@ -160,7 +166,7 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
 function SortGame({ cfg, onDone }: GrowGameProps) {
   const [cards] = useState(() => sortCards(cfg.items as SortItem[]));
   const [i, setI] = useState(0);
-  const [feedback, setFeedback] = useState<boolean | null>(null);
+  const [feedback, setFeedback] = useState<{ ok: boolean; side: boolean } | null>(null);
   const right = useRef(0);
   const times = useRef<number[]>([]);
   const shownAt = useRef(Date.now());
@@ -174,7 +180,7 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
     const ok = card.right === side;
     if (ok) right.current += 1;
     times.current.push(Date.now() - shownAt.current);
-    setFeedback(ok);
+    setFeedback({ ok, side });
     later(() => {
       locked.current = false;
       setFeedback(null);
@@ -194,7 +200,7 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
   });
 
   return (
-    <div className="kids-game">
+    <div className="kids-game kids-game-grow">
       <Sky />
       <Bar value={i / cards.length} />
       <Hud
@@ -206,26 +212,22 @@ function SortGame({ cfg, onDone }: GrowGameProps) {
         aria-live="polite"
         className={cn(
           'kids-game-card',
-          feedback === true && 'kids-game-card-right',
-          feedback === false && 'kids-game-card-wrong',
+          feedback?.ok === true && 'kids-game-card-right',
+          feedback?.ok === true &&
+            (feedback.side ? 'kids-game-card-fly-right' : 'kids-game-card-fly-left'),
+          feedback?.ok === false && 'kids-game-card-wrong',
         )}
       >
         {card?.text}
       </div>
       <div className="absolute bottom-[5%] left-[5%] right-[5%] flex gap-3">
-        <button
-          type="button"
-          onClick={() => pick(false)}
-          style={tileVars('transform')}
-          className="kids-game-side"
-        >
+        <button type="button" onClick={() => pick(false)} className="kids-game-side">
           ← {String(cfg.left)}
         </button>
         <button
           type="button"
           onClick={() => pick(true)}
-          style={tileVars('discover')}
-          className="kids-game-side"
+          className="kids-game-side kids-game-side-cyan"
         >
           {String(cfg.right)} →
         </button>
@@ -304,7 +306,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
           ? 'Oops! Watch again'
           : 'Nice!';
   return (
-    <div className="kids-game">
+    <div className={cn('kids-game kids-game-grow', oops && 'kids-game-flash')}>
       <Sky />
       <Bar value={best.current / MEMORY_TOP} />
       <Hud left={`Level ${level.current}`} right={'♥'.repeat(Math.max(0, lives.current))} />
@@ -324,7 +326,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
       </div>
       <p
         aria-live="polite"
-        className={cn('kids-game-caption', phase === 'input' && 'text-kids-streak')}
+        className={cn('kids-game-caption', phase === 'input' && 'text-kids-gold')}
       >
         {caption}
       </p>
@@ -375,7 +377,7 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
       aria-label={`${String(cfg.label)}: tap when the rings meet`}
       onPointerDown={tap}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && tap()}
-      className="kids-game block"
+      className="kids-game kids-game-grow block"
     >
       <Sky />
       <Bar value={beat.current.beats.length / total} />
@@ -401,7 +403,7 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
           key={flash.key}
           className={cn(
             'kids-game-word',
-            flash.beat === 'miss' ? 'text-kids-connect' : 'text-kids-streak',
+            flash.beat === 'miss' ? 'text-kids-wrong' : 'text-kids-gold',
           )}
         >
           {flash.beat === 'perfect' ? 'Perfect!' : flash.beat === 'good' ? 'Good' : 'Miss'}
@@ -422,6 +424,7 @@ function DashGame({ cfg, onDone }: GrowGameProps) {
     items: [],
     nextId: 1,
   });
+  const [bursts, setBursts] = useState<Burst[]>([]);
   const [count, setCount] = useState(0);
   const left = useCountdown(DASH_SECONDS, () => {
     done.current = true;
@@ -437,12 +440,14 @@ function DashGame({ cfg, onDone }: GrowGameProps) {
     if (done.current) return;
     setState((s) => ({ ...s, items: s.items.filter((x) => x.id !== o.id) }));
     picked.current = [...picked.current, { text: o.text, kind: o.kind }];
+    setBursts((list) => addBurst(list, o.x, o.y));
     setCount(picked.current.length);
   };
   return (
-    <div className="kids-game">
+    <div className="kids-game kids-game-grow">
       <Sky />
       <Bar value={left / DASH_SECONDS} />
+      <Bursts list={bursts} />
       <Hud left={`★ ${count}`} right={`${Math.ceil(left)}s`} />
       {state.items.map((o) => (
         <button
@@ -458,10 +463,7 @@ function DashGame({ cfg, onDone }: GrowGameProps) {
       ))}
       <div className="pointer-events-none absolute bottom-[5%] left-[5%] right-[5%] flex flex-wrap justify-center gap-1.5">
         {picked.current.slice(-5).map((p, j) => (
-          <span
-            key={`${j}-${p.text}`}
-            className="kids-chip px-2.5 py-1 font-rajdhani text-sm font-bold text-kids-streak"
-          >
+          <span key={`${j}-${p.text}`} className="kids-game-chip">
             {p.text}
           </span>
         ))}
@@ -512,12 +514,13 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
     } else arm(`${(rt / 1000).toFixed(2)}s`);
   };
   return (
-    <div className="kids-game" onPointerDown={tooSoon}>
+    <div className="kids-game kids-game-grow" onPointerDown={tooSoon}>
       <Sky />
       <Bar value={times.current.length / total} />
       <Hud left={`★ ${times.current.length}`} right={`${times.current.length} / ${total}`} />
       {st.phase === 'go' && (
         <button
+          key={times.current.length}
           type="button"
           onPointerDown={hit}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && hit(e)}
@@ -529,9 +532,10 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
       )}
       {st.msg && (
         <span
+          key={`${st.msg}-${times.current.length}`}
           className={cn(
-            'kids-game-word top-1/2 -translate-y-1/2',
-            st.msg === 'Too soon!' ? 'text-kids-connect' : 'text-kids-discover',
+            'kids-game-word kids-game-word-mid kids-game-word-quick',
+            st.msg === 'Too soon!' ? 'text-kids-wrong' : 'text-kids-discover',
           )}
         >
           {st.msg}
@@ -548,6 +552,8 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
 
 function SparkGame({ cfg, onDone }: GrowGameProps) {
   const seconds = Number(cfg.time) || SPARK_SECONDS;
+  // useId's colons aren't safe in url(#…).
+  const glowId = `spark-glow-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const box = useRef<HTMLDivElement>(null);
   const down = useRef(false);
   const ended = useRef(false);
@@ -577,7 +583,7 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
       ref={box}
       role="img"
       aria-label="Paint here"
-      className="kids-game cursor-crosshair"
+      className="kids-game kids-game-grow cursor-crosshair"
       onPointerDown={(e) => {
         if (ended.current) return;
         down.current = true;
@@ -602,6 +608,16 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 h-full w-full"
       >
+        <defs>
+          {/* Each stroke glows in its own colour: its blur under it. */}
+          <filter id={glowId} x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="0.6" result="glow" />
+            <feMerge>
+              <feMergeNode in="glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
         {strokes.map((points, j) => {
           const line = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
           return (
@@ -609,15 +625,16 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
               <polyline
                 points={line}
                 fill="none"
-                stroke={tileColor(SPARK_COLORS[j % SPARK_COLORS.length] ?? 'transform')}
+                stroke={tileColor(SPARK_INKS[j % SPARK_INKS.length] ?? 'gold')}
                 strokeWidth="2.6"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                filter={`url(#${glowId})`}
               />
               <polyline
                 points={line}
                 fill="none"
-                className="stroke-kids-text"
+                className="stroke-kids-white"
                 strokeWidth="0.7"
                 strokeLinecap="round"
                 strokeLinejoin="round"
