@@ -49,21 +49,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **S5.** Confetti: 46 pieces plus a cyan and a gold ring each time Discover opens, and on the Grow
   report (the plan already promises it at lines ~77, 199 and 512). Off under reduced motion.
 
-### Discover — `DiscoverPowers.tsx`
-
-- **D1.** The eyebrow pops in (`kPop .6s`); the name pill rises (`kUp .5s .5s`) instead of fading;
-  the count pill pops for 0.6 s (now 0.7 s).
-- **D2.** The hover tip gets its small arrow and a .2 s fade (keep it on keyboard focus too).
-- **D3.** Heading #e7f5f9 (now #f2fbff); "The {style}" with a cyan glow (`text-shadow 0 0 28px`).
-- **D4.** Gold #ffd98a (`constellation-gold-bright`) for the eyebrow, twinkles and the opened
-  power's edge (now #ffe08a).
-- **D5.** Photo ring: the 4-stop conic (cyan, #0a5b74, cyan-bright, cyan); inner #0e3a4a; photo
-  position 50% 35%.
-- **D6.** Power bubbles: rgba(14,58,74,.9) → rgba(5,19,26,.95); selected #1ec4e8 → #0a5b74;
-  cyan-bright glow; selected ink #eafdff.
-- **D7.** Name pill and tip background #05131a, text #eafdff (now #060a18 / #f2fbff).
-- **D8.** Count pill gradient cyan-bright → #0a5b74 (now cyan → #1b8aa3).
-
 ### Discover mini games — `KidsGames.tsx`, `GamePieces.tsx`
 
 - **M3.** Bursts: cyan for climb and energy (the .4 → 2.6 scale is applied).
@@ -337,3 +322,11 @@ Applying an item from group 1 means changing both apps the same way.
   "Best: X.Xs" / "First try!" as an outlined grey pill; the win line in a dashed box (its words
   are still decision W1); "Play again" outlined cyan and "Done" as the cyan gradient. Sizes follow
   the parent pages' scale (the prototype's from `md`), buttons 44/48 px rather than 46 px.
+- Discover (was D1–D8), applied on 2026-11-14 to both apps: the eyebrow pops (.6 s), the name
+  pill rises in after .5 s, the count pill pops for .6 s; the hover tip fades in with its small
+  arrow (web, also on keyboard focus); the heading #e7f5f9 with "The {style}" glowing cyan; gold
+  #ffd98a for the eyebrow, its twinkles and an opened power's edge; the photo ring's four-stop
+  gradient (drawn as blended wedges on mobile), its inner #0e3a4a and dark edge, the photo at
+  50% 35% (web; React Native's Image can't set it); the bubbles deep teal, lit cyan-bright to
+  #0a5b74 with light ink; the name pill and tip on #05131a with #eafdff text; the count pill
+  cyan-bright to #0a5b74. The name pill centres with `translate`, so its rise can't move it.

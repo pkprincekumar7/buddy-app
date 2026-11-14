@@ -42,13 +42,13 @@ export default function DiscoverPowers({
   return (
     <div className="mx-auto max-w-[1000px]">
       <section className="kids-enter-up text-center">
-        <p className="kids-eyebrow">
+        <p className="kids-eyebrow kids-enter-pop-six">
           <span className="kids-twinkle" aria-hidden="true" />
           <span className="truncate">Hey {firstName}, your superpowers are here!</span>
           <span className="kids-twinkle [animation-delay:0.5s]" aria-hidden="true" />
         </p>
-        <h1 className="mt-3.5 text-balance font-orbitron text-[clamp(28px,4vw,44px)] font-bold leading-[1.08] tracking-[0.02em] text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
-          You are <span className="text-kids-discover">The {powers.style}</span>
+        <h1 className="mt-3.5 text-balance font-orbitron text-[clamp(28px,4vw,44px)] font-bold leading-[1.08] tracking-[0.02em] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
+          You are <span className="kids-glow-word">The {powers.style}</span>
         </h1>
         {powers.style_line && (
           <p className="mx-auto mt-3 max-w-[540px] text-pretty text-[17px] font-semibold leading-snug text-kids-subtle md:text-xl">
@@ -78,13 +78,13 @@ export default function DiscoverPowers({
         <div className="kids-photo-ring kids-enter-pop">
           <div className="kids-photo text-[clamp(32px,6.4vw,52px)]">
             {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover object-[50%_35%]" />
             ) : (
               <span aria-hidden="true">{getInitials(childName).charAt(0)}</span>
             )}
           </div>
         </div>
-        <div className="kids-name-pill kids-enter-fade [animation-delay:0.5s]">{firstName}</div>
+        <div className="kids-name-pill kids-enter-up [animation-delay:0.5s]">{firstName}</div>
         {powers.powers.map((p, i) => {
           const slot = POWER_SLOTS[i];
           if (!slot) return null;
@@ -137,7 +137,7 @@ export default function DiscoverPowers({
       </div>
 
       <div className="mt-1.5 flex justify-center">
-        <p className="kids-count-pill kids-enter-pop [animation-delay:2.4s]">
+        <p className="kids-count-pill kids-enter-pop-six [animation-delay:2.4s]">
           {powers.powers.length} superpowers unlocked
         </p>
       </div>

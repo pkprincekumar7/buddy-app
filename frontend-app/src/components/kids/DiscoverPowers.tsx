@@ -11,7 +11,7 @@ import type { KidPowers } from '@/api/discover';
 import type { KidActivity, KidEvent } from '@/api/kids';
 import { getInitials } from '@/lib/avatarUtils';
 import { POWER_SLOTS, powerSize } from '@/lib/kidsPowers';
-import { font, rgb } from '@/theme';
+import { channels, font, rgb } from '@/theme';
 import { POWER_ICONS } from '@/components/kids/icons';
 import GameDialog from '@/components/kids/GameDialog';
 import { FLOAT, SPIN, enter, loop } from '@/components/kids/enter';
@@ -42,9 +42,27 @@ const GROW_X: CSSAnimationKeyframes = {
 };
 const UNFOLD_EASE = cubicBezier(0.2, 1.5, 0.4, 1);
 
-/** The ring round the photo: web `.kids-photo-ring`'s conic gradient (cyan → its shade →
- * cyan, from 200deg), drawn as wedges of cyan over the shade, as RN has no conic-gradient. */
+/** The ring round the photo: web `.kids-photo-ring`'s conic gradient from 200deg (cyan, its
+ * deep shade, cyan-bright, cyan), drawn as wedges each in its blended colour, as RN has no
+ * conic-gradient. */
 const WEDGES = 72;
+const STOPS = [
+  'kids-discover',
+  'kids-orb-cyan-lo',
+  'kids-orb-sky',
+  'kids-discover',
+];
+/** The gradient's colour at `t` (0–1 round the ring). */
+function ringColor(t: number) {
+  const span = t * (STOPS.length - 1);
+  const k = Math.min(STOPS.length - 2, Math.floor(span));
+  const from = channels[STOPS[k] ?? 'kids-discover'] ?? [0, 0, 0];
+  const to = channels[STOPS[k + 1] ?? 'kids-discover'] ?? [0, 0, 0];
+  const f = span - k;
+  const mix = (i: number) =>
+    Math.round((from[i] ?? 0) + ((to[i] ?? 0) - (from[i] ?? 0)) * f);
+  return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+}
 function ConicRing({ size }: { size: number }) {
   const r = size / 2;
   const wedges = useMemo(
@@ -56,10 +74,9 @@ function ConicRing({ size }: { size: number }) {
         const b = deg(k + 1.15);
         const pt = (t: number) =>
           `${r + r * Math.sin(t)} ${r - r * Math.cos(t)}`;
-        const t = (k + 0.5) / WEDGES;
         return {
           d: `M${r} ${r}L${pt(a)}A${r} ${r} 0 0 1 ${pt(b)}Z`,
-          alpha: Math.abs(1 - 2 * t),
+          fill: ringColor((k + 0.5) / WEDGES),
         };
       }),
     [r],
@@ -72,7 +89,7 @@ function ConicRing({ size }: { size: number }) {
       style={{ position: 'absolute', left: 0, top: 0 }}
     >
       {wedges.map((w, k) => (
-        <Path key={k} d={w.d} fill={color('discover')} fillOpacity={w.alpha} />
+        <Path key={k} d={w.d} fill={w.fill} />
       ))}
     </Svg>
   );
@@ -152,7 +169,9 @@ export default function DiscoverPowers({
   return (
     <View>
       <Animated.View style={enter('up', 0, reduced)}>
-        <View style={[d.eyebrow, EYEBROW]}>
+        <Animated.View
+          style={[d.eyebrow, EYEBROW, enter('pop', 0, reduced, 0.6)]}
+        >
           <Animated.View
             style={[
               d.twinkle,
@@ -185,7 +204,7 @@ export default function DiscoverPowers({
               loop(TWINKLE, 1, 0.5, 'ease-in-out', reduced),
             ]}
           />
-        </View>
+        </Animated.View>
         <Text
           accessibilityRole="header"
           className="mt-3"
@@ -198,8 +217,7 @@ export default function DiscoverPowers({
             },
           ]}
         >
-          You are{' '}
-          <Text style={{ color: color('discover') }}>The {powers.style}</Text>
+          You are <Text style={d.titleGlow}>The {powers.style}</Text>
         </Text>
         {powers.style_line ? (
           <Text className="mt-3" style={[d.line, LINE]}>
@@ -296,7 +314,7 @@ export default function DiscoverPowers({
                 d.namePill,
                 NAME_PILL,
                 { top: at(66) - 0.2 * pillHeight },
-                enter('fade', 0.5, reduced),
+                enter('up', 0.5, reduced),
               ]}
             >
               <Text
@@ -318,7 +336,7 @@ export default function DiscoverPowers({
               const from = unfold[i];
               if (!slot || !from) return null;
               const on = playing === i;
-              const ink = on ? color('text') : color('discover');
+              const ink = on ? color('world-name') : color('discover');
               return (
                 <Animated.View
                   key={p.game}
@@ -396,7 +414,7 @@ export default function DiscoverPowers({
 
       <Animated.View
         className="mt-1"
-        style={[d.countPill, COUNT_PILL, enter('pop', 2.4, reduced)]}
+        style={[d.countPill, COUNT_PILL, enter('pop', 2.4, reduced, 0.6)]}
       >
         <Text
           style={[
@@ -448,13 +466,16 @@ const SPOKE_LINE = {
   top: 0,
   transformOrigin: 'left center',
 } as const;
-/** `.kids-photo-ring`: p-1.5, the conic gradient's shade under its cyan wedges. */
+/** `.kids-photo-ring`: p-1.5, under the conic gradient's wedges. */
 const PHOTO_RING = {
   padding: 6,
-  backgroundColor: rgb('kids-discover-shade'),
+  backgroundColor: rgb('kids-orb-cyan-lo'),
 } as const;
 /** `.kids-photo`'s letter: Orbitron bold. */
-const INITIAL = { ...font('orbitron', 700), color: rgb('kids-text') } as const;
+const INITIAL = {
+  ...font('orbitron', 700),
+  color: rgb('kids-world-name'),
+} as const;
 /** `.kids-name-pill`: px-3.5 py-1. */
 const NAME_PILL = { paddingHorizontal: 14, paddingVertical: 4 } as const;
 /** A power's icon and name (gap-[5px]), the label at most 90% across. */

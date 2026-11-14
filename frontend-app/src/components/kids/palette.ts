@@ -130,8 +130,8 @@ export function avatar(c: KidsColor): ViewStyle {
   };
 }
 
-/** `.kids-power`, `-open` and `-on`: a power's bubble, cyan (the prototype's), its edge
- * gold once opened, lit while its game is open (pressed: a little smaller). */
+/** `.kids-power`, `-open` and `-on`: a power's bubble, deep teal (the prototype's), its edge
+ * gold once opened, lit cyan while its game is open (pressed: a little smaller). */
 export function power(
   opened: boolean,
   on: boolean,
@@ -144,21 +144,21 @@ export function power(
     borderColor: on
       ? fill('discover')
       : opened
-      ? rgb('kids-streak', 0.6)
+      ? rgb('kids-gold', 0.6)
       : fill('discover', 0.4),
     alignItems: 'center',
     justifyContent: 'center',
     experimental_backgroundImage: on
-      ? `radial-gradient(circle at 50% 35%, ${fill('discover', 0.85)}, ${shade(
-          'discover',
+      ? `radial-gradient(circle at 50% 35%, ${rgb('kids-orb-sky')}, ${rgb(
+          'kids-orb-cyan-lo',
         )})`
       : `radial-gradient(circle at 50% 35%, ${rgb(
-          'kids-discover-shade',
-          0.55,
-        )}, ${rgb('kids-bg', 0.95)})`,
+          'kids-world-card',
+          0.9,
+        )}, ${rgb('kids-world-deep', 0.95)})`,
     boxShadow: on
       ? `0 0 40px ${fill('discover', 0.55)}`
-      : `0 0 24px ${fill('discover', 0.15)}`,
+      : `0 0 24px ${rgb('kids-orb-sky', 0.15)}`,
     transform: [{ scale: pressed ? 0.97 : 1 }],
   };
 }
@@ -176,22 +176,22 @@ export const discoverPage = {
     paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: rgb('kids-streak', 0.55),
-    backgroundColor: rgb('kids-streak', 0.08),
+    borderColor: rgb('kids-gold', 0.55),
+    backgroundColor: rgb('kids-gold', 0.08),
   } satisfies ViewStyle,
   eyebrowText: {
     ...font('rajdhani', 700),
     fontSize: 12,
     letterSpacing: 12 * 0.06,
     textTransform: 'uppercase',
-    color: rgb('kids-streak'),
+    color: rgb('kids-gold'),
   } satisfies TextStyle,
   twinkle: {
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: rgb('kids-streak'),
-    boxShadow: `0 0 10px ${rgb('kids-streak')}`,
+    backgroundColor: rgb('kids-gold'),
+    boxShadow: `0 0 10px ${rgb('kids-gold')}`,
   } satisfies ViewStyle,
   title: {
     ...font('orbitron', 700),
@@ -199,7 +199,14 @@ export const discoverPage = {
     lineHeight: 28 * 1.08,
     letterSpacing: 28 * 0.02,
     textAlign: 'center',
-    color: rgb('kids-text'),
+    color: rgb('kids-heading'),
+  } satisfies TextStyle,
+  /** "The {style}": cyan with a glow. */
+  titleGlow: {
+    color: fill('discover'),
+    textShadowColor: fill('discover', 0.45),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
   } satisfies TextStyle,
   line: {
     ...font('rajdhani', 600),
@@ -231,11 +238,11 @@ export const discoverPage = {
     flex: 1,
     borderRadius: 9999,
     borderWidth: 4,
-    borderColor: rgb('kids-bg'),
+    borderColor: rgb('kids-world-deep'),
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: rgb('kids-discover-shade', 0.6),
+    backgroundColor: rgb('kids-world-card'),
   } satisfies ViewStyle,
   namePill: {
     position: 'absolute',
@@ -245,14 +252,14 @@ export const discoverPage = {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: fill('discover', 0.5),
-    backgroundColor: rgb('kids-bg', 0.92),
+    backgroundColor: rgb('kids-world-deep', 0.92),
   } satisfies ViewStyle,
   nameText: {
     ...font('orbitron', 600),
     fontSize: 14,
     letterSpacing: 14 * 0.18,
     textTransform: 'uppercase',
-    color: rgb('kids-text'),
+    color: rgb('kids-world-name'),
   } satisfies TextStyle,
   powerLabel: {
     ...font('rajdhani', 700),
@@ -267,17 +274,17 @@ export const discoverPage = {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: fill('discover'),
-    experimental_backgroundImage: `linear-gradient(180deg, ${fill(
-      'discover',
+    experimental_backgroundImage: `linear-gradient(180deg, ${rgb(
+      'kids-orb-sky',
       0.25,
-    )}, ${rgb('kids-discover-shade', 0.35)})`,
+    )}, ${rgb('kids-orb-cyan-lo', 0.35)})`,
     boxShadow: `0 0 30px ${fill('discover', 0.3)}`,
   } satisfies ViewStyle,
   countText: {
     ...font('orbitron', 700),
     fontSize: 14,
     letterSpacing: 14 * 0.08,
-    color: rgb('kids-text'),
+    color: rgb('kids-world-name'),
   } satisfies TextStyle,
 };
 

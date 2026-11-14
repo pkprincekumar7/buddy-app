@@ -1543,10 +1543,10 @@
     border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
     background: radial-gradient(
       circle at 50% 35%,
-      rgb(var(--kids-discover-shade-rgb) / 0.55),
-      rgb(var(--kids-bg-rgb) / 0.95)
+      rgb(var(--kids-world-card-rgb) / 0.9),
+      rgb(var(--kids-world-deep-rgb) / 0.95)
     );
-    box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.15);
+    box-shadow: 0 0 24px rgb(var(--kids-orb-sky-rgb) / 0.15);
     backdrop-filter: blur(8px);
     transition:
       transform 0.2s ease,
@@ -1576,15 +1576,15 @@
     transform: scale(0.97);
   }
   .kids-power-open > .kids-power-face {
-    border-color: rgb(var(--kids-streak-rgb) / 0.6);
+    border-color: rgb(var(--kids-gold-rgb) / 0.6);
   }
   .kids-power-on > .kids-power-face {
-    color: rgb(var(--kids-text-rgb));
+    color: rgb(var(--kids-world-name-rgb));
     border-color: rgb(var(--kids-discover-rgb));
     background: radial-gradient(
       circle at 50% 35%,
-      rgb(var(--kids-discover-rgb) / 0.85),
-      rgb(var(--kids-discover-shade-rgb))
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
     );
     box-shadow: 0 0 40px rgb(var(--kids-discover-rgb) / 0.55);
   }
@@ -1595,24 +1595,33 @@
   /* "Click here to enjoy the game", over a bubble while it's hovered or focused. */
   .kids-power-tip {
     @apply pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-xl px-3 py-1.5 font-rajdhani text-[13px] font-bold tracking-[0.06em] group-hover:block group-focus-visible:block;
-    color: rgb(var(--kids-text-rgb));
-    background: rgb(var(--kids-bg-rgb));
+    color: rgb(var(--kids-world-name-rgb));
+    background: rgb(var(--kids-world-deep-rgb));
     border: 1px solid rgb(var(--kids-discover-rgb));
     box-shadow: 0 0 20px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* The tip's small arrow, pointing down at the power. */
+  .kids-power-tip::after {
+    @apply absolute left-1/2 top-full h-2.5 w-2.5;
+    content: '';
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: rgb(var(--kids-world-deep-rgb));
+    border-right: 1px solid rgb(var(--kids-discover-rgb));
+    border-bottom: 1px solid rgb(var(--kids-discover-rgb));
   }
   /* Discover's heading pieces: the gold eyebrow with its twinkling dots, the glow round the
      orbit, a spoke to each power, the child's photo in its cyan ring and their name. */
   .kids-eyebrow {
     @apply inline-flex max-w-full items-center gap-2 rounded-full px-4 py-1.5 font-rajdhani text-xs font-bold uppercase md:text-sm;
     letter-spacing: clamp(0.04em, 0.6vw, 0.12em);
-    color: rgb(var(--kids-streak-rgb));
-    border: 1px solid rgb(var(--kids-streak-rgb) / 0.55);
-    background: rgb(var(--kids-streak-rgb) / 0.08);
+    color: rgb(var(--kids-gold-rgb));
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.55);
+    background: rgb(var(--kids-gold-rgb) / 0.08);
   }
   .kids-twinkle {
     @apply h-2 w-2 shrink-0 rounded-full;
-    background: rgb(var(--kids-streak-rgb));
-    box-shadow: 0 0 10px rgb(var(--kids-streak-rgb));
+    background: rgb(var(--kids-gold-rgb));
+    box-shadow: 0 0 10px rgb(var(--kids-gold-rgb));
   }
   .kids-glow-dot {
     box-shadow: 0 0 12px rgb(var(--kids-area-rgb));
@@ -1640,32 +1649,34 @@
     background: conic-gradient(
       from 200deg,
       rgb(var(--kids-discover-rgb)),
-      rgb(var(--kids-discover-shade-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb)),
+      rgb(var(--kids-orb-sky-rgb)),
       rgb(var(--kids-discover-rgb))
     );
     box-shadow: 0 0 50px rgb(var(--kids-discover-rgb) / 0.35);
   }
   .kids-photo {
     @apply flex h-full w-full items-center justify-center overflow-hidden rounded-full border-4 font-orbitron font-bold;
-    color: rgb(var(--kids-text-rgb));
-    border-color: rgb(var(--kids-bg-rgb));
-    background: rgb(var(--kids-discover-shade-rgb) / 0.6);
+    color: rgb(var(--kids-world-name-rgb));
+    border-color: rgb(var(--kids-world-deep-rgb));
+    background: rgb(var(--kids-world-card-rgb));
   }
   .kids-name-pill {
     @apply pointer-events-none absolute left-1/2 top-[66%] whitespace-nowrap rounded-full px-4 py-1 font-orbitron text-sm font-semibold uppercase tracking-[0.18em];
-    transform: translate(-50%, -20%);
-    color: rgb(var(--kids-text-rgb));
-    background: rgb(var(--kids-bg-rgb) / 0.92);
+    /* `translate`, not transform, so its rise-in (kids-up) can't move it off centre. */
+    translate: -50% -20%;
+    color: rgb(var(--kids-world-name-rgb));
+    background: rgb(var(--kids-world-deep-rgb) / 0.92);
     border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
   }
   .kids-count-pill {
     @apply inline-block whitespace-nowrap rounded-full px-[18px] py-2 font-orbitron text-sm font-bold tracking-[0.08em];
-    color: rgb(var(--kids-text-rgb));
+    color: rgb(var(--kids-world-name-rgb));
     border: 1px solid rgb(var(--kids-discover-rgb));
     background: linear-gradient(
       180deg,
-      rgb(var(--kids-discover-rgb) / 0.25),
-      rgb(var(--kids-discover-shade-rgb) / 0.35)
+      rgb(var(--kids-orb-sky-rgb) / 0.25),
+      rgb(var(--kids-orb-cyan-lo-rgb) / 0.35)
     );
     box-shadow: 0 0 30px rgb(var(--kids-discover-rgb) / 0.3);
   }
@@ -2467,6 +2478,13 @@
   /* A wrong memory tap: the frame flashes (fades back in). */
   .kids-game-flash {
     animation: kids-fade 0.3s ease;
+  }
+  /* Discover: the eyebrow and the count pill pop for .6 s; the tip fades in (.2 s). */
+  .kids-enter-pop-six {
+    animation: kids-pop 0.6s ease backwards;
+  }
+  .kids-power-tip {
+    animation: kids-fade 0.2s ease both;
   }
   /* The game dialog: the veil rises in (.25 s), the panel pops (.35 s); on a win the dots
      twinkle, the medallion pops and pulses, "New best!" pops a moment later. */
