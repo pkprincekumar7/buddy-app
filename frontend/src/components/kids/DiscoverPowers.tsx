@@ -6,6 +6,7 @@ import { POWER_SLOTS, powerSize } from '@/lib/kidsPowers';
 import { cn } from '@/lib/utils';
 import { POWER_ICONS } from '@/components/kids/icons';
 import GameDialog from '@/components/kids/GameDialog';
+import Confetti from '@/components/kids/Confetti';
 
 interface DiscoverPowersProps {
   childName: string;
@@ -85,6 +86,8 @@ export default function DiscoverPowers({
           </div>
         </div>
         <div className="kids-name-pill kids-enter-up [animation-delay:0.5s]">{firstName}</div>
+        {/* Each time Discover opens (the page mounts it anew per circle). */}
+        <Confetti />
         {powers.powers.map((p, i) => {
           const slot = POWER_SLOTS[i];
           if (!slot) return null;

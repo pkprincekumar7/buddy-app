@@ -14,6 +14,7 @@ import { POWER_SLOTS, powerSize } from '@/lib/kidsPowers';
 import { channels, font, rgb } from '@/theme';
 import { POWER_ICONS } from '@/components/kids/icons';
 import GameDialog from '@/components/kids/GameDialog';
+import Confetti from '@/components/kids/Confetti';
 import { FLOAT, SPIN, enter, loop } from '@/components/kids/enter';
 import {
   color,
@@ -330,6 +331,8 @@ export default function DiscoverPowers({
                 {firstName}
               </Text>
             </Animated.View>
+            {/* Each time Discover opens (the page mounts it anew per circle). */}
+            <Confetti />
             {powers.powers.map((p, i) => {
               const size = at(powerSize(p.level));
               const slot = POWER_SLOTS[i];

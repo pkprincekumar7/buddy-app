@@ -59,3 +59,17 @@ export const READ_ALOUD: Record<KidsArea, string> = {
   connect: 'Your wins. Pick one and show it to your grown-up.',
   release: 'How do you feel today? There is no wrong answer.',
 };
+
+/** Discover's read-aloud from the child's own result (the prototype's): "You are The {style}.
+ *  {line} Tap each power around you." Without a result, the general line. */
+export function discoverReadAloud(
+  style?: string | null,
+  line?: string | null,
+): string {
+  if (!style) return READ_ALOUD.discover;
+  const said = line?.trim();
+  const sentence = said ? (/[.!?]$/.test(said) ? said : `${said}.`) : '';
+  return [`You are The ${style}.`, sentence, 'Tap each power around you.']
+    .filter(Boolean)
+    .join(' ');
+}

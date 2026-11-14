@@ -1203,6 +1203,9 @@
       radial-gradient(ellipse at 5% 60%, rgb(var(--kids-release-rgb) / 0.16), transparent 45%),
       radial-gradient(ellipse at 70% 110%, rgb(var(--kids-transform-rgb) / 0.12), transparent 45%),
       rgb(var(--kids-bg-rgb));
+    /* Confetti flies past the edges for a moment: no sideways scroll for it (`clip`, not
+       `hidden`, so the sticky kids bar still sticks). */
+    overflow-x: clip;
   }
   /* The chunky button: the open circle's colour on its darker shade, pressed down. */
   .kids-btn {
@@ -1230,6 +1233,34 @@
     /* Pushed down as on mobile (palette.ts buttonOff), also when used on its own. */
     transform: translateY(4px);
     box-shadow: 0 1px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  /* Confetti (components/kids/Confetti): rings and pieces over their box, shown only where
+     motion is welcome (the animations are in the no-preference block). */
+  .kids-confetti {
+    @apply pointer-events-none absolute inset-0 z-[4] hidden;
+  }
+  .kids-confetti-ring {
+    @apply absolute left-1/2 top-1/2 aspect-square rounded-full opacity-0;
+    width: min(34%, 220px);
+    border: 2px solid rgb(var(--kids-discover-rgb));
+  }
+  .kids-confetti-ring-gold {
+    border-color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-confetti-piece {
+    @apply absolute left-1/2 top-[46%] opacity-0;
+  }
+  /* "Read to me" while on: always cyan (any circle), dark ink, pushed down 4 px with its
+     shade unchanged (the prototype's). */
+  .kids-read-on {
+    @apply inline-flex items-center justify-center rounded-full font-rajdhani font-bold transition-transform;
+    transition-duration: 0.12s;
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-discover-rgb));
+    box-shadow: 0 5px 0 rgb(var(--kids-discover-shade-rgb));
+  }
+  .kids-read-on:not(:disabled):active {
+    transform: translateY(4px);
   }
   /* A panel tinted with the open circle's colour. */
   .kids-card {
@@ -2516,6 +2547,27 @@
     transform: scaleX(1);
   }
 }
+/* Confetti: a ring grows and fades; a piece flies out to (--dx, --dy), spinning --r. */
+@keyframes kids-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.2);
+    opacity: 0;
+  }
+}
+@keyframes kids-conf {
+  0% {
+    transform: translate(0, 0) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--r));
+    opacity: 0;
+  }
+}
 /* An opened Curious box turning over (the prototype's kFlip). */
 @keyframes kids-flip {
   from {
@@ -2647,6 +2699,18 @@
   }
   .kids-game-flag {
     animation: kids-twinkle 1s ease-in-out infinite;
+  }
+  /* Confetti (shown only here, where motion is welcome). */
+  .kids-confetti {
+    display: block;
+  }
+  /* `backwards`, not `both`: once done, each piece is back at its hidden start, so nothing
+     is left far outside the page (it would widen it and let a phone scroll sideways). */
+  .kids-confetti-ring {
+    animation: kids-ring 1.4s ease-out backwards;
+  }
+  .kids-confetti-piece {
+    animation: kids-conf 2s cubic-bezier(0.15, 0.7, 0.4, 1) backwards;
   }
   /* Release: the note card pops in once a mood is picked. */
   .kids-note-pop {

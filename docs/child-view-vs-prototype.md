@@ -38,17 +38,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 
 - **P1.** In child view, the child's row reads "Child · age N" (now "Child view").
 
-### Kids page shell — `KidsMode.tsx`, `KidsHeader.tsx`
-
-- **S1.** Home: the prototype's house icon (no door), a 4 px press, 22 px right padding.
-- **S2.** Area chip: .08em tracking, 18 px left padding.
-- **S3.** "Read to me" when on: always cyan (#4be9ff on #1b8aa3, dark ink), Rajdhani 700 16 px,
-  gap 10, a 4 px press with the shadow unchanged, 22 px icon.
-- **S4.** Discover's read-aloud text built from the child's result: "You are The {style}. {line}.
-  Tap each power around you." (now "You have superpowers. Tap each power around you.").
-- **S5.** Confetti: 46 pieces plus a cyan and a gold ring each time Discover opens, and on the Grow
-  report (the plan already promises it at lines ~77, 199 and 512). Off under reduced motion.
-
 ### Parent pages
 
 - **PP1.** Growth map "Kids N" label: 10.5 px, uppercase, .16em, margin-top 3 px (reads "KIDS 78").
@@ -314,3 +303,12 @@ Applying an item from group 1 means changing both apps the same way.
   and interest buttons, win buttons and tiles all moved at 150 ms with their glows snapping. On
   the kids page that default now sits at the lowest specificity, so each class's own wins; the
   rest of the app is unchanged.
+- The kids page shell (was S1–S5), applied on 2026-11-14 to both apps: Home with the
+  prototype's house (roof and walls, no door), 16/22 px padding and a 4 px press; the area chip
+  at .08em tracking with 18 px padding; "Read to me" while on always cyan on its shade with dark
+  ink, Rajdhani, a 10 px gap and a 4 px press that keeps its shadow; Discover's read-aloud from
+  the child's own result ("You are The {style}. {line} Tap each power around you.", waiting for
+  the result; `discoverReadAloud`, tested); confetti (`Confetti`, both apps): a cyan and a gold
+  ring and 46 pieces flung from the middle, each time Discover opens and over the orb of a
+  finished Grow world's report, none under reduced motion. Sizes follow the parent pages' scale
+  (the prototype's 56 px bar buttons stay 40 px).

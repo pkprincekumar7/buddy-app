@@ -34,6 +34,7 @@ import {
 } from '@/components/kids/palette';
 import { FLOAT, SPIN, enter, loop } from '@/components/kids/enter';
 import GrowGame from '@/components/kids/GrowGames';
+import Confetti from '@/components/kids/Confetti';
 
 /** The round Play's glow breathing (web kids-pulse, the prototype's kPulse): a glow layer's
  * opacity, as RN can't animate box-shadow. */
@@ -260,30 +261,34 @@ export default function GrowWorlds({
         <Text accessibilityRole="header" className="mt-4" style={pick.title}>
           World <Text style={v.goldGlow}>complete!</Text>
         </Text>
-        <Animated.View
-          className="mt-6 self-center"
-          style={[
-            { width: 128, height: 128 },
-            loop(FLOAT, 3.4, 0, 'ease-in-out', reduced),
-          ]}
-        >
-          <View
+        {/* The orb floats in a still box, where the confetti goes (web). */}
+        <View className="mt-6 self-center" style={{ width: 128, height: 128 }}>
+          <Animated.View
             style={[
-              worldOrb(WORLD_ORBS[world % WORLD_ORBS.length] ?? 'cyan'),
-              v.reportOrb,
+              { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+              loop(FLOAT, 3.4, 0, 'ease-in-out', reduced),
             ]}
           >
-            <Svg width={56} height={56} viewBox="0 0 24 24" fill="none">
-              <Path
-                d={W.icon}
-                stroke={pick.ink}
-                strokeWidth={1.9}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-          </View>
-        </Animated.View>
+            <View
+              style={[
+                worldOrb(WORLD_ORBS[world % WORLD_ORBS.length] ?? 'cyan'),
+                v.reportOrb,
+              ]}
+            >
+              <Svg width={56} height={56} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d={W.icon}
+                  stroke={pick.ink}
+                  strokeWidth={1.9}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </View>
+          </Animated.View>
+          {/* The world is done: confetti over its orb (the prototype's). */}
+          <Confetti />
+        </View>
         <View
           accessibilityLiveRegion="polite"
           className="mt-5 items-center"

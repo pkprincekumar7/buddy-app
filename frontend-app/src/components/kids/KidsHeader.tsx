@@ -1,16 +1,11 @@
 import React from 'react';
 import { Text, View } from 'react-native';
-import { House, Volume2 } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
+import { Volume2 } from 'lucide-react-native';
 import { Pressable } from '@/components/ui/pressable';
 import type { KidsArea } from '@/lib/childView';
 import { rgb } from '@/theme';
-import {
-  button,
-  buttonOff,
-  chip,
-  color,
-  text,
-} from '@/components/kids/palette';
+import { buttonOff, chip, color, text } from '@/components/kids/palette';
 
 interface KidsHeaderProps {
   area: KidsArea;
@@ -22,8 +17,14 @@ interface KidsHeaderProps {
 
 /** Web `bg-kids-bg/80` (the bar is sticky, so the page scrolls under it). */
 const BAR = { backgroundColor: rgb('kids-bg', 0.8) } as const;
-/** `.kids-btn` pressed: down 5px (the off look keeps `.kids-btn`'s press). */
-const PRESSED = { transform: [{ translateY: 5 }] } as const;
+/** "Read to me" while on (web .kids-read-on): always cyan, dark ink, pushed down 4px with its
+ * shade unchanged. */
+const readOn = (pressed: boolean) => ({
+  backgroundColor: color('discover'),
+  borderRadius: 999,
+  boxShadow: `0 5px 0 ${color('discover-shade')}`,
+  transform: [{ translateY: pressed ? 4 : 0 }],
+});
 
 /**
  * The kids page's bar (web components/kids/KidsHeader), as the prototype's: Home (back to the
@@ -48,17 +49,26 @@ export default function KidsHeader({
           onPress={onHome}
           accessibilityRole="button"
           accessibilityLabel="Back to home"
-          className="h-10 flex-row items-center justify-center gap-1.5 pl-3 pr-4"
-          style={({ pressed }) => [buttonOff(pressed), pressed && PRESSED]}
+          className="h-10 flex-row items-center justify-center gap-1.5 pl-4 pr-[22px]"
+          style={({ pressed }) => buttonOff(pressed)}
         >
-          <House size={18} color={color('text')} />
+          {/* The prototype's house: a roof and walls, no door. */}
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+            <Path
+              d="M3 11l9-7 9 7M5 10v10h14V10"
+              stroke={color('text')}
+              strokeWidth={2.6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
           <Text className="text-sm" style={text.label}>
             Home
           </Text>
         </Pressable>
         <View
-          className="flex-row items-center gap-2 px-3 py-1.5"
-          style={chip(area)}
+          className="flex-row items-center gap-2 py-1.5"
+          style={[chip(area), { paddingHorizontal: 18 }]}
         >
           <View
             className="h-2.5 w-2.5 rounded-full"
@@ -69,7 +79,7 @@ export default function KidsHeader({
           />
           <Text
             className="text-sm uppercase"
-            style={[text.heading, { letterSpacing: 14 * 0.05 }]}
+            style={[text.heading, { letterSpacing: 14 * 0.08 }]}
           >
             {areaName}
           </Text>
@@ -80,19 +90,14 @@ export default function KidsHeader({
         accessibilityRole="button"
         accessibilityLabel="Read to me"
         accessibilityState={{ selected: readAloud }}
-        className="h-10 flex-row items-center justify-center gap-1.5 px-4"
+        className="h-10 flex-row items-center justify-center gap-2.5 px-4"
         style={({ pressed }) =>
-          readAloud
-            ? button(area, pressed)
-            : [buttonOff(pressed), pressed && PRESSED]
+          readAloud ? readOn(pressed) : buttonOff(pressed)
         }
       >
-        <Volume2 size={18} color={ink} />
-        {/* On it's `.kids-btn` (Orbitron black); off, `.kids-btn-off` (Rajdhani bold). */}
-        <Text
-          className="text-sm"
-          style={[readAloud ? text.heading : text.label, { color: ink }]}
-        >
+        <Volume2 size={20} color={ink} />
+        {/* Rajdhani bold, on or off (the prototype's). */}
+        <Text className="text-sm" style={[text.label, { color: ink }]}>
           Read to me
         </Text>
       </Pressable>

@@ -13,6 +13,7 @@ import type { GrowResult } from '@/lib/kidsGrow';
 import { cn } from '@/lib/utils';
 import { KIDS_COLORS, tileVars } from '@/components/kids/palette';
 import GrowGame from '@/components/kids/GrowGames';
+import Confetti from '@/components/kids/Confetti';
 
 const worldColor = (i: number) => KIDS_COLORS[i % KIDS_COLORS.length] ?? 'discover';
 
@@ -159,6 +160,8 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
                 <path d={W.icon} />
               </svg>
             </div>
+            {/* The world is done: confetti over its orb (the prototype's). */}
+            <Confetti />
           </div>
         </section>
         <div className="kids-report-card mt-5 text-center" role="status">

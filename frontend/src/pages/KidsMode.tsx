@@ -14,7 +14,7 @@ import { useKidWorlds } from '@/hooks/useKidWorlds';
 import { useTts } from '@/lib/TtsContext';
 import { speakText, stopSpeech } from '@/lib/tts';
 import { childViewHome, isKidsArea, type KidsArea } from '@/lib/childView';
-import { AREA_NAMES, AREA_SPLASH, READ_ALOUD, areaOpen } from '@/lib/kidsAreas';
+import { AREA_NAMES, AREA_SPLASH, READ_ALOUD, areaOpen, discoverReadAloud } from '@/lib/kidsAreas';
 import KidsHeader from '@/components/kids/KidsHeader';
 import ReleaseCheckIn from '@/components/kids/ReleaseCheckIn';
 import DiscoverPowers from '@/components/kids/DiscoverPowers';
@@ -61,9 +61,23 @@ export default function KidsMode() {
   }, [playSplash, setAmbientSuppressed]);
 
   useEffect(() => {
-    if (ttsEnabled && area && !playSplash) speakText(READ_ALOUD[area]);
+    if (!ttsEnabled || !area || playSplash) return;
+    // Discover reads the child's own result, so it waits for it.
+    if (area === 'discover' && powers.isLoading) return;
+    speakText(
+      area === 'discover'
+        ? discoverReadAloud(powers.powers?.style, powers.powers?.style_line)
+        : READ_ALOUD[area],
+    );
     return () => stopSpeech();
-  }, [ttsEnabled, area, playSplash]);
+  }, [
+    ttsEnabled,
+    area,
+    playSplash,
+    powers.isLoading,
+    powers.powers?.style,
+    powers.powers?.style_line,
+  ]);
 
   if (!childId) return <Navigate to="/Home" replace />;
   if (!area) return <Navigate to={childViewHome(childId)} replace />;
