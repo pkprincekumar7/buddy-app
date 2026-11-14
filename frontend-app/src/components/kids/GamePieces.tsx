@@ -157,13 +157,19 @@ export function Bursts({ list, size }: { list: Burst[]; size: number }) {
 }
 
 export function Bar({ value }: { value: number }) {
+  const reduced = useReducedMotion();
   return (
     <View pointerEvents="none" style={game.bar}>
-      <View
+      {/* The fill eases to its new width (web transition-[width] duration-200). */}
+      <Animated.View
         style={[
           game.barFill,
           BAR_GLOW,
           { width: `${Math.max(0, Math.min(1, value)) * 100}%` },
+          !reduced && {
+            transitionProperty: 'width',
+            transitionDuration: 200,
+          },
         ]}
       />
     </View>

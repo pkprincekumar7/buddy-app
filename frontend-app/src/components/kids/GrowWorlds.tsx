@@ -172,9 +172,9 @@ export default function GrowWorlds({
                 <Pressable
                   onPress={() => start(i)}
                   accessibilityRole="button"
-                  accessibilityLabel={
-                    last ? `${item.name}, completed` : item.name
-                  }
+                  accessibilityLabel={`${item.name}, ${
+                    last ? `completed, last ${last.total}` : '3 games'
+                  }`}
                   className="flex-1"
                   style={({ pressed }) => worldCard(pressed)}
                 >
@@ -286,7 +286,7 @@ export default function GrowWorlds({
         </Animated.View>
         <View
           accessibilityLiveRegion="polite"
-          className="mt-6 items-center"
+          className="mt-5 items-center"
           style={reportCard}
         >
           <Text style={[s.orbitron(48, 48), { color: color('streak') }]}>
@@ -296,7 +296,7 @@ export default function GrowWorlds({
             <Text
               className="mt-2"
               style={[
-                s.orbitron(16, 22),
+                s.orbitron(18, 24),
                 { color: color(BAND_COLOR[band.color]) },
               ]}
             >
@@ -310,7 +310,7 @@ export default function GrowWorlds({
             {trendLine(report.total, report.previous)}
           </Text>
         </View>
-        <View className="mt-5 gap-2.5">
+        <View className="mt-5 gap-3">
           {W.games.map((g, j) => {
             const r = results[j];
             const b = bandFor(r?.score ?? 0, worlds.bands);
@@ -318,7 +318,7 @@ export default function GrowWorlds({
             const bar = scoreBar(bc, r?.score ?? 0);
             return (
               <View key={g.title} style={reportCard}>
-                <View className="flex-row items-baseline justify-between gap-2.5">
+                <View className="flex-row items-baseline justify-between gap-3">
                   <Text className="flex-1" style={s.orbitron(16, 22)}>
                     {g.title}
                   </Text>
@@ -332,14 +332,14 @@ export default function GrowWorlds({
                 >
                   {r?.line}
                 </Text>
-                <View className="mt-2.5" style={bar.track}>
+                <View className="mt-3" style={bar.track}>
                   <View style={bar.fill} />
                 </View>
               </View>
             );
           })}
         </View>
-        <View className="mt-5 gap-2.5">
+        <View className="mt-5 gap-3">
           <View style={reportCard}>
             <Text style={s.label}>Strongest</Text>
             <Text className="mt-1" style={s.orbitron(16, 22)}>

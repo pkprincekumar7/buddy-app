@@ -84,7 +84,7 @@ describe('GrowWorlds', () => {
     );
     expect(getByText('Completed')).toBeTruthy();
     expect(getByText('Last: 60')).toBeTruthy();
-    fireEvent.press(getByLabelText('Self Care, completed'));
+    fireEvent.press(getByLabelText('Self Care, completed, last 60'));
     for (const [i, score] of [80, 80, 60].entries()) {
       mockScore = score;
       fireEvent.press(getByLabelText('Play'));
@@ -118,7 +118,7 @@ describe('GrowWorlds', () => {
         awaitProgress={jest.fn()}
       />,
     );
-    fireEvent.press(getByLabelText('Self Care, completed'));
+    fireEvent.press(getByLabelText('Self Care, completed, last 60'));
     fireEvent.press(getByLabelText('Play'));
     fireEvent.press(getByLabelText('Finish this game'));
     expect(getByText('Super strong')).toBeTruthy();

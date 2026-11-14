@@ -207,7 +207,7 @@ export default function DiscoverPowers({
         </Animated.View>
         <Text
           accessibilityRole="header"
-          className="mt-3"
+          className="mt-3.5"
           style={[
             d.title,
             {
@@ -293,7 +293,7 @@ export default function DiscoverPowers({
                 enter('pop', 0, reduced),
               ]}
             >
-              <ConicRing size={at(32)} />
+              <ConicRing size={at(28)} />
               <View style={d.photo}>
                 {avatarUrl ? (
                   <Image
@@ -413,7 +413,7 @@ export default function DiscoverPowers({
       </View>
 
       <Animated.View
-        className="mt-1"
+        className="mt-1.5"
         style={[d.countPill, COUNT_PILL, enter('pop', 2.4, reduced, 0.6)]}
       >
         <Text
@@ -445,10 +445,10 @@ export default function DiscoverPowers({
 }
 
 // The web's sizes at phone width, over the shared discoverPage styles.
-/** `.kids-eyebrow`: px-3.5 py-1.5 gap-2. */
-const EYEBROW = { paddingHorizontal: 14, paddingVertical: 6, gap: 8 } as const;
-/** `.kids-twinkle`: h-1.5 w-1.5. */
-const TWINKLE_DOT = { width: 6, height: 6, borderRadius: 3 } as const;
+/** `.kids-eyebrow`: px-4 py-1.5 gap-2. */
+const EYEBROW = { paddingHorizontal: 16, paddingVertical: 6, gap: 8 } as const;
+/** `.kids-twinkle`: h-2 w-2. */
+const TWINKLE_DOT = { width: 8, height: 8, borderRadius: 4 } as const;
 /** The lead line: 17px leading-snug, max-w-[540px]. */
 const LINE = {
   fontSize: 17,
@@ -476,12 +476,12 @@ const INITIAL = {
   ...font('orbitron', 700),
   color: rgb('kids-world-name'),
 } as const;
-/** `.kids-name-pill`: px-3.5 py-1. */
-const NAME_PILL = { paddingHorizontal: 14, paddingVertical: 4 } as const;
-/** A power's icon and name (gap-[5px]), the label at most 90% across. */
+/** `.kids-name-pill`: px-4 py-1. */
+const NAME_PILL = { paddingHorizontal: 16, paddingVertical: 4 } as const;
+/** A power's icon and name (gap-1), the label at most 90% across. */
 const FLOATING = {
   alignItems: 'center',
-  gap: 5,
+  gap: 4,
   maxWidth: '90%',
 } as const;
 /** `.kids-count-pill`: px-[18px] py-2. */

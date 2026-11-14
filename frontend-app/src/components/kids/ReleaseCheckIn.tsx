@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Text, TextInput, View, type TextStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import { enter } from '@/components/kids/enter';
 import { Pressable } from '@/components/ui/pressable';
 import type { KidActivity, KidEvent, KidMoodKey } from '@/api/kids';
 import { moodStreak } from '@/lib/kidsDay';
@@ -45,6 +47,7 @@ export default function ReleaseCheckIn({
   send,
 }: ReleaseCheckInProps) {
   const saved = activity.moods[day];
+  const reduced = useReducedMotion();
   const [mood, setMood] = useState<KidMoodKey | null>(
     MOODS.find(m => m.key === saved?.mood)?.key ?? null,
   );
@@ -78,8 +81,8 @@ export default function ReleaseCheckIn({
       </Text>
       <Text
         accessibilityRole="header"
-        className="mt-2.5 text-center text-3xl"
-        style={[text.heading, { lineHeight: 30 * 1.25 }]}
+        className="mt-3 text-center text-[28px]"
+        style={[text.heading, { lineHeight: 28 * 1.25 }]}
       >
         How do you feel today?
       </Text>
@@ -93,10 +96,10 @@ export default function ReleaseCheckIn({
       <View
         accessibilityRole="radiogroup"
         accessibilityLabel="How you feel"
-        className="mt-6 gap-3"
+        className="mt-7 gap-4"
       >
         {ROWS.map(row => (
-          <View key={row.map(m => m.key).join()} className="flex-row gap-3">
+          <View key={row.map(m => m.key).join()} className="flex-row gap-4">
             {row.map(m => {
               const on = m.key === mood;
               return (
@@ -125,7 +128,11 @@ export default function ReleaseCheckIn({
       </View>
 
       {picked ? (
-        <View className="mt-6" style={card('release')}>
+        // Pops in once a mood is picked (web kids-note-pop, .35 s).
+        <Animated.View
+          className="mt-6"
+          style={[card('release'), enter('pop', 0, reduced, 0.35)]}
+        >
           <Text className="text-lg" style={text.heading}>
             Want to tell more?
           </Text>
@@ -169,6 +176,12 @@ export default function ReleaseCheckIn({
               className="h-11 items-center justify-center px-6"
               style={({ pressed }) => [
                 button('release', pressed),
+                // A deeper 7 px shade (web .kids-btn-deep).
+                {
+                  boxShadow: `0 ${pressed ? 1 : 7}px 0 ${color(
+                    'release-shade',
+                  )}`,
+                },
                 sending && { opacity: 0.5 },
               ]}
             >
@@ -180,10 +193,10 @@ export default function ReleaseCheckIn({
               </Text>
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
       ) : null}
 
-      <View className="mt-6 flex-row items-center justify-center gap-2">
+      <View className="mt-6 flex-row items-center justify-center gap-2.5">
         <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
           <Path
             d={FLAME_PATH}

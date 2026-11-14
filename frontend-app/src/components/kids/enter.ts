@@ -3,10 +3,11 @@
  * and kPop): sections rise in, the photo, powers and pills pop. Transform and opacity only, and
  * none when the device asks for reduced motion.
  */
-import type {
-  CSSAnimationKeyframes,
-  CSSAnimationProperties,
-  CSSAnimationTimingFunction,
+import {
+  cubicBezier,
+  type CSSAnimationKeyframes,
+  type CSSAnimationProperties,
+  type CSSAnimationTimingFunction,
 } from 'react-native-reanimated';
 
 const UP: CSSAnimationKeyframes = {
@@ -39,6 +40,11 @@ const KINDS = {
   unfoldY: UNFOLD_Y,
   fade: FADE,
 } as const;
+/** A Grow world card's springy entrance (web kids-unfold-y's cubic-bezier); the rest ease. */
+const TIMING: Partial<Record<keyof typeof KINDS, CSSAnimationTimingFunction>> =
+  {
+    unfoldY: cubicBezier(0.2, 1.4, 0.4, 1),
+  };
 const DURATION = {
   up: 0.5,
   pop: 0.7,
@@ -59,7 +65,7 @@ export function enter(
     animationName: KINDS[kind],
     animationDuration: `${seconds}s`,
     animationDelay: `${delay}s`,
-    animationTimingFunction: 'ease',
+    animationTimingFunction: TIMING[kind] ?? 'ease',
     animationFillMode: 'both',
   };
 }

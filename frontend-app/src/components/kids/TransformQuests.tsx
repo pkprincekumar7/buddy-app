@@ -48,11 +48,11 @@ const s = {
     textAlign: 'center',
     color: color(AREA),
   },
-  // font-orbitron text-3xl font-black leading-tight
+  // font-orbitron text-[clamp(28px,4vw,44px)] (28px on a phone) font-black leading-tight
   title: {
     ...font('orbitron', 900),
-    fontSize: 30,
-    lineHeight: 30 * 1.25,
+    fontSize: 28,
+    lineHeight: 28 * 1.25,
     textAlign: 'center',
     color: color('text'),
   },
@@ -132,7 +132,7 @@ function TwoColumns<T>({
     else rows[rows.length - 1]?.push(i);
   });
   return (
-    <View className="mt-6 gap-3">
+    <View className="mt-7 gap-3">
       {rows.map(row => (
         <View key={row[0]} className="flex-row gap-3">
           {row.map(i => {
@@ -193,7 +193,7 @@ export default function TransformQuests({
       <View>
         <Animated.View style={enter('up', 0, reduced)}>
           <Text style={s.eyebrow}>Your quests</Text>
-          <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
+          <Text accessibilityRole="header" className="mt-3" style={s.title}>
             {interest ? 'Add another one' : 'What are you into?'}
           </Text>
           <Text className="mt-3" style={s.lead}>
@@ -243,7 +243,7 @@ export default function TransformQuests({
         <Text
           accessibilityRole="header"
           className="mt-2.5"
-          style={[s.title, LEFT]}
+          style={[s.title, LEFT, { lineHeight: 28 * 1.08 }]}
         >
           Your quests
         </Text>
@@ -270,7 +270,11 @@ export default function TransformQuests({
               disabled={sending || on}
               onPress={() => void pick(key)}
               accessibilityRole="button"
-              accessibilityLabel={it.label}
+              accessibilityLabel={`${it.label}, ${
+                key === quests.default_interest
+                  ? 'from your parent'
+                  : 'you added'
+              }`}
               accessibilityState={{ selected: on, disabled: sending || on }}
               style={({ pressed }) => [
                 interestStyle.chip(on),
@@ -375,7 +379,7 @@ export default function TransformQuests({
                   accessibilityState={{ disabled: sending || today }}
                   style={({ pressed }) => [
                     questLog(c, today ? 'today' : 'todo', pressed && !today),
-                    sending && !today && { opacity: 0.5 },
+                    sending && !today && { opacity: 0.6 },
                   ]}
                 >
                   {today ? (

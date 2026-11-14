@@ -69,8 +69,8 @@ export default function ConnectWins({
       </Text>
       <Text
         accessibilityRole="header"
-        className="mt-2.5 text-center text-3xl"
-        style={[text.heading, { lineHeight: 30 * 1.25 }]}
+        className="mt-3 text-center text-[28px]"
+        style={[text.heading, { lineHeight: 28 * 1.25 }]}
       >
         Your wins
       </Text>
@@ -83,7 +83,7 @@ export default function ConnectWins({
 
       {!win ? (
         <View className="mt-6" style={card('connect')}>
-          <Text className="text-center text-base" style={text.heading}>
+          <Text className="text-center text-xl" style={text.heading}>
             No wins yet
           </Text>
           <Text className="mt-2 text-center text-[15px]" style={text.body}>
@@ -106,7 +106,9 @@ export default function ConnectWins({
                   key={w.key}
                   onPress={() => setPicked(i)}
                   accessibilityRole="radio"
-                  accessibilityLabel={w.title}
+                  accessibilityLabel={
+                    activity.shown?.[w.key] ? `${w.title}, shown` : w.title
+                  }
                   accessibilityState={{ checked: on }}
                   style={({ pressed }) => cw.win(on, pressed)}
                 >
@@ -122,7 +124,7 @@ export default function ConnectWins({
                     {w.title}
                   </Text>
                   {activity.shown?.[w.key] ? (
-                    <Check size={18} color={color('teal')} />
+                    <Check size={16} color={color('teal')} />
                   ) : null}
                 </Pressable>
               );
@@ -193,7 +195,7 @@ export default function ConnectWins({
               {shown ? 'Your grown-up can see it' : 'Show my grown-up'}
             </Text>
           </Pressable>
-          <Text className="mt-2.5 text-center text-[15px]" style={text.muted}>
+          <Text className="mt-3 text-center text-[15px]" style={text.muted}>
             {typeof childAge === 'number'
               ? 'Only your first name and age go on the card.'
               : 'Only your first name goes on the card.'}

@@ -633,7 +633,9 @@ function VoiceGame({ onWin }: GameProps) {
                         left: (size - d) / 2,
                         top: (size - d) / 2,
                         opacity: 1 - i * 0.28,
-                        // Grows by scale only (a transform, not a layout change).
+                        // Grows by scale only (a transform, not a layout change); the
+                        // border is drawn at 1/scale so it stays 1px on screen (web).
+                        borderWidth: 1 / (1 + (s * 0.6 * size) / d),
                         transform: [{ scale: 1 + (s * 0.6 * size) / d }],
                       },
                     ]}

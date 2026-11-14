@@ -49,14 +49,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **S5.** Confetti: 46 pieces plus a cyan and a gold ring each time Discover opens, and on the Grow
   report (the plan already promises it at lines ~77, 199 and 512). Off under reduced motion.
 
-### Release — `ReleaseCheckIn.tsx`
-
-- **RL1.** Content max-width 1000 px.
-- **RL2.** Mood grid auto-fit `minmax(150px,1fr)`, gap 16 (fits 5 in a row from about 830 px).
-- **RL3.** Tile transition .12 s; Save shadow 7 px.
-- **RL4.** The note card pops in (`kPop .35s`).
-- **RL5.** The prototype's flame path (control point −5.5).
-
 ### Parent pages
 
 - **PP1.** Growth map "Kids N" label: 10.5 px, uppercase, .16em, margin-top 3 px (reads "KIDS 78").
@@ -314,3 +306,11 @@ Applying an item from group 1 means changing both apps the same way.
   mobile; measured identical to the prototype's. The headings set to 900 to make up for it (Grow's
   heading, world names, report and game titles, Play, the game dialog's title, "You did it!" and
   time) are back at the prototype's 700. This changes every Orbitron heading, parent pages too.
+- Release (was RL1–RL5), applied on 2026-11-14 to both apps: content up to 1000 px; the moods in
+  an auto-fit `minmax(150px,1fr)` grid, gap 16 (five in a row from about 830 px, two on phones);
+  the tiles' .12 s press; Save on a 7 px shade; the note card popping in (.35 s); the prototype's
+  flame path. Found on the way: the base `button:not(:disabled)` transition (150 ms, transform
+  and opacity) out-ranked every kids class's own transition, so world cards, the Play orb, quest
+  and interest buttons, win buttons and tiles all moved at 150 ms with their glows snapping. On
+  the kids page that default now sits at the lowest specificity, so each class's own wins; the
+  rest of the app is unchanged.

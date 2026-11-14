@@ -438,6 +438,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
   const [lit, setLit] = useState(-1);
   const [phase, setPhase] = useState<'wait' | 'show' | 'input'>('wait');
   const [oops, setOops] = useState(false);
+  const reduced = useReducedMotion();
   const later = useLater();
 
   const show = (n: number) => {
@@ -519,30 +520,45 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
             }}
           >
             {pads.map((p, j) => (
-              <Pressable
+              // Lights up by scale over .12 s (web .kids-game-pad's transition).
+              <Animated.View
                 key={p}
-                disabled={phase !== 'input'}
-                onPress={() => tap(j)}
-                accessibilityRole="button"
-                accessibilityLabel={p}
                 style={[
-                  memoryPad(
-                    PAD_COLORS[j % PAD_COLORS.length] ?? 'discover',
-                    lit === j,
-                  ),
-                  { width: (size * 0.76 * 0.94) / 2 },
+                  {
+                    width: (size * 0.76 * 0.94) / 2,
+                    transform: [{ scale: lit === j ? 1.06 : 1 }],
+                  },
+                  !reduced && {
+                    transitionProperty: 'transform',
+                    transitionDuration: 120,
+                  },
                 ]}
               >
-                <Text
+                <Pressable
+                  disabled={phase !== 'input'}
+                  onPress={() => tap(j)}
+                  accessibilityRole="button"
+                  accessibilityLabel={p}
                   style={[
-                    game.number,
-                    piece.padText,
-                    { color: color(lit === j ? 'world-deep' : 'world-name') },
+                    memoryPad(
+                      PAD_COLORS[j % PAD_COLORS.length] ?? 'discover',
+                      lit === j,
+                    ),
+                    // Its size and scale are the wrapper's, which eases the lighting.
+                    { width: '100%', transform: [] },
                   ]}
                 >
-                  {p}
-                </Text>
-              </Pressable>
+                  <Text
+                    style={[
+                      game.number,
+                      piece.padText,
+                      { color: color(lit === j ? 'world-deep' : 'world-name') },
+                    ]}
+                  >
+                    {p}
+                  </Text>
+                </Pressable>
+              </Animated.View>
             ))}
           </View>
           <Caption>
@@ -643,7 +659,15 @@ function TimingGame({ cfg, onDone }: GrowGameProps) {
                       width: size,
                       height: size,
                       opacity: ms > per ? 0.4 : 1,
-                      // Shrinks by scale only (a transform, not a layout change).
+                      // Shrinks by scale only (a transform, not a layout change); the
+                      // border and glow are drawn at 1/scale so they stay 4px and 24px
+                      // on screen, as the web's (which shrinks its width instead).
+                      borderWidth: (4 * size) / Math.max(ring, 1),
+                      boxShadow: css(
+                        `0 0 ${
+                          (24 * size) / Math.max(ring, 1)
+                        }px rgb(var(--kids-discover-rgb) / 0.7)`,
+                      ),
                       transform: [{ scale: ring / size }],
                     },
                   ]}

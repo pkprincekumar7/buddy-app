@@ -528,7 +528,14 @@
     @apply bg-background text-foreground;
   }
 
-  button:not(:disabled) {
+  button:not(:disabled):not(.kids-page *) {
+    transition:
+      transform 150ms ease,
+      opacity 150ms ease;
+  }
+  /* The kids page keeps the same default at the lowest specificity, so a kids class's own
+     transition (a world card's springy lift and glow, a tile's .12 s press) wins over it. */
+  .kids-page :where(button:not(:disabled)) {
     transition:
       transform 150ms ease,
       opacity 150ms ease;
@@ -1208,6 +1215,10 @@
     transform: translateY(5px);
     box-shadow: 0 1px 0 rgb(var(--kids-area-shade-rgb));
   }
+  /* Release's Save sits on a deeper 7 px shade (the prototype's). */
+  .kids-btn-deep {
+    box-shadow: 0 7px 0 rgb(var(--kids-area-shade-rgb));
+  }
   /* The same, off: Back, Read to me, and other secondary buttons. */
   .kids-btn-off {
     @apply inline-flex items-center justify-center gap-2 rounded-full font-rajdhani font-bold transition-transform duration-100;
@@ -1234,7 +1245,8 @@
   }
   /* A big pickable tile (a mood, a power): its own colour pair, set where used. */
   .kids-tile {
-    @apply flex flex-col items-center justify-center gap-2 rounded-[22px] font-orbitron font-black transition-transform duration-100;
+    @apply flex flex-col items-center justify-center gap-2 rounded-[22px] font-orbitron font-black transition-transform;
+    transition-duration: 0.12s;
     color: rgb(var(--kids-text-rgb));
     background: rgb(var(--kids-off-rgb) / 0.6);
     border: 3px solid rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.3);
@@ -2635,6 +2647,10 @@
   }
   .kids-game-flag {
     animation: kids-twinkle 1s ease-in-out infinite;
+  }
+  /* Release: the note card pops in once a mood is picked. */
+  .kids-note-pop {
+    animation: kids-pop 0.35s ease both;
   }
   /* Connect: the card re-pops on each pick; its star spins. */
   .kids-win-card {

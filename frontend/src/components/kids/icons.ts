@@ -3,7 +3,7 @@ export const STAR_PATH =
   'M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z';
 /** The streak flame, in a 24×24 box. */
 export const FLAME_PATH =
-  'M12 3c1 3.5 5 5.5 5 10a5 5 0 01-10 0c0-2.5 1.5-4 2.5-5 .3 1.6 1 2.6 2 3 0-2.8-.3-5 .5-8z';
+  'M12 3c1 3.5 5 5.5 5 10a5 5 0 01-10 0c0-2.5 1.5-4 2.5-5 .3 1.6 1 2.6 2 3 0-2.8-.3-5.5.5-8z';
 
 /** Each power's icon (the prototype's), by its game, in a 24×24 box. */
 export const POWER_ICONS: Record<string, string> = {

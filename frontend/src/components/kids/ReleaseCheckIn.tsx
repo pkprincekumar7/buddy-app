@@ -38,7 +38,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
   };
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-[1000px]">
       <section className="text-center">
         <p className="text-xs font-bold uppercase tracking-[0.3em] text-kids-area md:text-sm">
           Daily check-in
@@ -54,7 +54,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
       <div
         role="radiogroup"
         aria-label="How you feel"
-        className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+        className="mt-7 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4 md:mt-[30px]"
       >
         {MOODS.map((m) => {
           const on = m.key === mood;
@@ -82,7 +82,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
       </div>
 
       {picked && (
-        <div className="kids-card mt-6">
+        <div className="kids-card kids-note-pop mt-6 md:mt-7">
           <p className="font-orbitron text-lg font-black text-kids-text md:text-xl">
             Want to tell more?
           </p>
@@ -120,7 +120,7 @@ export default function ReleaseCheckIn({ activity, day, sending, send }: Release
               type="button"
               onClick={() => void save()}
               disabled={sending}
-              className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
+              className="kids-btn kids-btn-deep h-11 px-6 text-sm md:h-12 md:text-base"
             >
               {sending ? 'Saving…' : 'Save'}
             </button>

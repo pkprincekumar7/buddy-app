@@ -125,15 +125,16 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
                 key={i}
                 aria-hidden="true"
                 className={cn('kids-win-dot', d.gold ? 'bg-kids-gold' : 'bg-kids-discover')}
-                style={
-                  {
-                    ...d.at,
-                    width: d.size,
-                    height: d.size,
+                style={{
+                  ...d.at,
+                  width: d.size,
+                  height: d.size,
+                  // Its own pace (index.css .kids-win-dot reads these).
+                  ...({
                     '--twinkle': `${d.secs}s`,
                     '--twinkle-delay': `${d.delay}s`,
-                  } as CSSProperties
-                }
+                  } as CSSProperties),
+                }}
               />
             ))}
             <div className="kids-win-medal" aria-hidden="true">
