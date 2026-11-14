@@ -14,6 +14,7 @@ parent's and child's data go in data blocks.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -44,6 +45,60 @@ def errors(validator: Draft202012Validator, answer: Any) -> list[str]:
             for error in validator.iter_errors(answer)
         }
     )
+
+
+# What a field key may not contain to be saved (store.MAP_KEY_PATTERN, less its `:`).
+_UNSAFE_KEY = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def unique_ids(answer: Any) -> Any:
+    """Gives each activity and evidence field an id of its own, so two never share an answer.
+
+    The app stores what the parent fills in by `k`: a plan's per activity (with the
+    activity's id), a tracker's across all its steps. A repeat in that scope ("photo" twice
+    in one activity, "date" in two steps) would share its photos and text, so it gets a
+    numbered suffix ("photo", "photo2"), within the schema's 20 characters. The model is
+    asked for unique keys; this catches the answers that repeat one anyway.
+
+    A key is also made safe to save: the app sends it in a map key that the PATCH accepts
+    only as letters, digits, `_` and `-` (store.MAP_KEY_PATTERN, where `:` separates the
+    activity id), so anything else becomes `_` ("next step" → "next_step", a clipped
+    key's "…" → "_"), and an empty key becomes "field". Anything not shaped like a plan
+    or tracker is returned as is, for the validator to report.
+    """
+    if not isinstance(answer, Mapping):
+        return answer
+    # A plan activity's id is its month and `n`, so `n` comes from its place ("01" to
+    # "09"): a repeated `n` would make two activities share everything filled in.
+    acts = answer.get("acts")
+    if isinstance(acts, list):
+        for i, act in enumerate(acts, start=1):
+            if isinstance(act, dict):
+                act["n"] = f"{i:02d}"
+    # Tracker steps share one scope; each plan activity has its own.
+    for group, fields, per_item in (("acts", "do", True), ("steps", "fields", False)):
+        items = answer.get(group)
+        if not isinstance(items, list):
+            continue
+        seen: set[str] = set()
+        for item in items:
+            if per_item:
+                seen = set()
+            entries = item.get(fields) if isinstance(item, Mapping) else None
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("k"), str):
+                    continue
+                base = _UNSAFE_KEY.sub("_", entry["k"]) or "field"
+                key, n = base, 2
+                while key in seen:
+                    suffix = str(n)
+                    key = base[: 20 - len(suffix)] + suffix
+                    n += 1
+                entry["k"] = key
+                seen.add(key)
+    return answer
 
 
 # ── the plan ───────────────────────────────────────────────────────────────────
@@ -111,7 +166,7 @@ Return a 3-month plan built around what the parent said above, not a generic cur
   • "award": a 1-3 word badge name for finishing it, e.g. "Streak keeper".
   • "objective": one sentence, the specific, checkable outcome that makes this activity done.
   • "apply": one sentence on how the child actually does this — the real-world action, not an abstraction.
-  • "do": 1-4 fields the parent/child fill in as evidence, each with a "kind": "text" (one line), "area" (a few sentences), "date", "num" (a plain number), "count" (a running tally — set "target" to the number that finishes it, and "stepBy" if it should count up by more than 1 at a time), or "photo" (import a photo as proof). Pick whichever kinds genuinely fit what this activity produces — don't default to the same kind every time.
+  • "do": 1-4 fields the parent/child fill in as evidence, each with a "kind": "text" (one line), "area" (a few sentences), "date", "num" (a plain number), "count" (a running tally — set "target" to the number that finishes it, and "stepBy" if it should count up by more than 1 at a time), or "photo" (import a photo as proof). Pick whichever kinds genuinely fit what this activity produces — don't default to the same kind every time. Each field's "k" is a short id of letters, digits and "_", different from every other field's "k" in the same activity.
 
 Rules:
   • Every activity must be something a child of the profile's age can actually do largely unsupervised — age-appropriate difficulty and independence throughout.
@@ -187,7 +242,7 @@ Return exactly 9 steps, in the order the child works through them counting down 
   • "short": an even shorter label for a step-rail chip. Max 3 words.
   • "when": roughly when this step happens relative to the event, e.g. "6 weeks out".
   • "body": one or two sentences on what actually happens in this step.
-  • "fields": 1-4 fields the child/the parent fill in as evidence, each "type": "text" (one line), "date", or "note" (a few sentences).
+  • "fields": 1-4 fields the child/the parent fill in as evidence, each "type": "text" (one line), "date", or "note" (a few sentences). Each field's "k" is a short id of letters, digits and "_", different from every other field's "k" in all 9 steps.
 
 Rules:
   • Escalate toward the named event: early steps are preparation, the final 1-2 steps are the event itself and confirming it happened.

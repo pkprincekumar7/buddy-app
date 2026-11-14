@@ -11,6 +11,7 @@ run touches every public route (except Google sign-in, which needs Google):
 - **Account (auth, users):** login, `me`, refresh (as the mobile app does, with the refresh
   token), logout-all (the old tokens stop working), the profile and preferences.
 - **Children:** the list and a change to the child.
+- **Child view:** every kids endpoint (journey.child_view), with no LLM call.
 - **Every kind of generation:** grow's questions, child rounds and recommendations (the area
   then completed with the child's picks); transform's plan, event tracker and Life Pathway;
   release's observations, regenerated after the first watch.
@@ -65,9 +66,7 @@ def _bearer(token: str) -> dict[str, str]:
 
 
 def _login(email: str, password: str, *, expect: int = 200) -> dict[str, Any]:
-    response = httpx.post(
-        f"{API}/auth/login", json={"email": email, "password": password}
-    )
+    response = httpx.post(f"{API}/auth/login", json={"email": email, "password": password})
     return check(response, expect)  # type: ignore[no-any-return]
 
 
@@ -83,9 +82,7 @@ def _signed_in(j: Journey) -> None:
 def account(j: Journey) -> None:
     step("auth: login, me, refresh, logout-all")
     tokens = _login(j.email, j.password)
-    me = check(
-        httpx.get(f"{API}/auth/me", headers=_bearer(tokens["access_token"])), 200
-    )
+    me = check(httpx.get(f"{API}/auth/me", headers=_bearer(tokens["access_token"])), 200)
     if me.get("id", me.get("user_id")) != j.user_id:
         raise WalkFailed(f"me is someone else: {me}")
     # The mobile app refreshes with the refresh token as a bearer token.
@@ -94,9 +91,7 @@ def account(j: Journey) -> None:
     )
     check(httpx.get(f"{API}/auth/me", headers=_bearer(refreshed["access_token"])), 200)
     check(
-        httpx.post(
-            f"{API}/auth/logout-all", headers=_bearer(refreshed["access_token"])
-        ),
+        httpx.post(f"{API}/auth/logout-all", headers=_bearer(refreshed["access_token"])),
         200,
         204,
     )
@@ -124,7 +119,7 @@ def _generate(j: Journey, path: str, body: dict[str, Any] | None = None) -> None
 
 
 def grow_everything(j: Journey) -> None:
-    step("grow: questions, child rounds and recommendations, then completed")
+    step("grow: questions, answers and recommendations, then completed")
     area = f"{j.child}/growth-areas/{journey.AREA}"
     _generate(j, area, {"kind": "parent_questions", "area_name": "Self-care"})
 
@@ -133,41 +128,34 @@ def grow_everything(j: Journey) -> None:
         return next(a for a in areas if a["area_id"] == journey.AREA)  # type: ignore[no-any-return]
 
     questions = current()["parent_questions"]["questions"]
-    answers = {
-        q["id"]: "He tries on his own first, then asks for help" for q in questions
-    }
+    answers = {q["id"]: "He tries on his own first, then asks for help" for q in questions}
     saved = {"area_name": "Self-care", "status": "in_progress", "answers": answers}
     check(j.http.put(area, json=saved), 200, 201)
-    _generate(j, area, {"kind": "child_rounds"})
     _generate(j, area, {"kind": "recommendations"})
     done = current()
-    rounds = done["child_rounds"]["rounds"]
-    if not rounds or not done.get("ai_three_month_recommendations"):
-        raise WalkFailed(f"grow's generations came back empty: {done}")
-    picks = [r["a"]["id"] for r in rounds]
-    completed = {
-        **saved,
-        "status": "completed",
-        "child_activity": {"selections": picks},
-    }
-    check(j.http.put(area, json=completed), 200)
+    if not done.get("ai_three_month_recommendations"):
+        raise WalkFailed(f"grow's recommendations came back empty: {done}")
+    check(j.http.put(area, json={**saved, "status": "completed"}), 200)
 
 
 def transform_everything(j: Journey) -> None:
     step("transform: the plan, a photo, the event, its tracker and the Life Pathway")
     plan = f"{j.child}/transform"
-    check(j.http.patch(plan, json={"ask": "Help him get dressed on his own"}), 200)
+    # Each save is made on the version the last response showed (409 otherwise).
+    version = check(j.http.get(plan), 200)["version"]
+    ask = {"ask": "Help him get dressed on his own", "version": version}
+    version = check(j.http.patch(plan, json=ask), 200)["version"]
     _generate(j, plan, {"kind": "plan"})
     body = {"field_key": "week_1", "content_type": "image/jpeg"}
     presigned = check(j.http.post(f"{plan}/photos/presign", json=body), 200)
     journey._upload(presigned["upload_url"], presigned["upload_fields"], "image/jpeg")
-    check(
-        j.http.patch(plan, json={"photos": {"week_1": [presigned["photo_key"]]}}), 200
-    )
+    photos = {"photos": {"week_1": [presigned["photo_key"]]}, "version": version}
+    version = check(j.http.patch(plan, json=photos), 200)["version"]
     event = {
         "event_name": "Dressed by himself",
         "event_date": "2027-01-24",
         "event_set": True,
+        "version": version,
     }
     check(j.http.patch(plan, json=event), 200)
     _generate(j, plan, {"kind": "event_tracker"})
@@ -185,9 +173,7 @@ def release_everything(j: Journey) -> None:
     observations = f"{j.child}/observations"
     _generate(j, observations)
     first = check(j.http.get(observations), 200)["items"][0]["id"]
-    watched = check(
-        j.http.patch(observations, json={"watching": [first], "span": "2 weeks"}), 200
-    )
+    watched = check(j.http.patch(observations, json={"watching": [first], "span": "2 weeks"}), 200)
     _generate(j, observations)
     again = check(j.http.get(observations), 200)
     # A new set replaces the last and clears what was watched; Release stays done.
@@ -215,9 +201,7 @@ def _tone() -> bytes:
         out.setnchannels(1)
         out.setsampwidth(2)
         out.setframerate(16000)
-        frames = (
-            int(8000 * math.sin(2 * math.pi * 440 * n / 16000)) for n in range(16000)
-        )
+        frames = (int(8000 * math.sin(2 * math.pi * 440 * n / 16000)) for n in range(16000))
         out.writeframes(b"".join(struct.pack("<h", f) for f in frames))
     return buffer.getvalue()
 
@@ -239,9 +223,7 @@ def shared(j: Journey) -> None:
     s3.put_object(Bucket=ASSETS_BUCKET, Key=key, Body=b"e2e apk")
     # What build-android-apk writes after each upload (APP-11 f).
     latest = f"{APK_PREFIX}latest.json"
-    s3.put_object(
-        Bucket=ASSETS_BUCKET, Key=latest, Body=json.dumps({"key": key}).encode()
-    )
+    s3.put_object(Bucket=ASSETS_BUCKET, Key=latest, Body=json.dumps({"key": key}).encode())
     try:
         link = check(j.http.get(f"{API}/downloads/apk"), 200)
         if link["expires_in"] != 300 or link["filename"] != "superpower-android.apk":
@@ -273,15 +255,11 @@ def admin(j: Journey) -> None:
         signed_in = _login(admin_email, admin_password)
         http = httpx.Client(timeout=30, headers=_bearer(signed_in["access_token"]))
         check(http.get(f"{API}/auth/accounts"), 200)
-        found = check(
-            http.post(f"{API}/auth/accounts/search", json={"email": j.email}), 200
-        )
+        found = check(http.post(f"{API}/auth/accounts/search", json={"email": j.email}), 200)
         if j.user_id not in str(found):
             raise WalkFailed(f"the search didn't find the parent: {found}")
         owner = {"location": j.location}
-        listed = check(
-            http.get(f"{API}/children", params={"user_id": j.user_id, **owner}), 200
-        )
+        listed = check(http.get(f"{API}/children", params={"user_id": j.user_id, **owner}), 200)
         if [c["id"] for c in listed] != [j.child_id]:
             raise WalkFailed(f"the admin's list: {listed}")
         check(http.get(j.child, params=owner), 200)
@@ -289,23 +267,17 @@ def admin(j: Journey) -> None:
         # An admin reads but never writes a child.
         check(http.patch(j.child, json={"school": "x"}), 403)
 
-        check(
-            http.post(f"{API}/auth/accounts/{j.user_id}/lock", params=owner), 200, 204
-        )
+        check(http.post(f"{API}/auth/accounts/{j.user_id}/lock", params=owner), 200, 204)
         check(j.http.get(j.child), 401, 403)  # the parent's session stops at once
         _login(j.email, j.password, expect=403)  # account_locked
-        check(
-            http.post(f"{API}/auth/accounts/{j.user_id}/unlock", params=owner), 200, 204
-        )
+        check(http.post(f"{API}/auth/accounts/{j.user_id}/unlock", params=owner), 200, 204)
         _signed_in(j)
         check(j.http.get(j.child), 200)
 
         role = f"{API}/auth/accounts/{other_id}/role"
         check(http.patch(role, json={"role": "admin"}, params=owner), 200)
         promoted = _login(other_email, other_password)
-        me = check(
-            httpx.get(f"{API}/auth/me", headers=_bearer(promoted["access_token"])), 200
-        )
+        me = check(httpx.get(f"{API}/auth/me", headers=_bearer(promoted["access_token"])), 200)
         if me.get("role") != "admin":
             raise WalkFailed(f"the promotion didn't stick: {me}")
         check(http.patch(role, json={"role": "parent"}, params=owner), 200)
@@ -344,6 +316,7 @@ def walk_everything() -> Journey:
     for part in (grow_everything, transform_everything, release_everything):
         part(j)
     journey.connect(j)
+    journey.child_view(j)
     for part in (children, shared, admin):
         part(j)
     return j

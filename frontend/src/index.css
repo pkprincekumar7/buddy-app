@@ -24,20 +24,16 @@
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* Orbitron from Google Fonts (v35, Latin), the same font the design prototype loads: one
+   variable file, offered at 700–900 only. Text asking for a lighter Orbitron (many parent-page
+   labels set none) draws at 700, as it did with the old static Bold file and as the mobile app
+   does (theme `font()` uses Bold below 900). */
 @font-face {
   font-family: 'Orbitron';
   font-style: normal;
-  font-weight: 700;
+  font-weight: 700 900;
   font-display: swap;
-  src: url('/fonts/Orbitron-Bold.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Orbitron';
-  font-style: normal;
-  font-weight: 900;
-  font-display: swap;
-  src: url('/fonts/Orbitron-Black.woff2') format('woff2');
+  src: url('/fonts/Orbitron.woff2') format('woff2');
 }
 
 /*
@@ -311,6 +307,10 @@
     --constellation-card-rgb: 9 13 22; /* Connect.tsx + AccomplishmentRow surface */
     --constellation-surface-rgb: 5 9 18; /* Connect.tsx panel surface */
     --constellation-slate-soft-rgb: 157 180 196; /* #9db4c4 — GrowthAreaSheet + LifePathway */
+    --constellation-lavender-rgb: 179 170 255; /* #b3aaff — GrowthAreas: a child's game score band */
+    --constellation-sky-rgb: 143 216 255; /* #8fd8ff — GrowthAreaSheet: the "child's games" tag */
+    --constellation-lilac-rgb: 195 166 255; /* #c3a6ff — GrowthAreaSheet: the "your answers" tag */
+    --constellation-mint-rgb: 95 232 196; /* #5fe8c4 — GrowthAreaSheet: the "next step" tag, a score going up */
     --constellation-cyan-frost-rgb: 207 233 242; /* #cfe9f2 — GrowthAreaSheet + LifePathway */
     --constellation-slate-cool-rgb: 147 174 190; /* #93aebe — GrowthAreaSheet + LifePathway */
     --constellation-overlay-rgb: 8 14 26; /* GrowthAreaSheet sheet backdrop + WhatsAppModal backdrop */
@@ -335,6 +335,14 @@
     --constellation-gold-glow2-rgb: 255 214 130; /* PersonalityJourney ring glow accent */
     --constellation-slate-warm-rgb: 127 151 168; /* #7f97a8 — LifePathway body text */
     --constellation-slate-mute-rgb: 111 134 151; /* #6f8697 — LifePathway label text */
+    /* LifePathway's child quests (the prototype's): the panel, a ring's core, done (teal),
+       a finished count, a not-started status and pill text. */
+    --constellation-panel-rgb: 7 13 25; /* #070d19 */
+    --constellation-ring-core-rgb: 8 16 30; /* #08101e */
+    --constellation-teal-rgb: 60 225 190; /* #3ce1be */
+    --constellation-teal-pale-rgb: 143 232 212; /* #8fe8d4 */
+    --constellation-slate-dim-rgb: 95 118 134; /* #5f7686 */
+    --constellation-slate-pale-rgb: 157 178 192; /* #9db2c0 */
     --constellation-gold-cream2-rgb: 255 246 226; /* #fff6e2 — LifePathway gradient stop */
     --constellation-gold-warm-rgb: 255 216 154; /* #ffd89a — LifePathway gradient stop */
     --constellation-cyan-mid-rgb: 137 217 238; /* #89d9ee — LifePathway accent */
@@ -453,6 +461,69 @@
     --growth-critical-thinking-icon-rgb: 143 196 255; /* #8fc4ff */
     --growth-physical-wellness-icon-rgb: 95 232 196; /* #5fe8c4 */
     --growth-social-skills-icon-rgb: 179 170 255; /* #b3aaff */
+
+    /*
+     * Profile button and menu (Layout's header): the pill's surface and border,
+     * and the dark stop of the parent's avatar dot. The rest of the menu uses
+     * constellation tokens (overlay, cyan, text-frost, slate-warm/-mute).
+     */
+    --profile-pill-rgb: 11 18 32; /* #0b1220 pill background, used at .75 */
+    --profile-pill-border-rgb: 24 34 52; /* #182234 pill border */
+    --profile-parent-deep-rgb: 138 106 58; /* #8a6a3a parent avatar dot, outer stop */
+
+    /*
+     * Kids page (child view, docs/child-view-build-plan.md "Theming"): its own brighter
+     * palette. Each circle's colour and the darker shade its chunky buttons sit on;
+     * --kids-area-* is the open circle's pair (the page sets it, cyan by default).
+     */
+    --kids-discover-rgb: 75 233 255; /* #4be9ff — as constellation-cyan */
+    --kids-discover-shade-rgb: 27 138 163; /* #1b8aa3 */
+    --kids-grow-rgb: 75 233 255; /* #4be9ff */
+    --kids-grow-shade-rgb: 27 138 163; /* #1b8aa3 */
+    --kids-transform-rgb: 255 201 75; /* #ffc94b */
+    --kids-transform-shade-rgb: 179 134 28; /* #b3861c */
+    --kids-connect-rgb: 255 143 177; /* #ff8fb1 */
+    --kids-connect-shade-rgb: 179 82 111; /* #b3526f */
+    --kids-release-rgb: 157 140 255; /* #9d8cff */
+    --kids-release-shade-rgb: 90 74 168; /* #5a4aa8 */
+    --kids-teal-rgb: 60 225 190; /* #3ce1be — powers, the "Great" mood, done states */
+    --kids-teal-shade-rgb: 29 143 119; /* #1d8f77 */
+    --kids-orange-rgb: 255 159 90; /* #ff9f5a — powers */
+    --kids-orange-shade-rgb: 179 100 42; /* #b3642a */
+    --kids-area-rgb: 75 233 255;
+    --kids-area-shade-rgb: 27 138 163;
+    --kids-bg-rgb: 6 10 24; /* #060a18 page background */
+    --kids-text-rgb: 242 251 255; /* #f2fbff headings, text on dark */
+    --kids-body-rgb: 198 219 230; /* #c6dbe6 body copy */
+    --kids-muted-rgb: 169 198 212; /* #a9c6d4 hints */
+    --kids-subtle-rgb: 132 160 178; /* #84a0b2 a line under a title, a quiet label */
+    --kids-ink-rgb: 8 16 31; /* #08101f text on a lit button */
+    --kids-off-rgb: 26 36 66; /* #1a2442 an off button, an unpicked tile */
+    --kids-off-shade-rgb: 12 19 40; /* #0c1328 */
+    --kids-streak-rgb: 255 224 138; /* #ffe08a the streak line */
+    /* Grow's world cards (the prototype's "Pick a world"): the card, its glowing orb in one of
+       three gradients (cyan, gold, sky), the dark icon on it, and the gold played marker. */
+    --kids-heading-rgb: 231 245 249; /* #e7f5f9 Grow's heading */
+    --kids-world-name-rgb: 234 253 255; /* #eafdff a world's name */
+    --kids-world-card-rgb: 14 58 74; /* #0e3a4a card top, the sky orb's dark stop */
+    --kids-world-deep-rgb: 5 19 26; /* #05131a card bottom, the orb's icon, the marker's edge */
+    --kids-world-shadow-rgb: 2 6 15; /* #02060f */
+    --kids-gold-rgb: 255 217 138; /* #ffd98a the gold orb, "Completed", the played marker */
+    --kids-gold-shade-rgb: 138 100 32; /* #8a6420 gold's shade (a gold memory pad, sort side) */
+    --kids-wrong-rgb: 255 122 122; /* #ff7a7a a wrong answer, "Miss", "Too soon!" */
+    --kids-white-rgb: 255 255 255; /* a lit memory pad's centre, a spark stroke's core */
+    --kids-empty-rgb: 60 85 104; /* #3c5568 an empty box's dot in Discover's Curious game */
+    --kids-how-rgb: 212 230 238; /* #d4e6ee a Transform quest's how-to */
+    --kids-card-name-rgb: 29 22 64; /* #1d1640 the child's name on Connect's card */
+    --kids-orb-cyan-hi-rgb: 234 253 255; /* #eafdff */
+    --kids-orb-cyan-rgb: 75 233 255; /* #4be9ff */
+    --kids-orb-cyan-lo-rgb: 10 91 116; /* #0a5b74 */
+    --kids-orb-gold-hi-rgb: 255 246 220; /* #fff6dc */
+    --kids-orb-gold-rgb: 255 217 138; /* #ffd98a */
+    --kids-orb-gold-lo-rgb: 138 100 32; /* #8a6420 */
+    --kids-orb-sky-hi-rgb: 212 246 255; /* #d4f6ff */
+    --kids-orb-sky-rgb: 30 196 232; /* #1ec4e8 */
+    --kids-orb-sky-lo-rgb: 14 58 74; /* #0e3a4a */
   }
 }
 
@@ -465,7 +536,14 @@
     @apply bg-background text-foreground;
   }
 
-  button:not(:disabled) {
+  button:not(:disabled):not(.kids-page *) {
+    transition:
+      transform 150ms ease,
+      opacity 150ms ease;
+  }
+  /* The kids page keeps the same default at the lowest specificity, so a kids class's own
+     transition (a world card's springy lift and glow, a tile's .12 s press) wins over it. */
+  .kids-page :where(button:not(:disabled)) {
     transition:
       transform 150ms ease,
       opacity 150ms ease;
@@ -1032,6 +1110,1185 @@
     @apply border-edge rounded-2xl bg-card p-6;
   }
 
+  /* ── Profile button and menu (Layout) ─────────────────────────────────────── */
+  /* The header's profile pill: avatar dot, name, and the view under it. */
+  .profile-pill {
+    @apply flex h-11 items-center gap-2.5 rounded-full pl-1.5 pr-1.5 font-rajdhani transition-colors sm:pr-4;
+    background: rgb(var(--profile-pill-rgb) / 0.75);
+    border: 1px solid rgb(var(--profile-pill-border-rgb));
+    color: rgb(var(--constellation-text-frost-rgb));
+    backdrop-filter: blur(6px);
+  }
+  .profile-pill:hover {
+    border-color: rgb(var(--constellation-cyan-rgb) / 0.45);
+  }
+  /* The dropdown panel. */
+  .profile-panel {
+    @apply rounded-[14px] p-2;
+    background: rgb(var(--constellation-overlay-rgb) / 0.96);
+    border: 1px solid rgb(var(--constellation-cyan-rgb) / 0.2);
+    box-shadow: 0 20px 60px rgb(var(--constellation-void-deep-rgb) / 0.7);
+  }
+  /* Small uppercase labels: the view under the name, and the panel's headings. */
+  .profile-label {
+    @apply whitespace-nowrap font-rajdhani font-bold uppercase;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  .profile-heading {
+    @apply profile-label px-2.5 pb-2 pt-1.5;
+    color: rgb(var(--constellation-slate-mute-rgb));
+  }
+  /* A row in the panel (a profile, Add Child, Home, …). */
+  .profile-row {
+    @apply flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left font-rajdhani transition-colors;
+  }
+  .profile-row:hover {
+    background: rgb(var(--constellation-cyan-rgb) / 0.08);
+  }
+  .profile-row-selected,
+  .profile-row-selected:hover {
+    background: rgb(var(--constellation-cyan-rgb) / 0.1);
+  }
+  /* A child's row: the row itself is the box (hover), holding the main button
+     and the row's icon actions, so they sit inside it. */
+  .profile-row-group {
+    @apply flex items-center gap-1 rounded-[10px] pr-1.5 transition-colors;
+  }
+  .profile-row-group:hover,
+  .profile-row-group:focus-within {
+    background: rgb(var(--constellation-cyan-rgb) / 0.08);
+  }
+  /* The row's main button inside a group: the group draws the background. */
+  .profile-row-main {
+    @apply flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] py-2 pl-2.5 text-left font-rajdhani;
+  }
+  /* The row's small icon actions (edit, delete). */
+  .profile-row-action {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  .profile-row-action:hover {
+    color: rgb(var(--constellation-text-frost-rgb));
+    background: rgb(var(--constellation-cyan-rgb) / 0.12);
+  }
+  /* The open child's name. */
+  .profile-name-current {
+    color: rgb(var(--constellation-cyan-rgb));
+  }
+  .profile-name {
+    @apply truncate font-rajdhani text-sm font-bold;
+    color: rgb(var(--constellation-text-frost-rgb));
+  }
+  .profile-desc {
+    @apply truncate font-rajdhani text-xs font-semibold;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  /* Home, Account settings, Sign out, Add Child: a row with an icon and a label. */
+  .profile-link {
+    @apply profile-row text-sm font-semibold;
+    color: rgb(var(--constellation-slate-warm-rgb));
+  }
+  .profile-link:hover {
+    color: rgb(var(--constellation-text-frost-rgb));
+  }
+  .profile-link-active,
+  .profile-link-active:hover {
+    color: rgb(var(--constellation-cyan-rgb));
+  }
+  .profile-divider {
+    @apply mx-1 my-1.5;
+    border-top: 1px solid rgb(var(--constellation-cyan-rgb) / 0.1);
+  }
+  /* ── Kids page (child view) ───────────────────────────────────────────────── */
+  /* The page: a soft cyan, violet and gold glow over the kids background. */
+  .kids-page {
+    @apply min-h-screen font-rajdhani;
+    color: rgb(var(--kids-text-rgb));
+    background:
+      radial-gradient(ellipse at 85% -10%, rgb(var(--kids-discover-rgb) / 0.2), transparent 50%),
+      radial-gradient(ellipse at 5% 60%, rgb(var(--kids-release-rgb) / 0.16), transparent 45%),
+      radial-gradient(ellipse at 70% 110%, rgb(var(--kids-transform-rgb) / 0.12), transparent 45%),
+      rgb(var(--kids-bg-rgb));
+    /* Confetti flies past the edges for a moment: no sideways scroll for it (`clip`, not
+       `hidden`, so the sticky kids bar still sticks). */
+    overflow-x: clip;
+  }
+  /* The chunky button: the open circle's colour on its darker shade, pressed down. */
+  .kids-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-orbitron font-black transition-transform duration-100 disabled:cursor-not-allowed disabled:opacity-50;
+    background: rgb(var(--kids-area-rgb));
+    color: rgb(var(--kids-ink-rgb));
+    box-shadow: 0 6px 0 rgb(var(--kids-area-shade-rgb));
+  }
+  .kids-btn:not(:disabled):active {
+    transform: translateY(5px);
+    box-shadow: 0 1px 0 rgb(var(--kids-area-shade-rgb));
+  }
+  /* Release's Save sits on a deeper 7 px shade (the prototype's). */
+  .kids-btn-deep {
+    box-shadow: 0 7px 0 rgb(var(--kids-area-shade-rgb));
+  }
+  /* The same, off: Back, Read to me, and other secondary buttons. */
+  .kids-btn-off {
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-rajdhani font-bold transition-transform duration-100;
+    background: rgb(var(--kids-off-rgb));
+    color: rgb(var(--kids-text-rgb));
+    box-shadow: 0 5px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  .kids-btn-off:not(:disabled):active {
+    /* Pushed down as on mobile (palette.ts buttonOff), also when used on its own. */
+    transform: translateY(4px);
+    box-shadow: 0 1px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  /* Confetti (components/kids/Confetti): rings and pieces over their box, shown only where
+     motion is welcome (the animations are in the no-preference block). */
+  .kids-confetti {
+    @apply pointer-events-none absolute inset-0 z-[4] hidden;
+  }
+  .kids-confetti-ring {
+    @apply absolute left-1/2 top-1/2 aspect-square rounded-full opacity-0;
+    width: min(34%, 220px);
+    border: 2px solid rgb(var(--kids-discover-rgb));
+  }
+  .kids-confetti-ring-gold {
+    border-color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-confetti-piece {
+    @apply absolute left-1/2 top-[46%] opacity-0;
+  }
+  /* A live hub circle's disc grows a little under the pointer (the prototype's hover). */
+  @media (hover: hover) {
+    .hub-disc:hover {
+      transform: scale(1.08);
+    }
+  }
+  /* The hub's Discover tip (the prototype's), to the circle's right with a small arrow. */
+  .hub-tip {
+    @apply pointer-events-none absolute left-full top-1/2 z-[6] ml-3.5 whitespace-nowrap rounded-[9px] px-3.5 py-2 text-[12.5px] leading-[1.35];
+    translate: 0 -50%;
+    color: rgb(var(--constellation-text-frost-rgb));
+    background: rgb(var(--constellation-overlay-rgb) / 0.95);
+    border: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+    box-shadow:
+      0 8px 24px rgb(var(--constellation-void-deep-rgb) / 0.55),
+      0 0 18px rgb(var(--constellation-cyan-rgb) / 0.18);
+    animation: kids-fade 0.18s ease both;
+  }
+  .hub-tip::before {
+    @apply absolute -left-[5px] top-1/2 h-[9px] w-[9px];
+    content: '';
+    transform: translateY(-50%) rotate(45deg);
+    background: rgb(var(--constellation-overlay-rgb) / 0.95);
+    border-left: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+    border-bottom: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+  }
+  /* Discover's portal video (the prototype's): tinted, with a cyan glow. */
+  .stage-portal-video {
+    filter: hue-rotate(-8deg) saturate(1.15) contrast(1.05);
+  }
+  .stage-portal-glow {
+    @apply pointer-events-none absolute inset-0;
+    background: radial-gradient(
+      circle at 50% 50%,
+      rgb(var(--constellation-cyan-rgb) / 0.1),
+      rgb(var(--constellation-void-deep-rgb) / 0.75) 78%
+    );
+    mix-blend-mode: screen;
+  }
+  /* "Read to me" while on: always cyan (any circle), dark ink, pushed down 4 px with its
+     shade unchanged (the prototype's). */
+  .kids-read-on {
+    @apply inline-flex items-center justify-center rounded-full font-rajdhani font-bold transition-transform;
+    transition-duration: 0.12s;
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-discover-rgb));
+    box-shadow: 0 5px 0 rgb(var(--kids-discover-shade-rgb));
+  }
+  .kids-read-on:not(:disabled):active {
+    transform: translateY(4px);
+  }
+  /* A panel tinted with the open circle's colour. */
+  .kids-card {
+    @apply rounded-[24px] p-5;
+    background: rgb(var(--kids-area-rgb) / 0.12);
+    border: 3px solid rgb(var(--kids-area-rgb) / 0.45);
+  }
+  /* The circle's name chip in the header. */
+  .kids-chip {
+    @apply inline-flex items-center gap-2 rounded-full px-3 py-1.5;
+    background: rgb(var(--kids-area-rgb) / 0.14);
+    border: 2px solid rgb(var(--kids-area-rgb));
+  }
+  /* A big pickable tile (a mood, a power): its own colour pair, set where used. */
+  .kids-tile {
+    @apply flex flex-col items-center justify-center gap-2 rounded-[22px] font-orbitron font-black transition-transform;
+    transition-duration: 0.12s;
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-off-rgb) / 0.6);
+    border: 3px solid rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.3);
+    box-shadow: 0 7px 0 rgb(var(--kids-tile-shade-rgb, var(--kids-area-shade-rgb)));
+  }
+  .kids-tile:hover {
+    transform: translateY(-4px);
+  }
+  .kids-tile:not(:disabled):active {
+    transform: translateY(6px);
+  }
+  .kids-tile-on {
+    background: rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.22);
+    border-color: rgb(var(--kids-tile-rgb, var(--kids-area-rgb)));
+  }
+  /* Grow's "Pick a world" (the prototype's): the cyan pill eyebrow, the glowing word, and a
+     card per world with its floating orb. */
+  .kids-pill-eyebrow {
+    @apply inline-flex items-center rounded-full px-4 py-1.5 font-rajdhani text-[13px] font-bold uppercase md:px-[18px] md:py-2 md:text-[15px];
+    letter-spacing: 0.24em;
+    color: rgb(var(--kids-discover-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+    background: rgb(var(--kids-orb-sky-rgb) / 0.1);
+  }
+  .kids-glow-word {
+    color: rgb(var(--kids-discover-rgb));
+    text-shadow: 0 0 28px rgb(var(--kids-discover-rgb) / 0.45);
+  }
+  .kids-world {
+    @apply relative flex flex-col items-center gap-3 rounded-[26px] px-3.5 pb-5 pt-6 md:gap-4 md:rounded-[30px] md:px-[18px] md:pb-6 md:pt-7;
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.28);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb) / 0.55),
+      rgb(var(--kids-world-deep-rgb) / 0.85)
+    );
+    box-shadow: 0 14px 34px rgb(var(--kids-world-shadow-rgb) / 0.45);
+    transition:
+      transform 0.25s cubic-bezier(0.2, 1.5, 0.4, 1),
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .kids-world:hover {
+    transform: translateY(-6px);
+    border-color: rgb(var(--kids-discover-rgb));
+    box-shadow:
+      0 18px 40px rgb(var(--kids-world-shadow-rgb) / 0.5),
+      0 0 34px rgb(var(--kids-discover-rgb) / 0.25);
+  }
+  .kids-world:not(:disabled):active {
+    transform: scale(0.96);
+  }
+  .kids-world-ring {
+    @apply absolute -inset-2.5 rounded-full;
+    border: 1px dashed rgb(var(--kids-discover-rgb) / 0.3);
+  }
+  /* The orb: --kids-orb-* is one of the three gradients (.kids-world-orb-cyan, -gold, -sky). */
+  .kids-world-orb {
+    @apply absolute inset-0 flex items-center justify-center rounded-full;
+    color: rgb(var(--kids-world-deep-rgb));
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--kids-orb-hi-rgb)),
+      rgb(var(--kids-orb-rgb)) 40%,
+      rgb(var(--kids-orb-lo-rgb))
+    );
+    box-shadow:
+      0 0 30px rgb(var(--kids-orb-glow-rgb) / var(--kids-orb-glow-alpha, 0.5)),
+      inset -10px -12px 24px rgb(var(--kids-world-shadow-rgb) / 0.35),
+      inset 8px 8px 18px rgb(var(--kids-world-name-rgb) / 0.25);
+  }
+  .kids-world-orb-cyan {
+    --kids-orb-hi-rgb: var(--kids-orb-cyan-hi-rgb);
+    --kids-orb-rgb: var(--kids-orb-cyan-rgb);
+    --kids-orb-lo-rgb: var(--kids-orb-cyan-lo-rgb);
+    --kids-orb-glow-rgb: var(--kids-orb-cyan-rgb);
+  }
+  .kids-world-orb-gold {
+    --kids-orb-hi-rgb: var(--kids-orb-gold-hi-rgb);
+    --kids-orb-rgb: var(--kids-orb-gold-rgb);
+    --kids-orb-lo-rgb: var(--kids-orb-gold-lo-rgb);
+    --kids-orb-glow-rgb: var(--kids-orb-gold-rgb);
+    --kids-orb-glow-alpha: 0.45;
+  }
+  .kids-world-orb-sky {
+    --kids-orb-hi-rgb: var(--kids-orb-sky-hi-rgb);
+    --kids-orb-rgb: var(--kids-orb-sky-rgb);
+    --kids-orb-lo-rgb: var(--kids-orb-sky-lo-rgb);
+    --kids-orb-glow-rgb: var(--kids-orb-sky-rgb);
+  }
+  /* Played: a gold disc with a dark check on the orb's top-right. */
+  .kids-world-done {
+    @apply absolute -right-1.5 -top-1 flex h-[30px] w-[30px] items-center justify-center rounded-full md:h-[34px] md:w-[34px];
+    color: rgb(var(--kids-world-deep-rgb));
+    background: rgb(var(--kids-gold-rgb));
+    border: 3px solid rgb(var(--kids-world-deep-rgb));
+  }
+  .kids-world-name {
+    @apply text-balance text-center font-orbitron text-base font-bold leading-tight md:text-[19px];
+    letter-spacing: 0.03em;
+    color: rgb(var(--kids-world-name-rgb));
+  }
+  .kids-world-tag {
+    @apply font-rajdhani text-xs font-bold uppercase md:text-sm;
+    letter-spacing: 0.24em;
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-world-tag-done {
+    color: rgb(var(--kids-gold-rgb));
+  }
+  /* Grow's game screens and report (the prototype's). */
+  .kids-pill-gold {
+    color: rgb(var(--kids-gold-rgb));
+    border-color: rgb(var(--kids-gold-rgb) / 0.55);
+    background: rgb(var(--kids-gold-rgb) / 0.08);
+  }
+  .kids-gold-glow {
+    color: rgb(var(--kids-gold-rgb));
+    text-shadow: 0 0 28px rgb(var(--kids-gold-rgb) / 0.45);
+  }
+  /* Back: an outlined cyan circle. */
+  .kids-round-back {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors;
+    color: rgb(var(--kids-subtle-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-round-back:hover {
+    color: rgb(var(--kids-world-name-rgb));
+    border-color: rgb(var(--kids-discover-rgb));
+  }
+  /* The three games' dots: done gold, the current one cyan, both glowing. */
+  .kids-step-dot {
+    @apply h-2 w-9 rounded-full md:h-2.5 md:w-[46px];
+    background: rgb(var(--kids-discover-rgb) / 0.14);
+    transition: background 0.3s ease;
+  }
+  .kids-step-dot-done {
+    background: rgb(var(--kids-gold-rgb));
+    box-shadow: 0 0 12px rgb(var(--kids-gold-rgb) / 0.6);
+  }
+  .kids-step-dot-now {
+    background: rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 12px rgb(var(--kids-discover-rgb) / 0.6);
+  }
+  /* A game's intro: a square, game-sized frame with the skill, the round Play and the note. */
+  .kids-game-intro {
+    @apply relative mx-auto flex aspect-square w-full max-w-[540px] flex-col items-center justify-center gap-4 overflow-hidden rounded-[26px] md:gap-5;
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.3);
+    background: radial-gradient(
+      circle at 50% 40%,
+      rgb(var(--kids-world-card-rgb)),
+      rgb(var(--kids-world-deep-rgb)) 78%
+    );
+  }
+  .kids-game-skill {
+    @apply px-4 text-center font-rajdhani text-[13px] font-bold uppercase md:text-[15px];
+    letter-spacing: 0.28em;
+    color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-game-note {
+    @apply font-rajdhani text-sm font-bold uppercase md:text-base;
+    letter-spacing: 0.2em;
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-play-orb {
+    @apply flex h-32 w-32 flex-col items-center justify-center gap-1.5 rounded-full font-orbitron text-lg font-bold md:h-[150px] md:w-[150px] md:text-xl;
+    letter-spacing: 0.08em;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.5);
+    transition: transform 0.15s ease;
+  }
+  .kids-play-orb:hover {
+    transform: scale(1.06);
+  }
+  .kids-play-orb:not(:disabled):active {
+    transform: scale(0.95);
+  }
+  /* A game's score: a gold-edged card with the gold check orb. */
+  .kids-result-card {
+    @apply mx-auto max-w-[540px] rounded-[30px] px-6 py-7 text-center md:px-[26px] md:py-[30px];
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.5);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb) / 0.7),
+      rgb(var(--kids-world-deep-rgb) / 0.92)
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-gold-rgb) / 0.12);
+  }
+  .kids-check-orb {
+    @apply mx-auto flex h-20 w-20 items-center justify-center rounded-full md:h-24 md:w-24;
+    color: rgb(var(--kids-world-deep-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-orb-gold-hi-rgb)),
+      rgb(var(--kids-orb-gold-rgb)) 45%,
+      rgb(var(--kids-orb-gold-lo-rgb))
+    );
+    box-shadow: 0 0 40px rgb(var(--kids-gold-rgb) / 0.55);
+  }
+  /* A card on Grow's report: the prototype's report rows, dark navy with a thin gold edge. */
+  .kids-report-card {
+    @apply rounded-[22px] px-5 py-4 md:py-5;
+    background: rgb(var(--kids-world-deep-rgb) / 0.7);
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.35);
+  }
+  /* The report's world orb: the world's gradient, a dark edge and a cyan glow. */
+  .kids-report-orb {
+    border: 4px solid rgb(var(--kids-world-deep-rgb));
+    box-shadow: 0 0 50px rgb(var(--kids-discover-rgb) / 0.45);
+  }
+  /* Grow's buttons: the lit one a cyan gradient with a glow, the other outlined cyan. */
+  .kids-btn-glow,
+  .kids-btn-line {
+    @apply inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-full font-rajdhani font-bold uppercase transition-transform duration-150;
+    letter-spacing: 0.18em;
+  }
+  .kids-btn-glow {
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 26px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-btn-glow:not(:disabled):hover {
+    transform: translateY(-2px);
+  }
+  .kids-btn-glow:not(:disabled):active,
+  .kids-btn-line:not(:disabled):active {
+    transform: scale(0.96);
+  }
+  .kids-btn-glow:disabled {
+    opacity: 0.6;
+  }
+  .kids-btn-line {
+    color: rgb(var(--kids-discover-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+  }
+  .kids-btn-line:hover {
+    background: rgb(var(--kids-orb-sky-rgb) / 0.12);
+  }
+  /* A borderless text button. */
+  .kids-text-link {
+    @apply rounded-full px-[18px] py-2 font-rajdhani text-sm font-bold uppercase transition-colors md:text-base;
+    letter-spacing: 0.2em;
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-text-link:hover {
+    color: rgb(var(--kids-world-name-rgb));
+  }
+  /* A text box on the kids page. */
+  .kids-input {
+    @apply w-full rounded-[16px] px-4 py-3 font-rajdhani text-base font-semibold outline-none;
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-bg-rgb) / 0.7);
+    border: 3px solid rgb(var(--kids-area-rgb) / 0.35);
+  }
+  .kids-input:focus {
+    border-color: rgb(var(--kids-area-rgb));
+  }
+  /* Discover's orbit (2.5): rings around the child, and a bubble per power in its own pair. */
+  .kids-orbit-ring {
+    @apply pointer-events-none absolute rounded-full;
+    border: 1px solid rgb(var(--kids-area-rgb) / 0.28);
+  }
+  .kids-orbit-ring-dashed {
+    border-style: dashed;
+    border-color: rgb(var(--kids-area-rgb) / 0.14);
+  }
+  .kids-orbit-ring-faint {
+    border-color: rgb(var(--kids-area-rgb) / 0.12);
+  }
+  .kids-avatar {
+    @apply flex items-center justify-center overflow-hidden rounded-full font-orbitron font-black;
+    color: rgb(var(--kids-text-rgb));
+    border: 3px solid rgb(var(--kids-area-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-area-rgb) / 0.35),
+      rgb(var(--kids-bg-rgb))
+    );
+    box-shadow: 0 0 40px rgb(var(--kids-area-rgb) / 0.35);
+  }
+  /* A power's bubble (the prototype's): cyan, its edge gold once opened, lit while its
+     game is open. */
+  .kids-power {
+    @apply absolute rounded-full p-0;
+    transform: translate(-50%, -50%);
+  }
+  /* The bubble itself. Its hover growth and press dip are on this inner face, so the button's
+     own area never shrinks under the pointer and every click lands (a shrinking target can
+     end a press outside itself, and then the browser fires no click). */
+  .kids-power-face {
+    @apply absolute inset-0 flex items-center justify-center rounded-full;
+    color: rgb(var(--kids-discover-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-world-card-rgb) / 0.9),
+      rgb(var(--kids-world-deep-rgb) / 0.95)
+    );
+    box-shadow: 0 0 24px rgb(var(--kids-orb-sky-rgb) / 0.15);
+    backdrop-filter: blur(8px);
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  /* The app's buttons shrink while pressed (`button:active`, base layer), which would replace
+     these centring transforms and jump them to the bottom-right: they keep their own. */
+  .kids-power:not(:disabled):active,
+  .kids-game-orb:not(:disabled):active,
+  .kids-game-bubble:not(:disabled):active,
+  .kids-game-pill:not(:disabled):active {
+    transform: translate(-50%, -50%);
+  }
+  /* Grow's light and Order's stars centre with `translate`, so their pop, pulse or shake can
+     use transform: no press shrink. */
+  .kids-game-light:not(:disabled):active,
+  .kids-game-node:not(:disabled):active {
+    transform: none;
+  }
+  /* A whole game frame you tap or hold (climb, voice, timing) stays still. */
+  .kids-game:not(:disabled):active {
+    transform: none;
+  }
+  .kids-power:hover > .kids-power-face {
+    transform: scale(1.05);
+  }
+  .kids-power:active > .kids-power-face {
+    transform: scale(0.97);
+  }
+  .kids-power-open > .kids-power-face {
+    border-color: rgb(var(--kids-gold-rgb) / 0.6);
+  }
+  .kids-power-on > .kids-power-face {
+    color: rgb(var(--kids-world-name-rgb));
+    border-color: rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 40px rgb(var(--kids-discover-rgb) / 0.55);
+  }
+  .kids-power-label {
+    @apply max-w-[90%] text-center font-rajdhani font-bold uppercase leading-none tracking-[0.06em];
+    font-size: clamp(8px, 1.35vw, 11px);
+  }
+  /* "Click here to enjoy the game", over a bubble while it's hovered or focused. */
+  .kids-power-tip {
+    @apply pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-xl px-3 py-1.5 font-rajdhani text-[13px] font-bold tracking-[0.06em] group-hover:block group-focus-visible:block;
+    color: rgb(var(--kids-world-name-rgb));
+    background: rgb(var(--kids-world-deep-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 20px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* The tip's small arrow, pointing down at the power. */
+  .kids-power-tip::after {
+    @apply absolute left-1/2 top-full h-2.5 w-2.5;
+    content: '';
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: rgb(var(--kids-world-deep-rgb));
+    border-right: 1px solid rgb(var(--kids-discover-rgb));
+    border-bottom: 1px solid rgb(var(--kids-discover-rgb));
+  }
+  /* Discover's heading pieces: the gold eyebrow with its twinkling dots, the glow round the
+     orbit, a spoke to each power, the child's photo in its cyan ring and their name. */
+  .kids-eyebrow {
+    @apply inline-flex max-w-full items-center gap-2 rounded-full px-4 py-1.5 font-rajdhani text-xs font-bold uppercase md:text-sm;
+    letter-spacing: clamp(0.04em, 0.6vw, 0.12em);
+    color: rgb(var(--kids-gold-rgb));
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.55);
+    background: rgb(var(--kids-gold-rgb) / 0.08);
+  }
+  .kids-twinkle {
+    @apply h-2 w-2 shrink-0 rounded-full;
+    background: rgb(var(--kids-gold-rgb));
+    box-shadow: 0 0 10px rgb(var(--kids-gold-rgb));
+  }
+  .kids-glow-dot {
+    box-shadow: 0 0 12px rgb(var(--kids-area-rgb));
+  }
+  .kids-orbit-glow {
+    @apply pointer-events-none absolute inset-0 rounded-full;
+    background: radial-gradient(
+      circle at 50% 50%,
+      rgb(var(--kids-discover-rgb) / 0.16),
+      transparent 62%
+    );
+  }
+  .kids-orbit-spoke {
+    @apply pointer-events-none absolute left-1/2 top-1/2 h-px w-[39%] origin-left;
+  }
+  .kids-orbit-spoke-line {
+    @apply block h-full w-full origin-left;
+    background: linear-gradient(90deg, transparent 40%, rgb(var(--kids-discover-rgb) / 0.3));
+  }
+  .kids-orbit-spoke-on .kids-orbit-spoke-line {
+    background: linear-gradient(90deg, transparent 40%, rgb(var(--kids-discover-rgb) / 0.8));
+  }
+  .kids-photo-ring {
+    @apply absolute inset-[36%] rounded-full p-1.5;
+    background: conic-gradient(
+      from 200deg,
+      rgb(var(--kids-discover-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb)),
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-discover-rgb))
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-photo {
+    @apply flex h-full w-full items-center justify-center overflow-hidden rounded-full border-4 font-orbitron font-bold;
+    color: rgb(var(--kids-world-name-rgb));
+    border-color: rgb(var(--kids-world-deep-rgb));
+    background: rgb(var(--kids-world-card-rgb));
+  }
+  .kids-name-pill {
+    @apply pointer-events-none absolute left-1/2 top-[66%] whitespace-nowrap rounded-full px-4 py-1 font-orbitron text-sm font-semibold uppercase tracking-[0.18em];
+    /* `translate`, not transform, so its rise-in (kids-up) can't move it off centre. */
+    translate: -50% -20%;
+    color: rgb(var(--kids-world-name-rgb));
+    background: rgb(var(--kids-world-deep-rgb) / 0.92);
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  .kids-count-pill {
+    @apply inline-block whitespace-nowrap rounded-full px-[18px] py-2 font-orbitron text-sm font-bold tracking-[0.08em];
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-orb-sky-rgb) / 0.25),
+      rgb(var(--kids-orb-cyan-lo-rgb) / 0.35)
+    );
+    box-shadow: 0 0 30px rgb(var(--kids-discover-rgb) / 0.3);
+  }
+  /* Discover's mini games (2.6): the square they're played in, and their pieces. */
+  .kids-game {
+    @apply relative mx-auto aspect-square w-full touch-none select-none overflow-hidden rounded-[26px];
+    max-width: min(100%, calc(100vh - 260px));
+    min-width: 220px;
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.3);
+    background: radial-gradient(
+      circle at 50% 40%,
+      rgb(var(--kids-world-card-rgb)),
+      rgb(var(--kids-world-deep-rgb)) 78%
+    );
+  }
+  /* Grow's frame: up to 540 px, and short enough to fit under its header. */
+  .kids-game-grow {
+    max-width: min(100%, 540px, calc(100vh - 300px));
+    min-width: 260px;
+  }
+  .kids-game-bar {
+    @apply pointer-events-none absolute left-[6%] right-[6%] top-[5%] z-10 h-2 overflow-hidden rounded;
+    background: rgb(var(--kids-discover-rgb) / 0.14);
+  }
+  .kids-game-bar-fill {
+    @apply h-full rounded transition-[width] duration-200;
+    background: linear-gradient(90deg, rgb(var(--kids-orb-sky-rgb)), rgb(var(--kids-gold-rgb)));
+    box-shadow: 0 0 12px rgb(var(--kids-discover-rgb) / 0.7);
+  }
+  .kids-game-sky {
+    @apply pointer-events-none absolute h-[3px] w-[3px] rounded-full;
+    background: rgb(var(--kids-world-name-rgb));
+  }
+  .kids-game-caption {
+    @apply pointer-events-none absolute bottom-[5%] left-1/2 -translate-x-1/2 whitespace-nowrap font-rajdhani text-lg font-bold uppercase tracking-[0.22em];
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-game-orb {
+    @apply absolute rounded-full;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-world-name-rgb)),
+      rgb(var(--kids-discover-rgb)) 45%,
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.8);
+  }
+  .kids-game-box {
+    @apply flex items-center justify-center rounded-[18px] font-orbitron text-[clamp(22px,6vw,34px)] font-bold;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+    background: linear-gradient(
+      160deg,
+      rgb(var(--kids-orb-sky-rgb) / 0.35),
+      rgb(var(--kids-orb-cyan-lo-rgb) / 0.5)
+    );
+  }
+  .kids-game-box-open {
+    background: rgb(var(--kids-world-deep-rgb) / 0.7);
+  }
+  .kids-game-box-found {
+    border-color: rgb(var(--kids-gold-rgb));
+    background: radial-gradient(
+      circle,
+      rgb(var(--kids-gold-rgb) / 0.25),
+      rgb(var(--kids-world-deep-rgb) / 0.9)
+    );
+    box-shadow: 0 0 26px rgb(var(--kids-gold-rgb) / 0.45);
+  }
+  /* Order's stars centre with `translate`, so the next one's pulse and a wrong one's shake
+     can use transform. */
+  .kids-game-node {
+    @apply absolute flex items-center justify-center rounded-full font-orbitron text-[clamp(16px,4.4vw,24px)] font-bold;
+    translate: -50% -50%;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb) / 0.35);
+    background: rgb(var(--kids-world-deep-rgb) / 0.85);
+    transition: background 0.2s ease;
+  }
+  .kids-game-node-next {
+    border-color: rgb(var(--kids-discover-rgb));
+  }
+  .kids-game-node-done {
+    color: rgb(var(--kids-world-deep-rgb));
+    border-color: rgb(var(--kids-gold-rgb));
+    background: radial-gradient(
+      circle,
+      rgb(var(--kids-gold-rgb)),
+      rgb(var(--kids-transform-shade-rgb))
+    );
+  }
+  .kids-game-node-wrong {
+    border-color: rgb(var(--kids-connect-rgb));
+  }
+  .kids-game-bubble {
+    @apply absolute rounded-full;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.8);
+    background: radial-gradient(
+      circle at 32% 30%,
+      rgb(var(--kids-text-rgb) / 0.95),
+      rgb(var(--kids-discover-rgb) / 0.25) 35%,
+      rgb(var(--kids-discover-rgb) / 0.12) 70%
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-game-burst {
+    @apply pointer-events-none absolute h-[16%] w-[16%] rounded-full;
+    border: 3px solid rgb(var(--kids-gold-rgb));
+    animation: kids-burst 0.6s ease-out forwards;
+  }
+  .kids-game-burst-wrong {
+    border-color: rgb(var(--kids-wrong-rgb));
+  }
+  .kids-game-burst-cyan {
+    border-color: rgb(var(--kids-discover-rgb));
+  }
+  .kids-game-ring {
+    @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  /* Voice's mic: a dark-cyan circle, gold-edged once the voice is nearly full. */
+  .kids-game-mic {
+    @apply pointer-events-none absolute left-1/2 top-1/2 flex h-[26%] w-[26%] items-center justify-center rounded-full;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+  }
+  .kids-game-mic-full {
+    border-color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-game-wave {
+    @apply w-1.5 rounded-full;
+    background: rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 8px rgb(var(--kids-discover-rgb) / 0.7);
+  }
+  /* Grow's games (3.5): the readouts, the words that fall or fly, the basket, the sort
+     card and its sides, the memory pads, the timing target and the reaction light. */
+  .kids-game-hud {
+    @apply pointer-events-none absolute top-[9%] z-10 font-orbitron text-base font-bold;
+    color: rgb(var(--kids-world-name-rgb));
+  }
+  .kids-game-hud-gold {
+    color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-game-pill {
+    @apply absolute whitespace-nowrap rounded-full px-4 py-2.5 font-orbitron text-sm font-bold sm:text-base;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-text-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 40% 30%,
+      rgb(var(--kids-discover-rgb) / 0.6),
+      rgb(var(--kids-discover-shade-rgb) / 0.9)
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-game-basket {
+    @apply pointer-events-none absolute top-[87%] h-[8%] w-[28%];
+    transform: translate(-50%, -50%);
+    border: 3px solid rgb(var(--kids-gold-rgb));
+    border-top: none;
+    border-radius: 0 0 9999px 9999px;
+    background: linear-gradient(180deg, transparent, rgb(var(--kids-gold-rgb) / 0.35));
+    box-shadow: 0 8px 26px rgb(var(--kids-gold-rgb) / 0.35);
+  }
+  /* The sort card centres with `translate`, so its pop, shake and fly-off can use transform. */
+  .kids-game-card {
+    @apply absolute left-1/2 top-[44%] flex min-h-[34%] w-[78%] items-center justify-center rounded-[26px] px-5 py-6 text-center font-orbitron text-lg font-bold leading-snug sm:text-2xl;
+    translate: -50% -50%;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb) / 0.5);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb) / 0.95),
+      rgb(var(--kids-world-deep-rgb) / 0.98)
+    );
+    box-shadow: 0 0 34px rgb(var(--kids-discover-rgb) / 0.25);
+  }
+  .kids-game-card-right {
+    border-color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-game-card-wrong {
+    border-color: rgb(var(--kids-wrong-rgb));
+    box-shadow: 0 0 34px rgb(var(--kids-wrong-rgb) / 0.4);
+  }
+  /* The sort sides: the left gold, the right cyan. */
+  .kids-game-side {
+    @apply flex min-h-16 flex-1 items-center justify-center gap-2 rounded-[20px] font-rajdhani text-base font-bold uppercase tracking-[0.12em] sm:text-lg;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.7);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-gold-rgb) / 0.25),
+      rgb(var(--kids-gold-shade-rgb) / 0.45)
+    );
+  }
+  .kids-game-side-cyan {
+    border-color: rgb(var(--kids-discover-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-orb-sky-rgb) / 0.45),
+      rgb(var(--kids-orb-cyan-lo-rgb) / 0.7)
+    );
+  }
+  .kids-game-pad {
+    @apply flex aspect-square w-full items-center justify-center rounded-full font-orbitron text-sm font-bold sm:text-lg;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-tile-rgb) / 0.6);
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-tile-rgb) / 0.35),
+      rgb(var(--kids-world-deep-rgb) / 0.9) 75%
+    );
+    box-shadow: 0 0 14px rgb(var(--kids-tile-rgb) / 0.2);
+    transition: all 0.12s ease;
+  }
+  .kids-game-pad-lit {
+    transform: scale(1.06);
+    color: rgb(var(--kids-world-deep-rgb));
+    border-color: rgb(var(--kids-white-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-white-rgb)),
+      rgb(var(--kids-tile-rgb)) 55%
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-tile-rgb));
+  }
+  .kids-game-target {
+    @apply pointer-events-none absolute left-1/2 top-1/2 flex h-[26%] w-[26%] items-center justify-center rounded-full font-orbitron text-base font-bold sm:text-xl;
+    transform: translate(-50%, -50%);
+    color: rgb(var(--kids-gold-rgb));
+    border: 3px dashed rgb(var(--kids-gold-rgb));
+    background: radial-gradient(
+      circle,
+      rgb(var(--kids-gold-rgb) / 0.3),
+      rgb(var(--kids-gold-rgb) / 0.05)
+    );
+    box-shadow: 0 0 20px rgb(var(--kids-gold-rgb) / 0.3);
+  }
+  .kids-game-target-near {
+    border-color: rgb(var(--kids-white-rgb));
+    box-shadow: 0 0 40px rgb(var(--kids-gold-rgb) / 0.8);
+  }
+  .kids-game-closing {
+    @apply pointer-events-none absolute left-1/2 top-1/2 rounded-full;
+    transform: translate(-50%, -50%);
+    border: 4px solid rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 24px rgb(var(--kids-discover-rgb) / 0.7);
+  }
+  /* React's light (centres with `translate`, so its pop can scale it). */
+  .kids-game-light {
+    @apply absolute flex h-[22%] w-[22%] items-center justify-center rounded-full font-orbitron text-base font-black sm:text-xl;
+    translate: -50% -50%;
+    color: rgb(var(--kids-world-deep-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-orb-gold-hi-rgb)),
+      rgb(var(--kids-orb-gold-rgb)) 45%,
+      rgb(var(--kids-orb-gold-lo-rgb))
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-gold-rgb) / 0.8);
+  }
+  /* A flashed word ("Perfect!", "Too soon!"), glowing in its colour; centred with `translate`
+     so it can pop in. -mid: in the middle of the frame. */
+  .kids-game-word {
+    @apply pointer-events-none absolute left-1/2 top-[22%] whitespace-nowrap font-orbitron text-2xl font-black sm:text-3xl;
+    translate: -50% 0;
+    text-shadow: 0 0 20px currentColor;
+  }
+  .kids-game-word-mid {
+    top: 50%;
+    translate: -50% -50%;
+  }
+  /* A word picked in Dash: a gold chip. */
+  .kids-game-chip {
+    @apply rounded-full px-2.5 py-1 font-rajdhani text-sm font-bold;
+    color: rgb(var(--kids-gold-rgb));
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.6);
+    background: rgb(var(--kids-gold-rgb) / 0.15);
+  }
+  /* A score's bar in the world report, in its band's colour. */
+  .kids-score-bar {
+    @apply h-3 overflow-hidden rounded-full;
+    background: rgb(var(--kids-text-rgb) / 0.08);
+  }
+  .kids-score-bar-fill {
+    @apply h-full rounded-full;
+    background: rgb(var(--kids-tile-rgb));
+  }
+  /* The game's dialog over the kids page. */
+  /* A power's game dialog (the prototype's): a blurred dark veil, and a teal-to-navy panel. */
+  .kids-dialog-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-5;
+    background: rgb(var(--kids-world-shadow-rgb) / 0.84);
+    backdrop-filter: blur(6px);
+  }
+  .kids-dialog {
+    @apply max-h-full w-full max-w-[540px] overflow-y-auto rounded-[32px] px-5 pb-[18px] pt-4;
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb)),
+      rgb(var(--kids-world-deep-rgb)) 60%
+    );
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+    box-shadow:
+      0 30px 80px rgb(var(--kids-world-shadow-rgb) / 0.6),
+      0 0 60px rgb(var(--kids-orb-sky-rgb) / 0.2);
+  }
+  /* The power's icon in a tinted cyan circle, and × in an outlined one. */
+  .kids-dialog-icon {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full md:h-12 md:w-12;
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: rgb(var(--kids-orb-sky-rgb) / 0.15);
+  }
+  .kids-dialog-close {
+    @apply ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full md:h-12 md:w-12;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* The win: four twinkling dots, the pulsing check medallion, the time in gold. */
+  .kids-win-dot {
+    @apply pointer-events-none absolute rounded-full;
+  }
+  .kids-win-medal {
+    @apply mx-auto flex h-16 w-16 items-center justify-center rounded-full md:h-[72px] md:w-[72px];
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  .kids-win-time {
+    color: rgb(var(--kids-gold-rgb));
+    text-shadow: 0 0 24px rgb(var(--kids-gold-rgb) / 0.5);
+  }
+  /* "New best!" a solid gold pill; "Best: X.Xs" / "First try!" an outlined one in grey. */
+  .kids-win-pill {
+    @apply whitespace-nowrap rounded-full px-3 py-1 font-rajdhani text-sm font-bold uppercase;
+    letter-spacing: 0.2em;
+    color: rgb(var(--kids-subtle-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+  }
+  .kids-win-pill-best {
+    color: rgb(var(--kids-world-deep-rgb));
+    background: rgb(var(--kids-gold-rgb));
+    border-color: rgb(var(--kids-gold-rgb));
+  }
+  /* The win line in a dashed box. */
+  .kids-win-line {
+    @apply mx-auto max-w-[400px] rounded-[18px] px-4 py-2.5 font-rajdhani text-base font-semibold leading-snug md:text-[19px];
+    color: rgb(var(--kids-heading-rgb));
+    background: rgb(var(--kids-world-deep-rgb) / 0.7);
+    border: 1px dashed rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  /* The dialog's "Play again": outlined in full cyan. */
+  .kids-btn-line-strong {
+    border-color: rgb(var(--kids-discover-rgb));
+  }
+  /* A quest's progress (3.2): a dot per time it's to be done, filled up to the count. */
+  /* A quest's progress (the prototype's): a 30 px ring per time, filled with a star up to
+     the count. */
+  .kids-quest-dot {
+    @apply flex h-[30px] w-[30px] items-center justify-center rounded-full;
+    color: rgb(var(--kids-ink-rgb));
+    border: 3px solid rgb(var(--kids-tile-rgb) / 0.4);
+  }
+  .kids-quest-dot-on {
+    background: rgb(var(--kids-tile-rgb));
+    border-color: rgb(var(--kids-tile-rgb));
+  }
+  /* A quest's card: its own pair on its shade, teal once it's done; the text on the left and
+     the round button on the right. */
+  .kids-quest {
+    @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-[28px] px-5 py-5 md:gap-[18px] md:px-[26px] md:py-6;
+    background: rgb(var(--kids-tile-rgb) / 0.1);
+    border: 3px solid rgb(var(--kids-tile-rgb) / 0.5);
+    box-shadow: 0 8px 0 rgb(var(--kids-tile-shade-rgb));
+  }
+  /* Done: the card is given the teal pair (its number, rings and shadow follow). */
+  .kids-quest-done {
+    background: rgb(var(--kids-teal-rgb) / 0.12);
+    border-color: rgb(var(--kids-teal-rgb));
+  }
+  /* A quest's number: a rounded square in its colour. */
+  .kids-quest-no {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] font-orbitron text-base font-black md:h-11 md:w-11 md:rounded-[14px] md:text-lg;
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-tile-rgb));
+  }
+  /* "I did it today": a big circle in the quest's colour on its shade; done: a teal one. */
+  .kids-quest-log {
+    @apply flex h-28 w-28 flex-col items-center justify-center gap-1 rounded-full px-2 text-center font-orbitron text-[13px] font-black leading-[1.1] md:h-[132px] md:w-[132px] md:text-[15px];
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-tile-rgb));
+    box-shadow: 0 8px 0 rgb(var(--kids-tile-shade-rgb));
+    transition: transform 0.12s ease;
+  }
+  .kids-quest-log:not(:disabled):hover {
+    transform: scale(1.04);
+  }
+  .kids-quest-log:not(:disabled):active {
+    transform: translateY(6px) scale(0.98);
+  }
+  .kids-quest-log:disabled {
+    cursor: default;
+  }
+  /* While a log is being saved, the buttons wait (dimmed). */
+  .kids-quest-log:disabled:not(.kids-quest-log-today) {
+    opacity: 0.6;
+  }
+  .kids-quest-log-today {
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-off-rgb));
+    box-shadow: 0 8px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  .kids-quest-log-done {
+    @apply flex h-28 w-28 flex-col items-center justify-center gap-1 rounded-full px-2 text-center font-orbitron text-[13px] font-black leading-[1.1] md:h-[132px] md:w-[132px] md:text-[15px];
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-teal-rgb));
+  }
+  /* Connect (the prototype's): a win to pick, and the pink-to-violet card for it. */
+  .kids-win {
+    @apply flex min-h-16 items-center gap-3.5 rounded-[22px] px-[18px] py-3.5 text-left font-rajdhani text-[17px] font-bold leading-[1.25] md:min-h-[72px] md:text-xl;
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-off-rgb) / 0.6);
+    border: 3px solid rgb(var(--kids-text-rgb) / 0.1);
+    transition: transform 0.12s ease;
+  }
+  .kids-win:hover {
+    transform: translateX(4px);
+  }
+  .kids-win-on {
+    background: rgb(var(--kids-connect-rgb) / 0.14);
+    border-color: rgb(var(--kids-connect-rgb));
+  }
+  .kids-win-card {
+    @apply flex min-h-[280px] flex-col justify-between gap-5 rounded-[30px] px-[22px] py-6 text-left md:min-h-[300px] md:px-7 md:py-[30px];
+    color: rgb(var(--kids-ink-rgb));
+    background: linear-gradient(160deg, rgb(var(--kids-connect-rgb)), rgb(var(--kids-release-rgb)));
+    box-shadow: 0 10px 0 rgb(var(--kids-release-shade-rgb));
+  }
+  .kids-win-avatar {
+    @apply flex h-[60px] w-[60px] shrink-0 items-center justify-center overflow-hidden rounded-full font-orbitron text-[26px] font-black md:h-[72px] md:w-[72px] md:text-[30px];
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-streak-rgb));
+    border: 4px solid rgb(var(--kids-ink-rgb));
+    box-shadow: 0 5px 0 rgb(var(--kids-release-shade-rgb));
+  }
+  .kids-win-name {
+    color: rgb(var(--kids-card-name-rgb));
+  }
+  /* Transform's picker and chips (the prototype's): solid interest tiles, gold-edged chips. */
+  .kids-interest {
+    @apply min-h-[96px] rounded-[24px] px-3 font-orbitron text-base font-black md:min-h-[110px] md:text-xl;
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-tile-rgb));
+    box-shadow: 0 7px 0 rgb(var(--kids-tile-shade-rgb));
+    transition: transform 0.12s ease;
+  }
+  .kids-interest:not(:disabled):hover {
+    transform: translateY(-3px);
+  }
+  .kids-interest:not(:disabled):active {
+    transform: translateY(5px);
+  }
+  .kids-interest-chip {
+    @apply flex min-h-[60px] flex-col items-start justify-center gap-0.5 rounded-[20px] px-[22px] py-2 text-left;
+    color: rgb(var(--kids-streak-rgb));
+    background: rgb(var(--kids-transform-rgb) / 0.08);
+    border: 2px solid rgb(var(--kids-transform-rgb) / 0.45);
+  }
+  .kids-interest-chip-on {
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-transform-rgb));
+    border-color: rgb(var(--kids-transform-rgb));
+  }
+  .kids-interest-add {
+    @apply flex min-h-[60px] items-center gap-1.5 rounded-[20px] px-[22px] font-rajdhani text-base font-bold transition-colors md:text-lg;
+    color: rgb(var(--kids-streak-rgb));
+    border: 2px dashed rgb(var(--kids-transform-rgb) / 0.5);
+  }
+  .kids-interest-add:hover,
+  .kids-quests-back:hover {
+    background: rgb(var(--kids-transform-rgb) / 0.08);
+  }
+  .kids-quests-back {
+    @apply h-12 rounded-full px-[22px] font-rajdhani text-base font-bold transition-colors md:text-[17px];
+    color: rgb(var(--kids-streak-rgb));
+    border: 2px solid rgb(var(--kids-transform-rgb) / 0.5);
+  }
+
+  /* The round avatar dots: parent gold, child cyan. Size is set where used. */
+  .avatar-dot {
+    @apply flex shrink-0 items-center justify-center rounded-full font-orbitron font-black;
+    color: rgb(var(--constellation-navy-rgb));
+  }
+  .avatar-dot-parent {
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--constellation-gold-cream2-rgb)),
+      rgb(var(--constellation-gold-rgb)) 55%,
+      rgb(var(--profile-parent-deep-rgb))
+    );
+  }
+  .avatar-dot-child {
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--constellation-cyan-pale-rgb)),
+      rgb(var(--constellation-cyan-rgb)) 55%,
+      rgb(var(--constellation-cyan-deep-rgb))
+    );
+  }
+
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */
   .btn-primary {
     @apply glow-teal bg-gradient-to-r from-primary-medium to-primary font-semibold text-primary-foreground hover:from-primary hover:to-primary-light;
@@ -1249,5 +2506,308 @@
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes kids-burst {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kids-game-burst {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+@keyframes kids-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes kids-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kids-twinkle {
+    animation: kids-twinkle 1s ease-in-out infinite;
+  }
+  .kids-float {
+    animation: kids-float 4s ease-in-out infinite;
+  }
+}
+
+/* The kids page's entrances (the prototype's kUp, kPop, kUnfold, kGrowX), only where motion is
+   welcome: sections rise in, the photo and pills pop, the powers unfold from the centre. */
+@keyframes kids-up {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes kids-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes kids-unfold {
+  from {
+    left: 50%;
+    top: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.15);
+  }
+}
+@keyframes kids-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+/* Confetti: a ring grows and fades; a piece flies out to (--dx, --dy), spinning --r. */
+@keyframes kids-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.2);
+    opacity: 0;
+  }
+}
+@keyframes kids-conf {
+  0% {
+    transform: translate(0, 0) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--r));
+    opacity: 0;
+  }
+}
+/* An opened Curious box turning over (the prototype's kFlip). */
+@keyframes kids-flip {
+  from {
+    transform: rotateY(90deg) scale(0.8);
+  }
+  to {
+    transform: none;
+  }
+}
+/* Grow's sort card: pops in, shakes when wrong, flies off toward its side when right. */
+@keyframes kids-card-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateX(-12%);
+  }
+  75% {
+    transform: translateX(12%);
+  }
+}
+@keyframes kids-card-fly-left {
+  to {
+    opacity: 0;
+    transform: translateX(-70%) rotate(-14deg);
+  }
+}
+@keyframes kids-card-fly-right {
+  to {
+    opacity: 0;
+    transform: translateX(70%) rotate(14deg);
+  }
+}
+/* The round Play's glow breathing (the prototype's kPulse). */
+@keyframes kids-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 46px rgb(var(--kids-discover-rgb) / 0.95);
+  }
+}
+/* A world card rising and growing into place (the prototype's kUnfoldY). */
+@keyframes kids-unfold-y {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.85);
+  }
+}
+@keyframes kids-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hub-disc {
+    transition: transform 0.2s ease;
+  }
+  .kids-enter-up {
+    animation: kids-up 0.5s ease both;
+  }
+  .kids-enter-pop {
+    animation: kids-pop 0.7s ease backwards;
+  }
+  .kids-enter-unfold {
+    animation: kids-unfold 0.8s cubic-bezier(0.2, 1.5, 0.4, 1) backwards;
+  }
+  .kids-enter-grow {
+    animation: kids-grow-x 0.7s ease-out backwards;
+  }
+  .kids-enter-fade {
+    animation: kids-fade 0.5s ease backwards;
+  }
+  /* Grow's views (the prototype's): each game screen rises in (.4 s), the score card and the
+     world's report pop in (.45 s). */
+  .kids-enter-up-quick {
+    animation: kids-up 0.4s ease both;
+  }
+  .kids-enter-pop-quick {
+    animation: kids-pop 0.45s ease both;
+  }
+  .kids-pulse {
+    animation: kids-pulse 1.6s ease-in-out infinite;
+  }
+  /* Grow's games (the prototype's): the sky twinkles (each star its own --twinkle), the sort
+     card pops in, shakes or flies off, words, chips and the light pop in. */
+  .kids-game-sky {
+    animation: kids-twinkle var(--twinkle, 1.4s) ease-in-out infinite;
+  }
+  .kids-game-card {
+    animation: kids-pop 0.35s ease both;
+  }
+  .kids-game-card-wrong {
+    animation: kids-card-shake 0.35s ease;
+  }
+  .kids-game-card-fly-left {
+    animation: kids-card-fly-left 0.45s ease forwards;
+  }
+  .kids-game-card-fly-right {
+    animation: kids-card-fly-right 0.45s ease forwards;
+  }
+  .kids-game-word {
+    animation: kids-pop 0.4s ease both;
+  }
+  .kids-game-word-quick {
+    animation-duration: 0.3s;
+  }
+  .kids-game-chip {
+    animation: kids-pop 0.3s ease both;
+  }
+  .kids-game-light {
+    animation: kids-pop 0.18s ease both;
+  }
+  /* Discover's games: the focus light and the next star pulse, a wrong star shakes, closed boxes
+     float and an opened one flips, the climb's flag twinkles. */
+  .kids-game-orb-pulse {
+    animation: kids-pulse 1s ease-in-out infinite;
+  }
+  .kids-game-node-next {
+    animation: kids-pulse 1.1s ease-in-out infinite;
+  }
+  .kids-game-node-wrong {
+    animation: kids-card-shake 0.35s ease;
+  }
+  .kids-game-box {
+    animation: kids-float var(--float, 2.4s) ease-in-out infinite;
+  }
+  .kids-game-box-open {
+    animation: kids-flip 0.4s ease both;
+  }
+  .kids-game-flag {
+    animation: kids-twinkle 1s ease-in-out infinite;
+  }
+  /* Confetti (shown only here, where motion is welcome). */
+  .kids-confetti {
+    display: block;
+  }
+  /* `backwards`, not `both`: once done, each piece is back at its hidden start, so nothing
+     is left far outside the page (it would widen it and let a phone scroll sideways). */
+  .kids-confetti-ring {
+    animation: kids-ring 1.4s ease-out backwards;
+  }
+  .kids-confetti-piece {
+    animation: kids-conf 2s cubic-bezier(0.15, 0.7, 0.4, 1) backwards;
+  }
+  /* Release: the note card pops in once a mood is picked. */
+  .kids-note-pop {
+    animation: kids-pop 0.35s ease both;
+  }
+  /* Connect: the card re-pops on each pick; its star spins. */
+  .kids-win-card {
+    animation: kids-pop 0.35s ease both;
+  }
+  .kids-win-star {
+    animation: spin 8s linear infinite;
+  }
+  /* Transform: a finished quest's teal circle pops in. */
+  .kids-quest-log-done {
+    animation: kids-pop 0.45s ease both;
+  }
+  /* A wrong memory tap: the frame flashes (fades back in). */
+  .kids-game-flash {
+    animation: kids-fade 0.3s ease;
+  }
+  /* Discover: the eyebrow and the count pill pop for .6 s; the tip fades in (.2 s). */
+  .kids-enter-pop-six {
+    animation: kids-pop 0.6s ease backwards;
+  }
+  .kids-power-tip {
+    animation: kids-fade 0.2s ease both;
+  }
+  /* The game dialog: the veil rises in (.25 s), the panel pops (.35 s); on a win the dots
+     twinkle, the medallion pops and pulses, "New best!" pops a moment later. */
+  .kids-dialog-backdrop {
+    animation: kids-up 0.25s ease both;
+  }
+  .kids-dialog {
+    animation: kids-pop 0.35s ease both;
+  }
+  .kids-win-dot {
+    animation: kids-twinkle var(--twinkle, 1.2s) var(--twinkle-delay, 0s) ease-in-out infinite;
+  }
+  .kids-win-medal {
+    animation:
+      kids-pop 0.5s ease both,
+      kids-pulse 1.6s ease-in-out infinite;
+  }
+  .kids-win-pill-best {
+    animation: kids-pop 0.5s 0.3s ease backwards;
+  }
+  .kids-enter-unfold-y {
+    animation: kids-unfold-y 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
   }
 }

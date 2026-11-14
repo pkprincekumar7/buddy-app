@@ -1,15 +1,12 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Pressable } from '@/components/ui/pressable';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
-import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
   Brain,
   Dumbbell,
   Heart,
   Palette,
-  Plus,
   Rocket,
   Shield,
   Sparkles,
@@ -18,9 +15,10 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useNavigate } from '@/lib/router';
-import { children as childrenApi } from '@/api/children';
-import ChildCard from '@/components/shared/ChildCard';
+import { useChildren } from '@/hooks/useChildren';
+import { childPath } from '@/lib/childPaths';
 import PageLoader from '@/components/shared/PageLoader';
+import ChildViewNews from '@/components/home/ChildViewNews';
 import PageScroll from '@/components/layout/PageScroll';
 import {
   Reveal,
@@ -33,10 +31,6 @@ import { color, css, glow, recipe, rgb, type HslToken } from '@/theme';
 
 // The web's Android-browser APK download banner (IS_ANDROID_BROWSER) is web-only —
 // "the React Native app has its own update flow" — so it is intentionally not ported.
-
-// FEATURE HIDDEN on the web (`{false && (...)}`): children management section.
-// Flip to true together with the web when re-enabling (see the web comment).
-const SHOW_CHILDREN_SECTION = false;
 
 const PILLARS: {
   icon: LucideIcon;
@@ -200,7 +194,6 @@ const s = StyleSheet.create({
   leadSm: { lineHeight: 22.75 }, // text-sm leading-relaxed
   iconLeft: { marginRight: 8 }, // web mr-2 on top of the button's gap-2
   iconRight: { marginLeft: 8 },
-  iconLeftSm: { marginRight: 6 },
   heroGlowTop: { left: '50%', marginLeft: -300 }, // left-1/2 -translate-x-1/2 (w-[600px])
   ctaGlow: { left: '50%', marginLeft: -192 }, // left-1/2 -translate-x-1/2 (w-96)
 });
@@ -212,23 +205,16 @@ export default function Home() {
   const { notify, value: revealCtx } = useRevealNotifier();
 
   const {
-    data: childrenRaw = [],
+    list: children,
     isLoading,
     isLoadingError,
     isFetching,
     refetch,
-  } = useQuery({
-    queryKey: ['children'],
-    queryFn: () => childrenApi.list(),
-  });
-  const children = Array.isArray(childrenRaw) ? childrenRaw : [];
+  } = useChildren();
 
   const handleStartJourney = () => {
     void navigate('/Onboarding');
   };
-
-  // TO ENABLE MULTIPLE CHILDREN: replace children[0] with the child the user selected.
-  const firstChild = children[0]?.id ? children[0] : null;
 
   if (isLoading) {
     return <PageLoader />;
@@ -276,7 +262,6 @@ export default function Home() {
             style={HERO_GLOW_RIGHT}
           />
 
-          {/* Padding was previously shrunk when children existed (py-8) — see web comment. */}
           <View className="relative px-4 py-24">
             <Animated.View entering={HERO_ENTER} className="items-center">
               <View className="mb-8 flex-row items-center gap-2 self-center rounded-full border border-primary/20 bg-primary/10 px-4 py-2">
@@ -329,113 +314,47 @@ export default function Home() {
                     />
                   </Button>
                 ) : (
-                  // "Continue Your Journey" is shown here because the children management
-                  // section below is hidden (see the web comment).
-                  <Button
-                    size="xl"
-                    onPress={() =>
-                      void navigate(
-                        firstChild
-                          ? `/Onboarding/${firstChild.id}`
-                          : '/Onboarding',
-                      )
-                    }
-                    accessibilityLabel="Continue Your Journey"
-                    className="rounded-full font-semibold text-primary-foreground"
-                    style={recipe.btnPrimary}
-                  >
-                    <Sparkles
-                      size={16}
-                      color={color['primary-foreground']}
-                      style={s.iconLeft}
-                    />
-                    Continue Your Journey
-                    <ArrowRight
-                      size={16}
-                      color={color['primary-foreground']}
-                      style={s.iconRight}
-                    />
-                  </Button>
+                  // One child: "Continue Your Journey". Several: one button each. The
+                  // profile menu lists them too, and adds or deletes them.
+                  children.map(child => {
+                    const label =
+                      children.length === 1
+                        ? 'Continue Your Journey'
+                        : `Continue with ${child.name}`;
+                    return (
+                      <Button
+                        key={child.id}
+                        size="xl"
+                        onPress={() => void navigate(childPath(child))}
+                        accessibilityLabel={label}
+                        className="rounded-full font-semibold text-primary-foreground"
+                        style={recipe.btnPrimary}
+                      >
+                        <Sparkles
+                          size={16}
+                          color={color['primary-foreground']}
+                          style={s.iconLeft}
+                        />
+                        {label}
+                        <ArrowRight
+                          size={16}
+                          color={color['primary-foreground']}
+                          style={s.iconRight}
+                        />
+                      </Button>
+                    );
+                  })
                 )}
               </View>
+              {/* What each child did in child view: their parent pages open later. */}
+              {children
+                .filter(child => child.progress.conversation)
+                .map(child => (
+                  <ChildViewNews key={child.id} child={child} />
+                ))}
             </Animated.View>
           </View>
         </View>
-
-        {/* FEATURE HIDDEN: Children management section (add child, child cards, delete child). */}
-        {SHOW_CHILDREN_SECTION && (
-          <View className="py-10">
-            <View className="px-4">
-              <Reveal y={16} delay={0.2} duration={0.6}>
-                <View className="mb-4 flex-row items-center justify-between">
-                  <Text
-                    accessibilityRole="header"
-                    className="text-lg font-semibold text-foreground"
-                  >
-                    Your Children
-                  </Text>
-                  <View className="items-end gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onPress={() => {
-                        void navigate('/Onboarding', {
-                          state: { forceNew: true },
-                        });
-                      }}
-                      disabled={children.length >= 10}
-                      accessibilityLabel="Add Child"
-                      className="rounded-xl"
-                    >
-                      <Plus
-                        size={14}
-                        color={color.foreground}
-                        style={s.iconLeftSm}
-                      />
-                      Add Child
-                    </Button>
-                    {children.length >= 10 && (
-                      <Text className="text-xs text-muted-foreground">
-                        Maximum of 10 children reached.
-                      </Text>
-                    )}
-                  </View>
-                </View>
-
-                {children.length === 0 ? (
-                  <View className="flex-row flex-wrap items-center justify-center rounded-2xl border border-dashed border-border py-8">
-                    <Text className="text-center text-sm text-muted-foreground">
-                      No children yet.{' '}
-                    </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Add your first child"
-                      onPress={() => {
-                        void navigate('/Onboarding', {
-                          state: { forceNew: true },
-                        });
-                      }}
-                    >
-                      <Text className="text-sm text-primary underline">
-                        Add your first child
-                      </Text>
-                    </Pressable>
-                    <Text className="text-center text-sm text-muted-foreground">
-                      {' '}
-                      to begin their journey.
-                    </Text>
-                  </View>
-                ) : (
-                  <View className="gap-3">
-                    {children.map(child => (
-                      <ChildCard key={child.id} child={child} />
-                    ))}
-                  </View>
-                )}
-              </Reveal>
-            </View>
-          </View>
-        )}
 
         {/* 6 Pillars */}
         <View className="px-4 py-20">

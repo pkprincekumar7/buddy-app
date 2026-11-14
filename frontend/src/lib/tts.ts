@@ -33,3 +33,24 @@ export function pickPreferredVoice() {
     null
   );
 }
+
+/**
+ * Speaks `text` with the preferred voice, cancelling anything already speaking: the
+ * kids page's read-aloud (mobile lib/tts.ts has the same function).
+ */
+export function speakText(text: string, { rate = 0.95, pitch = 1.15 } = {}): void {
+  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voice = pickPreferredVoice();
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang ?? 'en-US';
+  utterance.rate = rate;
+  utterance.pitch = pitch;
+  window.speechSynthesis.speak(utterance);
+}
+
+/** Stops any speech (mobile lib/tts.ts has the same function). */
+export function stopSpeech(): void {
+  if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+}

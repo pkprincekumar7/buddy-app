@@ -21,6 +21,7 @@ from moto.server import ThreadedMotoServer
 
 from common.uploads import (
     MAX_UPLOAD_BYTES,
+    DeleteFailed,
     UploadError,
     Uploads,
     UploadsConfig,
@@ -181,6 +182,29 @@ def test_deleting_one_photo_and_a_childs_photos(uploads, s3, monkeypatch):
     left = [o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
     assert left == [avatar]  # transform's cleanup never touches children's avatar
     assert asyncio.run(uploads.delete_child("in", OTHER_CHILD, "avatar")) == 0
+
+
+def test_a_key_s3_kept_fails_the_childs_deletion(uploads, s3, monkeypatch):
+    # Quiet delete_objects answers 200 and lists what it couldn't delete under Errors: the
+    # deletion or purge must not commit as if the photos were gone (review).
+    keys = [uploads.new_key("in", CHILD, "avatar", "image/png") for _ in range(2)]
+    for key in keys:
+        _put(s3, key, 1)
+    real = s3.delete_objects
+
+    def partly(**params: Any) -> dict[str, Any]:
+        kept = params["Delete"]["Objects"][0]["Key"]
+        params["Delete"]["Objects"] = params["Delete"]["Objects"][1:]
+        real(**params)
+        return {"Errors": [{"Key": kept, "Code": "AccessDenied", "Message": "denied"}]}
+
+    monkeypatch.setattr(s3, "delete_objects", partly)
+    with pytest.raises(DeleteFailed, match="AccessDenied"):
+        asyncio.run(uploads.delete_child("in", CHILD, "avatar"))
+    monkeypatch.setattr(s3, "delete_objects", real)
+    # Run again (the redelivered message, the next purge round), it deletes the rest.
+    assert asyncio.run(uploads.delete_child("in", CHILD, "avatar")) == 1
+    assert s3.list_objects_v2(Bucket=BUCKET).get("Contents") is None
 
 
 # ── config ─────────────────────────────────────────────────────────────────────

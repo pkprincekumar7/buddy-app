@@ -7,12 +7,20 @@ import { useTts } from '@/lib/TtsContext';
 import { account, displayName } from '@/api/account';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { ArrowLeft, Home, LogOut, VolumeX, Volume2, Mail, RotateCcw, Settings } from 'lucide-react';
+import { ArrowLeft, Home, LogOut, VolumeX, Volume2, RotateCcw, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
+import { startOverCopy } from '@/lib/startOverCopy';
+import ProfileChildren from '@/components/shared/ProfileChildren';
+import type { Child } from '@/api/children';
+import { useChildren } from '@/hooks/useChildren';
+import { useDeleteChild } from '@/hooks/useDeleteChild';
 import { useStartOver } from '@/hooks/useStartOver';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { childViewHome } from '@/lib/childView';
+import { childSubtitle } from '@/lib/childPaths';
 
 interface LayoutProps {
   children: ReactNode;
@@ -45,6 +53,20 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
+  // The Children group is for parents; admins have no children.
+  const isParent = isAuthenticated && user?.role === 'parent';
+  const kids = useChildren(isParent);
+  const currentChild = kids.list.find((c) => c.id === navChildId);
+  const { deleteChild, deletingId } = useDeleteChild();
+  const [childToDelete, setChildToDelete] = useState<Child | null>(null);
+  // Child view (docs/child-view-build-plan.md, 1.2): the button and menu show the child.
+  const { view, enterChildView, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
+  const viewChild = childView ? kids.list.find((c) => c.id === view.childId) : undefined;
+  const parentName = displayName(user) ?? 'You';
+  const profileName = childView ? (viewChild?.name ?? 'Child') : parentName;
+  const profileInitial = getInitials(profileName).charAt(0);
+  const viewLabel = childView ? 'Child view' : isParent ? 'Parent view' : 'Admin';
 
   // Global TTS control and cleanup on load
   useEffect(() => {
@@ -104,6 +126,17 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   }, [logout]);
 
   const circleLabel = currentPageName ? CIRCLE_LABELS[currentPageName] : undefined;
+
+  const confirmDelete = useCallback(
+    async (child: Child) => {
+      setChildToDelete(null);
+      // Deleting the child whose page is open leaves nothing to show here.
+      if ((await deleteChild(child.id)) && child.id === navChildId) {
+        void navigate('/Home', { replace: true });
+      }
+    },
+    [deleteChild, navChildId, navigate],
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -181,7 +214,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
               </Button>
 
               {/* Start Over — shown on child-specific pages only */}
-              {isAuthenticated && navChildId && (
+              {isAuthenticated && navChildId && !childView && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -199,79 +232,133 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 <div className="relative" ref={profileRef}>
                   <button
                     onClick={() => setProfileOpen((prev) => !prev)}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-xs font-bold text-white ring-2 ring-transparent transition-all hover:scale-105 hover:ring-primary/40"
+                    className="profile-pill"
                     title="Your profile"
                     aria-label="Your profile"
                     aria-expanded={profileOpen}
                     aria-haspopup="true"
                   >
-                    {getInitials(displayName(user) ?? user?.email ?? '?')}
+                    <span
+                      className={cn(
+                        'avatar-dot h-8 w-8 text-[13px]',
+                        childView ? 'avatar-dot-child' : 'avatar-dot-parent',
+                      )}
+                    >
+                      {profileInitial}
+                    </span>
+                    {/* Name and view beside the dot from sm up; a 375px header has no room. */}
+                    <span className="hidden flex-col items-start gap-0.5 leading-tight sm:flex">
+                      <span className="max-w-32 truncate text-sm font-bold">{profileName}</span>
+                      <span className="profile-label">{viewLabel}</span>
+                    </span>
                   </button>
 
                   {profileOpen && (
                     <div
                       role="dialog"
                       aria-label="User profile"
-                      className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-surface-elevated shadow-2xl"
+                      className="profile-panel absolute right-0 top-full z-50 mt-2 w-72"
                     >
-                      {/* Header gradient strip */}
-                      <div className="bg-gradient-to-r from-primary-dark/30 to-success-strong/20 px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-lg font-bold text-white shadow-lg">
-                            {getInitials(displayName(user) ?? user?.email ?? '?')}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-card-foreground">
-                              {displayName(user) ?? 'User'}
-                            </p>
-                            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                              <Mail className="h-3 w-3 shrink-0" />
-                              {user?.email ?? ''}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                      <p className="profile-heading">Signed-in profile</p>
 
-                      {/* Divider */}
-                      <div className="border-t border-border" />
+                      {childView ? (
+                        <>
+                          {/* Child view: only the child, and the way back to parent view. */}
+                          <div className="profile-row profile-row-selected">
+                            <span className="avatar-dot avatar-dot-child h-7 w-7 text-xs">
+                              {profileInitial}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="profile-name block">{profileName}</span>
+                              <span className="profile-desc block">
+                                {viewChild ? childSubtitle(viewChild) : 'Child view'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="profile-divider" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileOpen(false);
+                              const childId = view.childId;
+                              exitChildView();
+                              void navigate(`/PersonalityJourney/${childId}`);
+                            }}
+                            className="profile-link"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            Back to parent view
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* The signed-in parent: the profile this view belongs to. */}
+                          <div className="profile-row profile-row-selected">
+                            <span className="avatar-dot avatar-dot-parent h-7 w-7 text-xs">
+                              {profileInitial}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="profile-name block">{profileName}</span>
+                              <span className="profile-desc block">
+                                {isParent ? 'Parent · sees everything' : 'Admin'}
+                              </span>
+                            </span>
+                          </div>
 
-                      {/* Navigation + actions */}
-                      <div className="p-2">
-                        <Link
-                          to={createPageUrl('Home')}
-                          onClick={() => setProfileOpen(false)}
-                          className={cn(
-                            'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent',
-                            currentPageName === 'Home' ? 'text-primary' : 'text-muted-foreground',
+                          {isParent && (
+                            <ProfileChildren
+                              list={kids.list}
+                              isLoading={kids.isLoading}
+                              isLoadingError={kids.isLoadingError}
+                              isFetching={kids.isFetching}
+                              onRetry={() => void kids.refetch()}
+                              currentChildId={navChildId}
+                              onClose={() => setProfileOpen(false)}
+                              onDelete={setChildToDelete}
+                              onChildView={(child: Child) => {
+                                enterChildView(child.id);
+                                void navigate(childViewHome(child.id));
+                              }}
+                            />
                           )}
-                        >
-                          <Home className="h-4 w-4" />
-                          Home
-                        </Link>
-                        <Link
-                          to={createPageUrl('AccountSettings')}
-                          onClick={() => setProfileOpen(false)}
-                          className={cn(
-                            'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent',
-                            currentPageName === 'AccountSettings'
-                              ? 'text-primary'
-                              : 'text-muted-foreground',
-                          )}
-                        >
-                          <Settings className="h-4 w-4" />
-                          Account settings
-                        </Link>
-                        <button
-                          onClick={() => {
-                            setProfileOpen(false);
-                            handleLogout();
-                          }}
-                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-error-medium/10 hover:text-error"
-                        >
-                          <LogOut className="h-4 w-4" />
-                          Sign out
-                        </button>
-                      </div>
+
+                          <div className="profile-divider" />
+
+                          {/* Navigation + actions */}
+                          <Link
+                            to={createPageUrl('Home')}
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'profile-link',
+                              currentPageName === 'Home' && 'profile-link-active',
+                            )}
+                          >
+                            <Home className="h-4 w-4" />
+                            Home
+                          </Link>
+                          <Link
+                            to={createPageUrl('AccountSettings')}
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'profile-link',
+                              currentPageName === 'AccountSettings' && 'profile-link-active',
+                            )}
+                          >
+                            <Settings className="h-4 w-4" />
+                            Account settings
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setProfileOpen(false);
+                              handleLogout();
+                            }}
+                            className="profile-link hover:text-error"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            Sign out
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -295,18 +382,22 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
         </div>
       </nav>
 
-      {/* Back — below the header, navigates to the previous route */}
-      <div className="px-4 pt-4 sm:px-6 lg:px-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void navigate(-1)}
-          className="text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-      </div>
+      {/* Back — below the header, navigates to the previous route. Not on the kids page,
+          whose own header has the Back to the circles, nor on the journey in child view: it's
+          the child's home, with nowhere to go back to. */}
+      {currentPageName !== 'Kids' && !(childView && currentPageName === 'PersonalityJourney') && (
+        <div className="px-4 pt-4 sm:px-6 lg:px-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void navigate(-1)}
+            className="text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+        </div>
+      )}
 
       {/* Page Content */}
       {children}
@@ -320,6 +411,19 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
               void doStartOver();
             }}
             isStartingOver={isStartingOver}
+            {...startOverCopy(currentChild?.name)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {childToDelete && (
+          <ConfirmModal
+            onCancel={() => setChildToDelete(null)}
+            onConfirm={() => void confirmDelete(childToDelete)}
+            isStartingOver={deletingId !== null}
+            title={`Delete ${childToDelete.name}?`}
+            description="Their profile, chat, results and plan are deleted for good."
           />
         )}
       </AnimatePresence>

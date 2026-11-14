@@ -2,8 +2,8 @@
 
     python -m grow.worker
 
-The relay publishes `grow.area_completed`, `grow.area_updated` and `grow.completed`; the
-consumer keeps the copies and deletes on `child.deleted` and `user.deletion_requested`
+The relay publishes `grow.area_completed`, `grow.area_updated`, `grow.completed` and
+`grow.world_played`; the consumer keeps the copies and deletes on `child.deleted` and `user.deletion_requested`
 (grow.app.lifecycle); the job loop claims this region's growth-area jobs and calls the LLM
 (grow.app.generation). Only this runtime has LLM keys. Needs the service's configuration plus EVENTS_TOPIC_ARN and
 EVENTS_QUEUE_URL, and one of OPENAI_API_KEY, ANTHROPIC_API_KEY or GEMINI_API_KEY (without

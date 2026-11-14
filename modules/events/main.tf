@@ -141,8 +141,10 @@ resource "aws_sns_topic" "producer" {
 resource "aws_sqs_queue" "dlq" {
   for_each = local.consumers
 
-  name                      = "${local.prefix}-${each.key}-events-dlq"
-  message_retention_seconds = 1209600 # 14 days, to investigate and redrive
+  name = "${local.prefix}-${each.key}-events-dlq"
+  # 14 days, counted from the first delivery (SQS keeps the enqueue time): at least 7 left
+  # after the main queue's 7 (var.queue_retention_seconds), to investigate and redrive.
+  message_retention_seconds = 1209600
   sqs_managed_sse_enabled   = true
 
   tags = {

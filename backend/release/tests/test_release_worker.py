@@ -287,7 +287,7 @@ def test_every_copy_keeps_the_newest_and_needs_its_owner(mongo_uri):
         )
         await consumer.handle_body(sns_envelope(area, r.layout["topics"]["grow"]))
         copy = await r.db[GROWTH_INPUTS].find_one({"_id": f"{child}:self_care"})
-        assert copy["child_choices"] == area_copy()["child_choices"] and copy["reflections"]
+        assert copy["child_games"] == area_copy()["child_games"] and copy["reflections"]
         await consumer.handle_body(_changed(r, child, 1, user_id=OTHER))
         assert (await r.db[CHILD_ACCESS].find_one({"_id": child}))["user_id"] == PARENT
 

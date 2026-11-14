@@ -81,6 +81,7 @@ The client never sends a prompt: the server builds it from its own data and loca
 | **Start limits** | 10 starts a minute per user, plus an hourly LLM limit per user shared by every circle (`LLM_HOURLY_LIMIT`, default 200, counted in Valkey). A start that finds the job already running gives its slot back, so two clicks at once count once. |
 | **Job status** | `pending` → `processing` → `completed` or `failed`. When `completed`, the result is already stored, so the client reloads the circle's `GET`. |
 | **Failures** | The worker retries the LLM call with backoff. A job that still fails, crashed, or stalled on every attempt ends `failed` with a short `error`, and the client may start it again. |
+| **Superseded** | When what a running job builds from changes (transform: a new `ask` or Day-90 event, `clear_track_steps`, an age or gender change, an updated growth area), the job ends `failed` with `superseded: its inputs changed` in the same transaction, and its result is never stored. Start it again for the new inputs. |
 | **Long text** | A text longer than its schema allows is cut at a word with "…" rather than failing the job. |
 
 ---
@@ -165,12 +166,15 @@ Errors the apps tell apart carry `detail.code`.
 | DELETE | `/children/{id}` | 10/min | Hides the child at once (`204`); the purge follows after 30 days. | |
 | POST | `/children/{id}/avatar/presign` | 20/min | `{content_type}` → `{upload_url, upload_fields, avatar_key, avatar_url}`. See the upload steps below. | |
 | POST | `/children/{id}/connect/visit` | 30/min | No body → `{progress}`. Parents only (build plan 5.7). Sets `progress.connect` once; a repeat changes nothing. | `403 circle_locked`, `503 release_unavailable` with `Retry-After` |
+| GET | `/children/{id}/kids?date=` | 60/min | Child view's activity (docs/child-view-build-plan.md, 2.1): `stars`, `circles_done` (what the child has done in child view, circle by circle), `flipped_powers`, `discover_badge`, `tried_today`, `best_times`, `moods` (the last 62 days), `shown` (the wins kept for the parent). `date` is the child's day, `YYYY-MM-DD`. Parents only. Reads nothing into existence. | `422 bad_date` |
+| POST | `/children/{id}/kids/events?date=` | 120/min | One thing the child did, by `type`: `flip_power` `{power}`, `try_power` `{power}`, `game_best` `{game, seconds}`, `mood` `{mood, note?}`, `show_win` `{key, title}`. The server gives the stars (a client never sends a count), each award once. Each type waits for its circle **in child view's own order**: Discover once the chat is done, then Grow once the Discover badge is earned, Transform once a world is done, Release (`mood`) once a quest is, Connect (`show_win`) once a mood is. A world and a quest aren't sent here: grow's world run and transform's quest log publish `grow.world_played` and `transform.quest_logged` in their own transaction, and children's worker records them (Grow done; the quest's star and Transform done) whenever they arrive, even before the circle is open (grow and transform have kept them already, and the two topics are unordered). The parent's progress doesn't open them. Answers with the activity. Parents only. | `403 circle_locked`, `409 shown_full`, `422 bad_date` |
 
 | Rule | Detail |
 |---|---|
 | Avatar upload | POST the photo as a form (`upload_fields`, then the file as `file`) within 5 minutes; S3 refuses it over 5 MB. Then PATCH the child with `avatar_key`: it must be this child's `…/avatar/` key, an allowed image, at most 5 MB. |
 | Connect unlock | Locked until Release is done. If the child's own `progress.release` isn't set, release is asked first, and its yes sets both flags. |
 | `progress.profile` | Set by the service once name, age and gender are all present. |
+| Kids stars | `power:<i>` +1 (first flip), `try:<i>:<day>` +1 (once a day), `badge:discover` +3 (every power flipped), `mood:<day>` +1, `quest:<interest>:<i>` +1 (a quest's first log). `game_best` keeps the fastest time (0.5–600 s); `show_win` gives none. |
 | Changed fields | `created_date` is now `created_at`. The onboarding answers, personality and phase fields are gone (they belong to the circles). |
 
 | Internal (port 8001) | Purpose |
@@ -186,7 +190,7 @@ Unlocked once the child's profile is complete (see [Circle unlock order](#circle
 | Method | Path | Limit | What it does | Errors |
 |---|---|---|---|---|
 | GET | `/children/{id}/onboarding` | 60/min | `{status, child_name, answers, completed_at}`: `not_started` with `answers: {}` until the chat is finished, then `completed`. | |
-| PUT | `/children/{id}/onboarding` | 10/min | The parent sends all seven answers once, at the end of the chat. `201` the first time (publishes `onboarding.conversation_completed`); `200` after (publishes `onboarding.answers_updated` only when an answer changed). Two saves racing resolve to one conversation. | 422 (missing, `null` or unknown fields), `409 conversation_changed` (a save keeps losing), `503 children_unavailable` |
+| PUT | `/children/{id}/onboarding` | 10/min | The parent sends all seven answers once, at the end of the chat. `201` the first time (publishes `onboarding.conversation_completed`); `200` after (publishes `onboarding.answers_updated` only when an answer changed). Two saves racing resolve to one conversation, and a save conflicts with a deletion in flight (it touches the child's and user's guards before checking their tombstones), so a first save can't bring a deleted child's conversation back. | 422 (missing, `null` or unknown fields), `409 conversation_changed` (a save keeps losing), `503 children_unavailable` |
 
 | Answer | Shape |
 |---|---|
@@ -207,16 +211,17 @@ Unlocked once the onboarding conversation is completed.
 | Method | Path | Limit | What it does | Errors |
 |---|---|---|---|---|
 | GET | `/children/{id}/personality` | 60/min | `{status, view_model, job_id, finalised_at, viewed_at}`. `status`: `not_started`, `generating` (with `job_id`), `ready` (with the server-built `view_model`, the shape the Discover pages render) or `failed`. | |
-| POST | `/children/{id}/personality/generation` | 10/min | No body. Starts the personality when there's none: `202 {job_id, status: "pending"}`, or `200` with the job already running. Usually not needed: discover starts it on its own when the conversation completes. | `409 already_generated` (no regeneration), `429 llm_limit`, `503 generation_unavailable` (job can't be stored) |
+| POST | `/children/{id}/personality/generation` | 10/min | No body. Starts the personality when there's none: `202 {job_id, status: "pending"}`, or `200` with the job already running. Usually not needed: discover starts it on its own when the conversation completes. A start that fails or is refused gives its hourly LLM slot back, unless a database error followed a start that did commit (its job is running). | `409 already_generated` (no regeneration), `429 llm_limit`, `503 generation_unavailable` (job can't be stored) |
 | GET | `/children/{id}/personality/generation/{job_id}` | 300/min | `{job_id, kind: "personality", status, error, created_at, completed_at}`. | `404 job_not_found` |
 | POST | `/children/{id}/personality/viewed` | 30/min | The parent passed the reveal splash: Discover is done (publishes `discover.completed` once). | `409 personality_not_ready` |
+| GET | `/children/{id}/personality/powers` | 60/min | Child view's seven powers: `style` (the dominant archetype) and `powers` (`name`, `game`, `level` 3–5, `line`, `try_this`), the levels from the personality's scores by a fixed table (`powers.json`). Parents only. | `404 personality_not_ready` |
 
 | Internal (port 8001) | Returns | Used by |
 |---|---|---|
 | `GET /internal/discover/children/{id}/status?location=` | `{completed}`: ready and the reveal passed | grow |
 | `GET /internal/discover/children/{id}/summary?location=` | `traits`, `strengths`, `version`; `404` until ready | grow, transform |
 
-**Worker:** starts the personality on `onboarding.conversation_completed` and runs the jobs: the prompt from its own copies, the answer checked against the schema, then `ready` with `discover.personality_finalised`. It keeps the copies, and deletes on `child.deleted` and `user.deletion_requested`.
+**Worker:** starts the personality on `onboarding.conversation_completed`, only when none was ever started for the child (a redelivery, even after a failed generation, starts nothing: the retry is the parent's, against the hourly LLM limit), and runs the jobs: the prompt from its own copies, the answer checked against the schema, then `ready` with `discover.personality_finalised`. It keeps the copies, and deletes on `child.deleted` and `user.deletion_requested`.
 
 ## grow
 
@@ -225,23 +230,25 @@ Unlocked once Discover is done.
 | Method | Path | Limit | What it does | Errors |
 |---|---|---|---|---|
 | GET | `/children/{id}/growth-areas` | 60/min | `{areas: [...]}`, in the order they were started (fields below). | |
-| PUT | `/children/{id}/growth-areas/{area_id}` | 60/min | Saves an area: `area_name`, `status` (`in_progress` / `completed`), `step`, `answers`, `child_activity`, `recommendations`, `feedback`. Generated and unknown fields are 422. An identical save changes nothing. | `422 unknown_question`, `422 area_completed`, `422 area_too_large`, `422 invalid_area_id` |
-| POST | `/children/{id}/growth-areas/{area_id}/generation` | 10/min | `{kind, area_name?}`; `kind` is `parent_questions` (creates the area), `child_rounds` or `recommendations`. | `409 already_generated`, `409 needs_answers`, `404 area_not_found`, `422 unknown_area`, `429 llm_limit` |
+| PUT | `/children/{id}/growth-areas/{area_id}` | 60/min | Saves an area: `area_name`, `status` (`in_progress` / `completed`), `step`, `answers`, `child_activity`, `recommendations`, `feedback`. Generated and unknown fields are 422. An identical save changes nothing. A completed area stays completed: a save sending `in_progress` (a copy that hasn't seen the recommendations' job complete it) is applied as an edit of the completed area (`step: null`, `grow.area_updated` when something changed). A save conflicts with a deletion in flight, and with another of the child's areas completing at once (both touch the child's guards), so a first save can't bring a deleted area back and `grow.completed` is published once. | `422 unknown_question`, `422 area_too_large`, `422 invalid_area_id` |
+| POST | `/children/{id}/growth-areas/{area_id}/generation` | 10/min | `{kind, area_name?}`; `kind` is `parent_questions` (creates the area) or `recommendations` (from the parent's answers and feedback and the latest run of the area's world; needs answers or a run). The recommendations' job completes an answered area that isn't yet, as a completing save would (`status`, `step: null`, `completed_at`, the same events, in the job's transaction); an area with no answers stays in progress. A start that fails or is refused gives its hourly LLM slot back, unless a database error followed a start that did commit (its job is running). | `409 already_generated`, `409 needs_input`, `404 area_not_found`, `422 unknown_area`, `429 llm_limit` |
 | GET | `/children/{id}/growth-areas/{area_id}/generation/{job_id}` | 300/min | Polls the job (`kind`, `status`, `error`). | |
+| GET | `/children/{id}/growth-areas/worlds` | 60/min | Child view's six worlds and their games (`worlds.json`, without the per-game suggestions, which only ground the recommendations' prompt), the score bands, and the child's `runs` per world (the last 10, oldest first). Parents only. Open once the chat is done, not behind Grow's lock (child view's order is the children service's). | `403 circle_locked` |
+| POST | `/children/{id}/growth-areas/worlds/{world}/runs` | 60/min | A finished world (0–5): `{scores}`, three games, 0–100 each. Stored with its `total` (the rounded mean), and publishes `grow.world_played` in the same transaction (children marks Grow done in child view). | `422` (scores or world) |
 
 | Area field | Content |
 |---|---|
 | `status`, `step`, dates | Progress through the area |
 | `parent_questions` | Generated: `{questions: [{id, question, hint}]}` |
-| `child_rounds` | Generated: `{rounds: [{a, b}]}`, icons as keys |
-| `ai_three_month_recommendations` | Generated: `[{title, detail}]` |
+| `ai_three_month_recommendations` | Generated: 5 × `{title, detail, source?}`; `source` is `both` (answers and games), `kid` (games), `you` (answers) or `step` (the next step) |
+| `recommendations_run_at` | The `at` of the world run the recommendations used, or null; the apps regenerate when the latest run's `at` differs |
+| `recommendations_current` | Whether the recommendations were written from the area's present answers and feedback (grow stores a hash of the ones the job read); false without recommendations, after a save changed either, or for recommendations stored before the hash. The apps regenerate when false |
 | `answers`, `child_activity`, `recommendations`, `feedback` | Saved by the parent |
 | `generating` | The kinds running |
 
 | Rule | Error |
 |---|---|
 | `answers` keys must be the area's question ids | `422 unknown_question` |
-| `completed` can't go back | `422 area_completed` |
 | At most 64 KB | `422 area_too_large` |
 | `area_id` is one of the area ids the apps use (`self_care`, …) and never starts with another circle's path | `422 invalid_area_id` |
 | Generation is only for the six areas the apps show | `422 unknown_area` |
@@ -249,9 +256,9 @@ Unlocked once Discover is done.
 
 | Event | When |
 |---|---|
-| `grow.area_completed` | An area is completed |
+| `grow.area_completed` | An area is completed (by the parent's save, or by its recommendations' job) |
 | `grow.completed` | The child's first area is completed |
-| `grow.area_updated` | A completed area is edited |
+| `grow.area_updated` | A completed area is edited, or gets new recommendations |
 
 | Internal (port 8001) | Returns | Used by |
 |---|---|---|
@@ -267,9 +274,12 @@ Unlocked once a growth area is completed.
 | Method | Path | Limit | What it does | Errors |
 |---|---|---|---|---|
 | GET | `/children/{id}/transform` | 60/min | The areas and the plan (fields below). | |
-| PATCH | `/children/{id}/transform` | 60/min | Any subset of the parent's fields; each one sent replaces the stored one, and each `photos` field key sent replaces that field's keys. `clear_track_steps` clears the tracker. `plan`, `track_steps` and the Life Pathway are 422. | `422 invalid_photo_key`, `422 photo_not_uploaded`, `422 photo_too_large`, `422 plan_too_large` (over 64 KB) |
+| PATCH | `/children/{id}/transform` | 60/min | `version` (required: the plan's, from the last GET or PATCH; `0` before the first save) and any subset of the parent's fields; each one sent replaces the stored one, and each `photos` field key sent replaces that field's keys (a photo then in no field is deleted). `clear_track_steps` clears the tracker. `plan`, `track_steps` and the Life Pathway are 422. | `409 plan_changed` (saved since: nothing changed; reload and apply again. Another device's save, or the plan's own job finishing: a generated plan landing also completes Transform when the event is set (`complete_if_ready`), and either bumps the `version`), `422 invalid_photo_key`, `422 photo_not_uploaded`, `422 photo_too_large`, `422 plan_too_large` (over 64 KB) |
 | POST | `/children/{id}/transform/generation` | 10/min | `{kind, area_id?}`: `life_pathway` (for a completed growth area), `plan` or `event_tracker`. | `409 needs_completed_area`, `409 needs_ask`, `409 needs_plan`, `409 needs_event`, `429 llm_limit` |
 | GET | `/children/{id}/transform/generation/{job_id}` | 300/min | Polls the job. | |
+| GET | `/children/{id}/transform/quests?date=` | 60/min | Child view's quests (these three routes open once the chat is done, not behind Transform's lock): `default_interest` (read from the plan's `ask`), the child's own `interests`, `current`, `logs`, `last_logged`, `logged_today` and the `catalog` (9 interests × 3 quests, `quests.json`). Parents only. | `422 bad_date` |
+| PUT | `/children/{id}/transform/quests/current?date=` | 60/min | `{interest}`: the interest on screen; one the plan doesn't name is added to `interests`. | `422 bad_date` |
+| POST | `/children/{id}/transform/quests/log?date=` | 120/min | `{interest, quest}`: `+1`, once a day per quest (a day after the last one logged), up to its target (anything more changes nothing). A counted log publishes `transform.quest_logged` in the same transaction (children gives the star and marks Transform done in child view). | `409 interest_not_picked`, `422 bad_date` |
 | POST | `/children/{id}/transform/photos/presign` | 20/min | `{field_key, content_type}` → `{upload_url, upload_fields, photo_key, photo_url}`. POST as a form within 5 minutes, then PATCH the key into `photos`. | `415`, `502`, `503 uploads_not_configured` |
 
 | GET field | Content |
@@ -281,11 +291,14 @@ Unlocked once a growth area is completed.
 | `photos` | `{field_key: [{key, url}]}` |
 | `generating` | `plan`, `event_tracker` |
 | `completed_at` | When Transform was completed |
+| `version` | What the next PATCH sends back (`0` until the plan's first save or job) |
 
 | Rule | Detail |
 |---|---|
 | Photo keys | S3 keys under the child's `…/ninety-day-plan/`, uploaded, an allowed image, at most 5 MB. |
 | Completion | Setting the Day-90 event (with a date) once the plan exists, or the plan arriving after it, completes Transform once (`transform.completed`). |
+| Two devices | A save is made on a `version`, so one device can't undo another's: the later save is `409 plan_changed` and changes nothing, and only the photos the accepted save removed are deleted. The apps reload, keep their own unsaved change where the other device didn't touch the same key (the other device's wins where both did), say "Updated on another device" and save again. |
+| Old photos | A replaced photo S3 fails to delete is tracked like an unsaved upload, and the worker's sweep deletes it a day later. |
 
 | Internal (port 8001) | Returns | Used by |
 |---|---|---|
@@ -308,7 +321,7 @@ Unlocked once Transform is done.
 |---|---|---|
 | `GET /internal/release/children/{id}/status?location=` | `{completed}` | children (the Connect visit) |
 
-**Worker:** runs the job (the evidence from its copies of the questionnaire, the areas' reflections and the child's picks), keeps the copies, and deletes on `child.deleted` and `user.deletion_requested`.
+**Worker:** runs the job (the evidence from its copies of the questionnaire, the areas' reflections and the child's child view game results), keeps the copies, and deletes on `child.deleted` and `user.deletion_requested`.
 
 ## shared
 

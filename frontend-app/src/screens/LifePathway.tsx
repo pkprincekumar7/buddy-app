@@ -16,6 +16,7 @@ import Spinner from '@/components/shared/Spinner';
 import StartJourneyModal from '@/components/lifepathway/StartJourneyModal';
 import ChartSection from '@/components/lifePathwayPage/ChartSection';
 import CompareSection from '@/components/lifePathwayPage/CompareSection';
+import ChildQuestsSection from '@/components/lifePathwayPage/ChildQuestsSection';
 import CtaSection from '@/components/lifePathwayPage/CtaSection';
 import HeroSection from '@/components/lifePathwayPage/HeroSection';
 import NinetyDaySection from '@/components/lifePathwayPage/NinetyDaySection';
@@ -374,6 +375,9 @@ export default function LifePathway() {
                   t={t}
                   reducedMotion={reducedMotion}
                 />
+                {childId ? (
+                  <ChildQuestsSection childId={childId} childName={childName} />
+                ) : null}
                 <CtaSection
                   childName={childName}
                   t={t}

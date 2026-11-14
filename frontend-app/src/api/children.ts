@@ -24,6 +24,8 @@ export const AVATAR_TYPES = [
 ];
 export const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 export const AVATAR_LIMITS = 'JPEG, PNG, WebP or GIF, up to 5 MB';
+/** The most children one parent can have (children service `MAX_CHILDREN`, `child_limit`). */
+export const MAX_CHILDREN = 10;
 
 /** Why this photo can't be used, or null when it can. */
 export function avatarProblem(type: string, size: number): string | null {

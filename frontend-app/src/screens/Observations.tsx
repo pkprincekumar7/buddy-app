@@ -42,6 +42,7 @@ import ObservationsSection from '@/components/observations/ObservationsSection';
 import WatchOverTime from '@/components/observations/WatchOverTime';
 import StartTrackingCard from '@/components/observations/StartTrackingCard';
 import NextSteps from '@/components/observations/NextSteps';
+import RecentMoods from '@/components/observations/RecentMoods';
 import TrackingStartedModal from '@/components/observations/TrackingStartedModal';
 import { font, recipe, rgb } from '@/theme';
 
@@ -381,6 +382,8 @@ export default function Observations() {
                 }}
               />
             )}
+
+            <RecentMoods childId={childId} childName={childName} />
 
             <NextSteps childName={childName} childGender={childGender} />
           </View>

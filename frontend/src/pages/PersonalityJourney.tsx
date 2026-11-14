@@ -12,6 +12,10 @@ import { useStartOver } from '@/hooks/useStartOver';
 import { cn } from '@/lib/utils';
 import StageSplash from '@/components/shared/StageSplash';
 import { ConfirmModal as StartOverConfirmModal } from '@/components/shared/StartOverButton';
+import { startOverCopy } from '@/lib/startOverCopy';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { kidsPath, type KidsArea } from '@/lib/childView';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 
 type Phase = 1 | 2;
@@ -326,6 +330,15 @@ const ACTIVE_INNER: React.CSSProperties = {
   zIndex: 2,
 };
 
+/** A tapped circle's ring before it opens (the prototype's `sel` shadow). */
+const SELECTED_GLOW =
+  '0 0 0 3px rgb(var(--constellation-cyan-rgb) / .9), 0 0 26px rgb(var(--constellation-cyan-rgb)), 0 0 46px rgb(var(--constellation-cyan-bright-rgb) / .6)';
+/** How long a tapped circle shows its ring before its page opens. */
+const SELECT_MS = 200;
+
+/** A locked circle's icon stroke (the prototype's #1b232b). */
+const LOCKED_ICON = '#1b232b';
+
 const INACTIVE_INNER: React.CSSProperties = {
   width: 54,
   height: 54,
@@ -361,6 +374,7 @@ function DimensionNode({
   onClick,
   locked,
   highlighted,
+  selected = false,
   iconPaths,
   label,
 }: {
@@ -372,6 +386,8 @@ function DimensionNode({
   // gets the faster double-ring pulse + animated glow instead of the
   // standard single-ring look every other unlocked circle uses.
   highlighted: boolean;
+  /** Tapped: ringed for a moment before its page opens. */
+  selected?: boolean;
   iconPaths: React.ReactNode;
   label: string;
 }) {
@@ -434,12 +450,15 @@ function DimensionNode({
         />
       )}
       <div
+        className={locked ? undefined : 'hub-disc'}
         style={
           locked
             ? INACTIVE_INNER
-            : highlighted
-              ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
-              : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
+            : selected
+              ? { ...ACTIVE_INNER, boxShadow: SELECTED_GLOW }
+              : highlighted
+                ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
+                : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
         }
       >
         <svg
@@ -447,7 +466,7 @@ function DimensionNode({
           style={{
             width: 23,
             height: 23,
-            stroke: locked ? '#1b232b' : 'rgb(var(--constellation-navy-rgb))',
+            stroke: locked ? LOCKED_ICON : 'rgb(var(--constellation-navy-rgb))',
             fill: 'none',
             strokeWidth: 2.2,
           }}
@@ -469,6 +488,7 @@ function DimensionNode({
 }
 
 function DimensionCirclesScreen({
+  childName,
   onConnect,
   onDiscover,
   onGoHome,
@@ -476,6 +496,7 @@ function DimensionCirclesScreen({
   onTransform,
   onRelease,
   onStartAgain,
+  childView = false,
   enabled,
   current,
 }: {
@@ -486,7 +507,10 @@ function DimensionCirclesScreen({
   onGrow: () => void;
   onTransform: () => void;
   onRelease: () => void;
-  onStartAgain: () => void;
+  /** Hidden when absent (child view: a child can't delete their own journey). */
+  onStartAgain?: () => void;
+  /** Child view: the "Superpower" eyebrow on top, and Start Again greyed out, "Completed". */
+  childView?: boolean;
   enabled: {
     grow: boolean;
     transform: boolean;
@@ -498,6 +522,26 @@ function DimensionCirclesScreen({
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
   const isMobile = useMediaQuery('(max-width: 639px)');
+  // Discover's tooltip, on devices that hover (a phone's tap would only flash it).
+  const canHover = useMediaQuery('(hover: hover)');
+  const [tip, setTip] = useState(false);
+  const firstName = childName.trim().split(/\s+/)[0] ?? childName;
+
+  // A tapped circle shows its ring for a moment, then opens (the prototype's `sel`).
+  const [selected, setSelected] = useState<string | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(openTimer.current), []);
+  const pick = (key: string, open: () => void) => () => {
+    if (selected) return;
+    setSelected(key);
+    setTip(false);
+    openTimer.current = setTimeout(() => {
+      open();
+      // Cleared once it's opening, so the hub is usable again if it's still there (a dialog,
+      // a failed open, or coming back to it).
+      setSelected(null);
+    }, SELECT_MS);
+  };
 
   // Exact match to HTML's watchRing: scale ring to fit available space.
   // Depends on isMobile (from the shared media-query hook) rather than
@@ -627,6 +671,23 @@ function DimensionCirclesScreen({
           50%     { box-shadow: 0 0 36px rgb(var(--constellation-cyan-rgb) / 1),0 0 74px rgb(var(--constellation-cyan-bright-rgb) / .9); }
         }
       `}</style>
+
+      {childView && (
+        <div
+          className="font-rajdhani"
+          style={{
+            paddingTop: 18,
+            fontWeight: 700,
+            fontSize: 12,
+            letterSpacing: '.4em',
+            textTransform: 'uppercase',
+            color: 'rgb(var(--constellation-cyan-bright-rgb))',
+            animation: 'fadeUp .7s ease .5s both',
+          }}
+        >
+          Superpower
+        </div>
+      )}
 
       {/* Ring area */}
       <div ref={ringAreaRef} style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
@@ -910,7 +971,8 @@ function DimensionCirclesScreen({
           <DimensionNode
             position={NP.connect}
             animationDelay=".55s"
-            onClick={onConnect}
+            onClick={pick('connect', onConnect)}
+            selected={selected === 'connect'}
             locked={!enabled.connect}
             highlighted={current === 'connect'}
             label="Connect"
@@ -921,13 +983,19 @@ function DimensionCirclesScreen({
           <div
             role="button"
             tabIndex={0}
-            onClick={onDiscover}
+            aria-label="Discover"
+            aria-describedby={tip && canHover ? 'hub-discover-tip' : undefined}
+            onClick={pick('discover', onDiscover)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                onDiscover();
+                pick('discover', onDiscover)();
               }
             }}
+            onMouseEnter={() => setTip(true)}
+            onMouseLeave={() => setTip(false)}
+            onFocus={() => setTip(true)}
+            onBlur={() => setTip(false)}
             style={{
               ...NODE_STYLE,
               ...NP.discover,
@@ -990,13 +1058,16 @@ function DimensionCirclesScreen({
               }}
             />
             <div
+              className="hub-disc"
               style={
-                current === 'discover'
-                  ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
-                  : {
-                      ...ACTIVE_INNER,
-                      boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
-                    }
+                selected === 'discover'
+                  ? { ...ACTIVE_INNER, boxShadow: SELECTED_GLOW }
+                  : current === 'discover'
+                    ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
+                    : {
+                        ...ACTIVE_INNER,
+                        boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                      }
               }
             >
               <svg
@@ -1019,13 +1090,20 @@ function DimensionCirclesScreen({
             >
               Discover
             </div>
+            {/* The prototype's hover tip, naming the child (web, hover-capable devices). */}
+            {tip && canHover && (
+              <div id="hub-discover-tip" role="tooltip" className="hub-tip">
+                Explore {firstName}&apos;s personality analysis results
+              </div>
+            )}
           </div>
 
           {/* Transform — top-right */}
           <DimensionNode
             position={NP.transform}
             animationDelay=".65s"
-            onClick={onTransform}
+            onClick={pick('transform', onTransform)}
+            selected={selected === 'transform'}
             locked={!enabled.transform}
             highlighted={current === 'transform'}
             label="Transform"
@@ -1041,7 +1119,8 @@ function DimensionCirclesScreen({
           <DimensionNode
             position={NP.release}
             animationDelay=".75s"
-            onClick={onRelease}
+            onClick={pick('release', onRelease)}
+            selected={selected === 'release'}
             locked={!enabled.release}
             highlighted={current === 'release'}
             label="Release"
@@ -1057,73 +1136,172 @@ function DimensionCirclesScreen({
           <DimensionNode
             position={NP.grow}
             animationDelay=".8s"
-            onClick={onGrow}
+            onClick={pick('grow', onGrow)}
+            selected={selected === 'grow'}
             locked={!enabled.grow}
             highlighted={current === 'grow'}
             label="Grow"
             iconPaths={<path d="M4 20V10M11 20V4M18 20v-7" />}
           />
 
-          {/* Start Again — bottom-center (always enabled) */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={onStartAgain}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onStartAgain();
-              }
-            }}
-            style={{
-              ...NODE_STYLE,
-              ...NP.startAgain,
-              animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
-              cursor: 'pointer',
-            }}
-          >
+          {/* Start Again in child view: greyed out and "Completed" (only the parent starts over) */}
+          {childView && (
             <div
+              role="button"
+              tabIndex={-1}
+              aria-disabled="true"
               style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div
-              style={{
-                ...ACTIVE_INNER,
-                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                ...NODE_STYLE,
+                ...NP.startAgain,
+                animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
+                cursor: 'not-allowed',
               }}
             >
-              <svg
-                viewBox="0 0 24 24"
+              <div
                 style={{
-                  width: 23,
-                  height: 23,
-                  stroke: 'rgb(var(--constellation-navy-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.2,
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgb(var(--constellation-slate-deep-rgb))',
+                  opacity: 0.4,
+                }}
+              />
+              <div style={INACTIVE_INNER}>
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style={{
+                    width: 23,
+                    height: 23,
+                    stroke: LOCKED_ICON,
+                    fill: 'none',
+                    strokeWidth: 2.2,
+                  }}
+                >
+                  <path d="M4 4v6h6M20 20v-6h-6" />
+                  <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
+                </svg>
+              </div>
+              {/* The tick badge */}
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  background: 'rgb(var(--constellation-navy-deep-rgb))',
+                  border: '1.5px solid rgb(var(--constellation-slate-deep-rgb))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 3,
                 }}
               >
-                <path d="M4 4v6h6M20 20v-6h-6" />
-                <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
-              </svg>
+                <svg
+                  viewBox="0 0 24 24"
+                  style={{
+                    width: 12,
+                    height: 12,
+                    stroke: 'rgb(var(--constellation-text-frost-rgb))',
+                    fill: 'none',
+                    strokeWidth: 3,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                  }}
+                >
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div
+                className="font-rajdhani"
+                style={{
+                  ...NODE_LABEL,
+                  color: 'rgb(var(--constellation-slate-dark-rgb))',
+                  textAlign: 'center',
+                }}
+              >
+                Start Again
+                <span
+                  style={{
+                    display: 'block',
+                    fontWeight: 600,
+                    fontSize: 10.5,
+                    letterSpacing: '.15em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Completed
+                </span>
+              </div>
             </div>
-            <div className="font-rajdhani" style={NODE_LABEL}>
-              Start Again
+          )}
+
+          {/* Start Again — bottom-center (always enabled; not in child view) */}
+          {onStartAgain && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={onStartAgain}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onStartAgain();
+                }
+              }}
+              style={{
+                ...NODE_STYLE,
+                ...NP.startAgain,
+                animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
+                cursor: 'pointer',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
+                  opacity: 0.5,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
+                  animation: 'nodePulse 2.6s ease-out infinite',
+                }}
+              />
+              <div
+                className="hub-disc"
+                style={{
+                  ...ACTIVE_INNER,
+                  boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  style={{
+                    width: 23,
+                    height: 23,
+                    stroke: 'rgb(var(--constellation-navy-rgb))',
+                    fill: 'none',
+                    strokeWidth: 2.2,
+                  }}
+                >
+                  <path d="M4 4v6h6M20 20v-6h-6" />
+                  <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
+                </svg>
+              </div>
+              <div className="font-rajdhani" style={NODE_LABEL}>
+                Start Again
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1159,6 +1337,9 @@ export default function PersonalityJourney() {
   const [discoverViewed, setDiscoverViewed] = useState(false);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const { doStartOver, isStartingOver } = useStartOver(childId);
+  // Child view (docs/child-view-build-plan.md, 1.3): each circle opens the kids page.
+  const { view, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
 
   // The child and its personality (build plan 7.5): discover generates the personality on
   // its own once the chat is saved, so the hub only waits for it (or retries a failure).
@@ -1175,11 +1356,18 @@ export default function PersonalityJourney() {
   const isAnalyzing = journey.status === 'analyzing';
 
   // Each circle's state, set by the services when it's completed (build plan 7.4).
-  const discoverCompleted = discoverViewed || Boolean(child?.progress.discover);
-  const growCompleted = Boolean(child?.progress.grow);
-  const transformCompleted = Boolean(child?.progress.transform);
-  const releaseCompleted = Boolean(child?.progress.release);
-  const connectVisited = Boolean(child?.progress.connect);
+  // In child view they follow what the child has done there instead (child view's own
+  // order, decided 2026-11-11): each circle opens once the one before is done in child view.
+  const kidDone = useKidActivity(childView ? childId : undefined).activity?.circles_done;
+  const done = (kid: boolean | undefined, parent: boolean) => (childView ? Boolean(kid) : parent);
+  const discoverCompleted = done(
+    kidDone?.discover,
+    discoverViewed || Boolean(child?.progress.discover),
+  );
+  const growCompleted = done(kidDone?.grow, Boolean(child?.progress.grow));
+  const transformCompleted = done(kidDone?.transform, Boolean(child?.progress.transform));
+  const releaseCompleted = done(kidDone?.release, Boolean(child?.progress.release));
+  const connectVisited = done(kidDone?.connect, Boolean(child?.progress.connect));
 
   // The splash stays up (on its last frame) until the profile opens: hiding it first would
   // show the hub's circles while `viewed` is recorded. That's awaited before navigating, so
@@ -1189,6 +1377,11 @@ export default function PersonalityJourney() {
     if (leavingForProfileRef.current) return;
     leavingForProfileRef.current = true;
     void (async () => {
+      if (childView) {
+        // The child's Discover: no `viewed`, so the parent still sees the reveal first.
+        if (childId) void navigate(kidsPath(childId, 'discover'));
+        return;
+      }
       if (childId && !discoverCompleted) {
         setDiscoverViewed(true);
         // Passing the reveal makes Discover done; children then unlocks Grow.
@@ -1198,7 +1391,11 @@ export default function PersonalityJourney() {
       }
       void navigate(`/PersonalityProfile/${childId ?? ''}`);
     })();
-  }, [navigate, childId, discoverCompleted]);
+  }, [navigate, childId, discoverCompleted, childView]);
+
+  // A circle's page: the parent's, or in child view the kids page at that circle.
+  const circlePath = (area: KidsArea, parentPath: string) =>
+    childView && childId ? kidsPath(childId, area) : parentPath;
 
   // Grow unlocks Transform once one of the six growth areas is completed: grow publishes
   // `grow.completed` then, and children sets `progress.grow`, so the client can't forge it.
@@ -1398,12 +1595,16 @@ export default function PersonalityJourney() {
     if (!isAuthenticated) {
       void navigate('/Onboarding', { replace: true });
     } else if (!childId || journey.status === 'missing') {
+      // In child view Home would bounce straight back here: leave child view first.
+      if (childView) exitChildView();
       void navigate('/Home', { replace: true });
     } else if (journey.status === 'locked') {
-      // The chat isn't done yet: back to it.
+      // The chat isn't done yet: back to it. Child view can't open the chat (its guard would
+      // send it straight back here), so it ends first: the chat is the parent's to finish.
+      if (childView) exitChildView();
       void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
     }
-  }, [isLoadingAuth, isAuthenticated, childId, journey.status, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, journey.status, navigate, childView, exitChildView]);
 
   const status =
     journey.status === 'failed' ? 'error' : isLoadingAuth || !child ? 'loading' : 'ready';
@@ -1565,13 +1766,18 @@ export default function PersonalityJourney() {
             >
               <DimensionCirclesScreen
                 childName={childName}
-                onConnect={() => void navigate(`/Connect/${childId ?? ''}`)}
+                onConnect={() => void navigate(circlePath('connect', `/Connect/${childId ?? ''}`))}
                 onDiscover={() => setShowDiscoverSplash(true)}
                 onGoHome={() => void navigate(`/PersonalityJourney/${childId ?? ''}`)}
-                onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
-                onTransform={() => void navigate(`/LifePathway/${childId ?? ''}`)}
-                onRelease={() => void navigate(`/Observations/${childId ?? ''}`)}
-                onStartAgain={() => setConfirmingStartOver(true)}
+                onGrow={() => void navigate(circlePath('grow', `/GrowthAreas/${childId ?? ''}`))}
+                onTransform={() =>
+                  void navigate(circlePath('transform', `/LifePathway/${childId ?? ''}`))
+                }
+                onRelease={() =>
+                  void navigate(circlePath('release', `/Observations/${childId ?? ''}`))
+                }
+                {...(!childView && { onStartAgain: () => setConfirmingStartOver(true) })}
+                childView={childView}
                 enabled={{
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
@@ -1586,7 +1792,7 @@ export default function PersonalityJourney() {
       </div>
 
       <AnimatePresence>
-        {showDiscoverSplash && <StageSplash stage={2} onReady={handleDiscoverSplashReady} />}
+        {showDiscoverSplash && <StageSplash stage={2} portal onReady={handleDiscoverSplashReady} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -1598,6 +1804,7 @@ export default function PersonalityJourney() {
               void doStartOver();
             }}
             isStartingOver={isStartingOver}
+            {...startOverCopy(child?.name)}
           />
         )}
       </AnimatePresence>

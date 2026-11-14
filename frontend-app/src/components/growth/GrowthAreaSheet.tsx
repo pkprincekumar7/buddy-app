@@ -13,6 +13,7 @@ import {
   Text,
   View,
   type TextInput,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 import { Portal } from '@/components/ui/portal';
@@ -24,23 +25,18 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
-import {
-  GAME_ROUNDS_PER_AREA,
-  fillTemplate,
-  pickedOptions,
-  resolveRounds,
-  topArchetype,
-} from '@/lib/growthAreaData';
+import { SPINNER } from '@/lib/animations';
+import { daysAgo, rankedGames, type WorldSummary } from '@/api/kidWorlds';
+import { fillTemplate } from '@/lib/growthAreaData';
 import type {
-  GameOption,
-  GameRound,
   GrowthArea,
   GrowthRecommendation,
   Question,
+  RecommendationSource,
 } from '@/lib/growthAreaData';
 import { color, css, font, rgb } from '@/theme';
-import ResultPhase, { type RecsPhase } from './ResultPhase';
 import SetGate, { type SetStatus } from './SetGate';
 import {
   CTA,
@@ -52,51 +48,53 @@ import {
   fadeUp,
 } from './shared';
 
-export type { RecsPhase } from './ResultPhase';
 export type { SetStatus } from './SetGate';
 
 /**
- * The whole per-area flow, as one overlay over the Growth Map:
+ * The per-area overlay over the Growth Map, as the prototype has it:
  *
- *   questions → the parent's five free-text reflections
- *   handoff   → the "hand the screen over" beat
- *   rounds    → the child's six either/or choices
- *   result    → constellation + recommendations
+ *   questions → "Guided Reflection": the parent's five free-text reflections
+ *   insights  → "Growth insights": what the parent answered and what the child played
+ *               in child view (the area's world), and the recommendations from both
  *
- * Nothing is written per step. The parent's answers persist once, when they hit
- * Finish (onSaveAnswers); the child's picks persist once, after round six
- * (onCompleteRounds) — which also kicks off recommendation generation in the
- * caller. The archetype and constellation render instantly off the picks alone
- * (no network needed); recsPhase/recommendations stream in afterwards as that
- * generation progresses. Closing the sheet mid-run discards the current step,
- * matching the source design — except mid-round, where it would strand the
- * child half-way through their six choices.
+ * Two tabs switch between them. An area the parent has answered opens on its insights;
+ * one they haven't, on its questions. The answers persist once, on Finish
+ * (onSaveAnswers), which moves to the insights; the caller keeps the recommendations
+ * current (onShowInsights) and passes them down.
  *
- * Neither question set is owned here: both are generated per child per area by
- * the caller and arrive as props, along with the status of that generation.
+ * The questions are generated per child per area by the caller and arrive as props, with
+ * the status of that generation: waiting, unusable (with a retry) or ready.
  *
- * RN: a Portal overlay (Android back = the web's Escape) holding the web's
- * centred panel, with the same fade-in backdrop and rise-in panel; the fade-out
- * plays before onClose so the caller's unmount isn't abrupt.
+ * RN: a Portal overlay (Android back = the web's Escape) holding the web's centred
+ * panel, with the same fade-in backdrop and rise-in panel; the fade-out plays before
+ * onClose so the caller's unmount isn't abrupt.
  */
 
-type Phase = 'questions' | 'handoff' | 'rounds' | 'result';
+type Phase = 'questions' | 'insights';
+export type RecsPhase = 'idle' | 'loading' | 'ready' | 'error';
 
 const PANEL_MAX = 620;
 const BACKDROP_MS = 300;
 
-/** Star, shown on the handoff beat. */
-const HANDOFF_STAR_PATH =
-  'M12 3l2.2 5.6L20 9.4l-4 4 1 6-5-2.9-5 2.9 1-6-4-4 5.8-.8z';
 const CLOSE_PATH = 'M6 6l12 12M18 6L6 18';
 const CHEVRON_LEFT = 'M14 6l-6 6 6 6';
 const CHEVRON_RIGHT = 'M10 6l6 6-6 6';
+const ARROW_RIGHT = 'M5 12h13M12 6l6 6-6 6';
+
+/** The score ring: its box, the ring's width (the web's inset) and the arc's circle. */
+const RING = 92;
+const RING_W = 8;
+const RING_R = (RING - RING_W) / 2;
+const RING_C = 2 * Math.PI * RING_R;
 
 const BACKDROP_BG = css(
   'radial-gradient(ellipse at 50% 40%,rgb(var(--constellation-overlay-rgb) / .72),rgb(var(--constellation-void-rgb) / .93) 70%)',
 );
 const BADGE_BG = css(
   'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+);
+const PIP_CURRENT = css(
+  'linear-gradient(90deg,rgb(var(--constellation-cyan-rgb)),rgb(var(--constellation-cyan-bright-rgb)))',
 );
 
 const PANEL: ViewStyle = {
@@ -124,43 +122,508 @@ const PANEL_IN = new Keyframe({
 }).duration(420);
 
 const STEP_IN = fadeUp(10, 340);
-const HANDOFF_IN = fadeUp(10, 400);
+const INSIGHTS_IN = fadeUp(10, 400);
 
-const CHOICE_TILE: ViewStyle = {
-  flex: 1,
-  borderRadius: 16,
-  paddingVertical: 18,
-  paddingHorizontal: 16,
-  experimental_backgroundImage: css(
-    'linear-gradient(160deg,rgb(var(--constellation-navy-soft-rgb) / .9),rgb(var(--constellation-ink-navy-rgb) / .9))',
-  ),
-  borderWidth: 1,
-  borderColor: rgb('constellation-cyan', 0.26),
-  alignItems: 'center',
-  gap: 12,
-};
-
-// Marks the option that occupied this round on the previous run — shown on a
-// Play Again replay so it reads as "here's what was picked, change it if you
-// like" rather than a blank round with no memory of the earlier answer.
-const CHOICE_TILE_PICKED: ViewStyle = {
-  ...CHOICE_TILE,
-  borderColor: rgb('constellation-gold', 0.85),
-  boxShadow: css(
-    '0 0 0 1px rgb(var(--constellation-gold-rgb) / .35),0 0 22px rgb(var(--constellation-gold-rgb) / .25)',
-  ),
-};
-
-const PIP_CURRENT = css(
-  'linear-gradient(90deg,rgb(var(--constellation-cyan-rgb)),rgb(var(--constellation-cyan-bright-rgb)))',
-);
-
-const COUNTER_TEXT = {
+const COUNTER_TEXT: TextStyle = {
   fontSize: 11,
-  fontWeight: '700' as const,
+  fontWeight: '700',
   letterSpacing: 11 * 0.16,
   color: rgb('constellation-slate-dark'),
 };
+
+/** The small cyan caps over a block ("Parent app", "Latest child view result"). */
+const EYEBROW: TextStyle = {
+  fontWeight: '700',
+  fontSize: 9.5,
+  letterSpacing: 9.5 * 0.28,
+  textTransform: 'uppercase',
+  color: rgb('constellation-cyan-bright'),
+};
+
+const CARD: ViewStyle = {
+  borderRadius: 13,
+  experimental_backgroundImage: css(
+    'linear-gradient(120deg,rgb(var(--constellation-navy-soft-rgb) / .55),rgb(var(--constellation-ink-navy-rgb) / .55))',
+  ),
+};
+
+const FILLED = rgb('constellation-gold', 0.45);
+const UNFILLED = rgb('constellation-cyan', 0.16);
+
+/** A game score's colour: its band's gold / cyan / violet as the page's tokens. */
+const BAND_TOKEN = {
+  gold: 'constellation-gold',
+  cyan: 'constellation-cyan',
+  violet: 'constellation-lavender',
+} as const;
+
+/** Each recommendation's tag: its words, colour and border. */
+const TAGS: Record<
+  RecommendationSource,
+  { label: (name: string) => string; color: string; border: string }
+> = {
+  both: {
+    label: name => `You + ${name}`,
+    color: rgb('constellation-gold'),
+    border: rgb('constellation-gold', 0.5),
+  },
+  kid: {
+    label: name => `${name}’s games`,
+    color: rgb('constellation-sky'),
+    border: rgb('constellation-cyan', 0.4),
+  },
+  you: {
+    label: () => 'Your answers',
+    color: rgb('constellation-lilac'),
+    border: rgb('constellation-lilac', 0.45),
+  },
+  step: {
+    label: () => 'Next step',
+    color: rgb('constellation-mint'),
+    border: rgb('constellation-mint', 0.45),
+  },
+};
+
+const plural = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** One of the two tabs under the header. */
+function Tab({
+  on,
+  onPress,
+  label,
+  dot = false,
+}: {
+  on: boolean;
+  onPress: () => void;
+  label: string;
+  dot?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: on }}
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          paddingVertical: 8,
+          paddingHorizontal: 16,
+          borderRadius: 999,
+          backgroundColor: on ? rgb('constellation-cyan', 0.16) : 'transparent',
+          borderWidth: 1,
+          borderColor: on
+            ? rgb('constellation-cyan', 0.7)
+            : rgb('constellation-cyan', 0.22),
+        },
+        pressed ? { transform: [{ scale: 0.97 }] } : null,
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={{
+          fontWeight: '700',
+          fontSize: 12,
+          letterSpacing: 12 * 0.14,
+          textTransform: 'uppercase',
+          color: on
+            ? rgb('constellation-cyan-pale')
+            : rgb('constellation-slate-dark'),
+        }}
+      >
+        {label}
+      </Text>
+      {dot ? (
+        <View
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 3.5,
+            backgroundColor: rgb('constellation-gold'),
+            boxShadow: css('0 0 8px rgb(var(--constellation-gold-rgb) / .9)'),
+          }}
+        />
+      ) : null}
+    </Pressable>
+  );
+}
+
+/** "Parent app" / "Child view": where the insights come from, gold-edged once there. */
+function SourceCard({
+  label,
+  text,
+  filled,
+}: {
+  label: string;
+  text: string;
+  filled: boolean;
+}) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        minWidth: 0,
+        borderRadius: 13,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderWidth: 1,
+        borderColor: filled ? FILLED : UNFILLED,
+        backgroundColor: rgb('constellation-ink-navy', 0.55),
+      }}
+    >
+      <Text style={EYEBROW}>{label}</Text>
+      <Text
+        style={{
+          marginTop: 4,
+          fontWeight: '700',
+          fontSize: 14,
+          color: rgb('constellation-cyan-pale'),
+        }}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The run's total as a ring. The web draws it with a conic gradient; RN has none, so
+ * it's an SVG track circle and an arc from the top to total%, cyan into gold.
+ */
+function ScoreRing({ total }: { total: number }) {
+  const share = Math.max(0, Math.min(100, total)) / 100;
+  return (
+    <View
+      accessibilityLabel={`${total} out of 100`}
+      style={{ width: RING, height: RING, flexShrink: 0 }}
+    >
+      <Svg
+        width={RING}
+        height={RING}
+        style={StyleSheet.absoluteFill}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Defs>
+          <LinearGradient id="growthRing" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor={rgb('constellation-cyan')} />
+            <Stop offset="100%" stopColor={rgb('constellation-gold')} />
+          </LinearGradient>
+        </Defs>
+        <Circle
+          cx={RING / 2}
+          cy={RING / 2}
+          r={RING_R}
+          fill="none"
+          stroke={rgb('constellation-cyan', 0.12)}
+          strokeWidth={RING_W}
+        />
+        {share > 0 ? (
+          <Circle
+            cx={RING / 2}
+            cy={RING / 2}
+            r={RING_R}
+            fill="none"
+            stroke="url(#growthRing)"
+            strokeWidth={RING_W}
+            strokeDasharray={`${RING_C} ${RING_C}`}
+            strokeDashoffset={RING_C * (1 - share)}
+            transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
+          />
+        ) : null}
+      </Svg>
+      <View
+        style={{
+          position: 'absolute',
+          top: RING_W,
+          left: RING_W,
+          right: RING_W,
+          bottom: RING_W,
+          borderRadius: RING / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: rgb('constellation-badge-b'),
+        }}
+      >
+        <Text
+          style={[
+            font('orbitron', 700),
+            {
+              fontSize: 26,
+              lineHeight: 26,
+              color: rgb('constellation-cyan-paler'),
+            },
+          ]}
+        >
+          {total}
+        </Text>
+        <Text
+          style={{
+            marginTop: 2,
+            fontSize: 9.5,
+            fontWeight: '700',
+            letterSpacing: 9.5 * 0.18,
+            color: rgb('constellation-slate-dark'),
+          }}
+        >
+          / 100
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** The latest run: its total in a ring, its strongest and weakest game, and each game. */
+function WorldResult({ world }: { world: WorldSummary }) {
+  const order = rankedGames(world.rows.map(r => r.score));
+  const best = world.rows[order[0] ?? 0];
+  const weakest = world.rows[order[order.length - 1] ?? 0];
+  const up = world.change !== null && world.change > 0;
+  const change =
+    world.change === null
+      ? ''
+      : ` · ${world.change >= 0 ? '+' : ''}${world.change} vs last try`;
+
+  return (
+    <>
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 18,
+        }}
+      >
+        <ScoreRing total={world.total} />
+        <View style={{ flex: 1, minWidth: 200 }}>
+          <Text style={[EYEBROW, { letterSpacing: 9.5 * 0.3 }]}>
+            Latest child view result
+          </Text>
+          <Text
+            style={[
+              font('orbitron', 700),
+              {
+                marginTop: 6,
+                fontSize: 17,
+                color: rgb('constellation-cyan-paler'),
+              },
+            ]}
+          >
+            Strongest: {best?.skill}. Room to grow: {weakest?.skill}.
+          </Text>
+          <Text
+            style={{
+              marginTop: 5,
+              fontSize: 13.5,
+              fontWeight: '600',
+              color: up
+                ? rgb('constellation-mint')
+                : rgb('constellation-slate-dark'),
+            }}
+          >
+            Played {daysAgo(world.at)} · {plural(world.tries, 'try', 'tries')}
+            {change}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ marginTop: 16, gap: 9 }}>
+        {world.rows.map(row => {
+          const token = BAND_TOKEN[row.band?.color ?? 'cyan'];
+          return (
+            <View
+              key={row.title}
+              style={[
+                CARD,
+                {
+                  paddingVertical: 11,
+                  paddingHorizontal: 14,
+                  borderWidth: 1,
+                  borderColor: rgb('constellation-cyan', 0.16),
+                },
+              ]}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                }}
+              >
+                <View style={{ flexShrink: 1, minWidth: 0, gap: 2 }}>
+                  <Text
+                    style={{
+                      fontWeight: '700',
+                      fontSize: 14.5,
+                      lineHeight: 14.5 * 1.25,
+                      color: rgb('constellation-cyan-pale'),
+                    }}
+                  >
+                    {row.skill}
+                  </Text>
+                  <Text
+                    style={{
+                      fontWeight: '600',
+                      fontSize: 12.5,
+                      lineHeight: 12.5 * 1.25,
+                      color: rgb('constellation-slate-dark'),
+                    }}
+                  >
+                    {row.title}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    font('orbitron', 700),
+                    { fontSize: 15, color: rgb(token) },
+                  ]}
+                >
+                  {row.score}
+                </Text>
+              </View>
+              <View
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={{
+                  marginTop: 9,
+                  height: 5,
+                  borderRadius: 3,
+                  overflow: 'hidden',
+                  backgroundColor: rgb('constellation-cyan', 0.12),
+                }}
+              >
+                <View
+                  style={{
+                    width: `${row.score}%`,
+                    height: '100%',
+                    borderRadius: 3,
+                    experimental_backgroundImage: css(
+                      `linear-gradient(90deg,rgb(var(--constellation-cyan-bright-rgb)),rgb(var(--${token}-rgb)))`,
+                    ),
+                  }}
+                />
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </>
+  );
+}
+
+/** One numbered recommendation, with its tag. */
+function Recommendation({
+  rec,
+  index,
+  childName,
+}: {
+  rec: GrowthRecommendation;
+  index: number;
+  childName: string;
+}) {
+  const tag = rec.source ? TAGS[rec.source] : null;
+  return (
+    <View
+      style={[
+        CARD,
+        {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: 12,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          borderWidth: 1,
+          borderColor: rgb('constellation-gold', 0.18),
+        },
+      ]}
+    >
+      <View style={{ width: 26, alignItems: 'center', gap: 6, paddingTop: 2 }}>
+        <View
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 3.5,
+            backgroundColor: rgb('constellation-gold-pale'),
+            boxShadow: css('0 0 10px rgb(var(--constellation-gold-rgb) / .9)'),
+          }}
+        />
+        <Text
+          style={[
+            font('orbitron', 700),
+            { fontSize: 10, color: rgb('constellation-gold', 0.6) },
+          ]}
+        >
+          {String(index + 1).padStart(2, '0')}
+        </Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <Text
+            style={{
+              flexShrink: 1,
+              fontWeight: '700',
+              fontSize: 14.5,
+              lineHeight: 14.5 * 1.35,
+              color: rgb('constellation-cyan-pale'),
+            }}
+          >
+            {rec.title}
+          </Text>
+          {tag ? (
+            <View
+              style={{
+                paddingVertical: 2,
+                paddingHorizontal: 8,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: tag.border,
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontWeight: '700',
+                  fontSize: 10,
+                  letterSpacing: 10 * 0.14,
+                  textTransform: 'uppercase',
+                  color: tag.color,
+                }}
+              >
+                {tag.label(childName)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        {rec.detail ? (
+          <Text
+            style={{
+              marginTop: 3,
+              fontWeight: '600',
+              fontSize: 13,
+              lineHeight: 13 * 1.45,
+              color: rgb('constellation-slate-cool'),
+            }}
+          >
+            {rec.detail}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
 
 interface GrowthAreaSheetProps {
   area: GrowthArea;
@@ -175,33 +638,28 @@ interface GrowthAreaSheetProps {
     progress?: string;
     onRetry: () => void;
   };
-  /** The child's six either/or rounds for this area — same shape as parentQuestions. */
-  childRounds: {
-    data: GameRound[] | null;
-    status: SetStatus;
-    progress?: string;
-    onRetry: () => void;
-  };
   /** Previously saved answers for this area, used to prefill a redo. */
   initialAnswers?: Record<string, unknown>;
-  /** Mount straight into the result view for an already-finished area. Requires initialPicks. */
+  /** Open on the insights (an answered area) rather than the questions. */
   initialPhase?: Phase;
-  /** The picks a completed area's result was generated from — only with initialPhase="result". */
-  initialPicks?: string[];
+  /** How many of the area's reflections the parent has saved. */
+  answered: number;
+  /** The child's latest run of this area's world in child view; null until played. */
+  world: WorldSummary | null;
   onClose: () => void;
-  /** Resolve true to advance to the handoff; false keeps the parent on question five. */
+  /** Resolve true to move to the insights; false keeps the parent on question five. */
   onSaveAnswers: (answers: Record<string, string>) => Promise<boolean>;
-  /** Called on Play Again, so the caller can generate rounds if it has none yet. */
-  onReplayRounds: () => void;
-  /** Called once, with the six chosen option ids, after the last round (and after any replay). */
-  onCompleteRounds: (pickedIds: string[]) => void;
-  /** Called from the result phase's "Explore Transform" button. */
+  /** Called when the insights are shown from a tab, so the caller can bring the
+   *  recommendations up to date. */
+  onShowInsights: () => void;
+  /** Leaves the sheet for the Life Pathway (Transform) page. */
   onExploreTransform: () => void;
-  /** True while either of the caller's writes is in flight. */
+  /** True while the caller's save is in flight. */
   isSaving?: boolean;
-  /** Status of the recommendation generation the caller kicked off. */
+  /** Status of the recommendation generation the caller runs. */
   recsPhase?: RecsPhase;
   recommendations?: GrowthRecommendation[];
+  onRetryRecommendations: () => void;
 }
 
 export default function GrowthAreaSheet({
@@ -209,18 +667,18 @@ export default function GrowthAreaSheet({
   childName,
   childGender,
   parentQuestions,
-  childRounds,
   initialAnswers,
   initialPhase = 'questions',
-  initialPicks,
+  answered,
+  world,
   onClose,
   onSaveAnswers,
-  onReplayRounds,
-  onCompleteRounds,
+  onShowInsights,
   onExploreTransform,
   isSaving = false,
   recsPhase = 'idle',
   recommendations = [],
+  onRetryRecommendations,
 }: GrowthAreaSheetProps) {
   const insets = useSafeAreaInsets();
   const {
@@ -229,43 +687,22 @@ export default function GrowthAreaSheet({
     progress: questionsProgress = '',
     onRetry: onRetryQuestions,
   } = parentQuestions;
-  const {
-    data: generatedRounds,
-    status: roundsStatus,
-    progress: roundsProgress = '',
-    onRetry: onRetryRounds,
-  } = childRounds;
-  // Stable empty arrays, so an area still waiting on its sets does not hand every
-  // downstream memo and effect a fresh reference on each render.
+  // Stable while the set is pending, so the prefill effect doesn't rerun every render.
   const questions: Question[] = useMemo(
     () => generatedQuestions ?? [],
     [generatedQuestions],
   );
-  const rounds: GameRound[] = useMemo(
-    () => generatedRounds ?? [],
-    [generatedRounds],
-  );
-
-  if (__DEV__ && generatedRounds && rounds.length !== GAME_ROUNDS_PER_AREA) {
-    // The handoff copy promises "Six quick choices"; shout in dev if a generated
-    // set ever stops matching that promise.
-    console.warn(
-      `[GrowthAreaSheet] ${area.id} has ${rounds.length} rounds but the handoff copy says ${GAME_ROUNDS_PER_AREA}.`,
-    );
-  }
 
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [qIdx, setQIdx] = useState(0);
-  const [rIdx, setRIdx] = useState(0);
-  const [picks, setPicks] = useState<string[]>(
-    initialPhase === 'result' ? initialPicks ?? [] : [],
-  );
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const textareaRef = useRef<TextInput | null>(null);
+  const who = childName || 'Your child';
+  const fill = (text: string) => fillTemplate(text, childName, childGender);
 
-  // Prefill a redo from previously saved answers, keeping only keys belonging to
-  // the current question set. An effect because the questions arrive
-  // asynchronously; merging means a late set can never discard typed input.
+  // Prefill a redo from previously saved answers, keeping only keys belonging to the
+  // current question set. An effect, because the questions may arrive after opening;
+  // merging means a late set never discards what the parent has typed.
   useEffect(() => {
     if (questions.length === 0) return;
     const known = new Set(questions.map(q => q.id));
@@ -280,13 +717,7 @@ export default function GrowthAreaSheet({
   }, [questions, initialAnswers]);
 
   const currentQuestion = questions[qIdx];
-  const currentRound = rounds[rIdx];
   const isLastQuestion = qIdx >= questions.length - 1;
-
-  // Closing mid-round would strand the child half-way through their choices —
-  // but while the rounds are still being written (or have failed) there is no run
-  // to strand, and a parent stuck on that wait must be able to get out.
-  const dismissable = phase !== 'rounds' || roundsStatus !== 'ready';
 
   // ── Open / close motion ───────────────────────────────────────────────────
   const backdrop = useSharedValue(0);
@@ -309,12 +740,17 @@ export default function GrowthAreaSheet({
     closeTimer.current = setTimeout(onClose, BACKDROP_MS);
   }, [isSaving, backdrop, onClose]);
 
-  // Move focus into the field on open and on each question change — including
-  // the moment the generated questions land and the field first exists.
+  // Focus the field on open and on each question change, including when the
+  // generated questions land and the field first exists.
   useEffect(() => {
     if (phase === 'questions' && questionsStatus === 'ready')
       textareaRef.current?.focus();
   }, [qIdx, phase, questionsStatus]);
+
+  const showInsights = useCallback(() => {
+    setPhase('insights');
+    onShowInsights();
+  }, [onShowInsights]);
 
   const goNext = useCallback(async () => {
     if (isSaving) return;
@@ -322,62 +758,21 @@ export default function GrowthAreaSheet({
       setQIdx(i => i + 1);
       return;
     }
-    // Only advance once the single write has landed — a failed save leaves the
-    // parent on question five with their text intact.
-    const saved = await onSaveAnswers(answers);
-    if (saved) setPhase('handoff');
+    // Only move on once the write has landed: a failed save leaves the parent on
+    // question five with their text intact.
+    if (await onSaveAnswers(answers)) setPhase('insights');
   }, [isLastQuestion, onSaveAnswers, answers, isSaving]);
 
-  const choose = useCallback(
-    (option: GameOption) => {
-      if (isSaving) return;
-      // Assign by index rather than appending — on a Play Again replay it
-      // overwrites the previous run's pick at this round in place.
-      const next = [...picks];
-      next[rIdx] = option.id;
-      setPicks(next);
-      if (rIdx >= rounds.length - 1) {
-        // The archetype and constellation are derived from `next` alone, so the
-        // result view renders immediately — recommendations catch up via props.
-        setPhase('result');
-        onCompleteRounds(next);
-      } else {
-        setRIdx(i => i + 1);
-      }
-    },
-    [picks, rIdx, rounds.length, onCompleteRounds, isSaving],
-  );
-
-  const playAgain = useCallback(() => {
-    setRIdx(0);
-    // Deliberately keep `picks` — each round pre-highlights what was chosen last time.
-    setPhase('rounds');
-    // No-op unless this area finished before its rounds were generated.
-    onReplayRounds();
-  }, [onReplayRounds]);
-
-  // The picks being rendered may predate this child's generated rounds — the set
-  // the ids belong to decides which one they resolve against.
-  const pickRounds = useMemo(
-    () => resolveRounds(area.id, generatedRounds, picks),
-    [area.id, generatedRounds, picks],
-  );
-  const archetype = useMemo(
-    () => topArchetype(area.id, pickRounds, picks)?.archetype ?? null,
-    [area.id, pickRounds, picks],
-  );
-  const pickedStars = useMemo(
-    () => pickedOptions(pickRounds, picks).map(o => o.star),
-    [pickRounds, picks],
-  );
+  const hasInput = answered > 0 || world !== null;
+  const recsFrom =
+    answered > 0 && world
+      ? `From your answers and ${who}’s games`
+      : answered > 0
+      ? 'From your answers'
+      : `From ${who}’s games`;
 
   return (
-    <Portal
-      onRequestClose={() => {
-        // Android back = the web's Escape: closes, except once the child is answering.
-        if (dismissable) requestClose();
-      }}
-    >
+    <Portal onRequestClose={requestClose}>
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
@@ -385,12 +780,9 @@ export default function GrowthAreaSheet({
           backdropStyle,
         ]}
       >
-        {/* Backdrop dismiss, except mid-round where it would discard the child's run. */}
         <Pressable
           style={StyleSheet.absoluteFill}
-          onPress={() => {
-            if (dismissable) requestClose();
-          }}
+          onPress={requestClose}
           accessible={false}
           importantForAccessibility="no"
         />
@@ -414,7 +806,9 @@ export default function GrowthAreaSheet({
               entering={PANEL_IN}
               style={PANEL}
               accessibilityViewIsModal
-              accessibilityLabel={`${area.name} — guided reflection`}
+              accessibilityLabel={`${area.name} — ${
+                phase === 'insights' ? 'growth insights' : 'guided reflection'
+              }`}
             >
               <ScrollView
                 style={{ flexGrow: 0, borderRadius: 20 }}
@@ -426,79 +820,358 @@ export default function GrowthAreaSheet({
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
-                {/* Area header — persists across the first three phases. */}
-                {phase !== 'result' && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    paddingRight: 34,
+                  }}
+                >
                   <View
                     style={{
-                      flexDirection: 'row',
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      flexShrink: 0,
                       alignItems: 'center',
-                      gap: 12,
-                      paddingRight: 34,
+                      justifyContent: 'center',
+                      experimental_backgroundImage: BADGE_BG,
+                      borderWidth: 1.5,
+                      borderColor: rgb('constellation-gold', 0.75),
+                      boxShadow: css(
+                        '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
+                      ),
                     }}
+                  >
+                    <PathIcon
+                      d={area.iconPath}
+                      size={19}
+                      stroke={area.iconColor}
+                      strokeWidth={1.8}
+                    />
+                  </View>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: 9.5 * 0.34,
+                        fontSize: 9.5,
+                        lineHeight: 9.5 * 1.3,
+                        color: rgb('constellation-cyan-bright'),
+                      }}
+                    >
+                      {phase === 'insights'
+                        ? 'Growth insights'
+                        : 'Guided Reflection'}
+                    </Text>
+                    <Text
+                      accessibilityRole="header"
+                      style={[
+                        font('orbitron', 700),
+                        {
+                          fontSize: 17,
+                          marginTop: 3,
+                          color: rgb('constellation-cyan-paler'),
+                        },
+                      ]}
+                    >
+                      {area.name}
+                    </Text>
+                  </View>
+                </View>
+
+                <View
+                  accessibilityRole="tablist"
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginTop: 18,
+                  }}
+                >
+                  <Tab
+                    label="Reflection"
+                    on={phase === 'questions'}
+                    onPress={() => {
+                      setQIdx(0);
+                      setPhase('questions');
+                    }}
+                  />
+                  <Tab
+                    label="Recommendations"
+                    on={phase === 'insights'}
+                    onPress={showInsights}
+                    dot={world !== null}
+                  />
+                </View>
+
+                {/* ── Growth insights ── */}
+                {phase === 'insights' && (
+                  <Animated.View
+                    entering={INSIGHTS_IN}
+                    style={{ marginTop: 20 }}
                   >
                     <View
                       style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 19,
-                        flexShrink: 0,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        experimental_backgroundImage: BADGE_BG,
-                        borderWidth: 1.5,
-                        borderColor: rgb('constellation-gold', 0.75),
-                        boxShadow: css(
-                          '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
-                        ),
+                        flexDirection: 'row',
+                        gap: 10,
+                        marginBottom: 16,
                       }}
                     >
-                      <PathIcon
-                        d={area.iconPath}
-                        size={19}
-                        stroke={area.iconColor}
-                        strokeWidth={1.8}
+                      <SourceCard
+                        label="Parent app"
+                        text={
+                          answered > 0
+                            ? `${answered} of ${
+                                questions.length || 5
+                              } reflections answered`
+                            : 'No reflections yet'
+                        }
+                        filled={answered > 0}
+                      />
+                      <SourceCard
+                        label="Child view"
+                        text={
+                          world
+                            ? `${plural(
+                                world.tries,
+                                'game round',
+                                'game rounds',
+                              )}, last ${daysAgo(world.at)}`
+                            : 'Games not played yet'
+                        }
+                        filled={world !== null}
                       />
                     </View>
-                    <View style={{ flexShrink: 1 }}>
-                      <Text
+
+                    {world ? (
+                      <WorldResult world={world} />
+                    ) : (
+                      <View
                         style={{
-                          fontWeight: '700',
-                          textTransform: 'uppercase',
-                          letterSpacing: 9.5 * 0.34,
-                          fontSize: 9.5,
-                          color: rgb('constellation-cyan-bright'),
+                          paddingVertical: 18,
+                          paddingHorizontal: 20,
+                          borderRadius: 16,
+                          borderWidth: 1,
+                          borderStyle: 'dashed',
+                          borderColor: rgb('constellation-cyan', 0.3),
+                          alignItems: 'center',
                         }}
                       >
-                        Guided Reflection
-                      </Text>
-                      <Text
-                        accessibilityRole="header"
-                        style={[
-                          font('orbitron', 700),
-                          {
-                            fontSize: 17,
-                            marginTop: 3,
-                            color: rgb('constellation-cyan-paler'),
-                          },
-                        ]}
+                        <Text
+                          style={[
+                            font('orbitron', 700),
+                            {
+                              fontSize: 16,
+                              textAlign: 'center',
+                              color: rgb('constellation-cyan-paler'),
+                            },
+                          ]}
+                        >
+                          {answered > 0
+                            ? `${who}’s side is missing`
+                            : 'Nothing to go on yet'}
+                        </Text>
+                        <Text
+                          style={{
+                            marginTop: 8,
+                            fontSize: 14.5,
+                            fontWeight: '600',
+                            lineHeight: 14.5 * 1.45,
+                            textAlign: 'center',
+                            color: rgb('constellation-slate-soft'),
+                          }}
+                        >
+                          {answered > 0
+                            ? `${who} hasn’t played the ${area.name} games in child view yet. For now, these recommendations use your answers only.`
+                            : `Answer the reflection questions here and ask ${who} to play the ${area.name} games in child view. Recommendations will appear once either is done.`}
+                        </Text>
+                      </View>
+                    )}
+
+                    {hasInput && (
+                      <View
+                        style={{
+                          marginTop: 18,
+                          borderTopWidth: 1,
+                          borderTopColor: rgb('constellation-gold', 0.22),
+                          paddingTop: 18,
+                        }}
                       >
-                        {area.name}
-                      </Text>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            alignItems: 'baseline',
+                            justifyContent: 'space-between',
+                            gap: 14,
+                          }}
+                        >
+                          <Text
+                            accessibilityRole="header"
+                            style={[
+                              font('orbitron', 700),
+                              {
+                                fontSize: 13.5,
+                                letterSpacing: 13.5 * 0.14,
+                                textTransform: 'uppercase',
+                                color: rgb('constellation-gold'),
+                              },
+                            ]}
+                          >
+                            Recommendations
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: '600',
+                              letterSpacing: 10.5 * 0.14,
+                              textTransform: 'uppercase',
+                              color: rgb('constellation-slate'),
+                            }}
+                          >
+                            {recsFrom}
+                          </Text>
+                        </View>
+
+                        <View
+                          accessibilityLiveRegion="polite"
+                          style={{ gap: 9, marginTop: 14 }}
+                        >
+                          {(recsPhase === 'loading' ||
+                            recsPhase === 'idle') && (
+                            <View
+                              style={{
+                                alignItems: 'center',
+                                gap: 12,
+                                paddingVertical: 24,
+                              }}
+                            >
+                              <Animated.View
+                                accessibilityRole="progressbar"
+                                accessibilityLabel="Loading"
+                                style={[
+                                  {
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 17,
+                                    borderWidth: 2,
+                                    borderColor: rgb('constellation-gold', 0.2),
+                                    borderTopColor: rgb('constellation-gold'),
+                                  },
+                                  SPINNER,
+                                ]}
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 12.5,
+                                  fontWeight: '600',
+                                  textAlign: 'center',
+                                  color: rgb('constellation-slate-soft'),
+                                }}
+                              >
+                                {fill('Writing recommendations for {name}…')}
+                              </Text>
+                            </View>
+                          )}
+
+                          {recsPhase === 'error' && (
+                            <View
+                              style={{
+                                alignItems: 'center',
+                                gap: 12,
+                                paddingVertical: 8,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: '600',
+                                  textAlign: 'center',
+                                  color: rgb('constellation-slate-soft'),
+                                }}
+                              >
+                                We couldn’t write the recommendations just now.
+                              </Text>
+                              <Pill
+                                label="Try again"
+                                onPress={onRetryRecommendations}
+                                textColor={CTA_TEXT}
+                                style={[
+                                  CTA,
+                                  {
+                                    paddingVertical: 10,
+                                    paddingHorizontal: 24,
+                                  },
+                                ]}
+                              />
+                            </View>
+                          )}
+
+                          {recsPhase === 'ready' &&
+                            recommendations.map((rec, i) => (
+                              <Recommendation
+                                key={i}
+                                rec={rec}
+                                index={i}
+                                childName={who}
+                              />
+                            ))}
+                        </View>
+                      </View>
+                    )}
+
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 12,
+                        marginTop: 18,
+                      }}
+                    >
+                      <Pill
+                        label="Done"
+                        onPress={requestClose}
+                        textColor={CTA_TEXT}
+                        style={[
+                          CTA,
+                          { paddingVertical: 11, paddingHorizontal: 26 },
+                        ]}
+                      />
+                      <Pill
+                        label="Explore Transform"
+                        onPress={onExploreTransform}
+                        textColor={rgb('constellation-gold-pale')}
+                        icon={{
+                          d: ARROW_RIGHT,
+                          side: 'right',
+                          size: 14,
+                          strokeWidth: 2.4,
+                        }}
+                        style={{
+                          paddingVertical: 11,
+                          paddingHorizontal: 22,
+                          backgroundColor: rgb('constellation-navy-deep', 0.9),
+                          borderWidth: 1,
+                          borderColor: rgb('constellation-gold', 0.5),
+                        }}
+                      />
                     </View>
-                  </View>
+                  </Animated.View>
                 )}
 
-                {/* ── Phase: the parent's five reflections ── */}
+                {/* ── Guided Reflection: the parent's five reflections ── */}
                 {phase === 'questions' && questionsStatus !== 'ready' && (
                   <SetGate
                     status={questionsStatus}
                     progress={questionsProgress}
                     onRetry={onRetryQuestions}
-                    waiting={fillTemplate(
-                      'Writing questions about {name}…',
-                      childName,
-                      childGender,
-                    )}
+                    waiting={fill('Writing questions about {name}…')}
                   />
                 )}
 
@@ -568,11 +1241,7 @@ export default function GrowthAreaSheet({
                                 },
                               ]}
                             >
-                              {fillTemplate(
-                                currentQuestion.question,
-                                childName,
-                                childGender,
-                              )}
+                              {fill(currentQuestion.question)}
                             </Text>
                             <Text
                               style={{
@@ -582,11 +1251,7 @@ export default function GrowthAreaSheet({
                                 color: rgb('constellation-slate-dark'),
                               }}
                             >
-                              {fillTemplate(
-                                currentQuestion.hint,
-                                childName,
-                                childGender,
-                              )}
+                              {fill(currentQuestion.hint)}
                             </Text>
                             <TextareaWithVoice
                               ref={textareaRef}
@@ -598,10 +1263,8 @@ export default function GrowthAreaSheet({
                                 }))
                               }
                               placeholder="Type your thoughts…"
-                              accessibilityLabel={fillTemplate(
+                              accessibilityLabel={fill(
                                 currentQuestion.question,
-                                childName,
-                                childGender,
                               )}
                               rows={3}
                               placeholderTextColor={color['muted-foreground']}
@@ -688,239 +1351,6 @@ export default function GrowthAreaSheet({
                       </View>
                     </>
                   )}
-
-                {/* ── Phase: hand the device to the child ── */}
-                {phase === 'handoff' && (
-                  <Animated.View
-                    entering={HANDOFF_IN}
-                    style={{ marginTop: 26, alignItems: 'center' }}
-                  >
-                    <View
-                      style={{
-                        width: 64,
-                        height: 64,
-                        borderRadius: 32,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        experimental_backgroundImage: BADGE_BG,
-                        borderWidth: 1.5,
-                        borderColor: rgb('constellation-gold', 0.75),
-                        boxShadow: css(
-                          '0 0 30px rgb(var(--constellation-cyan-rgb) / .28)',
-                        ),
-                      }}
-                    >
-                      <PathIcon
-                        d={HANDOFF_STAR_PATH}
-                        size={28}
-                        stroke={rgb('constellation-gold')}
-                        strokeWidth={1.7}
-                      />
-                    </View>
-                    <Text
-                      accessibilityRole="header"
-                      style={[
-                        font('orbitron', 700),
-                        {
-                          marginTop: 16,
-                          fontSize: 18,
-                          textAlign: 'center',
-                          color: rgb('constellation-cyan-paler'),
-                        },
-                      ]}
-                    >
-                      {fillTemplate(
-                        'Thank you. Now {name}’s turn.',
-                        childName,
-                        childGender,
-                      )}
-                    </Text>
-                    <Text
-                      style={{
-                        marginTop: 9,
-                        maxWidth: 400,
-                        fontSize: 14.5,
-                        fontWeight: '600',
-                        textAlign: 'center',
-                        color: rgb('constellation-slate-soft'),
-                      }}
-                    >
-                      {fillTemplate(
-                        // Spelled out, as the design has it — the round count is fixed by
-                        // GAME_ROUNDS_PER_AREA, asserted above.
-                        `Hand the screen to {name}. Six quick choices, then {his} ${area.name} constellation appears.`,
-                        childName,
-                        childGender,
-                      )}
-                    </Text>
-                    {/* The child's rounds are written while the parent reads the copy above. */}
-                    {roundsStatus === 'ready' ? (
-                      <Pill
-                        label="I’m ready"
-                        onPress={() => {
-                          setRIdx(0);
-                          setPicks([]);
-                          setPhase('rounds');
-                        }}
-                        textColor={CTA_TEXT}
-                        fontSize={13}
-                        style={[
-                          CTA,
-                          {
-                            marginTop: 20,
-                            paddingVertical: 12,
-                            paddingHorizontal: 30,
-                          },
-                        ]}
-                      />
-                    ) : (
-                      <SetGate
-                        status={roundsStatus}
-                        progress={roundsProgress}
-                        onRetry={onRetryRounds}
-                        waiting={fillTemplate(
-                          'Building {name}’s choices…',
-                          childName,
-                          childGender,
-                        )}
-                      />
-                    )}
-                  </Animated.View>
-                )}
-
-                {/* ── Phase: the child's six either/or rounds ── */}
-                {/* Reachable un-generated only via Play Again on an area finished before
-                    its rounds were ever generated; the handoff gates every other route in. */}
-                {phase === 'rounds' && roundsStatus !== 'ready' && (
-                  <SetGate
-                    status={roundsStatus}
-                    progress={roundsProgress}
-                    onRetry={onRetryRounds}
-                    waiting={fillTemplate(
-                      'Building {name}’s choices…',
-                      childName,
-                      childGender,
-                    )}
-                  />
-                )}
-
-                {phase === 'rounds' &&
-                  roundsStatus === 'ready' &&
-                  currentRound && (
-                    <Animated.View
-                      key={rIdx}
-                      entering={STEP_IN}
-                      style={{ marginTop: 22 }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'baseline',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                        }}
-                      >
-                        <Text
-                          accessibilityRole="header"
-                          style={[
-                            font('orbitron', 500),
-                            {
-                              flexShrink: 1,
-                              fontSize: 16,
-                              color: rgb('constellation-cyan-pale'),
-                            },
-                          ]}
-                        >
-                          Which would you rather do?
-                        </Text>
-                        <Text numberOfLines={1} style={COUNTER_TEXT}>
-                          Round {rIdx + 1} of {rounds.length}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={{ flexDirection: 'row', gap: 14, marginTop: 16 }}
-                      >
-                        {[currentRound.a, currentRound.b].map(
-                          (option, side) => {
-                            const wasPickedLastTime = picks[rIdx] === option.id;
-                            return (
-                              <Pressable
-                                key={option.id}
-                                accessibilityRole="button"
-                                accessibilityLabel={`${option.text}${
-                                  wasPickedLastTime ? ' (picked last time)' : ''
-                                }`}
-                                accessibilityState={{ disabled: isSaving }}
-                                onPress={() => choose(option)}
-                                disabled={isSaving}
-                                style={({ pressed }) => [
-                                  wasPickedLastTime
-                                    ? CHOICE_TILE_PICKED
-                                    : CHOICE_TILE,
-                                  pressed
-                                    ? { transform: [{ scale: 0.98 }] }
-                                    : null,
-                                ]}
-                              >
-                                <PathIcon
-                                  d={option.icon}
-                                  size={30}
-                                  stroke={
-                                    side === 0
-                                      ? rgb('constellation-cyan')
-                                      : rgb('constellation-gold')
-                                  }
-                                  strokeWidth={1.7}
-                                />
-                                <Text
-                                  style={{
-                                    fontWeight: '700',
-                                    fontSize: 14.5,
-                                    lineHeight: 14.5 * 1.4,
-                                    textAlign: 'center',
-                                    color: rgb('constellation-cyan-pale'),
-                                  }}
-                                >
-                                  {option.text}
-                                </Text>
-                                {wasPickedLastTime && (
-                                  <Text
-                                    numberOfLines={1}
-                                    style={{
-                                      fontSize: 9.5,
-                                      fontWeight: '700',
-                                      letterSpacing: 9.5 * 0.12,
-                                      textTransform: 'uppercase',
-                                      color: rgb('constellation-gold', 0.9),
-                                    }}
-                                  >
-                                    Picked last time
-                                  </Text>
-                                )}
-                              </Pressable>
-                            );
-                          },
-                        )}
-                      </View>
-                    </Animated.View>
-                  )}
-
-                {/* ── Phase: constellation + recommendations ── */}
-                {phase === 'result' && (
-                  <ResultPhase
-                    area={area}
-                    childName={childName}
-                    childGender={childGender}
-                    archetype={archetype}
-                    pickedStars={pickedStars}
-                    recsPhase={recsPhase}
-                    recommendations={recommendations}
-                    onPlayAgain={playAgain}
-                    onDone={requestClose}
-                    onExploreTransform={onExploreTransform}
-                  />
-                )}
 
                 {/* Close — after the content so it stacks on top of the header row. */}
                 <Pressable

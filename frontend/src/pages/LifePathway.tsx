@@ -7,6 +7,7 @@ import { useStageSplash } from '@/hooks/useStageSplash';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import { useIsMobile, useMediaQuery } from '@/hooks/use-mobile';
 import StartJourneyModal from '@/components/lifepathway/StartJourneyModal';
+import ChildQuests from '@/components/lifepathway/ChildQuests';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { useLifePathwayArea } from '@/hooks/useLifePathwayArea';
 import Spinner from '@/components/shared/Spinner';
@@ -1695,6 +1696,9 @@ export default function LifePathway() {
                   </div>
                 </div>
               </section>
+
+              {/* ── The child's quests (child view's Transform, 3.3) ──────── */}
+              <ChildQuests childId={childId} childName={childName} />
 
               {/* ── CTA ──────────────────────────────────────────────────── */}
               <section

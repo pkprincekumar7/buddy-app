@@ -28,6 +28,7 @@ from onboarding_testkit import (
     service_header,
 )
 from pymongo import MongoClient
+from pymongo.errors import OperationFailure
 
 from common.models import CHILD_ACCESS
 from common.routers import assert_every_route_has_a_policy
@@ -323,6 +324,58 @@ def test_two_first_saves_at_once_make_one_conversation(mongo_uri, monkeypatch):
         assert response.status_code == 200 and response.json()["answers"]["energy_level"] == "calm"
         assert await r.db[CONVERSATIONS].count_documents({}) == 1
         assert ("onboarding.answers_updated", 2) in await _events(r, child)
+
+    live(mongo_uri, test)
+
+
+def _purge(mongo: MongoClient[dict[str, Any]], db_name: str, child: str) -> str:
+    """The child's deletion as a tombstone write does it (its guard, then the tombstone), in
+    a transaction of its own: "committed", or "conflicted" with a write in flight."""
+    db = mongo[db_name]
+    with mongo.start_session() as session:
+        session.start_transaction()
+        try:
+            db.guards.update_one(
+                {"_id": f"child:{child}", "location": LOCATION},
+                {"$set": {"touched_at": datetime.now(UTC)}},
+                upsert=True,
+                session=session,
+            )
+            db.tombstones.insert_one(
+                {"_id": f"child:{child}", "location": LOCATION, "version": 2,
+                 "deleted_at": datetime.now(UTC)},
+                session=session,
+            )  # fmt: skip
+            session.commit_transaction()
+            return "committed"
+        except OperationFailure as exc:
+            session.abort_transaction()
+            assert exc.has_error_label("TransientTransactionError")
+            return "conflicted"  # it runs again after the write in flight
+
+
+@pytest.mark.live_service
+def test_a_deletion_during_a_first_save_conflicts_with_it(mongo_uri, monkeypatch):
+    # Found by review: the first save checked the tombstones without touching their guards,
+    # so a deletion committing after the check let the new conversation come back.
+    async def test(r: Running) -> None:
+        child = r.children.add()
+        await r.copy(child)
+        real = main.is_tombstoned
+        mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_uri)
+        deletion: list[str] = []
+
+        async def deleted_after_the_check(*args: Any, **kwargs: Any) -> bool:
+            found = await real(*args, **kwargs)
+            if not deletion:  # the purge commits after the save's check, before its insert
+                deletion.append(_purge(mongo, r.db.name, child))
+            return found
+
+        monkeypatch.setattr(main, "is_tombstoned", deleted_after_the_check)
+        response = await _put(r, child)
+        mongo.close()
+        # They conflicted: the deletion runs again, and then finds the conversation to delete.
+        assert deletion == ["conflicted"] and response.status_code == 201
 
     live(mongo_uri, test)
 

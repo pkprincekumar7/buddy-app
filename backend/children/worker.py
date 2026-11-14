@@ -2,8 +2,9 @@
 
     python -m children.worker
 
-The consumer sets progress flags from the circles' completion events and deletes a user's
-children on `user.deletion_requested`; the purge removes children deleted more than 30
+The consumer sets progress flags from the circles' completion events, records child view's
+Grow worlds and Transform quests from `grow.world_played` and `transform.quest_logged`, and
+deletes a user's children on `user.deletion_requested`; the purge removes children deleted more than 30
 days ago (children.app.lifecycle). Needs the service's configuration plus EVENTS_TOPIC_ARN
 and EVENTS_QUEUE_URL.
 """
@@ -46,6 +47,12 @@ def build_consumer(runtime: Runtime) -> Consumer:
 
     for event_type in lifecycle.FLAG_FOR_EVENT:
         consumer.handler(event_type)(on_completed)
+
+    async def on_child_view(received: ReceivedEvent, _session: Any) -> None:
+        await lifecycle.record_child_view(runtime, received)
+
+    for event_type in lifecycle.CHILD_VIEW_EVENTS:
+        consumer.handler(event_type)(on_child_view)
 
     @consumer.handler("user.deletion_requested")
     async def on_deletion_requested(received: ReceivedEvent, _session: Any) -> None:

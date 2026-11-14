@@ -6,6 +6,8 @@ import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
 import Spinner from '@/components/shared/Spinner';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { daysAgo } from '@/api/kidWorlds';
 import { Button } from '@/components/ui/button';
 
 import {
@@ -16,7 +18,7 @@ import {
   ShieldIcon,
   PencilIcon,
   ToastBanner,
-  BASE_ITEMS,
+  connectItems,
   WA_CONTACTS,
   IG_DESTS,
   IG_BGS,
@@ -86,35 +88,40 @@ export default function Connect() {
   }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   const isNarrow = useMediaQuery('(max-width: 859px)');
+  // The wins the child chose in child view ("Show my grown-up", P.2), newest first, ahead of
+  // the page's own: the parent shares them from here.
+  const { activity: kidActivity } = useKidActivity(childId);
 
   const items = useMemo(
-    () =>
-      BASE_ITEMS.map((it) =>
-        it.title.includes('{name}')
-          ? { ...it, title: it.title.replace('{name}', childName || 'Your child') }
-          : it,
-      ),
-    [childName],
+    () => connectItems(kidActivity?.shown ?? {}, childName, daysAgo),
+    [childName, kidActivity],
   );
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  // The picked card and the parent's edits are kept by the item's id, not its place: the shown
+  // wins load after the page and go first, which moves every other item down.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [edits, setEdits] = useState<Record<number, ItemEdits>>({});
+  const [edits, setEdits] = useState<Record<string, ItemEdits>>({});
 
-  const currentItem = items[activeIndex] ?? items[0]!;
-  const currentEdit = edits[activeIndex] ?? {};
+  const currentItem = items.find((it) => it.id === activeId) ?? items[0]!;
+  const currentEdit = edits[currentItem.id] ?? {};
   const title = currentEdit.title ?? currentItem.title;
   const caption = currentEdit.caption ?? currentItem.caption;
   const touched = currentEdit.title !== undefined || currentEdit.caption !== undefined;
 
   const editField = (field: 'title' | 'caption', value: string) => {
-    setEdits((prev) => ({ ...prev, [activeIndex]: { ...prev[activeIndex], [field]: value } }));
+    // Editing keeps this card picked, so wins arriving after it don't take its place.
+    setActiveId(currentItem.id);
+    setEdits((prev) => ({
+      ...prev,
+      [currentItem.id]: { ...prev[currentItem.id], [field]: value },
+    }));
   };
   const resetCard = () => {
     if (!touched) return;
     setEdits((prev) => {
       const next = { ...prev };
-      delete next[activeIndex];
+      delete next[currentItem.id];
       return next;
     });
   };
@@ -629,12 +636,12 @@ export default function Connect() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-              {items.map((item, index) => (
+              {items.map((item) => (
                 <AccomplishmentRow
-                  key={item.title}
+                  key={item.id}
                   item={item}
-                  active={activeIndex === index}
-                  onPick={() => setActiveIndex(index)}
+                  active={currentItem.id === item.id}
+                  onPick={() => setActiveId(item.id)}
                 />
               ))}
             </div>

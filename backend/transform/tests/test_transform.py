@@ -39,6 +39,7 @@ from transform_testkit import (
 )
 
 from common import upload_tracking
+from common.events import write_tombstone
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS
 from common.routers import assert_every_route_has_a_policy
 from transform.app import generation, main
@@ -63,7 +64,7 @@ def _code(response: httpx.Response) -> str:
 
 
 async def _patch(r: Running, child: str, **body: Any) -> httpx.Response:
-    return await r.http.patch(_path(child), json=body, headers=auth_header())
+    return await r.save_plan(child, **body)
 
 
 async def _start(r: Running, child: str, kind: str, **body: Any) -> httpx.Response:
@@ -103,7 +104,8 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
     assert public == {
         "/health", base, f"{base}/generation", f"{base}/generation/{{job_id}}",
-        f"{base}/photos/presign",
+        f"{base}/photos/presign", f"{base}/quests", f"{base}/quests/current",
+        f"{base}/quests/log",
     }  # fmt: skip
     internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
     assert internal == {"/internal/ping", "/internal/transform/children/{id}/status"}
@@ -427,10 +429,40 @@ def test_photos_round_trip_as_keys_and_urls(mongo_uri, monkeypatch, caplog):
 
         monkeypatch.setattr(r.runtime.uploads, "delete", failing)
         assert (await _patch(r, child, photos={"ideas": []})).status_code == 200
+        # ... and stays tracked, due at once, so the worker's sweep deletes it later.
+        row = await pending.find_one({"_id": second, "child_id": child})
+        assert row is not None and row["sweep_after"] <= datetime.now(UTC)
 
-    with caplog.at_level("WARNING", logger="transform.app.main"):
+    with caplog.at_level("WARNING", logger="common.upload_tracking"):
         live(mongo_uri, test)
-    assert "an old photo wasn't deleted" in caplog.text
+    assert "a replaced photo wasn't deleted; the sweep retries" in caplog.text
+
+
+@pytest.mark.live_service
+def test_a_crash_after_the_commit_leaves_the_replaced_photo_to_the_sweep(mongo_uri, monkeypatch):
+    # The replaced photo used to be tracked only once its delete failed, so a crash between
+    # the commit and the delete left it in S3 for good (review).
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        old = f"uploads/{LOCATION}/{child}/ninety-day-plan/{uuid.uuid4()}.jpg"
+        _put_photo(r, old)
+        assert (await _patch(r, child, photos={"x": [old]})).status_code == 200
+
+        async def crashed(*args: Any, **kwargs: Any) -> bool:
+            return False  # the process died before the delete ran
+
+        monkeypatch.setattr(upload_tracking, "delete_now", crashed)
+        assert (await _patch(r, child, photos={"x": []})).status_code == 200
+        pending = r.db[upload_tracking.PENDING_UPLOADS]
+        row = await pending.find_one({"_id": old, "location": LOCATION})
+        assert row is not None and row["sweep_after"] <= datetime.now(UTC)
+        assert r.runtime.uploads is not None
+        assert await upload_tracking.sweep(r.db, r.runtime.uploads, [LOCATION]) == 1
+        listed = r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET)
+        assert old not in {o["Key"] for o in listed.get("Contents", [])}
+        assert await pending.find_one({"_id": old}) is None
+
+    live(mongo_uri, test)
 
 
 @pytest.mark.live_service
@@ -513,7 +545,7 @@ def test_someone_elses_child_is_not_found_and_admins_only_read(mongo_uri):
         theirs = r.owners.add_child(user_id=OTHER)
         await r.copy(theirs, user_id=OTHER)
         for method, rest, body in (
-            ("GET", "", None), ("PATCH", "", {"ask": "x"}),
+            ("GET", "", None), ("PATCH", "", {"ask": "x", "version": 0}),
             ("POST", "/generation", {"kind": "plan"}),
             ("POST", "/photos/presign", {"field_key": "x", "content_type": "image/png"}),
         ):  # fmt: skip
@@ -536,7 +568,7 @@ def test_someone_elses_child_is_not_found_and_admins_only_read(mongo_uri):
         audited = [(e.subject_id, e.outcome, e.status) for e in r.audit if e.privileged]
         assert audited == [(None, "denied", 422), (PARENT, "allowed", 200), (None, "denied", 404)]
         assert (
-            await r.http.patch(_path(child), json={"ask": "x"}, headers=admin)
+            await r.http.patch(_path(child), json={"ask": "x", "version": 0}, headers=admin)
         ).status_code == 404
 
     live(mongo_uri, test)
@@ -546,7 +578,95 @@ def test_someone_elses_child_is_not_found_and_admins_only_read(mongo_uri):
 
 
 @pytest.mark.live_service
-def test_two_first_saves_at_once_make_one_plan(mongo_uri, monkeypatch):
+def test_a_save_needs_the_version_it_was_made_on(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        missing = await r.http.patch(_path(child), json={"ask": "x"}, headers=auth_header())
+        assert missing.status_code == 422
+        assert (await r.http.get(_path(child), headers=auth_header())).json()["version"] == 0
+        first = await _patch(r, child, version=0, ask="x")
+        assert first.status_code == 200 and first.json()["version"] == 1
+        again = await _patch(r, child, version=0, ask="y")  # the first save's base, again
+        assert again.status_code == 409 and _code(again) == "plan_changed"
+        assert (await _patch(r, child, version=1, ask="y")).json()["version"] == 2
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_two_devices_saving_at_once_lose_nothing(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        photo = f"uploads/{LOCATION}/{child}/ninety-day-plan/{uuid.uuid4()}.jpg"
+        _put_photo(r, photo)
+        base = (await _patch(r, child, applied={"a": True}, photos={"act:1": [photo]})).json()
+        # Device A adds a photo and ticks an activity, on the version both devices read.
+        newer = f"uploads/{LOCATION}/{child}/ninety-day-plan/{uuid.uuid4()}.jpg"
+        _put_photo(r, newer)
+        a = await _patch(
+            r, child, version=base["version"], applied={"a": True, "b": True},
+            photos={"act:1": [photo, newer]},
+        )  # fmt: skip
+        assert a.status_code == 200
+        # Device B, still on that version, clears the field and unticks: refused whole.
+        b = await _patch(r, child, version=base["version"], applied={}, photos={"act:1": []})
+        assert b.status_code == 409 and _code(b) == "plan_changed"
+        view = (await r.http.get(_path(child), headers=auth_header())).json()
+        assert view["applied"] == {"a": True, "b": True} and view["version"] == a.json()["version"]
+        assert [p["key"] for p in view["photos"]["act:1"]] == [photo, newer]
+        listed = r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET)
+        assert {photo, newer} <= {o["Key"] for o in listed["Contents"]}  # nothing deleted
+        # B reloads and saves again on the new version: only what B removed goes.
+        redone = await _patch(r, child, version=view["version"], photos={"act:1": [newer]})
+        assert redone.status_code == 200
+        listed = r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET)
+        keys = {o["Key"] for o in listed["Contents"]}
+        assert newer in keys and photo not in keys
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_save_returns_its_own_version_when_another_commits_right_after(mongo_uri, monkeypatch):
+    # The response was read again after the commit, so another device's save landing in
+    # between gave this app its version without its edits; the app's next save (whole
+    # maps, on that version) then silently undid them (review).
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        photo = f"uploads/{LOCATION}/{child}/ninety-day-plan/{uuid.uuid4()}.jpg"
+        _put_photo(r, photo)
+        base = (await _patch(r, child, applied={"a": True}, photos={"x": [photo]})).json()
+        assert r.runtime.uploads is not None
+        real = r.runtime.uploads.delete
+        mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_uri)
+
+        async def other_save_meanwhile(key: str) -> None:
+            # After this save committed, while it deletes the photo it removed.
+            mongo[r.db.name][PLANS].update_one(
+                {"_id": child}, {"$set": {"applied": {"other": True}}, "$inc": {"version": 1}}
+            )
+            await real(key)
+
+        monkeypatch.setattr(r.runtime.uploads, "delete", other_save_meanwhile)
+        saved = await _patch(
+            r, child, version=base["version"], applied={"a": True, "b": True}, photos={"x": []}
+        )
+        mongo.close()
+        assert saved.status_code == 200
+        assert saved.json()["version"] == base["version"] + 1
+        assert saved.json()["applied"] == {"a": True, "b": True}
+        monkeypatch.setattr(r.runtime.uploads, "delete", real)
+        # So the app's next save, on that version, is refused instead of undoing the other.
+        again = await _patch(r, child, version=saved.json()["version"], applied={})
+        assert again.status_code == 409 and _code(again) == "plan_changed"
+        stored = await r.db[PLANS].find_one({"_id": child})
+        assert stored["applied"] == {"other": True}
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_two_first_saves_at_once_make_one_plan_and_a_409(mongo_uri, monkeypatch):
     async def test(r: Running) -> None:
         child = await r.ready_child()
         real = main.is_tombstoned
@@ -564,34 +684,92 @@ def test_two_first_saves_at_once_make_one_plan(mongo_uri, monkeypatch):
             return await real(*args, **kwargs)
 
         monkeypatch.setattr(main, "is_tombstoned", other_save_first)
-        saved = await _patch(r, child, ask="Skateboarding")
+        saved = await _patch(r, child, version=0, ask="Skateboarding")
         mongo.close()
-        assert saved.status_code == 200 and saved.json()["ask"] == "Skateboarding"
-        assert (await r.db[PLANS].find_one({}))["version"] == 2
+        assert saved.status_code == 409 and _code(saved) == "plan_changed"
+        assert await r.db[PLANS].count_documents({}) == 1
+        assert "ask" not in await r.db[PLANS].find_one({})
 
     live(mongo_uri, test)
 
 
 @pytest.mark.live_service
-def test_a_plan_that_keeps_changing_is_409_and_a_deletion_meanwhile_404(mongo_uri, monkeypatch):
+def test_a_first_save_conflicts_with_a_deletion_in_flight(mongo_uri, monkeypatch):
+    # A first save checked "not deleted" without touching the guards, so a deletion
+    # committing meanwhile didn't conflict and the insert brought the plan back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        real = main.is_tombstoned
+        conflicts: list[OperationFailure] = []
+
+        async def deleted_meanwhile(*args: Any, **kwargs: Any) -> bool:
+            if not conflicts:
+                async with r.runtime.client.start_session() as deleting:
+                    try:
+                        async with await deleting.start_transaction():
+                            await write_tombstone(
+                                r.db, f"child:{child}", location=LOCATION, version=9,
+                                session=deleting,
+                            )  # fmt: skip
+                    except OperationFailure as exc:
+                        conflicts.append(exc)
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(main, "is_tombstoned", deleted_meanwhile)
+        assert (await _patch(r, child, version=0, ask="x")).status_code == 200
+        (conflict,) = conflicts
+        assert conflict.has_error_label("TransientTransactionError")
+        # The deletion, run again after the save, then wins: every later save is 404.
+        await write_tombstone(r.db, f"child:{child}", location=LOCATION, version=9)
+        assert (await _patch(r, child, version=1, ask="y")).status_code == 404
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_new_ask_or_event_ends_the_generation_building_from_the_old_one(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        await _patch(r, child, ask="Skateboarding")
+        job = (await _start(r, child, "plan")).json()["job_id"]
+        claimed = await claim(r.db)
+        # The same ask again changes nothing the plan is built from.
+        await _patch(r, child, ask="Skateboarding", applied={"a": True})
+        assert (await r.db[JOBS].find_one({"_id": job}))["status"] == "processing"
+        await _patch(r, child, ask="Drawing")
+        ended = await r.db[JOBS].find_one({"_id": job})
+        assert ended["status"] == "failed" and ended["error"] == "superseded: its inputs changed"
+        llm = llm_client(FakeOpenAI(answers=[PLAN_ANSWER]))
+        assert await generation.process(r.runtime, llm, claimed) == "dropped"
+        doc = await r.db[PLANS].find_one({"_id": child})
+        assert "plan" not in doc and doc["active_jobs"] == {}
+        # A new start builds from the new ask.
+        await _generate(r, child, "plan", PLAN_ANSWER)
+        await _patch(r, child, event_name="Show", event_date="2027-01-01", event_set=True)
+        tracker = (await _start(r, child, "event_tracker")).json()["job_id"]
+        claimed = await claim(r.db)
+        await _patch(r, child, event_date="2027-02-01")
+        assert (await r.db[JOBS].find_one({"_id": tracker}))["error"] == (
+            "superseded: its inputs changed"
+        )
+        llm = llm_client(FakeOpenAI(answers=[TRACKER_ANSWER]))
+        assert await generation.process(r.runtime, llm, claimed) == "dropped"
+        assert "track_steps" not in await r.db[PLANS].find_one({"_id": child})
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_deletion_meanwhile_is_404(mongo_uri, monkeypatch):
     async def test(r: Running) -> None:
         child = await r.ready_child()
         await _patch(r, child, ask="x")
-        real = main.is_tombstoned
-
-        async def changed_each_time(*args: Any, **kwargs: Any) -> bool:
-            await r.db[PLANS].update_one({}, {"$inc": {"version": 1}})
-            return await real(*args, **kwargs)
-
-        monkeypatch.setattr(main, "is_tombstoned", changed_each_time)
-        response = await _patch(r, child, ask="y")
-        assert response.status_code == 409 and _code(response) == "plan_changed"
 
         async def deleted(*args: Any, **kwargs: Any) -> bool:
             return True
 
         monkeypatch.setattr(main, "is_tombstoned", deleted)
-        assert (await _patch(r, child, ask="z")).status_code == 404
+        assert (await _patch(r, child, version=1, ask="z")).status_code == 404
 
     live(mongo_uri, test)
 
@@ -741,7 +919,7 @@ def test_missing_copies_are_read_through(mongo_uri):
         assert len(r.owners.calls) == calls
         # The personality, read through from discover when a start needs it.
         await r.area(child)
-        await r.http.patch(_path(child), json={"ask": "x"}, headers=auth_header())
+        await r.save_plan(child, ask="x")
         missing = await _start(r, child, "plan")
         assert missing.status_code == 503 and _code(missing) == "discover_unavailable"
         r.owners.personality(child, version=3)
@@ -751,7 +929,7 @@ def test_missing_copies_are_read_through(mongo_uri):
         theirs = r.owners.add_child()
         await r.copy(theirs)
         await r.area(theirs)
-        await r.http.patch(_path(theirs), json={"ask": "x"}, headers=auth_header())
+        await r.save_plan(theirs, ask="x")
         r.owners.personality(theirs, user_id=OTHER)
         assert (await _start(r, theirs, "plan")).status_code == 503  # never someone else's
 

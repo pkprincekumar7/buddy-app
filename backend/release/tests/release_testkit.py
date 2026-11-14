@@ -72,7 +72,7 @@ ANSWERS: dict[str, Any] = {
     "social_behaviour": "outgoing",
     "emotional_behaviour": "steady",
 }
-CHOICE = "Chose “Build a robot” over “Tell a story”"
+GAME_LINE = "Played Healthy Catch (Healthy habits): 80 of 100, Super strong"
 
 
 def _observation(title: str, sources: list[str], notes: list[str] | None = None) -> dict[str, Any]:
@@ -85,13 +85,17 @@ def _observation(title: str, sources: list[str], notes: list[str] | None = None)
     }
 
 
-# A valid answer: six patterns, one per source at least, one with a real choice line and
-# one with an invented one.
+# A valid answer: six patterns, one per source at least, one with a real game line and
+# one with an invented one (a score the child never got).
 OBSERVATIONS_ANSWER: dict[str, Any] = {
     "observations": [
         _observation("Settles better outdoors than indoors", ["onboarding", "grow"]),
         _observation("Attention runs long on chosen projects", ["grow"]),
-        _observation("Picks making over telling", ["child"], [CHOICE, "Chose “Fly” over “Swim”"]),
+        _observation(
+            "Plays healthy-habit games strongly",
+            ["child"],
+            [GAME_LINE, "Played Healthy Catch (Healthy habits): 100 of 100, Super strong"],
+        ),
         _observation("Talks through plans before starting", ["onboarding"]),
         _observation("Prefers quiet starts to mornings", ["onboarding"]),
         _observation("Finishes what she starts with a friend", ["grow"]),
@@ -113,7 +117,7 @@ def area_copy(area_id: str = "self_care", user_id: str = PARENT) -> dict[str, An
         "reflections": [
             {"question": "What does she do at bedtime?", "answer": "Brushes her teeth alone"}
         ],
-        "child_choices": [CHOICE],
+        "child_games": [GAME_LINE],
     }
 
 

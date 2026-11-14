@@ -190,11 +190,21 @@ interface Props {
   onContinue: (data: ChildFormData, photoFile?: File) => void | Promise<void>;
   initialData?: Partial<ChildFormData>;
   isLoading?: boolean;
+  /** The submit button's label: "Continue →" in setup, "Save changes" when editing. */
+  submitLabel?: string;
+  /** Opens the finished chat's answers (read-only); shown when editing a finished child. */
+  onViewAnswers?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ChildProfileStep({ onContinue, initialData, isLoading }: Props) {
+export default function ChildProfileStep({
+  onContinue,
+  initialData,
+  isLoading,
+  submitLabel = 'Continue →',
+  onViewAnswers,
+}: Props) {
   const [form, setForm] = useState<ChildFormData>({
     name: initialData?.name ?? '',
     age: initialData?.age ?? '',
@@ -511,23 +521,36 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between pt-1">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <p className="text-xs text-muted-foreground/40">* Required</p>
-          <Button
-            type="button"
-            onClick={handleContinue}
-            disabled={isLoading}
-            className="glow-teal-btn h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Saving…
-              </span>
-            ) : (
-              'Continue →'
+          <div className="flex flex-wrap items-center gap-3">
+            {onViewAnswers && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onViewAnswers}
+                disabled={isLoading}
+                className="h-11 rounded-full px-6 font-semibold"
+              >
+                See chat answers
+              </Button>
             )}
-          </Button>
+            <Button
+              type="button"
+              onClick={handleContinue}
+              disabled={isLoading}
+              className="glow-teal-btn h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Saving…
+                </span>
+              ) : (
+                submitLabel
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </motion.div>

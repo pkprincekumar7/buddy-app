@@ -102,6 +102,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/children/{id}/personality/powers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Powers
+         * @description Child view's seven powers (Discover's kids page), each with its game, a level from 3 to 5 that follows the personality, a line and a "try this". `404 personality_not_ready` until the personality is `ready`. Parents only.
+         */
+        get: operations["get_powers_api_v1_children__id__personality_powers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -152,6 +172,31 @@ export interface components {
             finalised_at: string | null;
             /** Viewed At */
             viewed_at: string | null;
+        };
+        /** Power */
+        Power: {
+            /** Name */
+            name: string;
+            /**
+             * Game
+             * @enum {string}
+             */
+            game: "focus" | "curious" | "order" | "draw" | "climb" | "voice" | "energy";
+            /** Level */
+            level: number;
+            /** Line */
+            line: string;
+            /** Try This */
+            try_this: string;
+        };
+        /** Powers */
+        Powers: {
+            /** Style */
+            style: string;
+            /** Style Line */
+            style_line: string;
+            /** Powers */
+            powers: components["schemas"]["Power"][];
         };
         /** Started */
         Started: {
@@ -332,6 +377,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Personality"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_powers_api_v1_children__id__personality_powers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Powers"];
                 };
             };
             /** @description Validation Error */

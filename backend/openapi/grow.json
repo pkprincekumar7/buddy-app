@@ -121,7 +121,7 @@
           "growth-areas"
         ],
         "summary": "Save Area",
-        "description": "Save one area: the parent's progress through its wizard, and its completion (`grow.area_completed`, and `grow.completed` for the child's first). Editing a completed area publishes `grow.area_updated`. Answer keys must be ids from the area's `parent_questions`; the generated parts can't be sent.",
+        "description": "Save one area: the parent's progress through its wizard, and its completion (`grow.area_completed`, and `grow.completed` for the child's first). Editing a completed area publishes `grow.area_updated`; a completed area stays completed (a save sending `in_progress` is an edit of it). Answer keys must be ids from the area's `parent_questions`; the generated parts can't be sent.",
         "operationId": "save_area_api_v1_children__id__growth_areas__area_id__put",
         "security": [
           {
@@ -197,7 +197,7 @@
           "growth-areas"
         ],
         "summary": "Start Generation",
-        "description": "Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`); recommendations need the answers saved (`409 needs_answers`) and replace the last ones. The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).",
+        "description": "Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`). Recommendations need the parent's answers saved or a run of the area's world (`409 needs_input`), are written from both, and replace the last ones; the area's `recommendations_run_at` is the run they used, and its `recommendations_current` says whether they're from its present answers and feedback. An answered area is completed by its recommendations' job (`grow.area_completed`, and `grow.completed` for the child's first). The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).",
         "operationId": "start_generation_api_v1_children__id__growth_areas__area_id__generation_post",
         "security": [
           {
@@ -351,6 +351,137 @@
           }
         }
       }
+    },
+    "/api/v1/children/{id}/growth-areas/worlds": {
+      "get": {
+        "tags": [
+          "growth-areas"
+        ],
+        "summary": "Get Worlds",
+        "description": "Child view's six worlds with their games, the score bands, and the child's last runs per world. Parents only (the parent's Growth page reads it too).",
+        "operationId": "get_worlds_api_v1_children__id__growth_areas_worlds_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Worlds"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/growth-areas/worlds/{world}/runs": {
+      "post": {
+        "tags": [
+          "growth-areas"
+        ],
+        "summary": "Add World Run",
+        "description": "A finished world: its three games' scores (0 to 100). The world keeps its last 10 runs, and publishes `grow.world_played` in the same transaction (children marks Grow done in child view from it). Parents only.",
+        "operationId": "add_world_run_api_v1_children__id__growth_areas_worlds__world__runs_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "world",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 0,
+              "description": "The world, 0 to 5",
+              "title": "World"
+            },
+            "description": "The world, 0 to 5"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Worlds"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -447,18 +578,6 @@
             ],
             "title": "Parent Questions"
           },
-          "child_rounds": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Child Rounds"
-          },
           "answers": {
             "additionalProperties": {
               "type": "string"
@@ -496,10 +615,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object"
+                  "$ref": "#/components/schemas/Recommendation"
                 },
                 "type": "array"
               },
@@ -508,6 +624,22 @@
               }
             ],
             "title": "Ai Three Month Recommendations"
+          },
+          "recommendations_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendations Run At"
+          },
+          "recommendations_current": {
+            "type": "boolean",
+            "title": "Recommendations Current"
           },
           "feedback": {
             "anyOf": [
@@ -525,7 +657,6 @@
               "type": "string",
               "enum": [
                 "parent_questions",
-                "child_rounds",
                 "recommendations"
               ]
             },
@@ -557,11 +688,12 @@
           "status",
           "step",
           "parent_questions",
-          "child_rounds",
           "answers",
           "child_activity",
           "recommendations",
           "ai_three_month_recommendations",
+          "recommendations_run_at",
+          "recommendations_current",
           "feedback",
           "generating",
           "completed_at",
@@ -671,24 +803,36 @@
         ],
         "title": "Areas"
       },
+      "Band": {
+        "properties": {
+          "min": {
+            "type": "integer",
+            "title": "Min"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "gold",
+              "cyan",
+              "violet"
+            ],
+            "title": "Color"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "label",
+          "color"
+        ],
+        "title": "Band"
+      },
       "ChildActivity": {
         "properties": {
-          "selections": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string",
-                  "maxLength": 1000
-                },
-                "type": "array",
-                "maxItems": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selections"
-          },
           "results": {
             "anyOf": [
               {
@@ -703,7 +847,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ChildActivity",
-        "description": "The child's picks (option ids from `child_rounds`) and, for older flows, results."
+        "description": "The child's activity results, carried by the area's events (`child_activity_results`)."
       },
       "GenerationIn": {
         "properties": {
@@ -711,7 +855,6 @@
             "type": "string",
             "enum": [
               "parent_questions",
-              "child_rounds",
               "recommendations"
             ],
             "title": "Kind"
@@ -760,7 +903,6 @@
             "type": "string",
             "enum": [
               "parent_questions",
-              "child_rounds",
               "recommendations"
             ],
             "title": "Kind"
@@ -814,6 +956,56 @@
           "completed_at"
         ],
         "title": "Job"
+      },
+      "Recommendation": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "both",
+              "kid",
+              "you",
+              "step"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "detail"
+        ],
+        "title": "Recommendation",
+        "description": "One of the area's AI recommendations (grow.app.areas.normalize_recommendations)."
+      },
+      "RunIn": {
+        "properties": {
+          "scores": {
+            "items": {
+              "type": "integer",
+              "maximum": 100.0,
+              "minimum": 0.0
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Scores"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scores"
+        ],
+        "title": "RunIn"
       },
       "Started": {
         "properties": {
@@ -872,6 +1064,153 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "World": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon"
+          },
+          "mission": {
+            "type": "string",
+            "title": "Mission"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/WorldGame"
+            },
+            "type": "array",
+            "title": "Games"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "icon",
+          "mission",
+          "hint",
+          "games"
+        ],
+        "title": "World"
+      },
+      "WorldGame": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "dash",
+              "sort",
+              "timing",
+              "catch",
+              "memory",
+              "spark",
+              "react"
+            ],
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "skill": {
+            "type": "string",
+            "title": "Skill"
+          },
+          "how": {
+            "type": "string",
+            "title": "How"
+          },
+          "tip": {
+            "type": "string",
+            "title": "Tip"
+          },
+          "cfg": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cfg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "skill",
+          "how",
+          "tip",
+          "cfg"
+        ],
+        "title": "WorldGame"
+      },
+      "WorldRun": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "scores": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Scores"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "scores",
+          "at"
+        ],
+        "title": "WorldRun"
+      },
+      "Worlds": {
+        "properties": {
+          "worlds": {
+            "items": {
+              "$ref": "#/components/schemas/World"
+            },
+            "type": "array",
+            "title": "Worlds"
+          },
+          "bands": {
+            "items": {
+              "$ref": "#/components/schemas/Band"
+            },
+            "type": "array",
+            "title": "Bands"
+          },
+          "runs": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/WorldRun"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Runs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "worlds",
+          "bands",
+          "runs"
+        ],
+        "title": "Worlds",
+        "description": "The six worlds and their games, the score bands, and the child's runs per world\n(`\"0\"`\u2026`\"5\"`, oldest first, the last 10)."
       }
     },
     "securitySchemes": {

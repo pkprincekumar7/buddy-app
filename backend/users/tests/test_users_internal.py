@@ -6,8 +6,6 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import pytest
-from pymongo.asynchronous.collection import AsyncCollection
-from pymongo.errors import DuplicateKeyError
 from users_testkit import (
     LOCATION,
     PARENT,
@@ -92,35 +90,102 @@ def test_a_deleted_accounts_profile_cant_come_back(mongo_uri):
 
 
 @pytest.mark.live_service
-def test_a_concurrent_create_is_answered_as_already_existing(mongo_uri, monkeypatch):
+def test_concurrent_creates_make_one_profile(mongo_uri):
     async def test(r: Running) -> None:
-        real = main.is_tombstoned
-
-        async def another_retry_wins(db, keys):
-            # The other request inserts between this one's read and its insert.
-            monkeypatch.setattr(main, "is_tombstoned", real)
-            assert (await create_profile(r)).status_code == 201
-            return await real(db, keys)
-
-        monkeypatch.setattr(main, "is_tombstoned", another_retry_wins)
-        response = await create_profile(r)
-        assert response.status_code == 200
+        # Both touch the user's guard in their transaction: one runs again and finds the
+        # other's profile.
+        first, second = await asyncio.gather(create_profile(r), create_profile(r))
+        assert sorted([first.status_code, second.status_code]) == [200, 201]
         assert await r.runtime.db[USERS].count_documents({"_id": PARENT}) == 1
 
     live(mongo_uri, test)
 
 
 @pytest.mark.live_service
-def test_a_profile_created_and_deleted_concurrently_asks_for_a_retry(mongo_uri, monkeypatch):
+def test_a_put_after_the_undo_delete_is_refused(mongo_uri):
+    # Auth timed out on its PUT and undid the registration (DELETE, 204); the PUT, still
+    # running in users, must not create the profile afterwards (review).
     async def test(r: Running) -> None:
-        async def duplicate(*args, **kwargs):
-            # Another request inserted it, and a DELETE removed it, before this re-read.
-            raise DuplicateKeyError("E11000 duplicate key")
+        path = f"/internal/users/{PARENT}"
+        undo = await r.internal.delete(
+            path, params={"location": LOCATION}, headers=service_header()
+        )
+        assert undo.status_code == 204
+        late = await create_profile(r)
+        assert (late.status_code, late.json()["detail"]["code"]) == (409, "profile_deleted")
+        assert await r.runtime.db[USERS].find_one({"_id": PARENT}) is None
 
-        monkeypatch.setattr(AsyncCollection, "insert_one", duplicate)
-        response = await create_profile(r)
-        assert response.status_code == 409
-        assert response.json()["detail"]["code"] == "profile_conflict"
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_delete_during_a_slow_put_leaves_no_profile(mongo_uri, monkeypatch):
+    # The PUT holds the guard (written, not committed); the DELETE's tombstone touches it
+    # too, so the DELETE conflicts and runs again once the PUT commits, then removes it.
+    async def test(r: Running) -> None:
+        real_check, real_stone = main.is_tombstoned, main.write_tombstone
+        path = f"/internal/users/{PARENT}"
+        undo: dict[str, asyncio.Task] = {}
+        stone_tries: list[int] = []
+
+        async def slow(db, keys, session=None, **kwargs):
+            # The check inside the PUT's transaction, right after write_guards.
+            if session is not None and not undo:
+                undo["task"] = asyncio.create_task(
+                    r.internal.delete(path, params={"location": LOCATION}, headers=service_header())
+                )
+                await asyncio.sleep(0.3)
+            return await real_check(db, keys, session, **kwargs)
+
+        async def counted(*args, **kwargs):
+            stone_tries.append(0)
+            return await real_stone(*args, **kwargs)
+
+        monkeypatch.setattr(main, "is_tombstoned", slow)
+        monkeypatch.setattr(main, "write_tombstone", counted)
+        put = await create_profile(r)
+        deleted = await undo["task"]
+        # The PUT went first and created the profile; the DELETE answered after it.
+        assert (put.status_code, deleted.status_code) == (201, 204)
+        assert len(stone_tries) >= 2, "the DELETE didn't conflict with the PUT's guard"
+        assert await r.runtime.db[USERS].find_one({"_id": PARENT}) is None
+        assert await r.runtime.db.tombstones.find_one({"_id": f"user:{PARENT}"}) is not None
+        monkeypatch.setattr(main, "is_tombstoned", real_check)
+        assert (await create_profile(r)).status_code == 409
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_put_during_a_slow_delete_is_refused(mongo_uri, monkeypatch):
+    # The other order: the DELETE holds the guard with its tombstone (not committed); the
+    # PUT passed its read before the transaction, conflicts on the guard, and run again
+    # sees the tombstone.
+    async def test(r: Running) -> None:
+        real_stone, real_guards = main.write_tombstone, main.write_guards
+        put: dict[str, asyncio.Task] = {}
+        guard_tries: list[int] = []
+
+        async def slow(*args, **kwargs):
+            await real_stone(*args, **kwargs)
+            if not put:
+                put["task"] = asyncio.create_task(create_profile(r))
+                await asyncio.sleep(0.3)
+
+        async def counted(*args, **kwargs):
+            guard_tries.append(0)
+            return await real_guards(*args, **kwargs)
+
+        monkeypatch.setattr(main, "write_tombstone", slow)
+        monkeypatch.setattr(main, "write_guards", counted)
+        deleted = await r.internal.delete(
+            f"/internal/users/{PARENT}", params={"location": LOCATION}, headers=service_header()
+        )
+        late = await put["task"]
+        assert deleted.status_code == 204
+        assert (late.status_code, late.json()["detail"]["code"]) == (409, "profile_deleted")
+        assert len(guard_tries) >= 2, "the PUT didn't conflict with the DELETE's guard"
+        assert await r.runtime.db[USERS].find_one({"_id": PARENT}) is None
 
     live(mongo_uri, test)
 
@@ -185,8 +250,10 @@ def test_delete_removes_the_profile_and_is_safe_to_repeat(mongo_uri):
             )
             assert response.status_code == 204 and response.content == b""
         assert await r.runtime.db[USERS].count_documents({"_id": PARENT}) == 0
-        # Undoing a registration isn't an account deletion: no tombstone, no event.
-        assert await r.runtime.db.tombstones.count_documents({}) == 0
+        # A tombstone (ids only) so a late PUT can't bring it back; but it isn't an account
+        # deletion: no event.
+        stone = await r.runtime.db.tombstones.find_one({"_id": f"user:{PARENT}"})
+        assert stone is not None and stone["location"] == LOCATION and stone["version"] == 2
         assert await r.runtime.db.outbox.count_documents({}) == 0
         assert (await r.internal.delete(path, headers=service_header())).status_code == 422
         bad = await r.internal.delete(

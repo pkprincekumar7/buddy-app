@@ -3,7 +3,9 @@
 - `start`: one job per child, through common.generation.jobs.start_job, which takes the
   `active_job_id` lock and inserts the job in one transaction. Only from `not_started` or
   `failed`: a `ready` personality is never regenerated (12.1). Used by
-  `POST …/personality/generation` and by the worker on `onboarding.conversation_completed`.
+  `POST …/personality/generation` and by the worker on `onboarding.conversation_completed`,
+  which starts one only from `not_started` (`first_only`): a redelivery never starts a
+  second generation outside the hourly LLM limit.
 - `process`: the worker's part. It builds the prompt from discover's own copies
   (`child_access`, `onboarding_inputs`), calls the LLM, checks the answer against the
   schema, builds the view model, and stores it (`status: ready`) in one transaction with
@@ -63,28 +65,45 @@ async def running_job(runtime: Runtime, personality: Mapping[str, Any] | None) -
 
 
 async def start(
-    runtime: Runtime, *, child_id: str, user_id: str, location: str, input_version: int
+    runtime: Runtime,
+    *,
+    child_id: str,
+    user_id: str,
+    location: str,
+    input_version: int,
+    first_only: bool = False,
 ) -> tuple[str, bool]:
     """Start the generation, or return the running one. Returns (job id, created).
 
-    AlreadyGenerated if it's ready; common.generation.jobs.JobRefused if the child or user
-    is deleted.
+    AlreadyGenerated if it's ready, and with `first_only` (the automatic start on
+    `onboarding.conversation_completed`) if any generation was ever started: the
+    personality document exists only once one was. A failed one is then the parent's to
+    retry, against the hourly LLM limit, so a redelivered event never starts a second.
+    common.generation.jobs.JobRefused if the child or user is deleted.
     """
     current = await runtime.db[PERSONALITIES].find_one({"_id": child_id, "location": location})
-    if current is not None and current["status"] not in STARTABLE:
+    if current is not None and (first_only or current["status"] not in STARTABLE):
         held = await running_job(runtime, current)
         if held is not None:
             return held, False
-        if current["status"] == "ready":
+        if first_only or current["status"] == "ready":
             raise AlreadyGenerated(child_id)
     try:
-        return await _start_job(runtime, child_id, user_id, location, input_version)
+        return await _start_job(
+            runtime, child_id, user_id, location, input_version, first_only=first_only
+        )
     except jobs.TargetRefused:
         raise AlreadyGenerated(child_id) from None
 
 
 async def _start_job(
-    runtime: Runtime, child_id: str, user_id: str, location: str, input_version: int
+    runtime: Runtime,
+    child_id: str,
+    user_id: str,
+    location: str,
+    input_version: int,
+    *,
+    first_only: bool,
 ) -> tuple[str, bool]:
     return await jobs.start_job(
         runtime.db,
@@ -97,8 +116,9 @@ async def _start_job(
         input_version=input_version,
         target_on_insert={"version": 1, "source": "llm"},
         # Checked again in the start's transaction: a job finishing meanwhile can't be
-        # followed by a second generation (review).
-        refuse_if={"status": "ready"},
+        # followed by a second generation (review), and with `first_only` a generation
+        # started meanwhile (the document is there) can't be followed by another.
+        refuse_if={} if first_only else {"status": "ready"},
     )
 
 

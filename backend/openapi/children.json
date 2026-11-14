@@ -497,6 +497,165 @@
           }
         }
       }
+    },
+    "/api/v1/children/{id}/kids": {
+      "get": {
+        "tags": [
+          "children"
+        ],
+        "summary": "Kid Activity",
+        "description": "What the child has done in child view (parents only): stars, Discover's flipped powers and best times, and the last 62 days' moods. `?date=` is the child's day.",
+        "operationId": "kid_activity_api_v1_children__id__kids_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's own day (their device's date), YYYY-MM-DD: within a day of the server's.",
+              "title": "Date"
+            },
+            "description": "The child's own day (their device's date), YYYY-MM-DD: within a day of the server's."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidActivity"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/kids/events": {
+      "post": {
+        "tags": [
+          "children"
+        ],
+        "summary": "Kid Event",
+        "description": "One thing the child did in child view (parents only; the child uses the parent's session). The server gives the stars, each once. Refused with `circle_locked` while the action's circle isn't open in child view: Discover once the chat is done, each other once the one before is done there (`circles_done`). Grow's worlds and Transform's quests aren't sent here: grow and transform publish them (`grow.world_played`, `transform.quest_logged`) with the run or the log, and children records them.",
+        "operationId": "kid_event_api_v1_children__id__kids_events_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's own day (their device's date), YYYY-MM-DD: within a day of the server's.",
+              "title": "Date"
+            },
+            "description": "The child's own day (their device's date), YYYY-MM-DD: within a day of the server's."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FlipPower"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TryPower"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GameBest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MoodIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ShowWin"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidActivity"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -743,6 +902,66 @@
         "title": "ChildPatch",
         "description": "Any subset; `null` clears an optional field. `avatar_id` and `avatar_key` exclude each other."
       },
+      "FlipPower": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "flip_power",
+            "title": "Type"
+          },
+          "power": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Power"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "power"
+        ],
+        "title": "FlipPower",
+        "description": "The child opened a Discover power: +1 the first time, +3 once all are open."
+      },
+      "GameBest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "game_best",
+            "title": "Type"
+          },
+          "game": {
+            "type": "string",
+            "enum": [
+              "focus",
+              "curious",
+              "order",
+              "draw",
+              "climb",
+              "voice",
+              "energy"
+            ],
+            "title": "Game"
+          },
+          "seconds": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 0.5,
+            "title": "Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "game",
+          "seconds"
+        ],
+        "title": "GameBest",
+        "description": "A Discover mini game finished: kept when it's the child's best time. No stars."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -755,6 +974,169 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "KidActivity": {
+        "properties": {
+          "stars": {
+            "type": "integer",
+            "title": "Stars"
+          },
+          "circles_done": {
+            "$ref": "#/components/schemas/KidCircles"
+          },
+          "flipped_powers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Flipped Powers"
+          },
+          "discover_badge": {
+            "type": "boolean",
+            "title": "Discover Badge"
+          },
+          "tried_today": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Tried Today",
+            "description": "Powers whose \"Try this today\" is done today."
+          },
+          "best_times": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Best Times"
+          },
+          "moods": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/KidMood"
+            },
+            "type": "object",
+            "title": "Moods",
+            "description": "The last 62 days' moods, newest first."
+          },
+          "shown": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ShownWin"
+            },
+            "type": "object",
+            "title": "Shown",
+            "description": "The wins \"Show my grown-up\" kept, by key."
+          }
+        },
+        "type": "object",
+        "required": [
+          "stars",
+          "circles_done",
+          "flipped_powers",
+          "discover_badge",
+          "tried_today",
+          "best_times",
+          "moods"
+        ],
+        "title": "KidActivity"
+      },
+      "KidCircles": {
+        "properties": {
+          "discover": {
+            "type": "boolean",
+            "title": "Discover"
+          },
+          "grow": {
+            "type": "boolean",
+            "title": "Grow"
+          },
+          "transform": {
+            "type": "boolean",
+            "title": "Transform"
+          },
+          "release": {
+            "type": "boolean",
+            "title": "Release"
+          },
+          "connect": {
+            "type": "boolean",
+            "title": "Connect"
+          }
+        },
+        "type": "object",
+        "required": [
+          "discover",
+          "grow",
+          "transform",
+          "release",
+          "connect"
+        ],
+        "title": "KidCircles",
+        "description": "Which circles the child has done in child view; each opens the next."
+      },
+      "KidMood": {
+        "properties": {
+          "mood": {
+            "type": "string",
+            "title": "Mood"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mood",
+          "note"
+        ],
+        "title": "KidMood"
+      },
+      "MoodIn": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "mood",
+            "title": "Type"
+          },
+          "mood": {
+            "type": "string",
+            "enum": [
+              "great",
+              "good",
+              "okay",
+              "low",
+              "upset"
+            ],
+            "title": "Mood"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "mood"
+        ],
+        "title": "MoodIn",
+        "description": "Release's check-in for the child's day: +1 once a day; a second one that day\nreplaces it."
       },
       "PresignIn": {
         "properties": {
@@ -856,6 +1238,77 @@
           "progress"
         ],
         "title": "ProgressOut"
+      },
+      "ShowWin": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "show_win",
+            "title": "Type"
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z]{1,12}(:[a-z0-9_-]{1,20}){0,3}$",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "key",
+          "title"
+        ],
+        "title": "ShowWin",
+        "description": "Connect's \"Show my grown-up\": keeps a win for the parent to share (P.2). No stars."
+      },
+      "ShownWin": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "at"
+        ],
+        "title": "ShownWin"
+      },
+      "TryPower": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "try_power",
+            "title": "Type"
+          },
+          "power": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Power"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "power"
+        ],
+        "title": "TryPower",
+        "description": "The child did a power's \"Try this today\": +1 once a day per power."
       },
       "ValidationError": {
         "properties": {

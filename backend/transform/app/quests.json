@@ -1,0 +1,261 @@
+{
+  "interests": [
+    {
+      "key": "football",
+      "label": "Football",
+      "match": [
+        "football",
+        "sport",
+        "cricket",
+        "running",
+        "basketball",
+        "swim"
+      ],
+      "quests": [
+        {
+          "title": "100 touches",
+          "how": "Keep the ball close. Count 100 touches.",
+          "target": 5
+        },
+        {
+          "title": "Weak foot hero",
+          "how": "Kick 20 times with your other foot.",
+          "target": 5
+        },
+        {
+          "title": "Sprint race",
+          "how": "Run 20 metres as fast as you can.",
+          "target": 3
+        }
+      ]
+    },
+    {
+      "key": "drawing",
+      "label": "Drawing",
+      "match": [
+        "drawing",
+        "draw",
+        "art",
+        "sketch",
+        "paint",
+        "comic"
+      ],
+      "quests": [
+        {
+          "title": "Draw every day",
+          "how": "Draw anything for 10 minutes.",
+          "target": 5
+        },
+        {
+          "title": "Copy a master",
+          "how": "Copy a drawing you love.",
+          "target": 2
+        },
+        {
+          "title": "Finish one",
+          "how": "Finish a drawing, colour and all.",
+          "target": 3
+        }
+      ]
+    },
+    {
+      "key": "music",
+      "label": "Music",
+      "match": [
+        "music",
+        "sing",
+        "guitar",
+        "piano",
+        "drum",
+        "song"
+      ],
+      "quests": [
+        {
+          "title": "Daily practice",
+          "how": "Play for 10 minutes.",
+          "target": 5
+        },
+        {
+          "title": "Learn a song",
+          "how": "Learn one song, bit by bit.",
+          "target": 3
+        },
+        {
+          "title": "Play for someone",
+          "how": "Play it for a friend or family.",
+          "target": 1
+        }
+      ]
+    },
+    {
+      "key": "building",
+      "label": "Building",
+      "match": [
+        "building",
+        "build",
+        "lego",
+        "making",
+        "tinker"
+      ],
+      "quests": [
+        {
+          "title": "Build time",
+          "how": "Build something for 15 minutes.",
+          "target": 5
+        },
+        {
+          "title": "Fix it",
+          "how": "Fix one broken thing, with help.",
+          "target": 1
+        },
+        {
+          "title": "Finish a project",
+          "how": "Build one thing all the way.",
+          "target": 2
+        }
+      ]
+    },
+    {
+      "key": "cooking",
+      "label": "Cooking",
+      "match": [
+        "cook",
+        "baking",
+        "bake",
+        "food",
+        "kitchen"
+      ],
+      "quests": [
+        {
+          "title": "Kitchen helper",
+          "how": "Help make a meal.",
+          "target": 5
+        },
+        {
+          "title": "Snack chef",
+          "how": "Make a snack on your own.",
+          "target": 3
+        },
+        {
+          "title": "Cook for someone",
+          "how": "Cook a dish for your family.",
+          "target": 1
+        }
+      ]
+    },
+    {
+      "key": "space",
+      "label": "Space",
+      "match": [
+        "space",
+        "star",
+        "planet",
+        "astronom",
+        "rocket"
+      ],
+      "quests": [
+        {
+          "title": "Look up",
+          "how": "Spot the moon or a star at night.",
+          "target": 5
+        },
+        {
+          "title": "Space fact",
+          "how": "Learn one new space fact.",
+          "target": 5
+        },
+        {
+          "title": "Draw the sky",
+          "how": "Draw what you saw up there.",
+          "target": 2
+        }
+      ]
+    },
+    {
+      "key": "animals",
+      "label": "Animals",
+      "match": [
+        "animal",
+        "dog",
+        "cat",
+        "bird",
+        "nature",
+        "insect"
+      ],
+      "quests": [
+        {
+          "title": "Animal watch",
+          "how": "Watch one animal for 5 minutes.",
+          "target": 5
+        },
+        {
+          "title": "Animal diary",
+          "how": "Write what you saw.",
+          "target": 3
+        },
+        {
+          "title": "Helper",
+          "how": "Feed or care for an animal.",
+          "target": 2
+        }
+      ]
+    },
+    {
+      "key": "reading",
+      "label": "Reading",
+      "match": [
+        "reading",
+        "read",
+        "book",
+        "story",
+        "writing",
+        "write"
+      ],
+      "quests": [
+        {
+          "title": "Read time",
+          "how": "Read for 15 minutes.",
+          "target": 5
+        },
+        {
+          "title": "Finish a book",
+          "how": "Read one book to the end.",
+          "target": 1
+        },
+        {
+          "title": "Tell someone",
+          "how": "Tell someone about your book.",
+          "target": 1
+        }
+      ]
+    },
+    {
+      "key": "games",
+      "label": "Game design",
+      "match": [
+        "gaming",
+        "game",
+        "minecraft",
+        "roblox",
+        "console"
+      ],
+      "quests": [
+        {
+          "title": "Level maker",
+          "how": "Draw a game level on paper.",
+          "target": 3
+        },
+        {
+          "title": "New rule",
+          "how": "Invent a new rule for a game.",
+          "target": 3
+        },
+        {
+          "title": "Playtest",
+          "how": "Get a friend to play your game.",
+          "target": 1
+        }
+      ]
+    }
+  ]
+}

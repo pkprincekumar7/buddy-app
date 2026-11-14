@@ -43,6 +43,7 @@ export const PAGE_NAMES = [
   'GrowthAreas',
   'Observations',
   'Connect',
+  'Kids',
   'AccountSettings',
   'Admin',
   'Login',
@@ -165,6 +166,23 @@ export const navigate: NavigateFunction = (to, options = {}) => {
     navigationRef.dispatch(StackActions.push(name, params));
   }
 };
+
+/**
+ * Replace the whole stack with one page, so nothing is left under it to go
+ * Back to. Child view uses it to start on the child's circles alone
+ * (docs/child-view-build-plan.md, 1.3). Returns false when navigation isn't ready yet
+ * (nothing happened, so try again); true once handled.
+ */
+export function resetTo(to: string): boolean {
+  // Not ready on the navigator's first mount: the caller tries again (false).
+  if (!navigationRef.isReady()) return false;
+  const { name, params } = parsePath(to);
+  if (!routeExists(name)) return true;
+  navigationRef.dispatch(
+    CommonActions.reset({ index: 0, routes: [{ name, params }] }),
+  );
+  return true;
+}
 
 // ─── Hooks (react-router API) ────────────────────────────────────────────────
 

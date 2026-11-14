@@ -15,6 +15,7 @@ import { useFonts } from 'expo-font';
 import { queryClientInstance } from './src/lib/query-client';
 import { AuthProvider } from './src/lib/AuthContext';
 import { TtsProvider } from './src/lib/TtsContext';
+import { ViewModeProvider } from './src/lib/ViewModeContext';
 import { AmbientAudioProvider } from './src/lib/AmbientAudioContext';
 import { Toaster } from './src/lib/toast';
 import { ErrorBoundary } from './src/components/shared/ErrorBoundary';
@@ -66,20 +67,22 @@ function App() {
         />
         <QueryClientProvider client={queryClientInstance}>
           <AuthProvider>
-            <TtsProvider>
-              <AmbientAudioProvider>
-                <ErrorBoundary>
-                  {/* Full-screen overlays (splashes, warp, sheets) render here, above the header. */}
-                  <PortalHost>
-                    {fontsLoaded || fontError ? (
-                      <Navigation />
-                    ) : (
-                      <View style={{ flex: 1 }} />
-                    )}
-                  </PortalHost>
-                </ErrorBoundary>
-              </AmbientAudioProvider>
-            </TtsProvider>
+            <ViewModeProvider>
+              <TtsProvider>
+                <AmbientAudioProvider>
+                  <ErrorBoundary>
+                    {/* Full-screen overlays (splashes, warp, sheets) render here, above the header. */}
+                    <PortalHost>
+                      {fontsLoaded || fontError ? (
+                        <Navigation />
+                      ) : (
+                        <View style={{ flex: 1 }} />
+                      )}
+                    </PortalHost>
+                  </ErrorBoundary>
+                </AmbientAudioProvider>
+              </TtsProvider>
+            </ViewModeProvider>
           </AuthProvider>
         </QueryClientProvider>
         <Toaster />

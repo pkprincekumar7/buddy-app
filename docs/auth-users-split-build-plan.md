@@ -244,7 +244,7 @@ Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terr
   - **Check:** module tests.
   - **As built:** `modules/events` reads the catalogue (`catalogue_path`, defaulting to the repo's file).
     - **Topics:** one per producer (9, hello included), encrypted with the environment's customer-managed KMS key (rotating).
-    - **Queues:** one per consumer, with a DLQ after `max_receive_count` (5); SSE-SQS, 20 s long polling, 14-day DLQ retention, and only the service's own queue may redrive into its DLQ.
+    - **Queues:** one per consumer, with a DLQ after `max_receive_count` (5); SSE-SQS, 20 s long polling, 7-day queue and 14-day DLQ retention (the DLQ counts from the first delivery, so a message that failed late still has a week there), and only the service's own queue may redrive into its DLQ.
     - **Subscriptions:** one per (consumer, producer topic), with the `event_type` filter on message attributes and raw delivery off.
     - **Queue policies:** `sqs:SendMessage` only from the subscribed topics (`aws:SourceArn`).
     - **Alarms (`enable_alarms`):** DLQ depth > 0, and oldest message > 10 min, both `notBreaching`.
@@ -362,7 +362,9 @@ Everything else depends on them. Build users first: auth's registration calls it
       - a retry with the same body writes nothing, and a changed one bumps `version`;
       - a different location is `409 location_mismatch`;
       - **decided here:** a tombstoned id is `409 profile_deleted`, so a deleted account's profile can't come back (7.4);
-      - a concurrent insert answers as "already existed"; if the profile was also deleted in between, it's `409 profile_conflict` and the saga retries.
+      - each attempt is one transaction on the location's shard (14): it writes the user's guard, checks the tombstone, then inserts or updates. Another location's profile or tombstone for the id is checked by a plain read before it, as the transaction's own read never conflicted with writes elsewhere either;
+      - concurrent PUTs both write the guard, so one conflicts and runs again: it finds the other's profile and answers as "already existed" (200);
+      - a PUT and the `DELETE` undoing it conflict on the same guard (the DELETE's tombstone writes it). Whichever runs again sees the other's commit: a PUT after the DELETE is `409 profile_deleted`, and a DELETE after the PUT removes the profile it made. Either way, once the DELETE has answered 204 no profile exists and none can be created.
     - **Worker:** relay plus a `user.deletion_requested` handler. It deletes the profile, writes the `user:` tombstone (version = the event's) and queues `user.data_deleted`, in one transaction. It always confirms, even with no profile, and a redelivery confirms again, which auth's `$addToSet` ignores.
   - **Checked locally:**
     - `pytest users/tests`: 46 passed, 100% line and branch coverage. They cover the route-policy test, the ownership matrix, validation, auditing, the rate limit, the internal API, and the deletion handler (replay-twice, consumer contract, a forged topic rejected, and the SQS → worker → relay round trip on Moto);
@@ -437,7 +439,9 @@ Everything else depends on them. Build users first: auth's registration calls it
     - **The change stream** (`app/authz_stream.py`) watches every `update`, `replace` and `delete` on all of `auth.auth`, with `updateLookup`:
       - it rewrites `authz:{id}` only if the region already holds it (a new `only_existing` mode of the versioned Lua write) and drops the entry of a deleted account;
       - **decided here:** the resume token is kept in a new tiny unsharded `worker_state` collection (`authz-stream:<region>`), saved after every change and as the cluster's time advances;
-      - a token the oplog no longer has (codes 260 / 280 / 286) restarts from now; other errors retry after 5 s.
+      - with no token saved yet (the first start, or after a lost one), the opening token is saved before any change is applied, so a failed first change is retried, not lost to a restart from now;
+      - a token the oplog no longer has (codes 260 / 280 / 286) restarts from now; other errors retry after 5 s from the saved token;
+      - a change that fails other than transiently (Valkey, OS errors, timeouts retry for as long as they last) is tried 3 times, then skipped: logged at ERROR as `authz.stream.change_skipped` (for a log metric filter and alarm) and its user's entry deleted, so the next request reads authz from Mongo.
     - **The reaper** (`app/reaper.py`) runs every minute over reservations older than 15 minutes, 100 at a time, in its own region's locations only (every location locally).
       - **Decided here:** it claims a row by deleting it (an exact match on the row read) **before** cleaning up. A saga activating it in that moment fails its conditional activation and undoes itself, so an account can never become active after its credentials are gone.
       - It then deletes the profile through users and the credentials. If users can't confirm, it puts the row back to retry, unless a new registration has taken the key meanwhile.
@@ -586,7 +590,9 @@ It gates every circle.
     - **The purge** runs hourly, in batches of 100 until none is left, over its region's locations (every location locally), for children deleted more than 30 days ago:
       - the avatar objects first (only `…/avatar/`: plan photos are transform's to delete);
       - then one transaction: the document, matching exactly the version read so a child restored meanwhile isn't purged, plus a `child:` tombstone and `child.deleted` (`{user_id}`), both at the final version (the last version + 1).
+      - oldest `deleted_at` first. A child that fails (S3 keeps some photos: `DeleteFailed`) is logged by id and left for the next round, skipped for 30 minutes so the rest of the round's batches move past it; the others in its batch still go.
     - **Account deletion:** every child of the user goes at once, soft-deleted or not, with no 30-day wait: the avatars, then one transaction for the documents, a `child:` tombstone each (version + 1), the `user:` tombstone and `user.data_deleted`.
+      - A child created between the first read and the transaction's own read has its avatars deleted inside the transaction, before the commit: if S3 refuses, nothing commits and the redelivered message finds the child again.
       - It always confirms, even with no children, and a redelivery confirms again.
       - **Decided here:** no `child.deleted` per child. The circles consume `user.deletion_requested` themselves.
   - **Checked locally:**

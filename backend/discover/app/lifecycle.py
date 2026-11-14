@@ -3,8 +3,10 @@
 - **`child.changed`:** the `child_access` copy, as a version-checked upsert.
 - **`onboarding.conversation_completed`:** the `onboarding_inputs` copy, then the
   personality starts on its own (discover.app.generation.start), so the Discover page
-  usually opens on "generating…". A personality already `generating` or `ready` is left
-  alone, so a redelivery starts nothing.
+  usually opens on "generating…". Only when no generation was ever started for the child
+  (`first_only`, checked again in the start's transaction): one already `generating`,
+  `ready` or `failed` is left alone, so a redelivery starts nothing (a failed one is the
+  parent's retry, which counts against the hourly LLM limit).
 - **`child.deleted`** (the purge): the child's personality and copies go, its open jobs
   are cancelled, in one transaction with a `child:` tombstone at the final version.
 - **`user.deletion_requested`** (10.3): everything of the user's, their jobs cancelled, a
@@ -102,6 +104,7 @@ async def conversation_completed(runtime: Runtime, received: ReceivedEvent) -> b
             user_id=user_id,
             location=location,
             input_version=event.version,
+            first_only=True,
         )
     except (generation.AlreadyGenerated, JobRefused):
         return False

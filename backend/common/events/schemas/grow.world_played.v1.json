@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/grow.world_played.v1.json",
+  "title": "grow.world_played v1",
+  "description": "A Grow world finished in child view: the run is kept in grow (world_runs), published in the same transaction. children marks Grow done in child view. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "world": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "The world's index (grow.app.worlds)."
+    }
+  },
+  "required": [
+    "world"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "world": 1
+    }
+  ]
+}

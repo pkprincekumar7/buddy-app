@@ -20,7 +20,7 @@ CHILD = "9b1c6f64-2f4e-4d0e-8e2a-6c1f0d3a7b55"
 
 def test_the_catalogue_matches_the_design():
     cat = catalogue.load()
-    assert len(cat.events) == 16  # the design's 7.6
+    assert len(cat.events) == 18  # the design's 7.6, plus child view's two (grow, transform)
     assert {e for e, s in cat.events.items() if s.reserved} == {
         "user.role_changed",
         "user.profile_updated",
@@ -67,9 +67,11 @@ def test_subscriptions_skip_reserved_events():
     assert cat.subscriptions("children") == [
         "discover.completed",
         "grow.completed",
+        "grow.world_played",
         "onboarding.conversation_completed",
         "release.completed",
         "transform.completed",
+        "transform.quest_logged",
         "user.deletion_requested",
     ]
     assert cat.subscriptions("shared") == []

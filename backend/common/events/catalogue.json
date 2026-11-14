@@ -64,10 +64,20 @@
       "consumers": ["transform", "release"],
       "schema": "grow.area_updated.v1"
     },
+    "grow.world_played": {
+      "producer": "grow",
+      "consumers": ["children"],
+      "schema": "grow.world_played.v1"
+    },
     "grow.completed": {
       "producer": "grow",
       "consumers": ["children"],
       "schema": "grow.completed.v1"
+    },
+    "transform.quest_logged": {
+      "producer": "transform",
+      "consumers": ["children"],
+      "schema": "transform.quest_logged.v1"
     },
     "transform.completed": {
       "producer": "transform",

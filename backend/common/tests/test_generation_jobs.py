@@ -380,6 +380,61 @@ def test_a_result_whose_lock_moved_on_is_dropped(mongo_run):
     mongo_run(body)
 
 
+def test_a_superseded_job_is_ended_and_its_result_dropped(mongo_run):
+    async def body(db, client):
+        await ensure_jobs(db, "grow")
+        await store.ensure_tombstones(db)
+        doc_id = f"{CHILD}:focus"
+        area = Target("growth_areas", doc_id, lock="active_jobs.generate_recommendations")
+        other = Target("growth_areas", doc_id, lock="active_jobs.generate_growth_parent_questions")
+        await _start(db, client, job_type="generate_recommendations", target=area)
+        job = await _claim(db)
+        await _start(db, client, job_type="generate_growth_parent_questions", target=other)
+        idle = Target("growth_areas", doc_id, lock="active_jobs.nothing_running")
+        async with client.start_session() as session, await session.start_transaction():
+            ended = await jobs.supersede_jobs(db, [area, idle], location="in", session=session)
+        assert ended == 1
+        target = await db.growth_areas.find_one({})
+        assert set(target["active_jobs"]) == {"generate_growth_parent_questions"}
+        assert (await db.jobs.find_one({"_id": job["_id"]}))["error"] == jobs.SUPERSEDED
+        # Its worker finishing later stores nothing.
+        assert not await jobs.complete_job(db, client, job, target_update={"result": 1})
+        assert "result" not in await db.growth_areas.find_one({})
+
+    mongo_run(body)
+
+
+def test_completing_conflicts_with_a_deletion_in_flight(mongo_run):
+    # Without the guards, "not deleted" read in the completion didn't conflict with a
+    # tombstone written meanwhile, so `in_transaction`'s writes could outlive the deletion.
+    async def body(db, client):
+        await _setup(db)
+        await _start(db, client)
+        job = await _claim(db)
+        conflicts: list[OperationFailure] = []
+
+        async def deletion_meanwhile(session: AsyncClientSession) -> None:
+            if conflicts:
+                return
+            async with client.start_session() as deleting:
+                try:
+                    async with await deleting.start_transaction():
+                        await store.write_tombstone(
+                            db, store.tombstone_key("child", CHILD), location="in",
+                            version=2, session=deleting,
+                        )  # fmt: skip
+                except OperationFailure as exc:
+                    conflicts.append(exc)
+
+        assert await jobs.complete_job(
+            db, client, job, target_update={"status": "ready"}, in_transaction=deletion_meanwhile
+        )
+        (conflict,) = conflicts
+        assert conflict.has_error_label("TransientTransactionError")
+
+    mongo_run(body)
+
+
 def test_a_failure_retries_with_backoff_then_fails(mongo_run):
     async def body(db, client):
         await _setup(db)

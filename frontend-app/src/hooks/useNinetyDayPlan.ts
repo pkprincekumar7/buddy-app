@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@/lib/toast';
+import { ApiError } from '@/api/errors';
 import { isAbort } from '@/api/polling';
 import {
+  planEditsDiffer,
+  rebasePlanPatch,
   runTransformGeneration,
   transform,
   TRANSFORM_ERRORS,
@@ -43,6 +46,18 @@ class PhotoRejected extends Error {}
 type GenerationState = 'idle' | 'running' | 'failed';
 
 const PATCH_DEBOUNCE_MS = 600;
+// A save that failed on the way (offline, a 5xx) is tried again after 2 s, 4 s, … 30 s.
+const RETRY_BASE_MS = 2000;
+const RETRY_MAX_MS = 30_000;
+// Saves refused because another device saved first, rebased and sent again, at most.
+const REBASES = 3;
+
+/** Worth sending again as it is: the network, a 5xx, or a limit. Anything else (a 422)
+ * would be refused the same way every time. */
+function retryable(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true;
+  return err.status >= 500 || err.status === 429 || err.status === 408;
+}
 
 /** Defensive coercion for a stored document's feedback map — a tag value
  * outside FB_TAGS (an older client, a manual edit) is dropped rather than
@@ -77,6 +92,33 @@ function hydratePhotos(
   return out;
 }
 
+/** The photos to show for `keys` (the merged plan's), with each key's URL from the server
+ * or this device, plus the local previews still uploading here. */
+function mergePhotos(
+  keys: Record<string, PlanPhoto[]>,
+  saving: Record<string, string[]> | null | undefined,
+  local: Record<string, PhotoItem[]>,
+): Record<string, PhotoItem[]> {
+  const urls = new Map<string, string>();
+  for (const items of Object.values(local))
+    for (const item of items) if (item.key) urls.set(item.key, item.url);
+  for (const photos of Object.values(keys))
+    for (const p of photos) urls.set(p.key, p.url ?? '');
+  const lists: Record<string, string[]> = {};
+  for (const [field, photos] of Object.entries(keys))
+    lists[field] = photos.map(p => p.key);
+  Object.assign(lists, saving);
+  const out: Record<string, PhotoItem[]> = {};
+  for (const field of new Set([...Object.keys(lists), ...Object.keys(local)])) {
+    const items = [
+      ...(lists[field] ?? []).map(key => ({ key, url: urls.get(key) ?? '' })),
+      ...(local[field] ?? []).filter(item => !item.key),
+    ];
+    if (items.length) out[field] = items;
+  }
+  return out;
+}
+
 /** The inverse: the keys to save, never a local preview that's still mid-upload (or
  * failed and got rolled back). A key sent replaces that key's list (build plan 7.7). */
 function toPhotosPayload(
@@ -104,6 +146,21 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   const [loadError, setLoadError] = useState<unknown>(null);
   // Mirrors "a load succeeded for this child" for the callbacks, free of render timing.
   const loadedRef = useRef(false);
+  // The plan as the server last returned it for this device's saves: every PATCH is made
+  // on its `version`, and a conflict is merged three ways against it.
+  const serverRef = useRef<TransformDoc | null>(null);
+  // The child `serverRef` and the pending buffer belong to (set when its load lands), and
+  // the child shown now. A save, reload or retry still running for the previous child
+  // touches only that child's; once the child changed, its failure is dropped, never
+  // retried, so one child's edits can't be saved onto another's plan.
+  const ownerRef = useRef<string | undefined>(undefined);
+  const childIdRef = useRef(childId);
+  childIdRef.current = childId;
+  const isCurrent = useCallback(
+    (id: string) => ownerRef.current === id && childIdRef.current === id,
+    [],
+  );
+
   const [reloadKey, setReloadKey] = useState(0);
 
   const [ask, setAsk] = useState('');
@@ -140,6 +197,10 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
       .then(fetched => {
         if (cancelled) return;
         loadedRef.current = true;
+        serverRef.current = fetched;
+        ownerRef.current = childId;
+        failuresRef.current = 0;
+        pendingPatchRef.current = {};
         setDoc(fetched);
         setAsk(fetched.ask ?? '');
         setApplied(fetched.applied);
@@ -175,32 +236,138 @@ export function useNinetyDayPlan({ childId }: UseNinetyDayPlanOptions) {
   /** Loads the saved plan again, after a failed load. */
   const reload = useCallback(() => setReloadKey(n => n + 1), []);
 
-  // Debounced, best-effort persistence — merges every scheduled patch into one
-  // pending buffer so a burst of quick taps/keystrokes becomes one write.
+  // Debounced persistence — merges every scheduled patch into one pending buffer so a
+  // burst of quick taps/keystrokes becomes one write. One save runs at a time, each on
+  // the version the last one returned; a failed one goes back into the buffer.
   const pendingPatchRef = useRef<PlanPatch>({});
   const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const failuresRef = useRef(0);
+  const savingRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  const flushPatch = useCallback(async (): Promise<boolean> => {
+  /** Local state as `server` plus what's still unsaved here (after a conflict, a refused
+   * save, or a reload): the merged plan the next save starts from. */
+  const showMerged = useCallback((server: TransformDoc, unsaved: PlanPatch) => {
+    setDoc(server);
+    setAsk(unsaved.ask ?? server.ask ?? '');
+    setApplied(unsaved.applied ?? server.applied);
+    setActIn(unsaved.act_inputs ?? server.act_inputs);
+    setActCt(unsaved.act_counts ?? server.act_counts);
+    setFb(normalizeFeedback(unsaved.feedback ?? server.feedback));
+    setPhotoFiles(local => mergePhotos(server.photos, unsaved.photos, local));
+    setEvName(unsaved.event_name ?? server.event_name ?? '');
+    setEvDate(unsaved.event_date ?? server.event_date ?? '');
+    setEvSet(unsaved.event_set ?? server.event_set);
+    setTrDone(unsaved.track_done ?? server.track_done);
+    setTrIn(unsaved.track_inputs ?? server.track_inputs);
+    setTrSit(unsaved.track_sittings ?? server.track_sittings);
+  }, []);
+
+  /** The plan from the server again, with what's unsaved here moved onto it. */
+  const rebase = useCallback(
+    async (failed: PlanPatch): Promise<boolean> => {
+      const base = serverRef.current;
+      if (!childId || !base || !isCurrent(childId)) return false;
+      let server: TransformDoc;
+      try {
+        server = await transform.get(childId);
+      } catch (err) {
+        console.error('[useNinetyDayPlan] Could not reload the plan:', err);
+        return false;
+      }
+      if (!isCurrent(childId)) return false; // another child's plan now
+      const unsaved = rebasePlanPatch(
+        { ...failed, ...pendingPatchRef.current },
+        base,
+        server,
+      );
+      if (planEditsDiffer(base, server)) toast('Updated on another device');
+      serverRef.current = server;
+      pendingPatchRef.current = unsaved;
+      showMerged(server, unsaved);
+      return true;
+    },
+    [childId, isCurrent, showMerged],
+  );
+
+  const save = useCallback(async (): Promise<boolean> => {
+    for (let rebases = 0; ; rebases += 1) {
+      const base = serverRef.current;
+      const body = pendingPatchRef.current;
+      // Still this child's buffer: the flush on a child change sends it, on its version.
+      if (!childId || !base || ownerRef.current !== childId) return false;
+      if (Object.keys(body).length === 0) return true;
+      pendingPatchRef.current = {};
+      try {
+        const saved = await transform.patch(childId, base.version, body);
+        if (ownerRef.current !== childId) return true; // another child's plan now
+        serverRef.current = saved;
+        failuresRef.current = 0;
+        if (childIdRef.current === childId) setDoc(saved);
+        return true;
+      } catch (err) {
+        // Another device saved first: move this change onto its plan and save again.
+        const conflict = err instanceof ApiError && err.code === 'plan_changed';
+        if (conflict && rebases < REBASES && (await rebase(body))) continue;
+        console.error('[useNinetyDayPlan] Failed to save progress:', err);
+        // Another child's plan now: dropped, not kept or retried onto it.
+        if (!isCurrent(childId)) return false;
+        if (conflict || retryable(err)) {
+          // Kept, newer edits winning, and sent again: on the next save, or after a pause.
+          pendingPatchRef.current = { ...body, ...pendingPatchRef.current };
+          failuresRef.current += 1;
+          if (failuresRef.current === 1) {
+            toast.error(
+              httpErrorMessage(err as Error, {
+                codeMessages: TRANSFORM_ERRORS,
+                fallback: 'Could not save your progress. We’ll keep trying.',
+              }),
+            );
+          }
+          if (mountedRef.current && !retryTimerRef.current) {
+            const wait = Math.min(
+              RETRY_MAX_MS,
+              RETRY_BASE_MS * 2 ** (failuresRef.current - 1),
+            );
+            retryTimerRef.current = setTimeout(() => {
+              retryTimerRef.current = null;
+              if (isCurrent(childId)) void flushPatchRef.current();
+            }, wait);
+          }
+          return false;
+        }
+        // Refused as it is (e.g. too large): show the saved plan again, with the rest.
+        toast.error(
+          httpErrorMessage(err as Error, {
+            codeMessages: TRANSFORM_ERRORS,
+            fallback: 'Could not save your progress. Please try again.',
+          }),
+        );
+        await rebase({});
+        return false;
+      }
+    }
+  }, [childId, isCurrent, rebase]);
+
+  const flushPatch = useCallback((): Promise<boolean> => {
     if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
     patchTimerRef.current = null;
-    if (!childId) return false;
-    const body = pendingPatchRef.current;
-    pendingPatchRef.current = {};
-    if (Object.keys(body).length === 0) return true;
-    try {
-      await transform.patch(childId, body);
-      return true;
-    } catch (err) {
-      console.error('[useNinetyDayPlan] Failed to save progress:', err);
-      toast.error(
-        httpErrorMessage(err as Error, {
-          codeMessages: TRANSFORM_ERRORS,
-          fallback: 'Could not save your progress. Please try again.',
-        }),
-      );
-      return false;
-    }
-  }, [childId]);
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    // After the save in flight, so each is made on the version the last one returned.
+    const next = savingRef.current.then(save, save);
+    savingRef.current = next;
+    return next;
+  }, [save]);
+  const flushPatchRef = useRef(flushPatch);
+  flushPatchRef.current = flushPatch;
 
   const schedulePatch = useCallback(
     (partial: PlanPatch) => {
