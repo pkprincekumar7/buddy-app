@@ -1059,6 +1059,11 @@ module.exports = {
       230,
       238
     ],
+    "kids-card-name": [
+      29,
+      22,
+      64
+    ],
     "kids-orb-cyan-hi": [
       234,
       253,

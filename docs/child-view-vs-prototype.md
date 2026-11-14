@@ -57,21 +57,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **RL4.** The note card pops in (`kPop .35s`).
 - **RL5.** The prototype's flame path (control point −5.5).
 
-### Connect — `ConnectWins.tsx`
-
-- **C1.** Two equal columns from `md` (now 1fr / 1.1fr), gap 26.
-- **C2.** Win buttons: Rajdhani 700 20 px, radius 22, min-height 72, padding 14/18, gap 14; a
-  neutral border, pink when picked (pink .14 fill); no shade shadow; hover slides right 4 px.
-- **C3.** Dot 14 px.
-- **C5.** The card column sticks (`top: 110px`).
-- **C6.** Card: pink → violet gradient (`160deg`, #ff8fb1 → #9d8cff), `0 10px 0 #5a4aa8`, radius 30,
-  padding 30/28, min-height 300, left-aligned; it re-pops on each pick.
-- **C7.** Card header: "SUPERPOWER" Orbitron 900 14 px .14em in dark ink on the left; a 34 px star
-  (#ffe08a fill, dark stroke) spinning (8 s) on the right.
-- **C8.** Win title Orbitron 900 clamp(26–34 px), dark ink #08101f, left, balanced.
-- **C9.** Avatar 72 px, 4 px dark border, gold #ffe08a fill, `0 5px 0 #5a4aa8`, photo at 50% 35%;
-  initial Orbitron 900 30 px dark. Name 20 px 700 #1d1640 (first name only, D).
-
 ### Parent pages
 
 - **PP1.** Growth map "Kids N" label: 10.5 px, uppercase, .16em, margin-top 3 px (reads "KIDS 78").
@@ -155,8 +140,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - The five hard-coded wins ("First in the district relay", "Finished your first build", "Science
   project picked for the fair", "Two new friends at the club", "You are The Thinker"), and the fake
   quest logs and stars seeded for untouched interests.
-- "Rahul, age 10" on the Connect card beside "Only your first name goes on the card.": the app's
-  first-name-only card is the consistent one (age dropped on purpose).
 - He/his in copy ("He loved it", "all on his own!", "He Never Gives Up!", "plan his next month"):
   the app writes to the child and names no pronoun.
 - "Kids Mode": the app calls it child view throughout.
@@ -313,3 +296,21 @@ Applying an item from group 1 means changing both apps the same way.
   columns on their shade, a numbered square, the how-to #d4e6ee (`--kids-how-rgb`), 30 px
   progress rings with a star, and the round "I did it today" button (112 px on phones, 132 px
   from `md`), "Done today" in grey, and the teal "Quest done!" circle that pops in.
+- Connect (was C1–C3, C5–C9), applied on 2026-11-14 to both apps: two equal columns from `md`
+  (gap 26) with the card column sticking (`top: 110px`, web); the wins as Rajdhani buttons with
+  a neutral edge, pink when picked, a 14 px dot, sliding right on hover; the card as the pink →
+  violet gradient on its violet shade, re-popping on each pick, "SUPERPOWER" in dark ink with a
+  gold star spinning (8 s), the win title in dark Orbitron, the gold avatar with a dark edge
+  (photo at 50% 35% on the web) and the first name in #1d1640 (`--kids-card-name-rgb`). Sizes
+  follow the parent pages' scale (the prototype's from `md`). "Show my grown-up" stays (P.2).
+- The Connect card's "{first name}, age {age}" (was listed under Ignore), applied on 2026-11-14
+  at the owner's request: the age is shown when one is saved, and the line under the card reads
+  "Only your first name and age go on the card." (just the first name, and the old line,
+  without an age).
+- The Orbitron font files (2026-11-14): the bundled ones were lighter than the prototype's
+  Google Fonts Orbitron (the web "Black" drew about 22% less than Google's 900, and the mobile
+  "Black" file was Orbitron Medium inside). Both apps now use Google's Orbitron v35: one
+  variable `Orbitron.woff2` (400–900) on the web, static `Orbitron-Bold.ttf` / `-Black.ttf` on
+  mobile; measured identical to the prototype's. The headings set to 900 to make up for it (Grow's
+  heading, world names, report and game titles, Play, the game dialog's title, "You did it!" and
+  time) are back at the prototype's 700. This changes every Orbitron heading, parent pages too.

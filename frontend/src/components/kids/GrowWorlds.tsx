@@ -61,7 +61,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
       <div className="mx-auto max-w-5xl">
         <section className="kids-enter-up text-center">
           <p className="kids-pill-eyebrow kids-enter-pop">Grow</p>
-          <h1 className="mt-4 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-[1.08] tracking-[0.02em] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
+          <h1 className="mt-4 font-orbitron text-[clamp(28px,4vw,44px)] font-bold leading-[1.08] tracking-[0.02em] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
             Pick a <span className="kids-glow-word">world</span>
           </h1>
           <p className="mx-auto mt-3 max-w-[520px] text-pretty text-[17px] font-semibold leading-snug text-kids-subtle md:text-xl">
@@ -136,7 +136,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
       <div className="kids-enter-pop-quick mx-auto max-w-3xl" style={tileVars(worldColor(world))}>
         <section className="text-center">
           <p className="kids-pill-eyebrow kids-pill-gold kids-enter-pop">{W.name} report</p>
-          <h1 className="mt-4 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-[1.08] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
+          <h1 className="mt-4 font-orbitron text-[clamp(28px,4vw,44px)] font-bold leading-[1.08] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
             World <span className="kids-gold-glow">complete!</span>
           </h1>
           <div className="relative mx-auto mt-6 h-32 w-32 md:mt-[26px] md:h-[150px] md:w-[150px]">
@@ -298,7 +298,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
         <p className="kids-pill-eyebrow kids-enter-pop">{W.name}</p>
         <p className="kids-pill-eyebrow kids-pill-gold kids-enter-pop">Game {step + 1} of 3</p>
       </div>
-      <h1 className="mt-3.5 text-center font-orbitron text-[26px] font-black leading-[1.1] text-kids-heading md:text-[clamp(28px,4vw,40px)]">
+      <h1 className="mt-3.5 text-center font-orbitron text-[26px] font-bold leading-[1.1] text-kids-heading md:text-[clamp(28px,4vw,40px)]">
         {G.title}
       </h1>
       <p className="mx-auto mt-2.5 max-w-[520px] text-pretty text-center text-[17px] font-semibold leading-snug text-kids-subtle md:text-xl">

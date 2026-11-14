@@ -218,6 +218,7 @@ export default function KidsMode() {
                 day: kid.day,
               })}
               childName={child.name}
+              childAge={child.age}
               avatarUrl={child.avatar_url}
               activity={kid.activity}
               sending={kid.sending}

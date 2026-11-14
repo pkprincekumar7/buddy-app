@@ -146,6 +146,23 @@ describe('ConnectWins', () => {
     });
   });
 
+  it('puts the age beside the first name when one is saved', () => {
+    const { getByText } = render(
+      <ConnectWins
+        wins={wins}
+        childName="Aarav Shah"
+        childAge={10}
+        activity={activity()}
+        sending={false}
+        send={jest.fn()}
+      />,
+    );
+    expect(getByText('Aarav, age 10')).toBeTruthy();
+    expect(
+      getByText('Only your first name and age go on the card.'),
+    ).toBeTruthy();
+  });
+
   it("doesn't keep a win twice", () => {
     const send = jest.fn();
     const { getByLabelText } = render(

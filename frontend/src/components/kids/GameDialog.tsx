@@ -103,7 +103,7 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
           </span>
           <h2
             id="kids-game-title"
-            className="min-w-0 font-orbitron text-lg font-black tracking-[0.04em] text-kids-world-name md:text-[22px]"
+            className="min-w-0 font-orbitron text-lg font-bold tracking-[0.04em] text-kids-world-name md:text-[22px]"
           >
             {power.name}
           </h2>
@@ -139,11 +139,11 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
             <div className="kids-win-medal" aria-hidden="true">
               <Check className="h-9 w-9 md:h-10 md:w-10" strokeWidth={2.6} />
             </div>
-            <p className="mt-3 font-orbitron text-2xl font-black text-kids-world-name md:text-[28px]">
+            <p className="mt-3 font-orbitron text-2xl font-bold text-kids-world-name md:text-[28px]">
               You did it!
             </p>
             <p className="kids-win-time mt-2.5 flex items-baseline justify-center gap-2">
-              <span className="font-orbitron text-4xl font-black leading-none md:text-[44px]">
+              <span className="font-orbitron text-4xl font-bold leading-none md:text-[44px]">
                 {result.secs.toFixed(1)}
               </span>
               <span className="font-rajdhani text-base font-bold uppercase tracking-[0.18em] md:text-xl">

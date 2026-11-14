@@ -12,6 +12,8 @@ const winColor = (i: number) => KIDS_COLORS[i % KIDS_COLORS.length] ?? 'connect'
 interface ConnectWinsProps {
   wins: Win[];
   childName: string;
+  /** The child's age, shown on the card beside the first name (as the prototype's). */
+  childAge?: number | null;
   avatarUrl?: string | null;
   activity: KidActivity;
   sending: boolean;
@@ -26,6 +28,7 @@ interface ConnectWinsProps {
 export default function ConnectWins({
   wins,
   childName,
+  childAge,
   avatarUrl,
   activity,
   sending,
@@ -34,6 +37,8 @@ export default function ConnectWins({
   const [picked, setPicked] = useState(0);
   const win = wins[Math.min(picked, wins.length - 1)];
   const firstName = childName.trim().split(/\s+/)[0] ?? childName;
+  // "Rahul, age 10" on the card; just the first name when no age is saved.
+  const cardName = typeof childAge === 'number' ? `${firstName}, age ${childAge}` : firstName;
   const shown = win ? Boolean(activity.shown?.[win.key]) : false;
 
   return (
@@ -58,8 +63,8 @@ export default function ConnectWins({
           </p>
         </div>
       ) : (
-        <div className="mt-6 grid gap-4 md:grid-cols-[1fr_1.1fr]">
-          <div role="radiogroup" aria-label="Your wins" className="grid content-start gap-2.5">
+        <div className="mt-6 grid items-start gap-5 md:mt-[30px] md:grid-cols-2 md:gap-[26px]">
+          <div role="radiogroup" aria-label="Your wins" className="grid content-start gap-3">
             {wins.map((w, i) => (
               <button
                 key={w.key}
@@ -68,13 +73,10 @@ export default function ConnectWins({
                 aria-checked={i === picked}
                 onClick={() => setPicked(i)}
                 style={tileVars(winColor(i))}
-                className={cn(
-                  'kids-tile flex-row justify-start gap-3 px-4 py-3 text-left text-sm',
-                  i === picked && 'kids-tile-on',
-                )}
+                className={cn('kids-win', i === picked && 'kids-win-on')}
               >
                 <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-kids-tile"
+                  className="h-3.5 w-3.5 shrink-0 rounded-full bg-kids-tile"
                   aria-hidden="true"
                 />
                 <span className="flex-1">{w.title}</span>
@@ -85,26 +87,39 @@ export default function ConnectWins({
             ))}
           </div>
 
-          <div>
-            <div className="kids-card text-center" aria-live="polite">
-              <p className="flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-[0.3em] text-kids-muted md:text-[13px]">
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-kids-streak">
-                  <path d={STAR_PATH} />
+          {/* The card stays in view while the list scrolls (from md, where they sit side by side). */}
+          <div className="md:sticky md:top-[110px]">
+            <div key={win.key} className="kids-win-card" aria-live="polite">
+              <div className="flex items-center justify-between">
+                <p className="font-orbitron text-sm font-black tracking-[0.14em]">SUPERPOWER</p>
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="kids-win-star h-[34px] w-[34px]"
+                >
+                  <path
+                    d={STAR_PATH}
+                    className="fill-kids-streak stroke-kids-ink"
+                    strokeWidth="1.2"
+                  />
                 </svg>
-                Superpower
-              </p>
-              <p className="mt-4 font-orbitron text-xl font-black leading-tight text-kids-text md:text-2xl">
+              </div>
+              <p className="text-balance font-orbitron text-[clamp(24px,3.4vw,34px)] font-black leading-[1.15]">
                 {win.title}
               </p>
-              <div className="mt-5 flex items-center justify-center gap-3">
-                <span className="kids-avatar h-12 w-12 text-xl">
+              <div className="flex items-center gap-3.5">
+                <span className="kids-win-avatar">
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover object-[50%_35%]"
+                    />
                   ) : (
                     <span aria-hidden="true">{getInitials(childName).charAt(0)}</span>
                   )}
                 </span>
-                <span className="text-base font-bold text-kids-body">{firstName}</span>
+                <span className="kids-win-name text-[17px] font-bold md:text-xl">{cardName}</span>
               </div>
             </div>
             <button
@@ -112,14 +127,16 @@ export default function ConnectWins({
               disabled={sending || shown}
               onClick={() => void send({ type: 'show_win', key: win.key, title: win.title })}
               className={cn(
-                'mt-4 h-11 w-full px-6 text-sm md:h-12 md:text-base',
+                'mt-5 h-11 w-full px-6 text-sm md:h-12 md:text-base',
                 shown ? 'kids-btn-off' : 'kids-btn',
               )}
             >
               {shown ? 'Your grown-up can see it' : 'Show my grown-up'}
             </button>
             <p className="mt-3 text-center text-[15px] font-semibold text-kids-muted md:text-lg">
-              Only your first name goes on the card.
+              {typeof childAge === 'number'
+                ? 'Only your first name and age go on the card.'
+                : 'Only your first name goes on the card.'}
             </p>
           </div>
         </div>

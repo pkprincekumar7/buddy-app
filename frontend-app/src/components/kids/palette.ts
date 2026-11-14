@@ -370,6 +370,79 @@ export function questLog(
     transform: [{ translateY: pressed ? 6 : 0 }, { scale: pressed ? 0.98 : 1 }],
   };
 }
+/** Connect's pieces (web .kids-win, -on, .kids-win-card, -avatar, -name). */
+export const connect = {
+  /** A win to pick: neutral, pink when picked (pressed: slides right, the web's hover). */
+  win: (on: boolean, pressed = false): ViewStyle => ({
+    minHeight: 64,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderWidth: 3,
+    borderColor: on ? fill('connect') : rgb('kids-text', 0.1),
+    backgroundColor: on ? fill('connect', 0.14) : rgb('kids-off', 0.6),
+    transform: [{ translateX: pressed ? 4 : 0 }],
+  }),
+  winText: {
+    ...font('rajdhani', 700),
+    fontSize: 17,
+    lineHeight: 17 * 1.25,
+    color: rgb('kids-text'),
+  } satisfies TextStyle,
+  card: {
+    minHeight: 280,
+    borderRadius: 30,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    gap: 20,
+    justifyContent: 'space-between',
+    experimental_backgroundImage: `linear-gradient(160deg, ${fill(
+      'connect',
+    )}, ${fill('release')})`,
+    boxShadow: `0 10px 0 ${shade('release')}`,
+  } satisfies ViewStyle,
+  label: {
+    ...font('orbitron', 900),
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: 14 * 0.14,
+    color: rgb('kids-ink'),
+  } satisfies TextStyle,
+  title: {
+    ...font('orbitron', 900),
+    fontSize: 24,
+    lineHeight: 24 * 1.15,
+    color: rgb('kids-ink'),
+  } satisfies TextStyle,
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: rgb('kids-ink'),
+    backgroundColor: rgb('kids-streak'),
+    boxShadow: `0 5px 0 ${shade('release')}`,
+  } satisfies ViewStyle,
+  initial: {
+    ...font('orbitron', 900),
+    fontSize: 26,
+    lineHeight: 32,
+    color: rgb('kids-ink'),
+  } satisfies TextStyle,
+  name: {
+    ...font('rajdhani', 700),
+    fontSize: 17,
+    lineHeight: 22,
+    color: rgb('kids-card-name'),
+  } satisfies TextStyle,
+};
+
 /** An interest tile (web .kids-interest): solid in its colour on its shade. */
 export function interestTile(c: KidsColor, pressed = false): ViewStyle {
   return {
@@ -562,7 +635,7 @@ export const dialog = {
     borderColor: fill('discover', 0.35),
   } satisfies ViewStyle,
   title: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 18,
     lineHeight: 24,
     letterSpacing: 18 * 0.04,
@@ -600,13 +673,13 @@ export const dialog = {
   } satisfies ViewStyle,
   ink: rgb('kids-world-name'),
   won: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 24,
     lineHeight: 30,
     color: rgb('kids-world-name'),
   } satisfies TextStyle,
   time: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 36,
     lineHeight: 40,
     color: rgb('kids-gold'),
@@ -777,7 +850,7 @@ export const worldPick = {
     color: fill('discover'),
   } satisfies TextStyle,
   title: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 30,
     lineHeight: 30 * 1.08,
     letterSpacing: 30 * 0.02,
@@ -824,7 +897,7 @@ export const worldPick = {
     backgroundColor: rgb('kids-gold'),
   } satisfies ViewStyle,
   name: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 16,
     lineHeight: 16 * 1.25,
     letterSpacing: 16 * 0.03,
@@ -869,7 +942,7 @@ export const growView = {
     textShadowRadius: 20,
   } satisfies TextStyle,
   title: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 26,
     lineHeight: 26 * 1.1,
     textAlign: 'center',
@@ -920,7 +993,7 @@ export const growView = {
     boxShadow: `0 0 46px ${fill('discover', 0.95)}`,
   } satisfies ViewStyle,
   playText: {
-    ...font('orbitron', 900),
+    ...font('orbitron', 700),
     fontSize: 18,
     lineHeight: 24,
     letterSpacing: 18 * 0.08,

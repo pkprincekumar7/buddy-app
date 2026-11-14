@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { Check } from 'lucide-react-native';
 import { Pressable } from '@/components/ui/pressable';
 import type { KidActivity, KidEvent } from '@/api/kids';
@@ -9,14 +10,14 @@ import type { Win } from '@/lib/kidsWins';
 import { STAR_PATH } from '@/components/kids/icons';
 import {
   KIDS_COLORS,
-  avatar,
   button,
   buttonOff,
   card,
   color,
+  connect as cw,
   text,
-  tile,
 } from '@/components/kids/palette';
+import { SPIN, enter, loop } from '@/components/kids/enter';
 
 const winColor = (i: number) =>
   KIDS_COLORS[i % KIDS_COLORS.length] ?? 'connect';
@@ -24,6 +25,8 @@ const winColor = (i: number) =>
 interface ConnectWinsProps {
   wins: Win[];
   childName: string;
+  /** The child's age, shown on the card beside the first name (as the prototype's). */
+  childAge?: number | null;
   avatarUrl?: string | null;
   activity: KidActivity;
   sending: boolean;
@@ -38,6 +41,7 @@ interface ConnectWinsProps {
 export default function ConnectWins({
   wins,
   childName,
+  childAge,
   avatarUrl,
   activity,
   sending,
@@ -46,7 +50,11 @@ export default function ConnectWins({
   const [picked, setPicked] = useState(0);
   const win = wins[Math.min(picked, wins.length - 1)];
   const firstName = childName.trim().split(/\s+/)[0] ?? childName;
+  // "Rahul, age 10" on the card; just the first name when no age is saved.
+  const cardName =
+    typeof childAge === 'number' ? `${firstName}, age ${childAge}` : firstName;
   const shown = win ? Boolean(activity.shown?.[win.key]) : false;
+  const reduced = useReducedMotion();
 
   return (
     <View>
@@ -88,7 +96,7 @@ export default function ConnectWins({
           <View
             accessibilityRole="radiogroup"
             accessibilityLabel="Your wins"
-            className="mt-6 gap-2.5"
+            className="mt-6 gap-3"
           >
             {wins.map((w, i) => {
               const on = i === picked;
@@ -100,14 +108,17 @@ export default function ConnectWins({
                   accessibilityRole="radio"
                   accessibilityLabel={w.title}
                   accessibilityState={{ checked: on }}
-                  className="flex-row items-center gap-2.5 px-4 py-3"
-                  style={({ pressed }) => tile(c, on, pressed)}
+                  style={({ pressed }) => cw.win(on, pressed)}
                 >
                   <View
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: color(c) }}
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 7,
+                      backgroundColor: color(c),
+                    }}
                   />
-                  <Text className="flex-1 text-sm" style={text.heading}>
+                  <Text className="flex-1" style={cw.winText}>
                     {w.title}
                   </Text>
                   {activity.shown?.[w.key] ? (
@@ -118,38 +129,29 @@ export default function ConnectWins({
             })}
           </View>
 
-          <View
+          {/* The card re-pops on each pick (web kids-pop .35 s). */}
+          <Animated.View
+            key={win.key}
             accessibilityLiveRegion="polite"
-            className="mt-5 items-center"
-            style={card('connect')}
+            className="mt-5"
+            style={[cw.card, enter('pop', 0, reduced, 0.35)]}
           >
-            <View className="flex-row items-center gap-2">
-              <Svg width={16} height={16} viewBox="0 0 24 24">
-                <Path d={STAR_PATH} fill={color('streak')} />
-              </Svg>
-              <Text
-                className="text-[11px] uppercase"
-                style={[
-                  text.label,
-                  { color: color('muted'), letterSpacing: 11 * 0.3 },
-                ]}
-              >
-                Superpower
-              </Text>
+            <View className="flex-row items-center justify-between">
+              <Text style={cw.label}>SUPERPOWER</Text>
+              <Animated.View style={loop(SPIN, 8, 0, 'linear', reduced)}>
+                <Svg width={34} height={34} viewBox="0 0 24 24">
+                  <Path
+                    d={STAR_PATH}
+                    fill={color('streak')}
+                    stroke={color('ink')}
+                    strokeWidth={1.2}
+                  />
+                </Svg>
+              </Animated.View>
             </View>
-            <Text
-              className="mt-4 text-center text-xl"
-              style={[text.heading, { lineHeight: 20 * 1.25 }]}
-            >
-              {win.title}
-            </Text>
-            <View className="mt-5 flex-row items-center gap-2.5">
-              <View
-                style={[
-                  avatar('connect'),
-                  { position: 'relative', width: 48, height: 48 },
-                ]}
-              >
+            <Text style={cw.title}>{win.title}</Text>
+            <View className="flex-row items-center gap-3.5">
+              <View style={cw.avatar}>
                 {avatarUrl ? (
                   <Image
                     source={{ uri: avatarUrl }}
@@ -157,19 +159,14 @@ export default function ConnectWins({
                     className="h-full w-full"
                   />
                 ) : (
-                  <Text className="text-xl" style={text.heading}>
+                  <Text style={cw.initial}>
                     {getInitials(childName).charAt(0)}
                   </Text>
                 )}
               </View>
-              <Text
-                className="text-base"
-                style={[text.label, { color: color('body') }]}
-              >
-                {firstName}
-              </Text>
+              <Text style={cw.name}>{cardName}</Text>
             </View>
-          </View>
+          </Animated.View>
           <Pressable
             onPress={() =>
               void send({ type: 'show_win', key: win.key, title: win.title })
@@ -180,7 +177,7 @@ export default function ConnectWins({
               shown ? 'Your grown-up can see it' : 'Show my grown-up'
             }
             accessibilityState={{ disabled: sending || shown }}
-            className="mt-4 h-11 items-center justify-center px-6"
+            className="mt-5 h-11 items-center justify-center px-6"
             style={({ pressed }) =>
               shown
                 ? buttonOff(false)
@@ -197,7 +194,9 @@ export default function ConnectWins({
             </Text>
           </Pressable>
           <Text className="mt-2.5 text-center text-[15px]" style={text.muted}>
-            Only your first name goes on the card.
+            {typeof childAge === 'number'
+              ? 'Only your first name and age go on the card.'
+              : 'Only your first name goes on the card.'}
           </Text>
         </>
       )}
