@@ -488,6 +488,347 @@ export const grow = {
   } satisfies TextStyle,
 };
 
+/** The world cards' three orbs, in turn (web .kids-world-orb-cyan, -gold, -sky). */
+export const WORLD_ORBS = ['cyan', 'gold', 'sky'] as const;
+export type WorldOrb = (typeof WORLD_ORBS)[number];
+
+/** Grow's "Pick a world" (web .kids-pill-eyebrow, .kids-glow-word, .kids-world-*). */
+export const worldPick = {
+  eyebrow: {
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: fill('discover', 0.5),
+    backgroundColor: rgb('kids-orb-sky', 0.1),
+  } satisfies ViewStyle,
+  eyebrowText: {
+    ...font('rajdhani', 700),
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 13 * 0.24,
+    textTransform: 'uppercase',
+    color: fill('discover'),
+  } satisfies TextStyle,
+  title: {
+    ...font('orbitron', 900),
+    fontSize: 30,
+    lineHeight: 30 * 1.08,
+    letterSpacing: 30 * 0.02,
+    textAlign: 'center',
+    color: rgb('kids-heading'),
+  } satisfies TextStyle,
+  glowWord: {
+    color: fill('discover'),
+    textShadowColor: fill('discover', 0.45),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  } satisfies TextStyle,
+  lead: {
+    ...font('rajdhani', 600),
+    fontSize: 17,
+    lineHeight: 17 * 1.375,
+    maxWidth: 520,
+    alignSelf: 'center',
+    textAlign: 'center',
+    color: rgb('kids-subtle'),
+  } satisfies TextStyle,
+  ring: {
+    position: 'absolute',
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: fill('discover', 0.3),
+  } satisfies ViewStyle,
+  done: {
+    position: 'absolute',
+    right: -6,
+    top: -4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: rgb('kids-world-deep'),
+    backgroundColor: rgb('kids-gold'),
+  } satisfies ViewStyle,
+  name: {
+    ...font('orbitron', 900),
+    fontSize: 16,
+    lineHeight: 16 * 1.25,
+    letterSpacing: 16 * 0.03,
+    textAlign: 'center',
+    color: rgb('kids-world-name'),
+  } satisfies TextStyle,
+  tag: {
+    ...font('rajdhani', 700),
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 12 * 0.24,
+    textTransform: 'uppercase',
+    color: rgb('kids-subtle'),
+  } satisfies TextStyle,
+  tagDone: { color: rgb('kids-gold') } satisfies TextStyle,
+  /** The icon on the orb and the check on the played marker. */
+  ink: rgb('kids-world-deep'),
+};
+
+/** Grow's game screens and report (web .kids-round-back, -step-dot, -pill-gold, -game-intro,
+ * -play-orb, -result-card, -check-orb, -report-orb, -btn-glow, -btn-line, -text-link). */
+export const growView = {
+  back: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: fill('discover', 0.35),
+  } satisfies ViewStyle,
+  backIcon: rgb('kids-subtle'),
+  pillGold: {
+    borderColor: rgb('kids-gold', 0.55),
+    backgroundColor: rgb('kids-gold', 0.08),
+  } satisfies ViewStyle,
+  pillGoldText: { color: rgb('kids-gold') } satisfies TextStyle,
+  goldGlow: {
+    color: rgb('kids-gold'),
+    textShadowColor: rgb('kids-gold', 0.45),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  } satisfies TextStyle,
+  title: {
+    ...font('orbitron', 900),
+    fontSize: 26,
+    lineHeight: 26 * 1.1,
+    textAlign: 'center',
+    color: rgb('kids-heading'),
+  } satisfies TextStyle,
+  intro: {
+    width: '100%',
+    maxWidth: 540,
+    aspectRatio: 1,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    overflow: 'hidden',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: fill('discover', 0.3),
+    experimental_backgroundImage: `radial-gradient(circle at 50% 40%, ${rgb(
+      'kids-world-card',
+    )}, ${rgb('kids-world-deep')} 78%)`,
+  } satisfies ViewStyle,
+  skill: {
+    ...font('rajdhani', 700),
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 13 * 0.28,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    color: rgb('kids-gold'),
+  } satisfies TextStyle,
+  note: {
+    ...font('rajdhani', 700),
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 14 * 0.2,
+    textTransform: 'uppercase',
+    color: rgb('kids-subtle'),
+  } satisfies TextStyle,
+  /** The round Play's breathing glow, a layer under it (RN can't animate box-shadow). */
+  playGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 9999,
+    boxShadow: `0 0 46px ${fill('discover', 0.95)}`,
+  } satisfies ViewStyle,
+  playText: {
+    ...font('orbitron', 900),
+    fontSize: 18,
+    lineHeight: 24,
+    letterSpacing: 18 * 0.08,
+    color: rgb('kids-world-name'),
+  } satisfies TextStyle,
+  playInk: rgb('kids-world-name'),
+  result: {
+    width: '100%',
+    maxWidth: 540,
+    alignSelf: 'center',
+    alignItems: 'center',
+    borderRadius: 30,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    borderWidth: 1,
+    borderColor: rgb('kids-gold', 0.5),
+    experimental_backgroundImage: `linear-gradient(180deg, ${rgb(
+      'kids-world-card',
+      0.7,
+    )}, ${rgb('kids-world-deep', 0.92)})`,
+    boxShadow: `0 0 50px ${rgb('kids-gold', 0.12)}`,
+  } satisfies ViewStyle,
+  checkOrb: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    experimental_backgroundImage: `radial-gradient(circle at 40% 35%, ${rgb(
+      'kids-orb-gold-hi',
+    )}, ${rgb('kids-orb-gold')} 45%, ${rgb('kids-orb-gold-lo')})`,
+    boxShadow: `0 0 40px ${rgb('kids-gold', 0.55)}`,
+  } satisfies ViewStyle,
+  score: {
+    ...font('orbitron', 900),
+    fontSize: 36,
+    lineHeight: 40,
+    color: rgb('kids-gold'),
+  } satisfies TextStyle,
+  reportOrb: {
+    borderWidth: 4,
+    borderColor: rgb('kids-world-deep'),
+    boxShadow: `0 0 50px ${fill('discover', 0.45)}`,
+  } satisfies ViewStyle,
+  btnText: {
+    ...font('rajdhani', 700),
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 14 * 0.18,
+    textTransform: 'uppercase',
+  } satisfies TextStyle,
+  btnGlowText: { color: rgb('kids-world-name') } satisfies TextStyle,
+  btnLineText: { color: fill('discover') } satisfies TextStyle,
+  link: {
+    ...font('rajdhani', 700),
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 14 * 0.2,
+    textTransform: 'uppercase',
+    color: rgb('kids-subtle'),
+  } satisfies TextStyle,
+};
+
+/** A game's dot: done gold, the current one cyan (both glowing), the rest faint. */
+export function stepDot(state: 'done' | 'now' | 'next'): ViewStyle {
+  const lit =
+    state === 'done'
+      ? rgb('kids-gold')
+      : state === 'now'
+      ? fill('discover')
+      : null;
+  return {
+    width: 36,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: lit ?? fill('discover', 0.14),
+    boxShadow: lit
+      ? `0 0 12px ${
+          state === 'done' ? rgb('kids-gold', 0.6) : fill('discover', 0.6)
+        }`
+      : undefined,
+  };
+}
+
+/** The round Play (pressed: a little smaller). */
+export function playOrb(pressed = false): ViewStyle {
+  return {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 2,
+    borderColor: fill('discover'),
+    experimental_backgroundImage: `radial-gradient(circle at 40% 35%, ${rgb(
+      'kids-orb-sky',
+    )}, ${rgb('kids-orb-cyan-lo')})`,
+    boxShadow: `0 0 18px ${fill('discover', 0.5)}`,
+    transform: [{ scale: pressed ? 0.95 : 1 }],
+  };
+}
+
+/** `.kids-btn-glow`: Grow's lit button, a cyan gradient with a glow. */
+export function buttonGlow(pressed = false): ViewStyle {
+  return {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: fill('discover'),
+    experimental_backgroundImage: `linear-gradient(180deg, ${rgb(
+      'kids-orb-sky',
+    )}, ${rgb('kids-orb-cyan-lo')})`,
+    boxShadow: `0 0 26px ${fill('discover', 0.35)}`,
+    transform: [{ scale: pressed ? 0.96 : 1 }],
+  };
+}
+
+/** `.kids-btn-line`: outlined cyan. */
+export function buttonLine(pressed = false): ViewStyle {
+  return {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: fill('discover', 0.4),
+    backgroundColor: pressed ? rgb('kids-orb-sky', 0.12) : undefined,
+    transform: [{ scale: pressed ? 0.96 : 1 }],
+  };
+}
+
+/** `.kids-world`: a world's card (pressed: a little smaller). */
+export function worldCard(pressed = false): ViewStyle {
+  return {
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingTop: 24,
+    paddingBottom: 20,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: fill('discover', 0.28),
+    experimental_backgroundImage: `linear-gradient(180deg, ${rgb(
+      'kids-world-card',
+      0.55,
+    )}, ${rgb('kids-world-deep', 0.85)})`,
+    boxShadow: `0 14px 34px ${rgb('kids-world-shadow', 0.45)}`,
+    transform: [{ scale: pressed ? 0.96 : 1 }],
+  };
+}
+
+/** `.kids-world-orb` in one of the three gradients. */
+export function worldOrb(orb: WorldOrb): ViewStyle {
+  const glow = orb === 'gold' ? 0.45 : 0.5;
+  return {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    experimental_backgroundImage: `radial-gradient(circle at 35% 30%, ${rgb(
+      `kids-orb-${orb}-hi`,
+    )}, ${rgb(`kids-orb-${orb}`)} 40%, ${rgb(`kids-orb-${orb}-lo`)})`,
+    boxShadow: `0 0 30px ${rgb(
+      `kids-orb-${orb}`,
+      glow,
+    )}, inset -10px -12px 24px ${rgb(
+      'kids-world-shadow',
+      0.35,
+    )}, inset 8px 8px 18px ${rgb('kids-world-name', 0.25)}`,
+  };
+}
+
 /** The sort card (web .kids-game-card, -right, -wrong). */
 export function sortCard(state: 'shown' | 'right' | 'wrong'): ViewStyle {
   return {

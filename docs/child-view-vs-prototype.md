@@ -94,38 +94,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **M9.** Voice: dark-cyan mic circle (#1ec4e8 → #0a5b74) with a light mic, a gold border above
   90%, glow 20 → 70 px; wave bars 5 px apart.
 
-### Grow — "Pick a world" — `GrowWorlds.tsx`
-
-- **GW1.** "Grow" eyebrow as the bordered pill (cyan .5 border, cyan .1 fill, Rajdhani 15, .24em).
-- **GW2.** Heading Orbitron 700, .02em, #e7f5f9; "world" with a cyan glow. Subtitle #84a0b2.
-- **GW3.** Grid auto-fit `minmax(220px,1fr)`, gap 20, margin-top 34.
-- **GW4.** World card: radius 30, padding 28/18/24, soft gradient rgba(14,58,74,.55) →
-  rgba(5,19,26,.85), 1 px cyan .28 border, soft shadow.
-- **GW5.** World icon: 46 px dark icon in a 104 px glowing orb (three gradients: cyan, gold,
-  cyan-deep), a dashed ring spinning (18 s), the orb floating (4 s, staggered .5 s).
-- **GW6.** World colours cycle through the three orbs (now the six power pairs).
-- **GW7.** World name Orbitron 700 19 px #eafdff. The tag uppercase, .24em, and "Completed" in gold
-  once played (keep "Last: {total}" beside it).
-- **GW8.** Played marker: a 34 px gold #ffd98a disc with a dark check and 3 px dark border, popping,
-  on the orb's top-right.
-- **GW9.** Motion: cards unfold one after another (.08 s stagger); hover lifts 6 px, tilts ±1.5°,
-  cyan border and glow; press scales to .96.
-
-### Grow — game screens — `GrowWorlds.tsx`
-
-- **GS1.** Header centred.
-- **GS2.** Back as a 44 px outlined cyan circle with a chevron.
-- **GS3.** Progress dots 46×10: done gold #ffd98a with a glow, current cyan with a glow, the rest
-  cyan .14, animated.
-- **GS4.** Two pills under the dots: the world name (cyan) and "Game n of 3" (gold).
-- **GS5.** Game title Orbitron 700 clamp(28–44 px) #e7f5f9; how-to #84a0b2, 21 px.
-- **GS6.** Intro: a square game-sized frame; the skill in gold #ffd98a, .28em; a 150 px round
-  pulsing "Play" with a cyan gradient; "Played before" / "New game" (from the world's runs).
-- **GS7.** Result: the 96 px gold check orb; "Well done!" in gold #ffd98a with a glow (keep the
-  score and band under it, D).
-- **GS8.** Result buttons outside the card, 62 px, uppercase Rajdhani: "Next game" / "Finish world"
-  a cyan gradient with a glow, "Try again" outlined cyan.
-
 ### Grow — the games — `GrowGames.tsx`, `GamePieces.tsx`
 
 - **GG1.** Frame `min(100%, 540px, 100vh - 300px)`, min 260; radial #0e3a4a → #05131a; twinkling
@@ -144,14 +112,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **GG8.** Spark: strokes glow; colours #ffd98a, #4be9ff, #3ce1be, #9d8cff, #ff8fb1; inner line white.
 
 A red token for "wrong" doesn't exist yet: add one (e.g. `--kids-wrong-rgb`) for GG2, GG3, GG5, GG7.
-
-### Grow — report — `GrowWorlds.tsx`
-
-- **R1.** Eyebrow as a gold pill "{World} report"; "complete!" in gold #ffd98a with a glow,
-  Orbitron 700.
-- **R2.** The 150 px floating world orb with its icon (and the confetti, S5).
-- **R3.** "Play again" outlined cyan, 62 px, uppercase; "Pick another world" as a borderless text
-  link in #84a0b2.
 
 ### Transform — `TransformQuests.tsx`
 
@@ -378,3 +338,18 @@ Applying an item from group 1 means changing both apps the same way.
   tiles, note card and streak row were smaller, with Save on its own line; Connect's heading, card
   and button were smaller; Grow used each world's colour where the web uses the Grow colour; quest
   dots sat below the how-to.
+- Grow's "Pick a world" (was GW1–GW9), applied on 2026-11-14 to both apps: the cyan pill eyebrow,
+  the heading with the glowing "world", the auto-fit grid (two columns on phones), a gradient card
+  per world with its 104 px orb (cyan, gold and sky in turn, a spinning dashed ring, floating),
+  the dark icon, the gold played marker, "Completed" in gold with "Last: {total}" under it, and
+  the cards unfolding in turn, lifting on hover (no tilt, as the prototype renders) and shrinking on press. Sizes follow
+  the parent pages' scale (an 88 px orb and 16 px names on phones) rather than the prototype's.
+- Grow's game screens and report (was GS1–GS8, R1–R3), applied on 2026-11-14 to both apps: a
+  centred header with a round outlined Back and glowing gold/cyan dots; the world and "Game n of
+  3" pills; the intro as a square frame with the skill in gold, a round pulsing Play and "Played
+  before" / "New game"; the score card with the gold check orb and a glowing gold "Well done!"
+  (the score and band kept under it); "Next game" / "Finish world" as a cyan gradient and "Try
+  again" outlined, outside the card; the report's gold pill, gold "complete!" and floating world
+  orb, "Play again" outlined and "Pick another world" as a text link. Each view rises or pops in
+  as the prototype's. Buttons stay on the parent pages' height (44/48 px, not 62 px); R2's
+  confetti stays with S5.

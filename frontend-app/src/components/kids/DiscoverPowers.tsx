@@ -4,8 +4,6 @@ import Animated, {
   cubicBezier,
   useReducedMotion,
   type CSSAnimationKeyframes,
-  type CSSAnimationProperties,
-  type CSSAnimationTimingFunction,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { Pressable } from '@/components/ui/pressable';
@@ -16,7 +14,7 @@ import { POWER_SLOTS, powerSize } from '@/lib/kidsPowers';
 import { font, rgb } from '@/theme';
 import { POWER_ICONS } from '@/components/kids/icons';
 import GameDialog from '@/components/kids/GameDialog';
-import { enter } from '@/components/kids/enter';
+import { FLOAT, SPIN, enter, loop } from '@/components/kids/enter';
 import {
   color,
   discoverPage as d,
@@ -31,44 +29,18 @@ const around = (n: number) => ({ top: n, left: n, right: n, bottom: n });
 const clamp = (min: number, value: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
-// The web's looping animations (index.css kids-twinkle, kids-float, the dashed ring's
-// spin_60s, and the spokes' kids-grow-x entrance), only where motion is welcome.
+// The web's kids-twinkle and the spokes' kids-grow-x entrance (the float and the dashed ring's
+// spin are components/kids/enter's), only where motion is welcome.
 const TWINKLE: CSSAnimationKeyframes = {
   '0%': { opacity: 0.25 },
   '50%': { opacity: 1 },
   '100%': { opacity: 0.25 },
-};
-const FLOAT: CSSAnimationKeyframes = {
-  '0%': { transform: [{ translateY: 0 }] },
-  '50%': { transform: [{ translateY: -8 }] },
-  '100%': { transform: [{ translateY: 0 }] },
-};
-const SPIN: CSSAnimationKeyframes = {
-  from: { transform: [{ rotate: '0deg' }] },
-  to: { transform: [{ rotate: '360deg' }] },
 };
 const GROW_X: CSSAnimationKeyframes = {
   from: { transform: [{ scaleX: 0 }] },
   to: { transform: [{ scaleX: 1 }] },
 };
 const UNFOLD_EASE = cubicBezier(0.2, 1.5, 0.4, 1);
-
-const loop = (
-  name: CSSAnimationKeyframes,
-  seconds: number,
-  delay: number,
-  timing: CSSAnimationTimingFunction,
-  reduced: boolean,
-): CSSAnimationProperties | null =>
-  reduced
-    ? null
-    : {
-        animationName: name,
-        animationDuration: `${seconds}s`,
-        animationDelay: `${delay}s`,
-        animationTimingFunction: timing,
-        animationIterationCount: 'infinite',
-      };
 
 /** The ring round the photo: web `.kids-photo-ring`'s conic gradient (cyan → its shade →
  * cyan, from 200deg), drawn as wedges of cyan over the shade, as RN has no conic-gradient. */

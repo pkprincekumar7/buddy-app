@@ -1003,6 +1003,81 @@ module.exports = {
       255,
       224,
       138
+    ],
+    "kids-heading": [
+      231,
+      245,
+      249
+    ],
+    "kids-world-name": [
+      234,
+      253,
+      255
+    ],
+    "kids-world-card": [
+      14,
+      58,
+      74
+    ],
+    "kids-world-deep": [
+      5,
+      19,
+      26
+    ],
+    "kids-world-shadow": [
+      2,
+      6,
+      15
+    ],
+    "kids-gold": [
+      255,
+      217,
+      138
+    ],
+    "kids-orb-cyan-hi": [
+      234,
+      253,
+      255
+    ],
+    "kids-orb-cyan": [
+      75,
+      233,
+      255
+    ],
+    "kids-orb-cyan-lo": [
+      10,
+      91,
+      116
+    ],
+    "kids-orb-gold-hi": [
+      255,
+      246,
+      220
+    ],
+    "kids-orb-gold": [
+      255,
+      217,
+      138
+    ],
+    "kids-orb-gold-lo": [
+      138,
+      100,
+      32
+    ],
+    "kids-orb-sky-hi": [
+      212,
+      246,
+      255
+    ],
+    "kids-orb-sky": [
+      30,
+      196,
+      232
+    ],
+    "kids-orb-sky-lo": [
+      14,
+      58,
+      74
     ]
   },
   "raw": {

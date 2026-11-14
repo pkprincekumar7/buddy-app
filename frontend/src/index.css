@@ -497,6 +497,23 @@
     --kids-off-rgb: 26 36 66; /* #1a2442 an off button, an unpicked tile */
     --kids-off-shade-rgb: 12 19 40; /* #0c1328 */
     --kids-streak-rgb: 255 224 138; /* #ffe08a the streak line */
+    /* Grow's world cards (the prototype's "Pick a world"): the card, its glowing orb in one of
+       three gradients (cyan, gold, sky), the dark icon on it, and the gold played marker. */
+    --kids-heading-rgb: 231 245 249; /* #e7f5f9 Grow's heading */
+    --kids-world-name-rgb: 234 253 255; /* #eafdff a world's name */
+    --kids-world-card-rgb: 14 58 74; /* #0e3a4a card top, the sky orb's dark stop */
+    --kids-world-deep-rgb: 5 19 26; /* #05131a card bottom, the orb's icon, the marker's edge */
+    --kids-world-shadow-rgb: 2 6 15; /* #02060f */
+    --kids-gold-rgb: 255 217 138; /* #ffd98a the gold orb, "Completed", the played marker */
+    --kids-orb-cyan-hi-rgb: 234 253 255; /* #eafdff */
+    --kids-orb-cyan-rgb: 75 233 255; /* #4be9ff */
+    --kids-orb-cyan-lo-rgb: 10 91 116; /* #0a5b74 */
+    --kids-orb-gold-hi-rgb: 255 246 220; /* #fff6dc */
+    --kids-orb-gold-rgb: 255 217 138; /* #ffd98a */
+    --kids-orb-gold-lo-rgb: 138 100 32; /* #8a6420 */
+    --kids-orb-sky-hi-rgb: 212 246 255; /* #d4f6ff */
+    --kids-orb-sky-rgb: 30 196 232; /* #1ec4e8 */
+    --kids-orb-sky-lo-rgb: 14 58 74; /* #0e3a4a */
   }
 }
 
@@ -1230,6 +1247,244 @@
   .kids-tile-on {
     background: rgb(var(--kids-tile-rgb, var(--kids-area-rgb)) / 0.22);
     border-color: rgb(var(--kids-tile-rgb, var(--kids-area-rgb)));
+  }
+  /* Grow's "Pick a world" (the prototype's): the cyan pill eyebrow, the glowing word, and a
+     card per world with its floating orb. */
+  .kids-pill-eyebrow {
+    @apply inline-flex items-center rounded-full px-4 py-1.5 font-rajdhani text-[13px] font-bold uppercase md:px-[18px] md:py-2 md:text-[15px];
+    letter-spacing: 0.24em;
+    color: rgb(var(--kids-discover-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.5);
+    background: rgb(var(--kids-orb-sky-rgb) / 0.1);
+  }
+  .kids-glow-word {
+    color: rgb(var(--kids-discover-rgb));
+    text-shadow: 0 0 28px rgb(var(--kids-discover-rgb) / 0.45);
+  }
+  .kids-world {
+    @apply relative flex flex-col items-center gap-3 rounded-[26px] px-3.5 pb-5 pt-6 md:gap-4 md:rounded-[30px] md:px-[18px] md:pb-6 md:pt-7;
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.28);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb) / 0.55),
+      rgb(var(--kids-world-deep-rgb) / 0.85)
+    );
+    box-shadow: 0 14px 34px rgb(var(--kids-world-shadow-rgb) / 0.45);
+    transition:
+      transform 0.25s cubic-bezier(0.2, 1.5, 0.4, 1),
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .kids-world:hover {
+    transform: translateY(-6px);
+    border-color: rgb(var(--kids-discover-rgb));
+    box-shadow:
+      0 18px 40px rgb(var(--kids-world-shadow-rgb) / 0.5),
+      0 0 34px rgb(var(--kids-discover-rgb) / 0.25);
+  }
+  .kids-world:not(:disabled):active {
+    transform: scale(0.96);
+  }
+  .kids-world-ring {
+    @apply absolute -inset-2.5 rounded-full;
+    border: 1px dashed rgb(var(--kids-discover-rgb) / 0.3);
+  }
+  /* The orb: --kids-orb-* is one of the three gradients (.kids-world-orb-cyan, -gold, -sky). */
+  .kids-world-orb {
+    @apply absolute inset-0 flex items-center justify-center rounded-full;
+    color: rgb(var(--kids-world-deep-rgb));
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--kids-orb-hi-rgb)),
+      rgb(var(--kids-orb-rgb)) 40%,
+      rgb(var(--kids-orb-lo-rgb))
+    );
+    box-shadow:
+      0 0 30px rgb(var(--kids-orb-glow-rgb) / var(--kids-orb-glow-alpha, 0.5)),
+      inset -10px -12px 24px rgb(var(--kids-world-shadow-rgb) / 0.35),
+      inset 8px 8px 18px rgb(var(--kids-world-name-rgb) / 0.25);
+  }
+  .kids-world-orb-cyan {
+    --kids-orb-hi-rgb: var(--kids-orb-cyan-hi-rgb);
+    --kids-orb-rgb: var(--kids-orb-cyan-rgb);
+    --kids-orb-lo-rgb: var(--kids-orb-cyan-lo-rgb);
+    --kids-orb-glow-rgb: var(--kids-orb-cyan-rgb);
+  }
+  .kids-world-orb-gold {
+    --kids-orb-hi-rgb: var(--kids-orb-gold-hi-rgb);
+    --kids-orb-rgb: var(--kids-orb-gold-rgb);
+    --kids-orb-lo-rgb: var(--kids-orb-gold-lo-rgb);
+    --kids-orb-glow-rgb: var(--kids-orb-gold-rgb);
+    --kids-orb-glow-alpha: 0.45;
+  }
+  .kids-world-orb-sky {
+    --kids-orb-hi-rgb: var(--kids-orb-sky-hi-rgb);
+    --kids-orb-rgb: var(--kids-orb-sky-rgb);
+    --kids-orb-lo-rgb: var(--kids-orb-sky-lo-rgb);
+    --kids-orb-glow-rgb: var(--kids-orb-sky-rgb);
+  }
+  /* Played: a gold disc with a dark check on the orb's top-right. */
+  .kids-world-done {
+    @apply absolute -right-1.5 -top-1 flex h-[30px] w-[30px] items-center justify-center rounded-full md:h-[34px] md:w-[34px];
+    color: rgb(var(--kids-world-deep-rgb));
+    background: rgb(var(--kids-gold-rgb));
+    border: 3px solid rgb(var(--kids-world-deep-rgb));
+  }
+  /* 900: the bundled Orbitron Bold reads lighter than the prototype's web-font 700. */
+  .kids-world-name {
+    @apply text-balance text-center font-orbitron text-base font-black leading-tight md:text-[19px];
+    letter-spacing: 0.03em;
+    color: rgb(var(--kids-world-name-rgb));
+  }
+  .kids-world-tag {
+    @apply font-rajdhani text-xs font-bold uppercase md:text-sm;
+    letter-spacing: 0.24em;
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-world-tag-done {
+    color: rgb(var(--kids-gold-rgb));
+  }
+  /* Grow's game screens and report (the prototype's). */
+  .kids-pill-gold {
+    color: rgb(var(--kids-gold-rgb));
+    border-color: rgb(var(--kids-gold-rgb) / 0.55);
+    background: rgb(var(--kids-gold-rgb) / 0.08);
+  }
+  .kids-gold-glow {
+    color: rgb(var(--kids-gold-rgb));
+    text-shadow: 0 0 28px rgb(var(--kids-gold-rgb) / 0.45);
+  }
+  /* Back: an outlined cyan circle. */
+  .kids-round-back {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors;
+    color: rgb(var(--kids-subtle-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-round-back:hover {
+    color: rgb(var(--kids-world-name-rgb));
+    border-color: rgb(var(--kids-discover-rgb));
+  }
+  /* The three games' dots: done gold, the current one cyan, both glowing. */
+  .kids-step-dot {
+    @apply h-2 w-9 rounded-full md:h-2.5 md:w-[46px];
+    background: rgb(var(--kids-discover-rgb) / 0.14);
+    transition: background 0.3s ease;
+  }
+  .kids-step-dot-done {
+    background: rgb(var(--kids-gold-rgb));
+    box-shadow: 0 0 12px rgb(var(--kids-gold-rgb) / 0.6);
+  }
+  .kids-step-dot-now {
+    background: rgb(var(--kids-discover-rgb));
+    box-shadow: 0 0 12px rgb(var(--kids-discover-rgb) / 0.6);
+  }
+  /* A game's intro: a square, game-sized frame with the skill, the round Play and the note. */
+  .kids-game-intro {
+    @apply relative mx-auto flex aspect-square w-full max-w-[540px] flex-col items-center justify-center gap-4 overflow-hidden rounded-[26px] md:gap-5;
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.3);
+    background: radial-gradient(
+      circle at 50% 40%,
+      rgb(var(--kids-world-card-rgb)),
+      rgb(var(--kids-world-deep-rgb)) 78%
+    );
+  }
+  .kids-game-skill {
+    @apply px-4 text-center font-rajdhani text-[13px] font-bold uppercase md:text-[15px];
+    letter-spacing: 0.28em;
+    color: rgb(var(--kids-gold-rgb));
+  }
+  .kids-game-note {
+    @apply font-rajdhani text-sm font-bold uppercase md:text-base;
+    letter-spacing: 0.2em;
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-play-orb {
+    @apply flex h-32 w-32 flex-col items-center justify-center gap-1.5 rounded-full font-orbitron text-lg font-black md:h-[150px] md:w-[150px] md:text-xl;
+    letter-spacing: 0.08em;
+    color: rgb(var(--kids-world-name-rgb));
+    border: 2px solid rgb(var(--kids-discover-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.5);
+    transition: transform 0.15s ease;
+  }
+  .kids-play-orb:hover {
+    transform: scale(1.06);
+  }
+  .kids-play-orb:not(:disabled):active {
+    transform: scale(0.95);
+  }
+  /* A game's score: a gold-edged card with the gold check orb. */
+  .kids-result-card {
+    @apply mx-auto max-w-[540px] rounded-[30px] px-6 py-7 text-center md:px-[26px] md:py-[30px];
+    border: 1px solid rgb(var(--kids-gold-rgb) / 0.5);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-world-card-rgb) / 0.7),
+      rgb(var(--kids-world-deep-rgb) / 0.92)
+    );
+    box-shadow: 0 0 50px rgb(var(--kids-gold-rgb) / 0.12);
+  }
+  .kids-check-orb {
+    @apply mx-auto flex h-20 w-20 items-center justify-center rounded-full md:h-24 md:w-24;
+    color: rgb(var(--kids-world-deep-rgb));
+    background: radial-gradient(
+      circle at 40% 35%,
+      rgb(var(--kids-orb-gold-hi-rgb)),
+      rgb(var(--kids-orb-gold-rgb)) 45%,
+      rgb(var(--kids-orb-gold-lo-rgb))
+    );
+    box-shadow: 0 0 40px rgb(var(--kids-gold-rgb) / 0.55);
+  }
+  /* The report's world orb: the world's gradient, a dark edge and a cyan glow. */
+  .kids-report-orb {
+    border: 4px solid rgb(var(--kids-world-deep-rgb));
+    box-shadow: 0 0 50px rgb(var(--kids-discover-rgb) / 0.45);
+  }
+  /* Grow's buttons: the lit one a cyan gradient with a glow, the other outlined cyan. */
+  .kids-btn-glow,
+  .kids-btn-line {
+    @apply inline-flex items-center justify-center gap-2.5 whitespace-nowrap rounded-full font-rajdhani font-bold uppercase transition-transform duration-150;
+    letter-spacing: 0.18em;
+  }
+  .kids-btn-glow {
+    color: rgb(var(--kids-world-name-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb));
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kids-orb-sky-rgb)),
+      rgb(var(--kids-orb-cyan-lo-rgb))
+    );
+    box-shadow: 0 0 26px rgb(var(--kids-discover-rgb) / 0.35);
+  }
+  .kids-btn-glow:not(:disabled):hover {
+    transform: translateY(-2px);
+  }
+  .kids-btn-glow:not(:disabled):active,
+  .kids-btn-line:not(:disabled):active {
+    transform: scale(0.96);
+  }
+  .kids-btn-glow:disabled {
+    opacity: 0.6;
+  }
+  .kids-btn-line {
+    color: rgb(var(--kids-discover-rgb));
+    border: 1px solid rgb(var(--kids-discover-rgb) / 0.4);
+  }
+  .kids-btn-line:hover {
+    background: rgb(var(--kids-orb-sky-rgb) / 0.12);
+  }
+  /* A borderless text button. */
+  .kids-text-link {
+    @apply rounded-full px-[18px] py-2 font-rajdhani text-sm font-bold uppercase transition-colors md:text-base;
+    letter-spacing: 0.2em;
+    color: rgb(var(--kids-subtle-rgb));
+  }
+  .kids-text-link:hover {
+    color: rgb(var(--kids-world-name-rgb));
   }
   /* A text box on the kids page. */
   .kids-input {
@@ -1989,6 +2244,23 @@
     transform: scaleX(1);
   }
 }
+/* The round Play's glow breathing (the prototype's kPulse). */
+@keyframes kids-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgb(var(--kids-discover-rgb) / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 46px rgb(var(--kids-discover-rgb) / 0.95);
+  }
+}
+/* A world card rising and growing into place (the prototype's kUnfoldY). */
+@keyframes kids-unfold-y {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.85);
+  }
+}
 @keyframes kids-fade {
   from {
     opacity: 0;
@@ -2009,5 +2281,19 @@
   }
   .kids-enter-fade {
     animation: kids-fade 0.5s ease backwards;
+  }
+  /* Grow's views (the prototype's): each game screen rises in (.4 s), the score card and the
+     world's report pop in (.45 s). */
+  .kids-enter-up-quick {
+    animation: kids-up 0.4s ease both;
+  }
+  .kids-enter-pop-quick {
+    animation: kids-pop 0.45s ease both;
+  }
+  .kids-pulse {
+    animation: kids-pulse 1.6s ease-in-out infinite;
+  }
+  .kids-enter-unfold-y {
+    animation: kids-unfold-y 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
   }
 }

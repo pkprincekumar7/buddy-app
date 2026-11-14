@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Check, Play } from 'lucide-react';
+import { Check, ChevronLeft } from 'lucide-react';
 import {
   BAND_COLOR,
   bandFor,
@@ -15,6 +15,9 @@ import { POWER_COLORS, tileVars } from '@/components/kids/palette';
 import GrowGame from '@/components/kids/GrowGames';
 
 const worldColor = (i: number) => POWER_COLORS[i % POWER_COLORS.length] ?? 'discover';
+
+/** The world cards' orbs, as the prototype's: cyan, gold and sky, in turn. */
+const WORLD_ORBS = ['kids-world-orb-cyan', 'kids-world-orb-gold', 'kids-world-orb-sky'] as const;
 
 interface GrowWorldsProps {
   worlds: KidWorlds;
@@ -55,19 +58,17 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
 
   if (world === null) {
     return (
-      <div className="mx-auto max-w-4xl">
-        <section className="text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.3em] text-kids-area md:text-sm">
-            Grow
-          </p>
-          <h1 className="mt-3 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-tight text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
-            Pick a <span className="text-kids-area">world</span>
+      <div className="mx-auto max-w-5xl">
+        <section className="kids-enter-up text-center">
+          <p className="kids-pill-eyebrow kids-enter-pop">Grow</p>
+          <h1 className="mt-4 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-[1.08] tracking-[0.02em] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
+            Pick a <span className="kids-glow-word">world</span>
           </h1>
-          <p className="mx-auto mt-3 max-w-xl text-[17px] font-semibold leading-snug text-kids-body md:text-xl">
+          <p className="mx-auto mt-3 max-w-[520px] text-pretty text-[17px] font-semibold leading-snug text-kids-subtle md:text-xl">
             Play three quick games right here.
           </p>
         </section>
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] sm:gap-5 md:mt-[34px]">
           {worlds.worlds.map((w, i) => {
             const runs = runsOf(worlds, i);
             const last = runs[runs.length - 1];
@@ -76,30 +77,44 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
                 key={w.name}
                 type="button"
                 onClick={() => start(i)}
-                style={tileVars(worldColor(i))}
-                className="kids-tile relative min-h-[120px] px-3 text-base md:min-h-[136px] md:text-lg"
+                className="kids-world kids-enter-unfold-y"
+                style={{ animationDelay: `${i * 0.08}s` }}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  className="h-10 w-10 text-kids-tile md:h-12 md:w-12"
+                <div
+                  className="relative h-[88px] w-[88px] motion-safe:animate-[kids-float_4s_ease-in-out_infinite] md:h-[104px] md:w-[104px]"
+                  style={{ animationDelay: `${i * 0.5}s` }}
                 >
-                  <path d={w.icon} />
-                </svg>
-                <span className="text-center">{w.name}</span>
-                <span className="font-rajdhani text-sm font-bold text-kids-muted md:text-base">
-                  {last ? `Last: ${last.total}` : '3 games'}
-                </span>
-                {last && (
-                  <Check
-                    className="absolute right-3 top-3 h-5 w-5 text-kids-teal"
-                    aria-label="Played"
-                  />
+                  <div className="kids-world-ring motion-safe:animate-[spin_18s_linear_infinite]" />
+                  <div className={cn('kids-world-orb', WORLD_ORBS[i % WORLD_ORBS.length])}>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.9"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="h-[38px] w-[38px] md:h-[46px] md:w-[46px]"
+                    >
+                      <path d={w.icon} />
+                    </svg>
+                  </div>
+                  {last && (
+                    <span className="kids-world-done kids-enter-pop" aria-hidden="true">
+                      <Check className="h-3.5 w-3.5 md:h-4 md:w-4" strokeWidth={3.2} />
+                    </span>
+                  )}
+                </div>
+                <span className="kids-world-name">{w.name}</span>
+                {last ? (
+                  <span className="flex flex-col items-center gap-1">
+                    <span className="kids-world-tag kids-world-tag-done">Completed</span>
+                    <span className="font-rajdhani text-sm font-bold text-kids-muted md:text-base">
+                      Last: {last.total}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="kids-world-tag">3 games</span>
                 )}
               </button>
             );
@@ -118,14 +133,33 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
     const weakest = W.games[order[order.length - 1] ?? 0];
     const band = bandFor(report.total, worlds.bands);
     return (
-      <div className="mx-auto max-w-3xl" style={tileVars(worldColor(world))}>
+      <div className="kids-enter-pop-quick mx-auto max-w-3xl" style={tileVars(worldColor(world))}>
         <section className="text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.3em] text-kids-area md:text-sm">
-            {W.name} report
-          </p>
-          <h1 className="mt-3 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-tight text-kids-text md:text-[clamp(34px,4.8vw,53px)]">
-            World <span className="text-kids-area">complete!</span>
+          <p className="kids-pill-eyebrow kids-pill-gold kids-enter-pop">{W.name} report</p>
+          <h1 className="mt-4 font-orbitron text-[clamp(28px,4vw,44px)] font-black leading-[1.08] text-kids-heading md:text-[clamp(34px,4.8vw,53px)]">
+            World <span className="kids-gold-glow">complete!</span>
           </h1>
+          <div className="relative mx-auto mt-6 h-32 w-32 md:mt-[26px] md:h-[150px] md:w-[150px]">
+            <div
+              className={cn(
+                'kids-world-orb kids-report-orb motion-safe:animate-[kids-float_3.4s_ease-in-out_infinite]',
+                WORLD_ORBS[world % WORLD_ORBS.length],
+              )}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="h-14 w-14 md:h-16 md:w-16"
+              >
+                <path d={W.icon} />
+              </svg>
+            </div>
+          </div>
         </section>
         <div className="kids-card mt-5 text-center" role="status">
           <p className="font-orbitron text-5xl font-black text-kids-streak">{report.total}</p>
@@ -197,19 +231,15 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
           <p className="mt-1 text-base font-bold text-kids-text md:text-lg">{W.mission}</p>
           <p className="mt-1 text-[15px] font-semibold text-kids-body md:text-lg">{W.hint}</p>
         </div>
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <div className="mt-7 flex flex-col items-center gap-4 md:mt-[30px]">
           <button
             type="button"
             onClick={() => start(world)}
-            className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
+            className="kids-btn-line h-11 px-6 text-sm md:h-12 md:text-base"
           >
             Play again
           </button>
-          <button
-            type="button"
-            onClick={back}
-            className="kids-btn-off h-11 px-6 text-sm md:h-12 md:text-base"
-          >
+          <button type="button" onClick={back} className="kids-text-link">
             Pick another world
           </button>
         </div>
@@ -220,6 +250,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
   const G = W.games[step];
   if (!G) return null;
   const result = results[step];
+  const playedBefore = runsOf(worlds, world).length > 0;
   const resultBand = result ? bandFor(result.score, worlds.bands) : null;
 
   const finishWorld = async () => {
@@ -236,55 +267,67 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
   };
 
   return (
-    <div className="mx-auto max-w-3xl" style={tileVars(worldColor(world))}>
-      <div className="flex items-center gap-3">
+    <div
+      key={`${world}-${step}`}
+      className="kids-enter-up-quick mx-auto max-w-3xl text-center"
+      style={tileVars(worldColor(world))}
+    >
+      <div className="flex items-center justify-center gap-3">
         <button
           type="button"
           onClick={back}
           aria-label="Back to worlds"
-          className="kids-btn-off flex h-10 w-10 items-center justify-center"
+          className="kids-round-back"
         >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2.4} aria-hidden="true" />
         </button>
-        <div className="flex gap-2" aria-label={`Game ${step + 1} of 3`} role="img">
+        <div className="flex gap-3" aria-label={`Game ${step + 1} of 3`} role="img">
           {[0, 1, 2].map((j) => (
             <span
               key={j}
               className={cn(
-                'h-2.5 w-8 rounded-full',
-                j < step ? 'bg-kids-streak' : j === step ? 'bg-kids-discover' : 'bg-kids-off',
+                'kids-step-dot',
+                j < step && 'kids-step-dot-done',
+                j === step && 'kids-step-dot-now',
               )}
             />
           ))}
         </div>
       </div>
-      <p className="mt-5 text-[11px] font-bold uppercase tracking-[0.25em] text-kids-area md:text-[13px]">
-        {W.name} · Game {step + 1} of 3
-      </p>
-      <h1 className="mt-2 font-orbitron text-2xl font-black text-kids-text md:text-3xl">
+      <div className="mt-4 flex flex-wrap justify-center gap-2.5 md:mt-[18px]">
+        <p className="kids-pill-eyebrow kids-enter-pop">{W.name}</p>
+        <p className="kids-pill-eyebrow kids-pill-gold kids-enter-pop">Game {step + 1} of 3</p>
+      </div>
+      <h1 className="mt-3.5 text-center font-orbitron text-[26px] font-black leading-[1.1] text-kids-heading md:text-[clamp(28px,4vw,40px)]">
         {G.title}
       </h1>
-      <p className="mt-2 text-[15px] font-semibold text-kids-body md:text-lg">{G.how}</p>
+      <p className="mx-auto mt-2.5 max-w-[520px] text-pretty text-center text-[17px] font-semibold leading-snug text-kids-subtle md:text-xl">
+        {G.how}
+      </p>
 
       {phase === 'intro' && (
-        <div className="kids-card mt-5 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-kids-muted md:text-[13px]">
-            {G.skill}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setRound((r) => r + 1);
-              setPhase('play');
-            }}
-            className="kids-btn mt-4 inline-flex h-11 items-center gap-2 px-6 text-sm md:h-12 md:text-base"
-          >
-            <Play className="h-[18px] w-[18px]" aria-hidden="true" /> Play
-          </button>
+        <div className="kids-enter-pop-quick mt-6">
+          <div className="kids-game-intro">
+            <p className="kids-game-skill">{G.skill}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setRound((r) => r + 1);
+                setPhase('play');
+              }}
+              className="kids-play-orb kids-pulse"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-9 w-9 md:h-10 md:w-10">
+                <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+              </svg>
+              Play
+            </button>
+            <p className="kids-game-note">{playedBefore ? 'Played before' : 'New game'}</p>
+          </div>
         </div>
       )}
       {phase === 'play' && (
-        <div className="mt-5">
+        <div className="kids-enter-up-quick mt-5">
           <GrowGame
             key={round}
             type={G.type}
@@ -301,19 +344,28 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
         </div>
       )}
       {phase === 'result' && result && (
-        <div className="kids-card mt-5 text-center" role="status">
-          <p className="font-orbitron text-xl font-black text-kids-text md:text-2xl">Well done!</p>
-          <p className="mt-2 font-orbitron text-4xl font-black text-kids-streak">{result.score}</p>
-          {resultBand && (
-            <p
-              className="mt-1 font-orbitron text-base font-black md:text-lg"
-              style={tileVars(BAND_COLOR[resultBand.color])}
-            >
-              <span className="text-kids-tile">{resultBand.label}</span>
+        <>
+          <div className="kids-result-card kids-enter-pop-quick mt-6" role="status">
+            <div className="kids-check-orb kids-enter-pop">
+              <Check className="h-10 w-10 md:h-12 md:w-12" strokeWidth={3} aria-hidden="true" />
+            </div>
+            <p className="kids-gold-glow mt-4 font-orbitron text-[clamp(28px,5vw,40px)] font-black">
+              Well done!
             </p>
-          )}
-          <p className="mt-2 text-[15px] font-semibold text-kids-body md:text-lg">{result.line}</p>
-          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            <p className="mt-2 font-orbitron text-4xl font-black text-kids-gold">{result.score}</p>
+            {resultBand && (
+              <p
+                className="mt-1 font-orbitron text-base font-black md:text-lg"
+                style={tileVars(BAND_COLOR[resultBand.color])}
+              >
+                <span className="text-kids-tile">{resultBand.label}</span>
+              </p>
+            )}
+            <p className="mt-2 text-[17px] font-semibold text-kids-body md:text-xl">
+              {result.line}
+            </p>
+          </div>
+          <div className="mt-5 flex flex-wrap justify-center gap-3.5 md:mt-[22px]">
             {step < 2 ? (
               <button
                 type="button"
@@ -321,7 +373,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
                   setStep(step + 1);
                   setPhase('intro');
                 }}
-                className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
+                className="kids-btn-glow h-11 px-7 text-sm md:h-12 md:text-base"
               >
                 Next game
               </button>
@@ -330,7 +382,7 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
                 type="button"
                 disabled={saving}
                 onClick={() => void finishWorld()}
-                className="kids-btn h-11 px-6 text-sm md:h-12 md:text-base"
+                className="kids-btn-glow h-11 px-7 text-sm md:h-12 md:text-base"
               >
                 {saving ? 'Saving…' : 'Finish world'}
               </button>
@@ -341,12 +393,12 @@ export default function GrowWorlds({ worlds, saving, addRun, awaitProgress }: Gr
                 setRound((r) => r + 1);
                 setPhase('play');
               }}
-              className="kids-btn-off h-11 px-6 text-sm md:h-12 md:text-base"
+              className="kids-btn-line h-11 px-6 text-sm md:h-12 md:text-base"
             >
               Try again
             </button>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

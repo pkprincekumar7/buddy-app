@@ -1,7 +1,11 @@
 import React, { useState, type ReactNode } from 'react';
 import { Text, View, type TextStyle } from 'react-native';
+import Animated, {
+  useReducedMotion,
+  type CSSAnimationKeyframes,
+} from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import { ArrowLeft, Check, Play } from 'lucide-react-native';
+import { Check, ChevronLeft } from 'lucide-react-native';
 import { Pressable } from '@/components/ui/pressable';
 import { font } from '@/theme';
 import {
@@ -15,52 +19,35 @@ import {
 import type { KidActivity } from '@/api/kids';
 import type { GrowResult } from '@/lib/kidsGrow';
 import {
-  POWER_COLORS,
-  button,
-  buttonOff,
+  WORLD_ORBS,
   card,
   color,
   scoreBar,
-  tile,
+  worldCard,
+  worldOrb,
+  worldPick as pick,
+  growView as v,
+  stepDot,
+  playOrb,
+  buttonGlow,
+  buttonLine,
 } from '@/components/kids/palette';
+import { FLOAT, SPIN, enter, loop } from '@/components/kids/enter';
 import GrowGame from '@/components/kids/GrowGames';
 
-const worldColor = (i: number) =>
-  POWER_COLORS[i % POWER_COLORS.length] ?? 'discover';
+/** The round Play's glow breathing (web kids-pulse, the prototype's kPulse): a glow layer's
+ * opacity, as RN can't animate box-shadow. */
+const PULSE: CSSAnimationKeyframes = {
+  '0%': { opacity: 0 },
+  '50%': { opacity: 1 },
+  '100%': { opacity: 0 },
+};
 
 /** Grow's circle colour: the web's --kids-area on this tab (.kids-btn, .kids-card, text-kids-area). */
 const AREA = 'grow';
 
 /** The child view's type scale (matched to the parent pages at phone width), in px. */
 const s = {
-  // text-xs font-bold uppercase tracking-[0.3em] text-kids-area
-  eyebrow: {
-    ...font('rajdhani', 700),
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 12 * 0.3,
-    textTransform: 'uppercase',
-    textAlign: 'center',
-    color: color(AREA),
-  },
-  // font-orbitron text-3xl font-black leading-tight
-  title: {
-    ...font('orbitron', 900),
-    fontSize: 30,
-    lineHeight: 30 * 1.25,
-    textAlign: 'center',
-    color: color('text'),
-  },
-  // max-w-xl text-[17px] font-semibold leading-snug text-kids-body
-  lead: {
-    ...font('rajdhani', 600),
-    fontSize: 17,
-    lineHeight: 17 * 1.375,
-    maxWidth: 576,
-    alignSelf: 'center',
-    textAlign: 'center',
-    color: color('body'),
-  },
   // text-[11px] font-bold uppercase tracking-[0.2em] text-kids-muted
   label: {
     ...font('rajdhani', 700),
@@ -69,20 +56,6 @@ const s = {
     letterSpacing: 11 * 0.2,
     textTransform: 'uppercase',
     color: color('muted'),
-  },
-  // .kids-btn text-sm
-  btn: {
-    ...font('orbitron', 900),
-    fontSize: 14,
-    lineHeight: 20,
-    color: color('ink'),
-  },
-  // .kids-btn-off text-sm
-  btnOff: {
-    ...font('rajdhani', 700),
-    fontSize: 14,
-    lineHeight: 20,
-    color: color('text'),
   },
   orbitron: (size: number, lineHeight: number) =>
     ({
@@ -153,6 +126,7 @@ export default function GrowWorlds({
   addRun,
   awaitProgress,
 }: GrowWorldsProps) {
+  const reduced = useReducedMotion();
   const [world, setWorld] = useState<number | null>(null);
   const [step, setStep] = useState(0);
   const [phase, setPhase] = useState<Phase>('intro');
@@ -178,53 +152,90 @@ export default function GrowWorlds({
   if (world === null) {
     return (
       <View>
-        <Text style={s.eyebrow}>Grow</Text>
-        <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
-          Pick a <Text style={{ color: color(AREA) }}>world</Text>
-        </Text>
-        <Text className="mt-3" style={s.lead}>
-          Play three quick games right here.
-        </Text>
+        <Animated.View style={enter('up', 0, reduced)}>
+          <Animated.View style={[pick.eyebrow, enter('pop', 0, reduced)]}>
+            <Text style={pick.eyebrowText}>Grow</Text>
+          </Animated.View>
+          <Text accessibilityRole="header" className="mt-4" style={pick.title}>
+            Pick a <Text style={pick.glowWord}>world</Text>
+          </Text>
+          <Text className="mt-3" style={pick.lead}>
+            Play three quick games right here.
+          </Text>
+        </Animated.View>
         <TwoColumns items={worlds.worlds}>
-          {(w, i) => {
+          {(item, i) => {
             const runs = runsOf(worlds, i);
             const last = runs[runs.length - 1];
-            const c = worldColor(i);
             return (
-              <Pressable
-                onPress={() => start(i)}
-                accessibilityRole="button"
-                accessibilityLabel={w.name}
-                className="min-h-[120px] flex-1 items-center justify-center gap-2 px-3"
-                style={({ pressed }) => tile(c, false, pressed)}
+              <Animated.View
+                className="flex-1"
+                style={enter('unfoldY', i * 0.08, reduced)}
               >
-                <Svg width={40} height={40} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d={w.icon}
-                    stroke={color(c)}
-                    strokeWidth={1.8}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </Svg>
-                <Text style={[s.orbitron(16, 22), { textAlign: 'center' }]}>
-                  {w.name}
-                </Text>
-                <Text
-                  style={[s.rajdhani(15, 21, 700), { color: color('muted') }]}
+                <Pressable
+                  onPress={() => start(i)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    last ? `${item.name}, completed` : item.name
+                  }
+                  className="flex-1"
+                  style={({ pressed }) => worldCard(pressed)}
                 >
-                  {last ? `Last: ${last.total}` : '3 games'}
-                </Text>
-                {last ? (
-                  <View
-                    accessible
-                    accessibilityLabel="Played"
-                    className="absolute right-2.5 top-2.5"
+                  <Animated.View
+                    style={[
+                      { width: 88, height: 88 },
+                      loop(FLOAT, 4, i * 0.5, 'ease-in-out', reduced),
+                    ]}
                   >
-                    <Check size={20} color={color('teal')} />
-                  </View>
-                ) : null}
-              </Pressable>
+                    <Animated.View
+                      style={[pick.ring, loop(SPIN, 18, 0, 'linear', reduced)]}
+                    />
+                    <View
+                      style={worldOrb(
+                        WORLD_ORBS[i % WORLD_ORBS.length] ?? 'cyan',
+                      )}
+                    >
+                      <Svg
+                        width={38}
+                        height={38}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <Path
+                          d={item.icon}
+                          stroke={pick.ink}
+                          strokeWidth={1.9}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </Svg>
+                    </View>
+                    {last ? (
+                      <Animated.View
+                        style={[pick.done, enter('pop', 0, reduced)]}
+                      >
+                        <Check size={14} color={pick.ink} strokeWidth={3.2} />
+                      </Animated.View>
+                    ) : null}
+                  </Animated.View>
+                  <Text style={pick.name}>{item.name}</Text>
+                  {last ? (
+                    <View className="items-center gap-1">
+                      <Text style={[pick.tag, pick.tagDone]}>Completed</Text>
+                      <Text
+                        style={[
+                          s.rajdhani(14, 20, 700),
+                          { color: color('muted') },
+                        ]}
+                      >
+                        Last: {last.total}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={pick.tag}>3 games</Text>
+                  )}
+                </Pressable>
+              </Animated.View>
             );
           }}
         </TwoColumns>
@@ -241,11 +252,41 @@ export default function GrowWorlds({
     const weakest = W.games[order[order.length - 1] ?? 0];
     const band = bandFor(report.total, worlds.bands);
     return (
-      <View>
-        <Text style={s.eyebrow}>{W.name} report</Text>
-        <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
-          World <Text style={{ color: color(AREA) }}>complete!</Text>
+      <Animated.View style={enter('pop', 0, reduced, 0.45)}>
+        <Animated.View
+          style={[pick.eyebrow, v.pillGold, enter('pop', 0, reduced)]}
+        >
+          <Text style={[pick.eyebrowText, v.pillGoldText]}>
+            {W.name} report
+          </Text>
+        </Animated.View>
+        <Text accessibilityRole="header" className="mt-4" style={pick.title}>
+          World <Text style={v.goldGlow}>complete!</Text>
         </Text>
+        <Animated.View
+          className="mt-6 self-center"
+          style={[
+            { width: 128, height: 128 },
+            loop(FLOAT, 3.4, 0, 'ease-in-out', reduced),
+          ]}
+        >
+          <View
+            style={[
+              worldOrb(WORLD_ORBS[world % WORLD_ORBS.length] ?? 'cyan'),
+              v.reportOrb,
+            ]}
+          >
+            <Svg width={56} height={56} viewBox="0 0 24 24" fill="none">
+              <Path
+                d={W.icon}
+                stroke={pick.ink}
+                strokeWidth={1.9}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </View>
+        </Animated.View>
         <View
           accessibilityLiveRegion="polite"
           className="mt-6 items-center"
@@ -330,33 +371,33 @@ export default function GrowWorlds({
             {W.hint}
           </Text>
         </View>
-        <View className="mt-6 flex-row flex-wrap justify-center gap-2.5">
+        <View className="mt-7 items-center gap-4">
           <Pressable
             onPress={() => start(world)}
             accessibilityRole="button"
             accessibilityLabel="Play again"
             className="h-11 items-center justify-center px-6"
-            style={({ pressed }) => button(AREA, pressed)}
+            style={({ pressed }) => buttonLine(pressed)}
           >
-            <Text style={s.btn}>Play again</Text>
+            <Text style={[v.btnText, v.btnLineText]}>Play again</Text>
           </Pressable>
           <Pressable
             onPress={back}
             accessibilityRole="button"
             accessibilityLabel="Pick another world"
-            className="h-11 items-center justify-center px-6"
-            style={({ pressed }) => buttonOff(pressed)}
+            className="px-[18px] py-2"
           >
-            <Text style={s.btnOff}>Pick another world</Text>
+            <Text style={v.link}>Pick another world</Text>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
     );
   }
 
   const G = W.games[step];
   if (!G) return null;
   const result = results[step];
+  const playedBefore = runsOf(worlds, world).length > 0;
   const resultBand = result ? bandFor(result.score, worlds.bands) : null;
 
   const finishWorld = async () => {
@@ -379,81 +420,85 @@ export default function GrowWorlds({
   };
 
   return (
-    <View>
-      <View className="flex-row items-center gap-3">
+    <Animated.View
+      key={`${world}-${step}`}
+      style={enter('up', 0, reduced, 0.4)}
+    >
+      <View className="flex-row items-center justify-center gap-3">
         <Pressable
           onPress={back}
           accessibilityRole="button"
           accessibilityLabel="Back to worlds"
-          className="h-10 w-10 items-center justify-center"
-          style={({ pressed }) => buttonOff(pressed)}
+          style={v.back}
         >
-          <ArrowLeft size={18} color={color('text')} />
+          <ChevronLeft size={18} strokeWidth={2.4} color={v.backIcon} />
         </Pressable>
         <View
           accessible
           accessibilityRole="image"
           accessibilityLabel={`Game ${step + 1} of 3`}
-          className="flex-row gap-2"
+          className="flex-row gap-3"
         >
           {[0, 1, 2].map(j => (
             <View
               key={j}
-              className="h-2.5 w-8 rounded-full"
-              style={{
-                backgroundColor:
-                  j < step
-                    ? color('streak')
-                    : j === step
-                    ? color('discover')
-                    : color('off'),
-              }}
+              style={stepDot(j < step ? 'done' : j === step ? 'now' : 'next')}
             />
           ))}
         </View>
       </View>
-      <Text
-        className="mt-5"
-        style={[
-          s.eyebrow,
-          {
-            fontSize: 11,
-            lineHeight: 16,
-            letterSpacing: 11 * 0.25,
-            textAlign: 'left',
-          },
-        ]}
-      >
-        {W.name} · Game {step + 1} of 3
-      </Text>
-      <Text
-        accessibilityRole="header"
-        className="mt-2"
-        style={s.orbitron(24, 30)}
-      >
+      <View className="mt-4 flex-row flex-wrap justify-center gap-2.5">
+        <Animated.View style={[pick.eyebrow, enter('pop', 0, reduced)]}>
+          <Text style={pick.eyebrowText}>{W.name}</Text>
+        </Animated.View>
+        <Animated.View
+          style={[pick.eyebrow, v.pillGold, enter('pop', 0, reduced)]}
+        >
+          <Text style={[pick.eyebrowText, v.pillGoldText]}>
+            Game {step + 1} of 3
+          </Text>
+        </Animated.View>
+      </View>
+      <Text accessibilityRole="header" className="mt-3.5" style={v.title}>
         {G.title}
       </Text>
-      <Text className="mt-2.5" style={s.rajdhani(15, 21)}>
+      <Text className="mt-2.5" style={pick.lead}>
         {G.how}
       </Text>
 
       {phase === 'intro' ? (
-        <View className="mt-5 items-center" style={card(AREA)}>
-          <Text style={[s.label, { textAlign: 'center' }]}>{G.skill}</Text>
-          <Pressable
-            onPress={replay}
-            accessibilityRole="button"
-            accessibilityLabel="Play"
-            className="mt-3 h-11 flex-row items-center justify-center gap-1.5 px-6"
-            style={({ pressed }) => button(AREA, pressed)}
-          >
-            <Play size={16} color={color('ink')} />
-            <Text style={s.btn}>Play</Text>
-          </Pressable>
-        </View>
+        <Animated.View className="mt-6" style={enter('pop', 0, reduced, 0.45)}>
+          <View style={v.intro}>
+            <Text style={v.skill}>{G.skill}</Text>
+            <View>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  v.playGlow,
+                  reduced ? { opacity: 0 } : null,
+                  loop(PULSE, 1.6, 0, 'ease-in-out', reduced),
+                ]}
+              />
+              <Pressable
+                onPress={replay}
+                accessibilityRole="button"
+                accessibilityLabel="Play"
+                style={({ pressed }) => playOrb(pressed)}
+              >
+                <Svg width={36} height={36} viewBox="0 0 24 24">
+                  <Path d="M8 5.5v13l10.5-6.5z" fill={v.playInk} />
+                </Svg>
+                <Text style={v.playText}>Play</Text>
+              </Pressable>
+            </View>
+            <Text style={v.note}>
+              {playedBefore ? 'Played before' : 'New game'}
+            </Text>
+          </View>
+        </Animated.View>
       ) : null}
       {phase === 'play' ? (
-        <View className="mt-5">
+        <Animated.View className="mt-5" style={enter('up', 0, reduced, 0.4)}>
           <GrowGame
             key={round}
             type={G.type}
@@ -467,39 +512,43 @@ export default function GrowWorlds({
               setPhase('result');
             }}
           />
-        </View>
+        </Animated.View>
       ) : null}
       {phase === 'result' && result ? (
-        <View
-          accessibilityLiveRegion="polite"
-          className="mt-5 items-center"
-          style={card(AREA)}
-        >
-          <Text style={s.orbitron(20, 26)}>Well done!</Text>
-          <Text
-            className="mt-2"
-            style={[s.orbitron(36, 36), { color: color('streak') }]}
+        <>
+          <Animated.View
+            accessibilityLiveRegion="polite"
+            className="mt-6"
+            style={[v.result, enter('pop', 0, reduced, 0.45)]}
           >
-            {result.score}
-          </Text>
-          {resultBand ? (
-            <Text
-              className="mt-1"
-              style={[
-                s.orbitron(16, 22),
-                { color: color(BAND_COLOR[resultBand.color]) },
-              ]}
-            >
-              {resultBand.label}
+            <Animated.View style={[v.checkOrb, enter('pop', 0, reduced)]}>
+              <Check size={40} strokeWidth={3} color={pick.ink} />
+            </Animated.View>
+            <Text className="mt-4" style={[s.orbitron(30, 36), v.goldGlow]}>
+              Well done!
             </Text>
-          ) : null}
-          <Text
-            className="mt-2"
-            style={[s.rajdhani(15, 21), { textAlign: 'center' }]}
-          >
-            {result.line}
-          </Text>
-          <View className="mt-4 flex-row flex-wrap justify-center gap-2.5">
+            <Text className="mt-2" style={v.score}>
+              {result.score}
+            </Text>
+            {resultBand ? (
+              <Text
+                className="mt-1"
+                style={[
+                  s.orbitron(16, 22),
+                  { color: color(BAND_COLOR[resultBand.color]) },
+                ]}
+              >
+                {resultBand.label}
+              </Text>
+            ) : null}
+            <Text
+              className="mt-2"
+              style={[s.rajdhani(17, 23), { textAlign: 'center' }]}
+            >
+              {result.line}
+            </Text>
+          </Animated.View>
+          <View className="mt-5 flex-row flex-wrap justify-center gap-3.5">
             {step < 2 ? (
               <Pressable
                 onPress={() => {
@@ -508,10 +557,10 @@ export default function GrowWorlds({
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Next game"
-                className="h-11 items-center justify-center px-6"
-                style={({ pressed }) => button(AREA, pressed)}
+                className="h-11 items-center justify-center px-7"
+                style={({ pressed }) => buttonGlow(pressed)}
               >
-                <Text style={s.btn}>Next game</Text>
+                <Text style={[v.btnText, v.btnGlowText]}>Next game</Text>
               </Pressable>
             ) : (
               <Pressable
@@ -520,13 +569,15 @@ export default function GrowWorlds({
                 accessibilityRole="button"
                 accessibilityLabel={saving ? 'Saving' : 'Finish world'}
                 accessibilityState={{ disabled: saving }}
-                className="h-11 items-center justify-center px-6"
+                className="h-11 items-center justify-center px-7"
                 style={({ pressed }) => [
-                  button(AREA, pressed),
-                  saving && { opacity: 0.5 },
+                  buttonGlow(pressed),
+                  saving && { opacity: 0.6 },
                 ]}
               >
-                <Text style={s.btn}>{saving ? 'Saving…' : 'Finish world'}</Text>
+                <Text style={[v.btnText, v.btnGlowText]}>
+                  {saving ? 'Saving…' : 'Finish world'}
+                </Text>
               </Pressable>
             )}
             <Pressable
@@ -534,13 +585,13 @@ export default function GrowWorlds({
               accessibilityRole="button"
               accessibilityLabel="Try again"
               className="h-11 items-center justify-center px-6"
-              style={({ pressed }) => buttonOff(pressed)}
+              style={({ pressed }) => buttonLine(pressed)}
             >
-              <Text style={s.btnOff}>Try again</Text>
+              <Text style={[v.btnText, v.btnLineText]}>Try again</Text>
             </Pressable>
           </View>
-        </View>
+        </>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }

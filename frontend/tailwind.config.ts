@@ -42,6 +42,8 @@ const config: Config = {
           body: 'rgb(var(--kids-body-rgb) / <alpha-value>)',
           muted: 'rgb(var(--kids-muted-rgb) / <alpha-value>)',
           subtle: 'rgb(var(--kids-subtle-rgb) / <alpha-value>)',
+          heading: 'rgb(var(--kids-heading-rgb) / <alpha-value>)',
+          gold: 'rgb(var(--kids-gold-rgb) / <alpha-value>)',
           ink: 'rgb(var(--kids-ink-rgb) / <alpha-value>)',
           off: 'rgb(var(--kids-off-rgb) / <alpha-value>)',
           'off-shade': 'rgb(var(--kids-off-shade-rgb) / <alpha-value>)',
