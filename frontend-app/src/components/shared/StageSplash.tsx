@@ -33,8 +33,9 @@ const CONTAINER_OUT = new Keyframe({
 interface StageSplashProps {
   stage: number;
   /** Discover's portal (web, the prototype's): the video tinted (Android; React Native's
-   *  `filter` is Android-only), with a cyan glow over it, and onReady fires at 3 s even if it
-   *  runs longer. Fitted like every stage video (not the prototype's cover, which zooms it). */
+   *  `filter` is Android-only), with a cyan glow over it, and onReady fires 3 s after it shows
+   *  even if it runs longer. Fitted like every stage video (not the prototype's cover, which
+   *  zooms it). */
   portal?: boolean;
   onReady?: () => void;
 }
@@ -121,12 +122,14 @@ function VideoSplash({
   useEventListener(player, 'statusChange', ({ status }) => {
     if (status === 'error') handleEnded();
   });
-  // The portal moves on at 3 s, as the prototype's does, however long the video is.
+  // The portal moves on 3 s after the video shows, as the prototype's does, however long the
+  // video is. Counted from then, not from mount: a slow load would otherwise use up the 3 s
+  // before anything is seen.
   useEffect(() => {
-    if (!portal) return;
+    if (!portal || !videoReady) return;
     const id = setTimeout(handleEnded, PORTAL_MS);
     return () => clearTimeout(id);
-  }, [portal, handleEnded]);
+  }, [portal, videoReady, handleEnded]);
 
   return (
     <Animated.View

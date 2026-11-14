@@ -269,7 +269,8 @@ Applying an item from group 1 means changing both apps the same way.
   hover tip "Explore {first name}'s personality analysis results" with its arrow (web, on
   devices that hover, also on keyboard focus); a tapped circle ringed (the prototype's `sel`
   glow) for 200 ms before its page opens; the Discover portal video with the prototype's tint and
-  cyan glow (fitted like the other stage videos, not the prototype's zooming cover) and moving on at 3 s (`StageSplash` `portal`; the tint is
+  cyan glow (fitted like the other stage videos, not the prototype's zooming cover; the 3 s count from
+  when the video shows, so a slow load can't use them up) and moving on at 3 s (`StageSplash` `portal`; the tint is
   Android-only on mobile, as React Native's `filter` is); in child view, the profile menu's
   child row reads "Child · age N" (`childSubtitle`). The hub is shared, so these show in parent
   view too, as in the prototype.

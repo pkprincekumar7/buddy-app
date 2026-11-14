@@ -20,8 +20,8 @@ const VIDEO_STAGES = new Set([1, 2, 4, 7]);
 interface StageSplashProps {
   stage: number;
   /** Discover's portal (the prototype's): the video tinted, with a cyan glow over it, and
-   *  onReady fires at 3 s even if it runs longer. Fitted like every stage video (not the
-   *  prototype's cover, which zooms it). */
+   *  onReady fires 3 s after it shows even if it runs longer. Fitted like every stage video
+   *  (not the prototype's cover, which zooms it). */
   portal?: boolean;
   onReady?: () => void;
 }
@@ -93,12 +93,14 @@ function VideoSplash({
     });
   }, [handleEnded]);
 
-  // The portal moves on at 3 s, as the prototype's does, however long the video is.
+  // The portal moves on 3 s after the video shows, as the prototype's does, however long the
+  // video is. Counted from then, not from mount: a slow load would otherwise use up the 3 s
+  // before anything is seen.
   useEffect(() => {
-    if (!portal) return;
+    if (!portal || !videoReady) return;
     const id = setTimeout(handleEnded, PORTAL_MS);
     return () => clearTimeout(id);
-  }, [portal, handleEnded]);
+  }, [portal, videoReady, handleEnded]);
 
   const video = (
     <video
