@@ -49,28 +49,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **S5.** Confetti: 46 pieces plus a cyan and a gold ring each time Discover opens, and on the Grow
   report (the plan already promises it at lines ~77, 199 and 512). Off under reduced motion.
 
-### Transform — `TransformQuests.tsx`
-
-- **T1.** Picker subtitle in the "add another" state: "Pick what else you are into. You get new
-  quests for it." (keep "Pick one. You get quests for it." when there's no interest yet).
-- **T2.** "Back to my quests" transparent with a 2 px gold .5 border, #ffe08a, 48 px.
-- **T3.** Interest grid auto-fit `minmax(200px,1fr)`, gap 16, margin-top 30; tiles solid in their
-  colour, dark ink Orbitron 900 20, radius 24, a 3 px hover lift.
-- **T4.** Colour order cyan, gold, teal, pink, violet, orange for interests, quests (quests 2 and 3
-  swap back) and wins (C4).
-- **T5.** Quests header left-aligned, with the subtitle "Do it for real, then tap the big button."
-- **T6.** Interest chips left-aligned, radius 20, min-height 60, padding 8/22, off fill gold .08,
-  tag Rajdhani 14 .08em.
-- **T7.** "+ Add another" with a 2 px dashed gold .5 border, transparent, Rajdhani 18 #ffe08a.
-- **T8.** Quest card: two columns (content left, a 132 px round action button right), radius 28,
-  padding 24/26, an 8 px shade shadow, 18 px between cards.
-- **T9.** Number as a 44 px rounded square in the quest's colour with the number in dark ink.
-- **T10.** How-to #d4e6ee.
-- **T11.** Progress dots 30 px with a 3 px border at .4; filled ones carry a 16 px ink star.
-- **T12.** Log button: the 132 px circle in the quest's own colour with a shade shadow, "+" and
-  "I did it today", scaling on hover. Done: a 132 px teal circle with a check, popping in (keep
-  "Quest done!").
-
 ### Release — `ReleaseCheckIn.tsx`
 
 - **RL1.** Content max-width 1000 px.
@@ -85,7 +63,6 @@ adding) the matching token in `frontend/src/index.css`, then `yarn theme:sync`, 
 - **C2.** Win buttons: Rajdhani 700 20 px, radius 22, min-height 72, padding 14/18, gap 14; a
   neutral border, pink when picked (pink .14 fill); no shade shadow; hover slides right 4 px.
 - **C3.** Dot 14 px.
-- **C4.** Dot colour order as T4.
 - **C5.** The card column sticks (`top: 110px`).
 - **C6.** Card: pink → violet gradient (`160deg`, #ff8fb1 → #9d8cff), `0 10px 0 #5a4aa8`, radius 30,
   padding 30/28, min-height 300, left-aligned; it re-pops on each pick.
@@ -327,3 +304,12 @@ Applying an item from group 1 means changing both apps the same way.
   #0a5b74; Voice's dark-cyan mic with a light icon, gold-edged above 90%, its glow 20 → 70 px,
   the wave bars 5 px apart. The stars centre with `translate`, so their pulse and shake can't
   move them; the line glows are SVG blur filters.
+- Transform (was T1–T12) and Connect's win colours (C4), applied on 2026-11-14 to both apps: the
+  picker's "add another" line; "Back to my quests" outlined gold; solid interest tiles on their
+  shade in an auto-fit grid (two columns on phones); the kids palette in the prototype's order
+  (cyan, gold, teal, pink, violet, orange; `KIDS_COLORS`, was `POWER_COLORS`) for interests,
+  quests and Connect's wins; the quests header left-aligned with "Do it for real, then tap the
+  big button."; gold-edged interest chips and a dashed "+ Add another"; quest cards in two
+  columns on their shade, a numbered square, the how-to #d4e6ee (`--kids-how-rgb`), 30 px
+  progress rings with a star, and the round "I did it today" button (112 px on phones, 132 px
+  from `md`), "Done today" in grey, and the teal "Quest done!" circle that pops in.

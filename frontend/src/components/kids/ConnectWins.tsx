@@ -5,9 +5,9 @@ import { getInitials } from '@/lib/avatarUtils';
 import type { Win } from '@/lib/kidsWins';
 import { cn } from '@/lib/utils';
 import { STAR_PATH } from '@/components/kids/icons';
-import { POWER_COLORS, tileVars } from '@/components/kids/palette';
+import { KIDS_COLORS, tileVars } from '@/components/kids/palette';
 
-const winColor = (i: number) => POWER_COLORS[i % POWER_COLORS.length] ?? 'connect';
+const winColor = (i: number) => KIDS_COLORS[i % KIDS_COLORS.length] ?? 'connect';
 
 interface ConnectWinsProps {
   wins: Win[];

@@ -509,6 +509,7 @@
     --kids-wrong-rgb: 255 122 122; /* #ff7a7a a wrong answer, "Miss", "Too soon!" */
     --kids-white-rgb: 255 255 255; /* a lit memory pad's centre, a spark stroke's core */
     --kids-empty-rgb: 60 85 104; /* #3c5568 an empty box's dot in Discover's Curious game */
+    --kids-how-rgb: 212 230 238; /* #d4e6ee a Transform quest's how-to */
     --kids-orb-cyan-hi-rgb: 234 253 255; /* #eafdff */
     --kids-orb-cyan-rgb: 75 233 255; /* #4be9ff */
     --kids-orb-cyan-lo-rgb: 10 91 116; /* #0a5b74 */
@@ -2048,23 +2049,105 @@
     border-color: rgb(var(--kids-discover-rgb));
   }
   /* A quest's progress (3.2): a dot per time it's to be done, filled up to the count. */
+  /* A quest's progress (the prototype's): a 30 px ring per time, filled with a star up to
+     the count. */
   .kids-quest-dot {
-    @apply h-4 w-4 rounded-full;
-    border: 2px solid rgb(var(--kids-tile-rgb) / 0.4);
+    @apply flex h-[30px] w-[30px] items-center justify-center rounded-full;
+    color: rgb(var(--kids-ink-rgb));
+    border: 3px solid rgb(var(--kids-tile-rgb) / 0.4);
   }
   .kids-quest-dot-on {
     background: rgb(var(--kids-tile-rgb));
     border-color: rgb(var(--kids-tile-rgb));
   }
-  /* A quest's card: its own pair, teal once it's done. */
+  /* A quest's card: its own pair on its shade, teal once it's done; the text on the left and
+     the round button on the right. */
   .kids-quest {
-    @apply rounded-[22px] p-4 md:p-5;
+    @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-[28px] px-5 py-5 md:gap-[18px] md:px-[26px] md:py-6;
     background: rgb(var(--kids-tile-rgb) / 0.1);
     border: 3px solid rgb(var(--kids-tile-rgb) / 0.5);
+    box-shadow: 0 8px 0 rgb(var(--kids-tile-shade-rgb));
   }
+  /* Done: the card is given the teal pair (its number, rings and shadow follow). */
   .kids-quest-done {
     background: rgb(var(--kids-teal-rgb) / 0.12);
     border-color: rgb(var(--kids-teal-rgb));
+  }
+  /* A quest's number: a rounded square in its colour. */
+  .kids-quest-no {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] font-orbitron text-base font-black md:h-11 md:w-11 md:rounded-[14px] md:text-lg;
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-tile-rgb));
+  }
+  /* "I did it today": a big circle in the quest's colour on its shade; done: a teal one. */
+  .kids-quest-log {
+    @apply flex h-28 w-28 flex-col items-center justify-center gap-1 rounded-full px-2 text-center font-orbitron text-[13px] font-black leading-[1.1] md:h-[132px] md:w-[132px] md:text-[15px];
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-tile-rgb));
+    box-shadow: 0 8px 0 rgb(var(--kids-tile-shade-rgb));
+    transition: transform 0.12s ease;
+  }
+  .kids-quest-log:not(:disabled):hover {
+    transform: scale(1.04);
+  }
+  .kids-quest-log:not(:disabled):active {
+    transform: translateY(6px) scale(0.98);
+  }
+  .kids-quest-log:disabled {
+    cursor: default;
+  }
+  /* While a log is being saved, the buttons wait (dimmed). */
+  .kids-quest-log:disabled:not(.kids-quest-log-today) {
+    opacity: 0.6;
+  }
+  .kids-quest-log-today {
+    color: rgb(var(--kids-text-rgb));
+    background: rgb(var(--kids-off-rgb));
+    box-shadow: 0 8px 0 rgb(var(--kids-off-shade-rgb));
+  }
+  .kids-quest-log-done {
+    @apply flex h-28 w-28 flex-col items-center justify-center gap-1 rounded-full px-2 text-center font-orbitron text-[13px] font-black leading-[1.1] md:h-[132px] md:w-[132px] md:text-[15px];
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-teal-rgb));
+  }
+  /* Transform's picker and chips (the prototype's): solid interest tiles, gold-edged chips. */
+  .kids-interest {
+    @apply min-h-[96px] rounded-[24px] px-3 font-orbitron text-base font-black md:min-h-[110px] md:text-xl;
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-tile-rgb));
+    box-shadow: 0 7px 0 rgb(var(--kids-tile-shade-rgb));
+    transition: transform 0.12s ease;
+  }
+  .kids-interest:not(:disabled):hover {
+    transform: translateY(-3px);
+  }
+  .kids-interest:not(:disabled):active {
+    transform: translateY(5px);
+  }
+  .kids-interest-chip {
+    @apply flex min-h-[60px] flex-col items-start justify-center gap-0.5 rounded-[20px] px-[22px] py-2 text-left;
+    color: rgb(var(--kids-streak-rgb));
+    background: rgb(var(--kids-transform-rgb) / 0.08);
+    border: 2px solid rgb(var(--kids-transform-rgb) / 0.45);
+  }
+  .kids-interest-chip-on {
+    color: rgb(var(--kids-ink-rgb));
+    background: rgb(var(--kids-transform-rgb));
+    border-color: rgb(var(--kids-transform-rgb));
+  }
+  .kids-interest-add {
+    @apply flex min-h-[60px] items-center gap-1.5 rounded-[20px] px-[22px] font-rajdhani text-base font-bold transition-colors md:text-lg;
+    color: rgb(var(--kids-streak-rgb));
+    border: 2px dashed rgb(var(--kids-transform-rgb) / 0.5);
+  }
+  .kids-interest-add:hover,
+  .kids-quests-back:hover {
+    background: rgb(var(--kids-transform-rgb) / 0.08);
+  }
+  .kids-quests-back {
+    @apply h-12 rounded-full px-[22px] font-rajdhani text-base font-bold transition-colors md:text-[17px];
+    color: rgb(var(--kids-streak-rgb));
+    border: 2px solid rgb(var(--kids-transform-rgb) / 0.5);
   }
 
   /* The round avatar dots: parent gold, child cyan. Size is set where used. */
@@ -2525,6 +2608,10 @@
   }
   .kids-game-flag {
     animation: kids-twinkle 1s ease-in-out infinite;
+  }
+  /* Transform: a finished quest's teal circle pops in. */
+  .kids-quest-log-done {
+    animation: kids-pop 0.45s ease both;
   }
   /* A wrong memory tap: the frame flashes (fades back in). */
   .kids-game-flash {

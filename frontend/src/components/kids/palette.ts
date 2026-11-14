@@ -7,11 +7,12 @@ import type { KidsColor } from '@/lib/kidsMoods';
  * an index.css --kids-* token; these only point the page's and a tile's variables at them.
  */
 
-/** The six pairs Discover's powers cycle through (power i takes POWER_COLORS[i % 6]). */
-export const POWER_COLORS: readonly KidsColor[] = [
+/** The kids palette's six pairs in the prototype's order (cyan, gold, teal, pink, violet,
+ * orange): Transform's interests and quests and Connect's wins take them in turn. */
+export const KIDS_COLORS: readonly KidsColor[] = [
   'discover',
-  'teal',
   'transform',
+  'teal',
   'connect',
   'release',
   'orange',

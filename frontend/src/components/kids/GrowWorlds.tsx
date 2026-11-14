@@ -11,10 +11,10 @@ import {
 import type { KidActivity } from '@/api/kids';
 import type { GrowResult } from '@/lib/kidsGrow';
 import { cn } from '@/lib/utils';
-import { POWER_COLORS, tileVars } from '@/components/kids/palette';
+import { KIDS_COLORS, tileVars } from '@/components/kids/palette';
 import GrowGame from '@/components/kids/GrowGames';
 
-const worldColor = (i: number) => POWER_COLORS[i % POWER_COLORS.length] ?? 'discover';
+const worldColor = (i: number) => KIDS_COLORS[i % KIDS_COLORS.length] ?? 'discover';
 
 /** The world cards' orbs, as the prototype's: cyan, gold and sky, in turn. */
 const WORLD_ORBS = ['kids-world-orb-cyan', 'kids-world-orb-gold', 'kids-world-orb-sky'] as const;

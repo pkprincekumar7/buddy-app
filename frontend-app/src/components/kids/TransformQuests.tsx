@@ -11,19 +11,27 @@ import {
   type KidQuests,
   type QuestInterestKey,
 } from '@/api/kidQuests';
+import Svg, { Path } from 'react-native-svg';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import {
-  POWER_COLORS,
-  button,
-  buttonOff,
-  chip,
+  KIDS_COLORS,
   color,
+  interest as interestStyle,
+  interestTile,
   questCard,
   questDot,
-  tile,
+  questLog,
+  questNo,
 } from '@/components/kids/palette';
+import { enter } from '@/components/kids/enter';
+import { rgb } from '@/theme';
+
+/** The star in a filled progress ring (web STAR). */
+const STAR =
+  'M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z';
 
 const questColor = (i: number) =>
-  POWER_COLORS[i % POWER_COLORS.length] ?? 'transform';
+  KIDS_COLORS[i % KIDS_COLORS.length] ?? 'transform';
 
 /** Transform's circle colour: the web's --kids-area on this tab (.kids-btn, .kids-chip, text-kids-area). */
 const AREA = 'transform';
@@ -58,71 +66,55 @@ const s = {
     textAlign: 'center',
     color: color('body'),
   },
-  // .kids-tile text-base
+  // .kids-interest text-base: dark ink.
   tile: {
     ...font('orbitron', 900),
     fontSize: 16,
     lineHeight: 22,
     textAlign: 'center',
-    color: color('text'),
+    color: color('ink'),
   },
-  // An interest chip: font-orbitron text-sm font-black, then text-[11px] font-bold
-  // uppercase tracking-[0.15em] opacity-80.
-  chipLabel: { ...font('orbitron', 900), fontSize: 14, lineHeight: 20 },
+  // An interest chip: Orbitron 900 15px, then Rajdhani 12px uppercase .08em.
+  chipLabel: { ...font('orbitron', 900), fontSize: 15, lineHeight: 20 },
   chipFrom: {
     ...font('rajdhani', 700),
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 11 * 0.15,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 12 * 0.08,
     textTransform: 'uppercase',
-    opacity: 0.8,
   },
-  // .kids-chip text-sm font-bold text-kids-text
-  chipAdd: {
+  // "+ Add another", "Back to my quests": Rajdhani bold, #ffe08a.
+  gold: {
     ...font('rajdhani', 700),
-    fontSize: 14,
-    lineHeight: 20,
-    color: color('text'),
+    fontSize: 16,
+    lineHeight: 22,
+    color: color('streak'),
   },
-  // font-orbitron text-[11px] font-black uppercase tracking-[0.2em] text-kids-muted
   questNo: {
     ...font('orbitron', 900),
-    fontSize: 11,
-    lineHeight: 16,
-    letterSpacing: 11 * 0.2,
-    textTransform: 'uppercase',
-    color: color('muted'),
+    fontSize: 16,
+    lineHeight: 20,
+    color: color('ink'),
   },
   questTitle: {
     ...font('orbitron', 900),
     fontSize: 18,
-    lineHeight: 24,
+    lineHeight: 22,
     color: color('text'),
   },
   questHow: {
     ...font('rajdhani', 600),
-    fontSize: 15,
-    lineHeight: 21,
-    color: color('body'),
+    fontSize: 17,
+    lineHeight: 17 * 1.4,
+    color: rgb('kids-how'),
   },
-  questDone: {
-    ...font('rajdhani', 700),
-    fontSize: 15,
-    lineHeight: 21,
-    color: color('teal'),
-  },
-  // .kids-btn / .kids-btn-off text-sm
-  btn: {
+  // The round button's words: Orbitron 900 13px.
+  log: {
     ...font('orbitron', 900),
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 14,
+    textAlign: 'center',
     color: color('ink'),
-  },
-  btnOff: {
-    ...font('rajdhani', 700),
-    fontSize: 14,
-    lineHeight: 20,
-    color: color('text'),
   },
 } satisfies Record<string, TextStyle>;
 
@@ -158,6 +150,9 @@ function TwoColumns<T>({
   );
 }
 
+/** The quests page's header is left-aligned (web). */
+const LEFT = { textAlign: 'left' } as const;
+
 /** The web's `button:active` scale, for the chips. */
 const pressScale = (pressed: boolean) => ({
   transform: [{ scale: pressed ? 0.97 : 1 }],
@@ -187,6 +182,7 @@ export default function TransformQuests({
   awaitProgress,
 }: TransformQuestsProps) {
   const [adding, setAdding] = useState(false);
+  const reduced = useReducedMotion();
   const mine = myInterests(quests);
   const current = currentInterest(quests);
   const interest = quests.catalog.find(i => i.key === current) ?? null;
@@ -195,24 +191,28 @@ export default function TransformQuests({
   if (adding || !interest) {
     return (
       <View>
-        <Text style={s.eyebrow}>Your quests</Text>
-        <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
-          {interest ? 'Add another one' : 'What are you into?'}
-        </Text>
-        <Text className="mt-3" style={s.lead}>
-          Pick one. You get quests for it.
-        </Text>
-        {interest ? (
-          <Pressable
-            onPress={() => setAdding(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Back to my quests"
-            className="mt-4 h-11 items-center justify-center self-center px-6"
-            style={({ pressed }) => buttonOff(pressed)}
-          >
-            <Text style={s.btnOff}>Back to my quests</Text>
-          </Pressable>
-        ) : null}
+        <Animated.View style={enter('up', 0, reduced)}>
+          <Text style={s.eyebrow}>Your quests</Text>
+          <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
+            {interest ? 'Add another one' : 'What are you into?'}
+          </Text>
+          <Text className="mt-3" style={s.lead}>
+            {interest
+              ? 'Pick what else you are into. You get new quests for it.'
+              : 'Pick one. You get quests for it.'}
+          </Text>
+          {interest ? (
+            <Pressable
+              onPress={() => setAdding(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Back to my quests"
+              className="mt-4 self-center"
+              style={({ pressed }) => interestStyle.back(pressed)}
+            >
+              <Text style={s.gold}>Back to my quests</Text>
+            </Pressable>
+          ) : null}
+        </Animated.View>
         <TwoColumns items={others}>
           {(it, i) => (
             <Pressable
@@ -225,8 +225,8 @@ export default function TransformQuests({
               accessibilityRole="button"
               accessibilityLabel={it.label}
               accessibilityState={{ disabled: sending }}
-              className="min-h-[120px] flex-1 items-center justify-center"
-              style={({ pressed }) => tile(questColor(i), false, pressed)}
+              className="flex-1"
+              style={({ pressed }) => interestTile(questColor(i), pressed)}
             >
               <Text style={s.tile}>{it.label}</Text>
             </Pressable>
@@ -238,14 +238,26 @@ export default function TransformQuests({
 
   return (
     <View>
-      <Text style={s.eyebrow}>{interest.label}</Text>
-      <Text accessibilityRole="header" className="mt-2.5" style={s.title}>
-        Your quests
-      </Text>
+      <Animated.View style={enter('up', 0, reduced)}>
+        <Text style={[s.eyebrow, LEFT]}>{interest.label}</Text>
+        <Text
+          accessibilityRole="header"
+          className="mt-2.5"
+          style={[s.title, LEFT]}
+        >
+          Your quests
+        </Text>
+        <Text
+          className="mt-2.5"
+          style={[s.lead, LEFT, { alignSelf: 'stretch' }]}
+        >
+          Do it for real, then tap the big button.
+        </Text>
+      </Animated.View>
 
       <View
         accessibilityLabel="Your interests"
-        className="mt-5 flex-row flex-wrap justify-center gap-2.5"
+        className="mt-5 flex-row flex-wrap gap-3"
       >
         {mine.map(key => {
           const it = quests.catalog.find(c => c.key === key);
@@ -260,10 +272,8 @@ export default function TransformQuests({
               accessibilityRole="button"
               accessibilityLabel={it.label}
               accessibilityState={{ selected: on, disabled: sending || on }}
-              className="items-start px-3.5 py-2"
               style={({ pressed }) => [
-                chip(AREA),
-                on && { backgroundColor: color(AREA) },
+                interestStyle.chip(on),
                 pressScale(pressed),
               ]}
             >
@@ -281,16 +291,15 @@ export default function TransformQuests({
             onPress={() => setAdding(true)}
             accessibilityRole="button"
             accessibilityLabel="Add another"
-            className="flex-row items-center gap-2 px-3.5 py-2"
-            style={({ pressed }) => [chip(AREA), pressScale(pressed)]}
+            style={({ pressed }) => interestStyle.add(pressed)}
           >
-            <Plus size={16} color={color('text')} />
-            <Text style={s.chipAdd}>Add another</Text>
+            <Plus size={16} strokeWidth={2.6} color={color('streak')} />
+            <Text style={s.gold}>Add another</Text>
           </Pressable>
         ) : null}
       </View>
 
-      <View className="mt-6 gap-4">
+      <View className="mt-6" style={{ gap: 18 }}>
         {interest.quests.map((q, i) => {
           const key = questKey(interest.key, i);
           const count = Math.min(quests.logs[key] ?? 0, q.target);
@@ -303,60 +312,83 @@ export default function TransformQuests({
             }
           };
           return (
-            <View key={key} style={questCard(c, done)}>
-              {/* Web: the text grows on the left, the progress dots sit top-right. */}
-              <View className="flex-row items-start justify-between gap-3">
-                <View className="min-w-0 flex-1">
-                  <Text style={s.questNo}>Quest {i + 1}</Text>
+            <Animated.View
+              key={key}
+              style={[questCard(c, done), enter('up', 0, reduced)]}
+            >
+              {/* The text on the left, the round button on the right. */}
+              <View className="min-w-0 flex-1">
+                <View className="flex-row items-center gap-3">
+                  <View
+                    accessible
+                    accessibilityLabel={`Quest ${i + 1}`}
+                    style={questNo(done ? 'teal' : c)}
+                  >
+                    <Text style={s.questNo}>{i + 1}</Text>
+                  </View>
                   <Text
                     accessibilityRole="header"
-                    className="mt-1"
+                    className="shrink"
                     style={s.questTitle}
                   >
                     {q.title}
                   </Text>
-                  <Text className="mt-2" style={s.questHow}>
-                    {q.how}
-                  </Text>
                 </View>
+                <Text className="mt-2.5" style={s.questHow}>
+                  {q.how}
+                </Text>
                 <View
                   accessible
                   accessibilityRole="image"
                   accessibilityLabel={`${count} of ${q.target} done`}
-                  className="flex-row flex-wrap gap-1.5"
+                  className="mt-3.5 flex-row flex-wrap"
+                  style={{ gap: 9 }}
                 >
                   {Array.from({ length: q.target }, (_, n) => (
-                    <View key={n} style={questDot(c, n < count)} />
+                    <View
+                      key={n}
+                      style={questDot(done ? 'teal' : c, n < count)}
+                    >
+                      {n < count ? (
+                        <Svg width={16} height={16} viewBox="0 0 24 24">
+                          <Path d={STAR} fill={color('ink')} />
+                        </Svg>
+                      ) : null}
+                    </View>
                   ))}
                 </View>
               </View>
-              <View className="mt-3">
-                {done ? (
-                  <View className="flex-row items-center gap-2">
-                    <Check size={20} color={color('teal')} />
-                    <Text style={s.questDone}>Quest done!</Text>
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={() => void doIt()}
-                    disabled={sending || today}
-                    accessibilityRole="button"
-                    accessibilityLabel={today ? 'Done today' : 'I did it today'}
-                    accessibilityState={{ disabled: sending || today }}
-                    className="h-11 items-center justify-center self-start px-6"
-                    style={({ pressed }) =>
-                      today
-                        ? buttonOff(false)
-                        : [button(AREA, pressed), sending && { opacity: 0.5 }]
-                    }
-                  >
-                    <Text style={today ? s.btnOff : s.btn}>
-                      {today ? 'Done today' : 'I did it today'}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
+              {done ? (
+                <Animated.View
+                  accessibilityLiveRegion="polite"
+                  style={[questLog(c, 'done'), enter('pop', 0, reduced, 0.45)]}
+                >
+                  <Check size={32} strokeWidth={3.4} color={color('ink')} />
+                  <Text style={s.log}>Quest done!</Text>
+                </Animated.View>
+              ) : (
+                <Pressable
+                  onPress={() => void doIt()}
+                  disabled={sending || today}
+                  accessibilityRole="button"
+                  accessibilityLabel={today ? 'Done today' : 'I did it today'}
+                  accessibilityState={{ disabled: sending || today }}
+                  style={({ pressed }) => [
+                    questLog(c, today ? 'today' : 'todo', pressed && !today),
+                    sending && !today && { opacity: 0.5 },
+                  ]}
+                >
+                  {today ? (
+                    <Check size={32} strokeWidth={3.4} color={color('text')} />
+                  ) : (
+                    <Plus size={32} strokeWidth={3.4} color={color('ink')} />
+                  )}
+                  <Text style={[s.log, today && { color: color('text') }]}>
+                    {today ? 'Done today' : 'I did it today'}
+                  </Text>
+                </Pressable>
+              )}
+            </Animated.View>
           );
         })}
       </View>

@@ -91,11 +91,12 @@ export function input(c: KidsColor, focused: boolean): TextStyle {
   };
 }
 
-/** The six pairs Discover's powers cycle through (web POWER_COLORS; power i takes [i % 6]). */
-export const POWER_COLORS: readonly KidsColor[] = [
+/** The kids palette's six pairs in the prototype's order (cyan, gold, teal, pink, violet,
+ * orange): Transform's interests and quests and Connect's wins take them in turn. */
+export const KIDS_COLORS: readonly KidsColor[] = [
   'discover',
-  'teal',
   'transform',
+  'teal',
   'connect',
   'release',
   'orange',
@@ -303,26 +304,122 @@ export function spoke(length: number, on: boolean): ViewStyle {
 
 /** `.kids-quest` / `-done`: a quest's card in `c`, teal once it's done. */
 export function questCard(c: KidsColor, done: boolean): ViewStyle {
+  const k: KidsColor = done ? 'teal' : c;
   return {
-    borderRadius: 22,
-    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     borderWidth: 3,
-    backgroundColor: done ? fill('teal', 0.12) : fill(c, 0.1),
+    backgroundColor: fill(k, done ? 0.12 : 0.1),
     borderColor: done ? fill('teal') : fill(c, 0.5),
+    boxShadow: `0 8px 0 ${shade(k)}`,
   };
 }
-
-/** `.kids-quest-dot` / `-on`: one time a quest is to be done. */
+/** A quest's progress ring (web .kids-quest-dot): 30 px, filled with a star up to the count. */
 export function questDot(c: KidsColor, on: boolean): ViewStyle {
   return {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderColor: on ? fill(c) : fill(c, 0.4),
     backgroundColor: on ? fill(c) : undefined,
   };
 }
+/** A quest's number (web .kids-quest-no): a rounded square in its colour. */
+export function questNo(c: KidsColor): ViewStyle {
+  return {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: fill(c),
+  };
+}
+/** "I did it today" (web .kids-quest-log, -today, -done): a big circle in the quest's colour
+ * on its shade (pressed: pushed down); off once logged today; teal once done. */
+export function questLog(
+  c: KidsColor,
+  state: 'todo' | 'today' | 'done',
+  pressed = false,
+): ViewStyle {
+  return {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    backgroundColor:
+      state === 'done'
+        ? fill('teal')
+        : state === 'today'
+        ? rgb('kids-off')
+        : fill(c),
+    boxShadow:
+      state === 'done'
+        ? undefined
+        : `0 8px 0 ${state === 'today' ? rgb('kids-off-shade') : shade(c)}`,
+    transform: [{ translateY: pressed ? 6 : 0 }, { scale: pressed ? 0.98 : 1 }],
+  };
+}
+/** An interest tile (web .kids-interest): solid in its colour on its shade. */
+export function interestTile(c: KidsColor, pressed = false): ViewStyle {
+  return {
+    minHeight: 96,
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: fill(c),
+    boxShadow: `0 7px 0 ${shade(c)}`,
+    transform: [{ translateY: pressed ? 5 : 0 }],
+  };
+}
+/** Transform's interest chip, "+ Add another" and "Back to my quests" (web
+ * .kids-interest-chip, -on, .kids-interest-add, .kids-quests-back). */
+export const interest = {
+  chip: (on: boolean): ViewStyle => ({
+    minHeight: 60,
+    borderRadius: 20,
+    paddingHorizontal: 22,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    gap: 2,
+    borderWidth: 2,
+    borderColor: on ? fill('transform') : fill('transform', 0.45),
+    backgroundColor: on ? fill('transform') : fill('transform', 0.08),
+  }),
+  add: (pressed: boolean): ViewStyle => ({
+    minHeight: 60,
+    borderRadius: 20,
+    paddingHorizontal: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: fill('transform', 0.5),
+    backgroundColor: pressed ? fill('transform', 0.08) : undefined,
+  }),
+  back: (pressed: boolean): ViewStyle => ({
+    height: 48,
+    borderRadius: 999,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: fill('transform', 0.5),
+    backgroundColor: pressed ? fill('transform', 0.08) : undefined,
+  }),
+};
 
 /** The mini games' pieces (web .kids-game-*), from the same tokens. */
 export const game = {

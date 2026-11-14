@@ -1054,6 +1054,11 @@ module.exports = {
       85,
       104
     ],
+    "kids-how": [
+      212,
+      230,
+      238
+    ],
     "kids-orb-cyan-hi": [
       234,
       253,

@@ -8,7 +8,7 @@ import { getInitials } from '@/lib/avatarUtils';
 import type { Win } from '@/lib/kidsWins';
 import { STAR_PATH } from '@/components/kids/icons';
 import {
-  POWER_COLORS,
+  KIDS_COLORS,
   avatar,
   button,
   buttonOff,
@@ -19,7 +19,7 @@ import {
 } from '@/components/kids/palette';
 
 const winColor = (i: number) =>
-  POWER_COLORS[i % POWER_COLORS.length] ?? 'connect';
+  KIDS_COLORS[i % KIDS_COLORS.length] ?? 'connect';
 
 interface ConnectWinsProps {
   wins: Win[];
