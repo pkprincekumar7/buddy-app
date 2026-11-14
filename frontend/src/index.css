@@ -24,12 +24,14 @@
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* Orbitron from Google Fonts (v35, Latin): one variable file for every weight, the same
-   font the design prototype loads. */
+/* Orbitron from Google Fonts (v35, Latin), the same font the design prototype loads: one
+   variable file, offered at 700–900 only. Text asking for a lighter Orbitron (many parent-page
+   labels set none) draws at 700, as it did with the old static Bold file and as the mobile app
+   does (theme `font()` uses Bold below 900). */
 @font-face {
   font-family: 'Orbitron';
   font-style: normal;
-  font-weight: 400 900;
+  font-weight: 700 900;
   font-display: swap;
   src: url('/fonts/Orbitron.woff2') format('woff2');
 }
