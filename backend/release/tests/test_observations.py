@@ -10,7 +10,7 @@ import re
 from typing import Any
 
 import pytest
-from release_testkit import ANSWERS, CHOICE, FIXTURES, area_copy
+from release_testkit import ANSWERS, FIXTURES, GAME_LINE, area_copy
 
 from release.app import observations
 
@@ -40,7 +40,7 @@ def test_the_icons_are_todays():
     [
         ('"Calmer outside"', "Calmer outside"),
         ("‘Calmer’", "Calmer"),
-        ('Chose "A" over "B"', "Chose “A” over “B”"),
+        ('She said "later" twice', "She said “later” twice"),
         ('""', ""),
         ("…", ""),
         ("  ", ""),
@@ -55,11 +55,11 @@ def test_the_evidence_from_the_copies():
     assert found.sources == ["onboarding", "grow", "child"]
     assert found.blocks["onboarding"]["Top strengths"] == ["curious", "kind"]
     assert list(found.blocks["grow"]) == ["Self Care", "Creativity"]
-    assert found.choice_lines == [CHOICE, CHOICE]
+    assert found.child_lines == [GAME_LINE, GAME_LINE]
     # Older copies without the new fields, and blank answers, offer nothing.
-    bare = {**area_copy(), "reflections": [{"question": "Q?", "answer": ""}], "child_choices": None}
+    bare = {**area_copy(), "reflections": [{"question": "Q?", "answer": ""}], "child_games": []}
     nothing = observations.evidence(None, [bare, {"area_name": "Old", "answers": {"q": "x"}}])
-    assert nothing.blocks == {} and nothing.sources == [] and nothing.choice_lines == []
+    assert nothing.blocks == {} and nothing.sources == [] and nothing.child_lines == []
 
 
 def _blocks(prompt: str) -> dict[str, Any]:
@@ -72,9 +72,9 @@ def test_the_prompt_keeps_parent_data_in_blocks():
     prompt = observations.prompt(child, found)
     blocks = _blocks(prompt)
     assert set(blocks) == {"profile", "onboarding", "grow", "child"}
-    assert blocks["child"] == {"Self Care": [CHOICE]}  # verbatim, typographic quotes kept
+    assert blocks["child"] == {"Self Care": [GAME_LINE]}  # verbatim
     outside = BLOCK.sub("", prompt)
-    assert "Aarav" not in outside and "teeth" not in outside and "robot" not in outside
+    assert "Aarav" not in outside and "teeth" not in outside and "Healthy Catch" not in outside
     assert "[SOURCE: child]" in outside and "AT LEAST 3 of your observations" in prompt
     assert "he/his pronouns" in prompt
     assert "focus, read, sense, motion, words, social" in prompt and ", note" not in prompt
@@ -88,3 +88,12 @@ def test_the_schema_is_todays():
     schema = observations.schema()["properties"]["observations"]
     assert (schema["minItems"], schema["maxItems"]) == (6, 8)
     assert schema["items"]["properties"]["icon"]["enum"] == list(observations.SELECTABLE_ICON_KEYS)
+
+
+def test_a_game_line_matches_with_either_apostrophe_or_quote():
+    # The LLM may copy a curly ’ or “” as straight: the line is still the same line.
+    line = "Played Habit Check (Know what’s good): 60 of 100, Growing"
+    assert observations.line_key("played habit check (know what's good): 60 of 100, growing.") == (
+        observations.line_key(line)
+    )
+    assert observations.line_key('Say "I can’t"') == observations.line_key("Say “I can't”")

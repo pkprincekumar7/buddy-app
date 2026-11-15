@@ -5,12 +5,13 @@ Ported from the web app: `normalizeObservations`, `selectObservations` and
 (`lib/prompts.ts`), with the evidence blocks the Observations page built
 (`buildGrowthAreaContext`, `buildChildActivityContext`). What today's page promoted after a
 job is what the server stores now: the answer normalised (no note, no card; no source, no
-card; icons from the registry; child-choice notes only if they match a line we gave), then
+card; icons from the registry; child game-result notes only if they match a line we gave), then
 trimmed to the six cards the page shows, every offered evidence block getting a card first.
 
 The evidence comes from release's own copies: `child_access` (name, age, gender),
 `onboarding_inputs` (the questionnaire) and `growth_inputs` (each completed area's questions
-with answers, and the child's picks as "Chose “X” over “Y”" lines). It goes in data blocks;
+with answers, and the child's child view game results as "Played X (Skill): N of 100, Band"
+lines, from the world run the area's recommendations were written from). It goes in data blocks;
 the instructions name the blocks by their source key only.
 """
 
@@ -66,16 +67,18 @@ def tidy_note(text: str) -> str:
     return out if any(ch.isalnum() for ch in out) else ""
 
 
-def choice_key(text: str) -> str:
-    """Case, spacing, trailing periods and quote style away; the options themselves stay."""
-    return re.sub(r"[\s.]+", " ", re.sub(r"[“”\"]", '"', text.lower())).strip()
+def line_key(text: str) -> str:
+    """Case, spacing, trailing periods and quote style (double quotes and apostrophes, curly
+    or straight) away; the words themselves stay."""
+    text = re.sub(r"[‘’]", "'", re.sub(r"[“”\"]", '"', text.lower()))
+    return re.sub(r"[\s.]+", " ", text).strip()
 
 
 def _allowed(note: str, allowed: set[str] | None) -> bool:
-    """A "Chose … over …" note must be a line we gave: the one kind we can check exactly."""
-    if allowed is None or not re.match(r"chose\s", note, flags=re.IGNORECASE):
+    """A "Played …" note must be a child line we gave: the one kind we can check exactly."""
+    if allowed is None or not re.match(r"played\s", note, flags=re.IGNORECASE):
         return True
-    return choice_key(note) in allowed
+    return line_key(note) in allowed
 
 
 def _slug(text: str) -> str:
@@ -91,11 +94,10 @@ def _items(raw: Any) -> list[Any] | None:
     return nested if isinstance(nested, list) else None
 
 
-def normalize(raw: Any, allowed_choices: Iterable[str] | None = None) -> list[dict[str, Any]]:
-    """The valid observations, with ids; malformed ones dropped, at most 8 candidates."""
-    allowed = (
-        {choice_key(line) for line in allowed_choices} if allowed_choices is not None else None
-    )
+def normalize(raw: Any, allowed_lines: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    """The valid observations, with ids; malformed ones dropped, at most 8 candidates. With
+    `allowed_lines` (the child block's lines), a "Played …" note must be one of them."""
+    allowed = {line_key(line) for line in allowed_lines} if allowed_lines is not None else None
     items = _items(raw)
     if items is None:
         return []
@@ -232,10 +234,10 @@ _LABELS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class Evidence:
-    """The blocks a prompt offers, in the order it offers them, and the choice lines."""
+    """The blocks a prompt offers, in the order it offers them, and the child block's lines."""
 
     blocks: dict[str, Any]
-    choice_lines: list[str]
+    child_lines: list[str]
 
     @property
     def sources(self) -> list[str]:
@@ -243,7 +245,7 @@ class Evidence:
 
 
 def evidence(answers: Mapping[str, Any] | None, areas: Sequence[Mapping[str, Any]]) -> Evidence:
-    """From the copies: the questionnaire, the areas' reflections, the child's picks."""
+    """From the copies: the questionnaire, the areas' reflections, the child's game results."""
     blocks: dict[str, Any] = {}
     questionnaire = {
         label: answers[name]
@@ -259,20 +261,18 @@ def evidence(answers: Mapping[str, Any] | None, areas: Sequence[Mapping[str, Any
     }
     if reflections:
         blocks["grow"] = reflections
-    choices = {
-        area["area_name"]: list(area["child_choices"])
-        for area in areas
-        if area.get("child_choices")
+    games = {
+        area["area_name"]: list(area["child_games"]) for area in areas if area.get("child_games")
     }
-    if choices:
-        blocks["child"] = choices
-    return Evidence(blocks, [line for lines in choices.values() for line in lines])
+    if games:
+        blocks["child"] = games
+    return Evidence(blocks, [line for lines in games.values() for line in lines])
 
 
 _INTRO = {
     "onboarding": "[SOURCE: onboarding] Onboarding questionnaire, answered by the parent:",
     "grow": "[SOURCE: grow] Growth-area reflections, answered by the parent (per area, each question with the parent's answer):",
-    "child": "[SOURCE: child] The child's own picks in the Grow rounds (per area). Each line is a forced choice between two options WE offered — the child tapped one, so these are choices, not quotations:",
+    "child": "[SOURCE: child] The child's own results in the child view games for each area (their latest try). Each line is a game WE built and scored, so these are game scores, not the child's words:",
 }
 
 _TEMPLATE = """You are helping a parent see the patterns in what THEY have already told us about their child. You are a careful listener writing back what you heard. You are not an assessor.
@@ -288,11 +288,11 @@ Return JSON ONLY conforming to the response schema.
 
 HOW TO BUILD THE SET
 1. Return EXACTLY six observations. Not five, not seven.
-2. Read across EVERY block before deciding what the six are. You are describing six different facets of one child — how attention works, how the child communicates, what settles the child, what the child chooses, what the child avoids, what the child is drawn to. Two observations a parent would read as the same point waste a slot.
+2. Read across EVERY block before deciding what the six are. You are describing six different facets of one child — how attention works, how the child communicates, what settles the child, what the child takes on, what the child avoids, what the child is drawn to. Two observations a parent would read as the same point waste a slot.
 3. Prefer merging two halves of one answer into a single richer observation. If merging everything mergeable leaves you short of six, do NOT split a pattern back apart to pad the count — return to the blocks and find a facet you have not used.
 4. Every observation must rest on something in the blocks above. If you cannot trace it, drop it and find another.
 RULE5
-6. A pattern that shows up in MORE THAN ONE block is the strongest thing this page can offer, because it has turned up more than once. Group it into ONE observation citing every block it appears in, and put those observations FIRST in your list. Something the parent described that the child's own choices also point to is worth more than either on its own — do not split it into two cards and lose that.
+6. A pattern that shows up in MORE THAN ONE block is the strongest thing this page can offer, because it has turned up more than once. Group it into ONE observation citing every block it appears in, and put those observations FIRST in your list. Something the parent described that the child's game results also point to is worth more than either on its own — do not split it into two cards and lose that.
 
 FIELD RULES
 • title — at most 8 words, and it must READ AS A PATTERN, containing a verb. Not a noun fragment lifted out of the answer.
@@ -304,9 +304,9 @@ FIELD RULES
   – From the onboarding or grow blocks: NEVER copy a sentence out of the block. Turn what it tells you into a specific observation. "I have to call him twice for dinner" is input; "Needs a second call before dinner lands once absorbed" is a note.
   – Each note must add something the summary does NOT say, and something no other note on this card says. If two notes could merge without losing information, you have written one note twice — replace it.
   – Reword and sharpen only. Do NOT add a fact, cause, motive or consequence the evidence does not contain. Every note must stay traceable to the block it came from.
-  – From the child block, the ONE exception to rewording: copy the line EXACTLY as written, whole, in its Chose “X” over “Y” form. Do not reword it, summarise it, or re-pair halves of two different lines. This is not stylistic — the two options in a round are the one thing you cannot paraphrase without risking claiming the child chose something the child actually rejected, and the rejected side is half the meaning. Reproduce a line verbatim or leave it out.
-  – The child tapped one of two options WE wrote and said nothing, so never present a choice as the child's words or as speech.
-  Do NOT wrap a note in quotation marks — the page frames them itself. Quote marks belong only inside a child-block line, around each of the two options.
+  – From the child block, the ONE exception to rewording: copy the line EXACTLY as written, whole, in its Played … form, or leave it out. Do not reword it, summarise it, round its score, or combine parts of two different lines. A score is the one thing you cannot paraphrase without risking claiming a result the child did not get.
+  – The child played a game WE built and we scored it; the child said nothing. Never present a score as the child's words or as speech, and never as a fixed trait of the child: it is one try at one game. Never compare it to other children or to norms.
+  Do NOT wrap a note in quotation marks — the page frames them itself.
 • sources — every source key whose block you actually drew on for this pattern. Cite honestly; do not add a key for a block you did not use.
 • icon — closest match from: ICONS.
 

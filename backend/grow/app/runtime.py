@@ -41,6 +41,7 @@ from common.models import (
 from common.regions import locations_for_region
 from common.settings_base import ServiceSettings
 from grow.app.store import ensure_growth_areas
+from grow.app.worlds import ensure_world_runs
 
 SERVICE = "grow"
 
@@ -134,6 +135,7 @@ class Runtime:
 
         async def ensure(db: Db) -> None:
             await ensure_growth_areas(db)
+            await ensure_world_runs(db)
             await ensure_jobs(db, SERVICE)
             await ensure_child_access(db)
             await ensure_inputs(db, [ONBOARDING_INPUTS, PERSONALITY_INPUTS])

@@ -2,7 +2,6 @@
 export type GenerationKind =
   | 'personality'
   | 'parent_questions'
-  | 'child_rounds'
   | 'recommendations'
   | 'life_pathway'
   | 'plan'
@@ -29,9 +28,6 @@ export function jobProgressMessage(elapsedMs: number, kind: GenerationKind): str
   } else if (kind === 'parent_questions') {
     if (s < 8) return 'Reading your child’s profile…';
     if (s < 15) return 'Writing questions just for them…';
-  } else if (kind === 'child_rounds') {
-    if (s < 8) return 'Turning your answers into a game…';
-    if (s < 15) return 'Shaping choices your child will love…';
   } else if (kind === 'observations') {
     if (s < 8) return 'Reading back what you have told us…';
     if (s < 15) return 'Grouping it into patterns…';

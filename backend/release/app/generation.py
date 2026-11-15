@@ -6,7 +6,7 @@
 - `process`: the worker's part. It builds the evidence from release's copies, calls the
   LLM, and runs the answer through today's normaliser and selection
   (release.app.observations): at most six cards, every offered evidence block on one first,
-  child-choice notes only if they match a line we gave. It stores them (`status: ready`,
+  child game-result notes only if they match a line we gave. It stores them (`status: ready`,
   `source: llm`) and clears `watching`, as today's promote step does: a tick against an
   older set of cards means nothing against a new one. `completed_at` stays. No evidence
   fails at once; an unusable answer, a failed call or a missing copy is retried.
@@ -112,7 +112,7 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
         return await give_up(str(exc), permanent=True)
     except Exception as exc:  # a timeout, a provider error, an unusable answer: retried
         return await give_up(f"the LLM call failed ({type(exc).__name__})")
-    candidates = observations.normalize(result.data, found.choice_lines)
+    candidates = observations.normalize(result.data, found.child_lines)
     if not candidates:
         return await give_up("nothing in the answer could be shown")
     selection = observations.select(candidates, found.sources)

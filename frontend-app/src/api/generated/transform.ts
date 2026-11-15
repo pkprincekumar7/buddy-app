@@ -41,7 +41,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Transform
-         * @description Save the parent's work on the 90-day plan; each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys). Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).
+         * @description Save the parent's work on the 90-day plan, made on the plan's `version` (from the last GET or PATCH): if the plan was saved since (another device), nothing changes and it's `409 plan_changed`; reload and apply the change again. Each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys; a photo no longer in any field is deleted). A change to `ask` or the Day-90 event, or `clear_track_steps`, ends a plan or tracker generation still building from the old one. Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).
          */
         patch: operations["patch_transform_api_v1_children__id__transform_patch"];
         trace?: never;
@@ -106,6 +106,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/children/{id}/transform/quests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quests
+         * @description The child's quests in child view: the interests, the quests and their counts, and which were logged on the child's `date`. Parents only.
+         */
+        get: operations["get_quests_api_v1_children__id__transform_quests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/children/{id}/transform/quests/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Current Interest
+         * @description Show an interest's quests: the plan's own, or one the child adds (kept in `interests`). Parents only.
+         */
+        put: operations["put_current_interest_api_v1_children__id__transform_quests_current_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/children/{id}/transform/quests/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log Quest
+         * @description The child did a quest today: `+1` to its count, once a day (a day after the last one logged) and up to its target (anything more changes nothing). A counted log publishes `transform.quest_logged` in the same transaction (children gives the star and marks Transform done in child view from it). The interest must be the plan's or one the child added (`409 interest_not_picked`). Parents only.
+         */
+        post: operations["log_quest_api_v1_children__id__transform_quests_log_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -128,6 +188,14 @@ export interface components {
             } | null;
             /** Life Pathway Generating */
             life_pathway_generating: boolean;
+        };
+        /** CurrentIn */
+        CurrentIn: {
+            /**
+             * Interest
+             * @enum {string}
+             */
+            interest: "football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games";
         };
         /** GenerationIn */
         GenerationIn: {
@@ -168,6 +236,31 @@ export interface components {
             /** Completed At */
             completed_at: string | null;
         };
+        /**
+         * KidQuests
+         * @description The child's quests: the parent's plan's interest (`default_interest`, null when the
+         *     `ask` names none), the ones the child added, the one on screen, and the counts.
+         */
+        KidQuests: {
+            /** Default Interest */
+            default_interest: ("football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games") | null;
+            /** Interests */
+            interests: ("football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games")[];
+            /** Current */
+            current: ("football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games") | null;
+            /** Logs */
+            logs: {
+                [key: string]: number;
+            };
+            /** Last Logged */
+            last_logged: {
+                [key: string]: string;
+            };
+            /** Logged Today */
+            logged_today: string[];
+            /** Catalog */
+            catalog: components["schemas"]["QuestInterestView"][];
+        };
         /** Photo */
         Photo: {
             /** Key */
@@ -177,10 +270,16 @@ export interface components {
         };
         /**
          * PlanPatch
-         * @description The parent's part of the plan; each field sent replaces the stored one. `plan`,
-         *     `track_steps` and the Life Pathway are transform's jobs' only (422).
+         * @description The parent's part of the plan, made on the `version` the app last read; each field
+         *     sent replaces the stored one. `plan`, `track_steps` and the Life Pathway are
+         *     transform's jobs' only (422).
          */
         PlanPatch: {
+            /**
+             * Version
+             * @description The plan's `version` this change was made on (`0` before the first save). Another save since is `409 plan_changed`: reload and apply again.
+             */
+            version: number;
             /** Ask */
             ask?: string | null;
             /** Applied */
@@ -249,6 +348,37 @@ export interface components {
             /** Photo Url */
             photo_url: string;
         };
+        /** QuestIn */
+        QuestIn: {
+            /** Target */
+            target: number;
+            /** Title */
+            title: string;
+            /** How */
+            how: string;
+        };
+        /** QuestInterestView */
+        QuestInterestView: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games";
+            /** Label */
+            label: string;
+            /** Quests */
+            quests: components["schemas"]["QuestIn"][];
+        };
+        /** QuestLog */
+        QuestLog: {
+            /**
+             * Interest
+             * @enum {string}
+             */
+            interest: "football" | "drawing" | "music" | "building" | "cooking" | "space" | "animals" | "reading" | "games";
+            /** Quest */
+            quest: number;
+        };
         /** Started */
         Started: {
             /** Job Id */
@@ -258,6 +388,8 @@ export interface components {
         };
         /** Transform */
         Transform: {
+            /** Version */
+            version: number;
             /** Areas */
             areas: components["schemas"]["AreaView"][];
             /** Ask */
@@ -529,6 +661,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PresignOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quests_api_v1_children__id__transform_quests_get: {
+        parameters: {
+            query: {
+                /** @description The child's day, YYYY-MM-DD */
+                date: string;
+            };
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidQuests"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_current_interest_api_v1_children__id__transform_quests_current_put: {
+        parameters: {
+            query: {
+                /** @description The child's day, YYYY-MM-DD */
+                date: string;
+            };
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurrentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidQuests"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    log_quest_api_v1_children__id__transform_quests_log_post: {
+        parameters: {
+            query: {
+                /** @description The child's day, YYYY-MM-DD */
+                date: string;
+            };
+            header?: never;
+            path: {
+                /** @description The child's id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestLog"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidQuests"];
                 };
             };
             /** @description Validation Error */

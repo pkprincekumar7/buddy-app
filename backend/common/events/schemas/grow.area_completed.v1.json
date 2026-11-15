@@ -72,7 +72,17 @@
       "items": {
         "type": "string"
       },
-      "description": "The child's picks in the area's rounds, as \"Chose “X” over “Y”\" lines (optional, added 2026-10-26)."
+      "description": "No longer sent since 2026-11-12, when the Grow rounds were removed (Release's child evidence is now child_games). Was the child's picks in the area's rounds, as \"Chose “X” over “Y”\" lines (optional, added 2026-10-26)."
+    },
+    "child_games": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "The child's child view game results for the area: the world run its recommendations were written from, one \"Played X (Skill): N of 100, Band\" line per game (optional, added 2026-11-12)."
     }
   },
   "required": [
@@ -91,7 +101,10 @@
       "recommendations": [
         "Short tasks"
       ],
-      "ai_three_month_recommendations": null
+      "ai_three_month_recommendations": null,
+      "child_games": [
+        "Played Planet Pattern (Memory): 80 of 100, Super strong"
+      ]
     }
   ]
 }

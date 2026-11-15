@@ -45,6 +45,7 @@ from common.generation.llm import LlmClient, LlmConfig
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS, ONBOARDING_INPUTS, PERSONALITY_INPUTS
 from transform import worker
 from transform.app import generation, lifecycle
+from transform.app.quests import KID_QUESTS
 from transform.app.store import PLANS
 
 
@@ -54,6 +55,17 @@ def live(mongo_uri: str, test: Callable[[Running], Awaitable[None]]) -> None:
             await test(r)
 
     asyncio.run(go())
+
+
+async def _pick_quest(r: Running, child_id: str) -> None:
+    """The child picks an interest in child view: their kid_quests document."""
+    picked = await r.http.put(
+        _path(child_id, "/quests/current"),
+        params={"date": datetime.now(UTC).date().isoformat()},
+        json={"interest": "space"},
+        headers=auth_header(),
+    )
+    assert picked.status_code == 200
 
 
 def _path(child_id: str, rest: str = "") -> str:
@@ -108,7 +120,7 @@ def test_unusable_answers_and_failures_are_retried_then_fail(mongo_uri):
         # The prompt held the area's copy, as data.
         assert "Brushes her teeth alone" in fake.prompts[0]
         # The plan and the tracker are checked against their schemas.
-        await r.http.patch(_path(child), json={"ask": "Skateboarding"}, headers=auth_header())
+        await r.save_plan(child, ask="Skateboarding")
         plan_job = await _start(r, child, "plan")
         bad = llm_client(FakeOpenAI(answers=[{**PLAN_ANSWER, "acts": []}]))
         assert await generation.process(r.runtime, bad, plan_job) == "retry"
@@ -130,15 +142,12 @@ def test_unusable_answers_and_failures_are_retried_then_fail(mongo_uri):
 def test_the_tracker_prompt_carries_the_event(mongo_uri):
     async def test(r: Running) -> None:
         child = await r.ready_child()
-        await r.http.patch(
-            _path(child),
-            json={
-                "ask": "Skateboarding",
-                "event_name": "Park show",
-                "event_date": "2027-03-04",
-                "event_set": True,
-            },
-            headers=auth_header(),
+        await r.save_plan(
+            child,
+            ask="Skateboarding",
+            event_name="Park show",
+            event_date="2027-03-04",
+            event_set=True,
         )
         plan_job = await _start(r, child, "plan")
         await generation.process(r.runtime, llm_client(FakeOpenAI(answers=[PLAN_ANSWER])), plan_job)
@@ -350,6 +359,65 @@ def test_an_area_update_clears_that_areas_milestones(mongo_uri):
 
 
 @pytest.mark.live_service
+def test_a_copy_and_its_clear_are_one_transaction(mongo_uri, monkeypatch):
+    # The clear used to be a write of its own after the copy's: a crash between them left
+    # the old milestones forever, since the redelivery found the copy applied already.
+    async def test(r: Running) -> None:
+        child = await _with_milestones(r)
+        consumer = worker.build_consumer(r.runtime)
+        real = generation.supersede
+
+        async def crash(*args: Any, **kwargs: Any) -> int:
+            raise RuntimeError("the worker died")
+
+        monkeypatch.setattr(generation, "supersede", crash)
+        with pytest.raises(RuntimeError):
+            await lifecycle.copy_child(r.runtime, consumer.check(_changed(r, child, 2, age=10)))
+        with pytest.raises(RuntimeError):
+            await lifecycle.copy_inputs(
+                r.runtime, consumer.check(_grow(r, "grow.area_updated", child, 3))
+            )
+        assert (await r.db[CHILD_ACCESS].find_one({"_id": child}))["version"] == 1
+        assert (await r.db[GROWTH_INPUTS].find_one({"_id": f"{child}:self_care"}))["version"] == 2
+        assert set((await _plan(r, child))["life_pathway"]) == {"self_care", "creativity"}
+        monkeypatch.setattr(generation, "supersede", real)
+        # Redelivered: both applied, with their clears.
+        await consumer.handle_body(_grow(r, "grow.area_updated", child, 3))
+        assert set((await _plan(r, child))["life_pathway"]) == {"creativity"}
+        await consumer.handle_body(_changed(r, child, 2, age=10))
+        assert "life_pathway" not in await _plan(r, child)
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_cleared_life_pathway_drops_the_jobs_still_building_it(mongo_uri):
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        await r.area(child, "creativity")
+        consumer = worker.build_consumer(r.runtime)
+        mine = await _start(r, child, "life_pathway", area_id="self_care")
+        other = await _start(r, child, "life_pathway", area_id="creativity")
+        # An area update ends that area's job only.
+        await consumer.handle_body(_grow(r, "grow.area_updated", child, 3))
+        assert (await r.db[JOBS].find_one({"_id": mine["_id"]}))["error"] == jobs.SUPERSEDED
+        assert (await r.db[JOBS].find_one({"_id": other["_id"]}))["status"] == "processing"
+        assert await generation.process(r.runtime, llm_client(), mine) == "dropped"
+        assert "self_care" not in (await _plan(r, child)).get("life_pathway", {})
+        # An age change ends every area's.
+        await consumer.handle_body(_changed(r, child, 2, age=10))
+        assert (await r.db[JOBS].find_one({"_id": other["_id"]}))["error"] == jobs.SUPERSEDED
+        assert await generation.process(r.runtime, llm_client(), other) == "dropped"
+        doc = await _plan(r, child)
+        assert "life_pathway" not in doc and doc["active_jobs"] == {}
+        # A new start runs from the new inputs.
+        fresh = await _start(r, child, "life_pathway", area_id="self_care")
+        assert await generation.process(r.runtime, llm_client(), fresh) == "completed"
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
 def test_every_copy_keeps_the_newest_and_needs_its_owner(mongo_uri):
     async def test(r: Running) -> None:
         consumer = worker.build_consumer(r.runtime)
@@ -431,20 +499,23 @@ def test_a_purged_child_is_deleted_with_its_plan_photos_and_jobs(mongo_uri):
     async def test(r: Running) -> None:
         child, kept = await r.ready_child(), await r.ready_child()
         gone, stays = _photo(r, child), _photo(r, kept)
-        await r.http.patch(_path(child), json={"photos": {"x": [gone]}}, headers=auth_header())
+        await r.save_plan(child, photos={"x": [gone]})
         await r.http.post(
             _path(child, "/generation"), json={"kind": "life_pathway", "area_id": "self_care"},
             headers=auth_header(),
         )  # fmt: skip
-        await r.http.patch(_path(kept), json={"ask": "x"}, headers=auth_header())
+        await r.save_plan(kept, ask="x")
+        for c in (child, kept):
+            await _pick_quest(r, c)
         await seed_user_outbox(
             r.db, user_id=PARENT, child_id=child, other_user_id=OTHER, other_child_id=kept
         )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_child_deleted(r, child, 7))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"named", "other"}  # only the child's went
-        for name in (PLANS, CHILD_ACCESS, PERSONALITY_INPUTS):
+        for name in (PLANS, KID_QUESTS, CHILD_ACCESS, PERSONALITY_INPUTS):
             assert await r.db[name].find_one({"_id": child}) is None
+        assert await r.db[KID_QUESTS].find_one({"_id": kept}) is not None
         assert await r.db[GROWTH_INPUTS].count_documents({"child_id": child}) == 0
         assert await r.db[PLANS].find_one({"_id": kept}) is not None
         assert _keys(r) == {stays}
@@ -458,9 +529,8 @@ def test_a_purged_child_is_deleted_with_its_plan_photos_and_jobs(mongo_uri):
 def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
     async def test(r: Running) -> None:
         child = await r.ready_child()
-        await r.http.patch(
-            _path(child), json={"photos": {"x": [_photo(r, child)]}}, headers=auth_header()
-        )
+        await r.save_plan(child, photos={"x": [_photo(r, child)]})
+        await _pick_quest(r, child)
         theirs = r.owners.add_child(user_id=OTHER)
         await r.copy(theirs, user_id=OTHER)
         await seed_user_outbox(
@@ -469,7 +539,7 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"other"}
-        for name in (PLANS, GROWTH_INPUTS, CHILD_ACCESS, PERSONALITY_INPUTS):
+        for name in (PLANS, KID_QUESTS, GROWTH_INPUTS, CHILD_ACCESS, PERSONALITY_INPUTS):
             assert await r.db[name].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILD_ACCESS].count_documents({"user_id": OTHER}) == 1
         assert _keys(r) == set()
@@ -516,15 +586,8 @@ def test_deletions_without_an_uploads_bucket(mongo_uri):
 def test_the_worker_generates_completes_and_publishes_until_stopped(mongo_uri):
     async def test(r: Running) -> None:
         child = await r.ready_child()
-        await r.http.patch(
-            _path(child),
-            json={
-                "ask": "Skateboarding",
-                "event_name": "Show",
-                "event_date": "2027-01-01",
-                "event_set": True,
-            },
-            headers=auth_header(),
+        await r.save_plan(
+            child, ask="Skateboarding", event_name="Show", event_date="2027-01-01", event_set=True
         )
         await r.http.post(_path(child, "/generation"), json={"kind": "plan"}, headers=auth_header())
         # grow's relay publishes; SNS delivers to transform's queue.

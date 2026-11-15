@@ -1,17 +1,16 @@
 """The growth areas' data and the generated sets' normalisers (docs/auth-users-split.md, 8, 12.1).
 
 `area_data.json` is generated from the web app's `lib/growthAreaData.ts`
-(tests/fixtures/regenerate.sh): the six areas, each area's archetypes (the tags a child
-round may carry), the icon keys and the per-area counts. The functions below are ports of
-the same module, so what grow stores is what the apps render today:
-- `normalize_questions` / `normalize_rounds` (`normalizeGeneratedQuestions` /
-  `normalizeGeneratedRounds`): the LLM's answer, repaired where cosmetic (word caps, a
-  missing star) and rejected (None) where it would break the page; ids are assigned here
-  (`<area>_gq1`, `<area>_gr1a`), never taken from the model. Icons stay keys: the apps
-  resolve a key to its drawing.
-- `normalize_recommendations` (`normalizeRecommendations`): `{title, detail}` with word caps;
-  a plain string is a title.
-- `fill_template`, `picked_options`, `top_archetype`: for the recommendations' prompt.
+(tests/fixtures/regenerate.sh): the six areas, the parent questions per area and the
+pronoun tokens (`copy_tokens`, `fill_template`: for the prompts, and the worlds'
+suggestions they quote). The functions below are ports of the same module, so what grow
+stores is what the apps render today:
+- `normalize_questions` (`normalizeGeneratedQuestions`): the LLM's answer, repaired where
+  cosmetic (word caps) and rejected (None) where it would break the page; ids are assigned
+  here (`<area>_gq1`), never taken from the model.
+- `normalize_recommendations` (`normalizeRecommendations`): `{title, detail, source?}` with
+  word caps; `source` is kept only when it is one of RECOMMENDATION_SOURCES; a plain
+  string is a title.
 
 The apps' own normalisers still run on what they read, and give the same result again.
 """
@@ -20,31 +19,23 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 _DATA: dict[str, Any] = json.loads((Path(__file__).parent / "area_data.json").read_text())
 
 AREAS: dict[str, dict[str, str]] = {area["id"]: area for area in _DATA["areas"]}
-ARCHETYPES: dict[str, dict[str, dict[str, str]]] = _DATA["archetypes"]
-ICON_KEYS: tuple[str, ...] = tuple(_DATA["icon_keys"])
 QUESTIONS_PER_AREA: int = _DATA["parent_questions_per_area"]
-ROUNDS_PER_AREA: int = _DATA["game_rounds_per_area"]
 _TOKENS: dict[str, dict[str, str]] = _DATA["copy_tokens"]
-FALLBACK_ICON = "spark"
 
 QUESTION_MAX_WORDS = 22
 HINT_MAX_WORDS = 14
-OPTION_TEXT_MAX_WORDS = 12
-STAR_MAX_CHARS = 14
 RECOMMENDATION_TITLE_MAX_WORDS = 10
 RECOMMENDATION_DETAIL_MAX_WORDS = 25
-
-
-def tags_for_area(area_id: str) -> list[str]:
-    """The tags a child round may carry: the area's archetype keys, in order."""
-    return list(ARCHETYPES.get(area_id, {}))
+# Where a recommendation comes from: the parent's answers and the child's games together,
+# the games only, the answers only, or the next step (RECOMMENDATION_SOURCES).
+RECOMMENDATION_SOURCES: tuple[str, ...] = ("both", "kid", "you", "step")
 
 
 def copy_tokens(gender: str | None) -> dict[str, str]:
@@ -60,7 +51,7 @@ def copy_tokens(gender: str | None) -> dict[str, str]:
 
 
 def fill_template(text: str, name: str | None, gender: str | None) -> str:
-    """`{name}`, `{he}`, `{his}`, … in archetype copy; an unknown token is left as it is."""
+    """`{name}`, `{he}`, `{his}`, … in copy (fillTemplate); an unknown token is left as it is."""
     tokens = copy_tokens(gender)
     child = name.strip() if name and name.strip() else "your child"
 
@@ -127,49 +118,9 @@ def normalize_questions(raw: Any, area_id: str) -> list[dict[str, str]] | None:
     return out if len(out) == QUESTIONS_PER_AREA else None
 
 
-def _option(
-    raw: Any, area_id: str, round_index: int, side: str, allowed: set[str]
-) -> dict[str, str] | None:
-    entry = _object(raw)
-    if entry is None:
-        return None
-    text, tag = _string(entry.get("text")), _string(entry.get("tag"))
-    if not text or tag not in allowed:
-        return None
-    star = _string(entry.get("star")) or text.split()[0]
-    icon = entry.get("icon")
-    return {
-        "id": f"{area_id}_gr{round_index + 1}{side}",
-        "text": cap_words(text, OPTION_TEXT_MAX_WORDS),
-        "tag": tag,
-        "star": star[:STAR_MAX_CHARS],
-        "icon": icon if isinstance(icon, str) and icon in ICON_KEYS else FALLBACK_ICON,
-    }
-
-
-def normalize_rounds(raw: Any, area_id: str) -> list[dict[str, dict[str, str]]] | None:
-    """The child's either/or rounds, with ids; None unless all are complete and tagged."""
-    items = _items(raw, "rounds")
-    if items is None:
-        return None
-    allowed = set(tags_for_area(area_id))
-    if not allowed:
-        return None
-    out: list[dict[str, dict[str, str]]] = []
-    for item in items[:ROUNDS_PER_AREA]:
-        entry = _object(item)
-        if entry is None:
-            break
-        a = _option(entry.get("a"), area_id, len(out), "a", allowed)
-        b = _option(entry.get("b"), area_id, len(out), "b", allowed)
-        if a is None or b is None:
-            break
-        out.append({"a": a, "b": b})
-    return out if len(out) == ROUNDS_PER_AREA else None
-
-
 def normalize_recommendations(raw: Any) -> list[dict[str, str]]:
-    """`{title, detail}` per recommendation, word-capped; plain strings are titles."""
+    """`{title, detail, source?}` per recommendation, word-capped; plain strings are titles.
+    An unknown or missing `source` is left out."""
     if not isinstance(raw, list):
         return []
     out: list[dict[str, str]] = []
@@ -186,35 +137,37 @@ def normalize_recommendations(raw: Any) -> list[dict[str, str]]:
         title = title.strip() if isinstance(title, str) else ""
         detail = detail.strip() if isinstance(detail, str) else ""
         if title or detail:
-            out.append(
-                {
-                    "title": cap_words(title, RECOMMENDATION_TITLE_MAX_WORDS),
-                    "detail": cap_words(detail, RECOMMENDATION_DETAIL_MAX_WORDS),
-                }
-            )
+            item_out = {
+                "title": cap_words(title, RECOMMENDATION_TITLE_MAX_WORDS),
+                "detail": cap_words(detail, RECOMMENDATION_DETAIL_MAX_WORDS),
+            }
+            source = entry.get("source")
+            if isinstance(source, str) and source in RECOMMENDATION_SOURCES:
+                item_out["source"] = source
+            out.append(item_out)
     return out
 
 
-# ── the child's picks ──────────────────────────────────────────────────────────
-
-
-def picked_options(rounds: Sequence[Mapping[str, Any]], picked_ids: Any) -> list[Mapping[str, Any]]:
-    """The options the child picked, in order; unknown ids are dropped."""
-    if not isinstance(picked_ids, list):
-        return []
-    options = {option["id"]: option for r in rounds for option in (r["a"], r["b"])}
-    return [options[i] for i in picked_ids if isinstance(i, str) and i in options]
-
-
-def top_archetype(
-    area_id: str, rounds: Sequence[Mapping[str, Any]], picked_ids: Any
-) -> dict[str, str] | None:
-    """The most-picked tag's archetype; a tie goes to the tag that got there first."""
-    options = picked_options(rounds, picked_ids)
-    if not options:
-        return None
-    counts: dict[str, int] = {}
-    for option in options:
-        counts[option["tag"]] = counts.get(option["tag"], 0) + 1
-    best = max(counts, key=lambda tag: counts[tag])  # max keeps the first of a tie
-    return ARCHETYPES.get(area_id, {}).get(best)
+def fit_sources(
+    recs: list[dict[str, str]], *, answered: bool, played: bool
+) -> list[dict[str, str]]:
+    """Each recommendation's `source` as the job's inputs allow it: "kid" or "both" only when
+    the child played the area's world, "you" or "both" only when the parent answered, "step"
+    only on the last. A tag that can't be true falls back to what there was ("both" to the
+    one input there is), or is left out; the app then shows no tag rather than a wrong one."""
+    out: list[dict[str, str]] = []
+    for i, rec in enumerate(recs):
+        source = rec.get("source")
+        if source == "both" and not (answered and played):
+            source = "you" if answered else "kid" if played else None
+        elif source == "kid" and not played:
+            source = "you" if answered else None
+        elif source == "you" and not answered:
+            source = "kid" if played else None
+        elif source == "step" and i != len(recs) - 1:
+            source = None
+        fitted = {k: v for k, v in rec.items() if k != "source"}
+        if source:
+            fitted["source"] = source
+        out.append(fitted)
+    return out

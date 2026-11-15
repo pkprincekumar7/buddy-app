@@ -2,11 +2,14 @@
 
 - **`child.changed`:** the `child_access` copy. When it changes the child's `age` or
   `gender`, every Life Pathway milestone is cleared (as today's `_LIFE_PATHWAY_INPUTS`), so
-  the page offers to generate them again.
+  the page offers to generate them again, and a Life Pathway job still running is
+  superseded (its result would be built from the old age). The copy and the clear are one
+  transaction.
 - **`onboarding.*`**, **`discover.personality_finalised`**, **`grow.area_completed` /
   `grow.area_updated`:** the `onboarding_inputs`, `personality_inputs` and `growth_inputs`
   copies, each a version-checked upsert, dropped over a tombstone. A `grow.area_updated`
-  that was applied clears that area's milestones: they were built from the old answers.
+  that was applied clears that area's milestones (they were built from the old answers)
+  and supersedes that area's running job, in the copy's transaction.
   The owner comes from the event's `user_id`, else from `child_access`; with neither, the
   message is retried.
 - **`child.deleted`** (the purge): the child's plan, copies and photos go, its jobs are
@@ -49,6 +52,8 @@ from common.models import (
     personality_inputs_fields,
 )
 from common.telemetry import current_traceparent
+from transform.app import generation
+from transform.app.quests import KID_QUESTS
 from transform.app.runtime import SERVICE, Runtime
 from transform.app.store import PLANS
 
@@ -73,34 +78,61 @@ def _tombstones(child_id: str, user_id: str) -> list[str]:
     return [tombstone_key("child", child_id), tombstone_key("user", user_id)]
 
 
+async def _clear_pathway(
+    runtime: Runtime,
+    child_id: str,
+    location: str,
+    session: AsyncClientSession,
+    area_id: str | None = None,
+) -> None:
+    """The Life Pathway (or one area's) built from inputs that changed, and the jobs still
+    building it, in the transaction that applied the change."""
+    field = "life_pathway" if area_id is None else f"life_pathway.{area_id}"
+    await runtime.db[PLANS].update_one(
+        {"_id": child_id, "location": location}, {"$unset": {field: ""}}, session=session
+    )
+    await generation.supersede(
+        runtime, child_id, location, session, areas=None if area_id is None else (area_id,)
+    )
+
+
 async def copy_child(runtime: Runtime, received: ReceivedEvent) -> bool:
-    """Apply a `child.changed` snapshot; clear the Life Pathway if age or gender changed."""
+    """Apply a `child.changed` snapshot; clear the Life Pathway if age or gender changed.
+    The copy and the clear are one transaction: a crash between them can't keep the old
+    milestones (a redelivery would find the copy applied and clear nothing)."""
     event = received.event
-    before = await runtime.db[CHILD_ACCESS].find_one(
-        {"_id": event.aggregate_id, "location": event.location}, {"age": 1, "gender": 1}
-    )
-    applied = await versioned_upsert(
-        runtime.db,
-        CHILD_ACCESS,
-        doc_id=event.aggregate_id,
-        location=event.location,
-        version=event.version,
-        fields=child_access_fields(received),
-        tombstones=_tombstones(event.aggregate_id, received.payload["user_id"]),
-    )
     payload = received.payload
-    if (
-        applied
-        and before is not None
-        and (
-            before.get("age") != payload.get("age") or before.get("gender") != payload.get("gender")
-        )
-    ):
-        await runtime.db[PLANS].update_one(
+    outcome: dict[str, bool] = {}
+
+    async def write(session: AsyncClientSession) -> None:
+        before = await runtime.db[CHILD_ACCESS].find_one(
             {"_id": event.aggregate_id, "location": event.location},
-            {"$unset": {"life_pathway": ""}},
+            {"age": 1, "gender": 1},
+            session=session,
         )
-    return applied
+        applied = await versioned_upsert(
+            runtime.db,
+            CHILD_ACCESS,
+            doc_id=event.aggregate_id,
+            location=event.location,
+            version=event.version,
+            fields=child_access_fields(received),
+            tombstones=_tombstones(event.aggregate_id, payload["user_id"]),
+            session=session,
+        )
+        outcome["applied"] = applied
+        if (
+            applied
+            and before is not None
+            and (
+                before.get("age") != payload.get("age")
+                or before.get("gender") != payload.get("gender")
+            )
+        ):
+            await _clear_pathway(runtime, event.aggregate_id, event.location, session)
+
+    await _transaction(runtime, write)
+    return outcome["applied"]
 
 
 async def _owner(runtime: Runtime, received: ReceivedEvent) -> str:
@@ -128,32 +160,40 @@ async def copy_inputs(runtime: Runtime, received: ReceivedEvent) -> bool:
         doc_id = growth_inputs_id(event.aggregate_id, received.payload["area_id"])
     else:
         collection, fields = ONBOARDING_INPUTS, onboarding_inputs_fields(received, user_id)
-    applied = await versioned_upsert(
-        runtime.db,
-        collection,
-        doc_id=doc_id,
-        location=event.location,
-        version=event.version,
-        fields=fields,
-        tombstones=_tombstones(event.aggregate_id, user_id),
-    )
-    if applied and event.event_type == "grow.area_updated":
-        await runtime.db[PLANS].update_one(
-            {"_id": event.aggregate_id, "location": event.location},
-            {"$unset": {f"life_pathway.{received.payload['area_id']}": ""}},
+    outcome: dict[str, bool] = {}
+
+    async def write(session: AsyncClientSession) -> None:
+        applied = await versioned_upsert(
+            runtime.db,
+            collection,
+            doc_id=doc_id,
+            location=event.location,
+            version=event.version,
+            fields=fields,
+            tombstones=_tombstones(event.aggregate_id, user_id),
+            session=session,
         )
-    return applied
+        outcome["applied"] = applied
+        # With the copy, in its transaction: the area's milestones came from the old answers.
+        if applied and event.event_type == "grow.area_updated":
+            await _clear_pathway(
+                runtime, event.aggregate_id, event.location, session,
+                received.payload["area_id"],
+            )  # fmt: skip
+
+    await _transaction(runtime, write)
+    return outcome["applied"]
 
 
 async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
-    """A purged child's plan, copies, photos and jobs, and its tombstone."""
+    """A purged child's plan, quests, copies, photos and jobs, and its tombstone."""
     event = received.event
     child_id, location = event.aggregate_id, event.location
     if runtime.uploads is not None:  # S3 isn't transactional, and deleting again is harmless
         await runtime.uploads.delete_child(location, child_id, PHOTO_KIND)
 
     async def write(session: AsyncClientSession) -> None:
-        for name in (PLANS, *COPIES):
+        for name in (PLANS, KID_QUESTS, *COPIES):
             await runtime.db[name].delete_one(
                 {"_id": child_id, "location": location}, session=session
             )
@@ -203,7 +243,7 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
         child_ids = await runtime.db[CHILD_ACCESS].distinct(
             "_id", {"location": location, "user_id": user_id}, session=session
         )
-        for name in (PLANS, GROWTH_INPUTS, *COPIES):
+        for name in (PLANS, KID_QUESTS, GROWTH_INPUTS, *COPIES):
             await runtime.db[name].delete_many(
                 {"location": location, "user_id": user_id}, session=session
             )

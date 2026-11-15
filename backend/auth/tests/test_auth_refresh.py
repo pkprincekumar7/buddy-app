@@ -242,6 +242,39 @@ def test_reuse_after_30_seconds_revokes_the_family_and_every_token(mongo_uri, ca
 
 
 @pytest.mark.live_service
+def test_a_crash_during_the_reuse_revocation_leaves_it_whole_to_happen_again(
+    mongo_uri, monkeypatch
+):
+    # The family's sessions and the account's revocation commit together: a crash between
+    # them used to leave the family gone but every other device still signed in (review).
+    async def test(r: Running) -> None:
+        tokens = await _signed_in(r)
+        await _refresh(r, tokens["refresh_token"])
+        old = claims(tokens["refresh_token"])
+        await r.db[SESSIONS].update_one(
+            {"_id": old["jti"]}, {"$set": {"rotated_at": datetime.now(UTC) - timedelta(seconds=31)}}
+        )
+        real = main.authz_change
+
+        def crash(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("the task died")
+
+        monkeypatch.setattr(main, "authz_change", crash)
+        with pytest.raises(RuntimeError):
+            await _refresh(r, tokens["refresh_token"])
+        # Nothing committed: the family is still there, so the next reuse revokes it all.
+        assert await r.db[SESSIONS].count_documents({"family_id": old["family_id"]}) == 2
+        monkeypatch.setattr(main, "authz_change", real)
+        stolen = await _refresh(r, tokens["refresh_token"])
+        assert (stolen.status_code, _code(stolen)) == (401, "session_revoked")
+        assert await r.db[SESSIONS].count_documents({"family_id": old["family_id"]}) == 0
+        account = await r.db[AUTH].find_one({"_id": old["sub"]})
+        assert account is not None and account["tokens_revoked_at"] is not None
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
 def test_reuse_for_an_account_that_is_gone_still_ends_the_family(mongo_uri):
     async def test(r: Running) -> None:
         tokens = await _signed_in(r)

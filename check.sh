@@ -63,8 +63,8 @@ if [ "$VENV_PY_VERSION" != "$PYTHON_VERSION" ]; then
   echo "  rm -rf backend/.venv && ./check.sh"
   exit 1
 fi
-# semgrep gets its own venv: it pins OpenTelemetry ~=1.37, and the services pin 1.45.1 (a
-# security fix, GHSA-xcq7-p3pf-p88h), which requirements-test.txt matches. CI already
+# semgrep gets its own venv: it pins OpenTelemetry ~=1.37, and the services pin 1.45.2 (a
+# security fix, GHSA-mf5v-w3w3-f6cg), which requirements-test.txt matches. CI already
 # installs requirements-security.txt in a job of its own. So backend/.venv gets every other
 # security tool, and backend/.venv-semgrep gets semgrep alone.
 SEMGREP_VENV="$BACKEND/.venv-semgrep"

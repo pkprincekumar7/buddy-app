@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# Regenerates normalised.json: what the web app's lib/observationsData.ts returns for
-# llm_answers.json (normalizeObservations with each case's allowed child-choice lines, then
-# selectObservations with its sources), plus the icon keys, by running that code with Node
-# (types stripped; Node 22.18+). release's port must give the same output (test_observations.py).
+# Regenerates normalised.json from llm_answers.json.
+#
+# The web-derived part: what the web app's lib/observationsData.ts returns, run with Node
+# (types stripped; Node 22.18+): the icon keys, and each case's items from
+# normalizeObservations with its allowed child game-result lines. release's port must give
+# the same output (test_observations.py).
+#
+# The release-only part: choosing which items to keep (release.app.observations.select) and
+# the icons the model may pick (SELECTABLE_ICON_KEYS) have no web counterpart any more, so
+# each case's "selection" and the "selectable" list are kept as they are in normalised.json.
+# A new case starts without a selection; write it by hand from what select should return.
 #
 #   backend/release/tests/fixtures/regenerate.sh
 set -euo pipefail
@@ -13,15 +20,29 @@ trap 'rm -rf "$work"' EXIT
 {
   cat "$source"
   cat <<'JS'
-import { readFileSync } from 'node:fs';
-type Case = { answer: unknown; allowed: string[] | null; sources: ObservationSourceKey[] };
+import { existsSync, readFileSync } from 'node:fs';
+type Case = { answer: unknown; allowed: string[] | null; sources: string[] };
 const cases = JSON.parse(readFileSync(process.argv[2], 'utf8')) as Case[];
-const out = cases.map((c) => {
-  const items = normalizeObservations(c.answer, c.allowed ? { allowedChoiceNotes: c.allowed } : undefined);
-  return { items, selection: selectObservations(items, c.sources) };
+const previous = existsSync(process.argv[3])
+  ? (JSON.parse(readFileSync(process.argv[3], 'utf8')) as {
+      selectable?: unknown;
+      cases?: { selection?: unknown }[];
+    })
+  : {};
+const out = cases.map((c, i) => {
+  const items = normalizeObservations(c.answer, c.allowed ? { allowedChildLines: c.allowed } : undefined);
+  const selection = previous.cases?.[i]?.selection;
+  return selection === undefined ? { items } : { items, selection };
 });
-process.stdout.write(JSON.stringify({ icon_keys: Object.keys(OBSERVATION_ICONS), selectable: SELECTABLE_ICON_KEYS, cases: out }, null, 2) + '\n');
+process.stdout.write(
+  JSON.stringify(
+    { icon_keys: Object.keys(OBSERVATION_ICONS), selectable: previous.selectable ?? [], cases: out },
+    null,
+    2,
+  ) + '\n',
+);
 JS
 } > "$work/observations.ts"
-node --no-warnings "$work/observations.ts" "$here/llm_answers.json" > "$here/normalised.json"
+node --no-warnings "$work/observations.ts" "$here/llm_answers.json" "$here/normalised.json" > "$work/normalised.json"
+mv "$work/normalised.json" "$here/normalised.json"
 echo "wrote release/tests/fixtures/normalised.json"

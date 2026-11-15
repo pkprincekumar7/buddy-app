@@ -7,6 +7,8 @@ is internal (port 8001, Cloud Map only). Each endpoint is in docs/auth-users-spl
 - `POST …/personality/generation` (a retry after `failed`, or the page opening before the
   automatic start) and `GET …/personality/generation/{job_id}`;
 - `POST …/personality/viewed`: the reveal passed, which makes Discover done;
+- `GET …/personality/powers`: child view's seven powers, from the ready personality
+  (discover.app.powers);
 - `GET /internal/discover/children/{id}/status` (grow's confirm-before-deny) and
   `…/summary` (grow's and transform's read-through of `personality_inputs`).
 
@@ -44,6 +46,7 @@ from common.telemetry import current_traceparent
 from discover.app import generation
 from discover.app.access import answers_for, child_for, error, not_found, require_unlocked
 from discover.app.personality import summary
+from discover.app.powers import powers, style_line
 from discover.app.runtime import SERVICE, Runtime
 from discover.app.store import KIND, PERSONALITIES
 
@@ -219,6 +222,20 @@ class Completed(BaseModel):
     completed: bool
 
 
+class Power(BaseModel):
+    name: str
+    game: Literal["focus", "curious", "order", "draw", "climb", "voice", "energy"]
+    level: int
+    line: str
+    try_this: str
+
+
+class Powers(BaseModel):
+    style: str  # the dominant archetype ("Thinker"): "You are The Thinker"
+    style_line: str  # the child's line for it, under the title
+    powers: list[Power]
+
+
 class Summary(BaseModel):
     """What a circle copies into personality_inputs (4.1)."""
 
@@ -295,6 +312,16 @@ async def get_personality(
     return _view(await _personality(runtime, child))
 
 
+async def _started_anyway(runtime: Runtime, child: Mapping[str, Any]) -> bool:
+    """Whether the personality has a job running after a start that failed with a database
+    error (its commit may have gone through). Unknown counts as not started."""
+    try:
+        personality = await _personality(runtime, child)
+        return await generation.running_job(runtime, personality) is not None
+    except PyMongoError:
+        return False
+
+
 @router.post(
     "/generation",
     status_code=202,
@@ -334,14 +361,23 @@ async def start_generation(
                 location=child["location"],
                 input_version=int(answers["version"]),
             )
-        except generation.AlreadyGenerated:
-            await runtime.llm_limit.give_back(caller.user_id)
-            raise error(409, "already_generated", "The personality is already generated.") from None
-        except JobRefused:
-            raise not_found() from None
-        except PyMongoError as exc:
-            _logger.exception("discover: the job couldn't be stored")
-            raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+        except Exception as exc:
+            # No job was started: no LLM call to count (review). Every failed start, the
+            # refusals below and anything unexpected alike. A database error can follow a
+            # start that did commit (an unknown commit result): its job runs, so it keeps
+            # the slot (review).
+            if not (isinstance(exc, PyMongoError) and await _started_anyway(runtime, child)):
+                await runtime.llm_limit.give_back(caller.user_id)
+            if isinstance(exc, generation.AlreadyGenerated):
+                raise error(
+                    409, "already_generated", "The personality is already generated."
+                ) from None
+            if isinstance(exc, JobRefused):
+                raise not_found() from None
+            if isinstance(exc, PyMongoError):
+                _logger.exception("discover: the job couldn't be stored")
+                raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+            raise
         if created:
             return Started(job_id=running, status="pending")
         await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call
@@ -418,6 +454,26 @@ async def mark_viewed(id: ChildId, runtime: Ready, caller: SignedIn) -> Personal
     if doc is None or doc["status"] != "ready":
         raise error(409, "personality_not_ready", "The personality isn't ready yet.")
     return _view(doc)
+
+
+@router.get(
+    "/powers",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="Child view's seven powers (Discover's kids page), each with its game, a "
+    'level from 3 to 5 that follows the personality, a line and a "try this". `404 '
+    "personality_not_ready` until the personality is `ready`. Parents only.",
+)
+async def get_powers(id: ChildId, runtime: Ready, caller: SignedIn) -> Powers:
+    child = await _parents_child(runtime, caller, id)
+    doc = await _personality(runtime, child)
+    if doc is None or doc["status"] != "ready":
+        raise error(404, "personality_not_ready", "The personality isn't ready yet.")
+    model = doc["view_model"]
+    return Powers(
+        style=model["type"],
+        style_line=style_line(model["type"]),
+        powers=[Power(**power) for power in powers(model)],
+    )
 
 
 app.include_router(health_router)

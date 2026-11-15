@@ -119,7 +119,7 @@
           "transform"
         ],
         "summary": "Patch Transform",
-        "description": "Save the parent's work on the 90-day plan; each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys). Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).",
+        "description": "Save the parent's work on the 90-day plan, made on the plan's `version` (from the last GET or PATCH): if the plan was saved since (another device), nothing changes and it's `409 plan_changed`; reload and apply the change again. Each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys; a photo no longer in any field is deleted). A change to `ask` or the Day-90 event, or `clear_track_steps`, ends a plan or tracker generation still building from the old one. Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).",
         "operationId": "patch_transform_api_v1_children__id__transform_patch",
         "security": [
           {
@@ -377,6 +377,224 @@
           }
         }
       }
+    },
+    "/api/v1/children/{id}/transform/quests": {
+      "get": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Get Quests",
+        "description": "The child's quests in child view: the interests, the quests and their counts, and which were logged on the child's `date`. Parents only.",
+        "operationId": "get_quests_api_v1_children__id__transform_quests_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's day, YYYY-MM-DD",
+              "title": "Date"
+            },
+            "description": "The child's day, YYYY-MM-DD"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidQuests"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/quests/current": {
+      "put": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Put Current Interest",
+        "description": "Show an interest's quests: the plan's own, or one the child adds (kept in `interests`). Parents only.",
+        "operationId": "put_current_interest_api_v1_children__id__transform_quests_current_put",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's day, YYYY-MM-DD",
+              "title": "Date"
+            },
+            "description": "The child's day, YYYY-MM-DD"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidQuests"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/quests/log": {
+      "post": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Log Quest",
+        "description": "The child did a quest today: `+1` to its count, once a day (a day after the last one logged) and up to its target (anything more changes nothing). A counted log publishes `transform.quest_logged` in the same transaction (children gives the star and marks Transform done in child view from it). The interest must be the plan's or one the child added (`409 interest_not_picked`). Parents only.",
+        "operationId": "log_quest_api_v1_children__id__transform_quests_log_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's day, YYYY-MM-DD",
+              "title": "Date"
+            },
+            "description": "The child's day, YYYY-MM-DD"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestLog"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidQuests"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -449,6 +667,31 @@
           "life_pathway_generating"
         ],
         "title": "AreaView"
+      },
+      "CurrentIn": {
+        "properties": {
+          "interest": {
+            "type": "string",
+            "enum": [
+              "football",
+              "drawing",
+              "music",
+              "building",
+              "cooking",
+              "space",
+              "animals",
+              "reading",
+              "games"
+            ],
+            "title": "Interest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "interest"
+        ],
+        "title": "CurrentIn"
       },
       "GenerationIn": {
         "properties": {
@@ -559,6 +802,112 @@
         ],
         "title": "Job"
       },
+      "KidQuests": {
+        "properties": {
+          "default_interest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "football",
+                  "drawing",
+                  "music",
+                  "building",
+                  "cooking",
+                  "space",
+                  "animals",
+                  "reading",
+                  "games"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Interest"
+          },
+          "interests": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "football",
+                "drawing",
+                "music",
+                "building",
+                "cooking",
+                "space",
+                "animals",
+                "reading",
+                "games"
+              ]
+            },
+            "type": "array",
+            "title": "Interests"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "football",
+                  "drawing",
+                  "music",
+                  "building",
+                  "cooking",
+                  "space",
+                  "animals",
+                  "reading",
+                  "games"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "logs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Logs"
+          },
+          "last_logged": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Last Logged"
+          },
+          "logged_today": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logged Today"
+          },
+          "catalog": {
+            "items": {
+              "$ref": "#/components/schemas/QuestInterestView"
+            },
+            "type": "array",
+            "title": "Catalog"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_interest",
+          "interests",
+          "current",
+          "logs",
+          "last_logged",
+          "logged_today",
+          "catalog"
+        ],
+        "title": "KidQuests",
+        "description": "The child's quests: the parent's plan's interest (`default_interest`, null when the\n`ask` names none), the ones the child added, the one on screen, and the counts."
+      },
       "Photo": {
         "properties": {
           "key": {
@@ -586,6 +935,12 @@
       },
       "PlanPatch": {
         "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Version",
+            "description": "The plan's `version` this change was made on (`0` before the first save). Another save since is `409 plan_changed`: reload and apply again."
+          },
           "ask": {
             "anyOf": [
               {
@@ -773,8 +1128,11 @@
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "version"
+        ],
         "title": "PlanPatch",
-        "description": "The parent's part of the plan; each field sent replaces the stored one. `plan`,\n`track_steps` and the Life Pathway are transform's jobs' only (422)."
+        "description": "The parent's part of the plan, made on the `version` the app last read; each field\nsent replaces the stored one. `plan`, `track_steps` and the Life Pathway are\ntransform's jobs' only (422)."
       },
       "PresignIn": {
         "properties": {
@@ -828,6 +1186,98 @@
         ],
         "title": "PresignOut"
       },
+      "QuestIn": {
+        "properties": {
+          "target": {
+            "type": "integer",
+            "title": "Target"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "how": {
+            "type": "string",
+            "title": "How"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target",
+          "title",
+          "how"
+        ],
+        "title": "QuestIn"
+      },
+      "QuestInterestView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "football",
+              "drawing",
+              "music",
+              "building",
+              "cooking",
+              "space",
+              "animals",
+              "reading",
+              "games"
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "quests": {
+            "items": {
+              "$ref": "#/components/schemas/QuestIn"
+            },
+            "type": "array",
+            "title": "Quests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "quests"
+        ],
+        "title": "QuestInterestView"
+      },
+      "QuestLog": {
+        "properties": {
+          "interest": {
+            "type": "string",
+            "enum": [
+              "football",
+              "drawing",
+              "music",
+              "building",
+              "cooking",
+              "space",
+              "animals",
+              "reading",
+              "games"
+            ],
+            "title": "Interest"
+          },
+          "quest": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Quest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "interest",
+          "quest"
+        ],
+        "title": "QuestLog"
+      },
       "Started": {
         "properties": {
           "job_id": {
@@ -848,6 +1298,10 @@
       },
       "Transform": {
         "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
           "areas": {
             "items": {
               "$ref": "#/components/schemas/AreaView"
@@ -1001,6 +1455,7 @@
         },
         "type": "object",
         "required": [
+          "version",
           "areas",
           "ask",
           "plan",

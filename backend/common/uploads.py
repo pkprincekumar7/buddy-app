@@ -59,6 +59,10 @@ _AWS_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "virtual"
 _LOCAL_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "path"})
 
 
+class DeleteFailed(RuntimeError):
+    """S3 answered a batch delete but kept some of its objects."""
+
+
 class UploadError(ValueError):
     """A refused upload; `code` is the API's error code."""
 
@@ -230,7 +234,8 @@ class Uploads:
         await asyncio.to_thread(self.client.delete_object, Bucket=self.config.bucket, Key=key)
 
     async def delete_child(self, location: str, child_id: str, kind: Kind) -> int:
-        """Every object of this kind for a deleted child (10.2). Returns how many."""
+        """Every object of this kind for a deleted child (10.2). Returns how many; raises
+        DeleteFailed if S3 kept any (a per-key error of a batch delete)."""
         prefix = child_prefix(location, child_id, kind)
         deleted = 0
         token: str | None = None
@@ -241,11 +246,21 @@ class Uploads:
             page = await asyncio.to_thread(self.client.list_objects_v2, **params)
             keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
             if keys:
-                await asyncio.to_thread(
+                result = await asyncio.to_thread(
                     self.client.delete_objects,
                     Bucket=self.config.bucket,
                     Delete={"Objects": keys, "Quiet": True},
                 )
+                # Quiet still lists each key S3 didn't delete (AccessDenied, SlowDown...).
+                # Raising keeps the caller's deletion or purge uncommitted, so its message or
+                # next round retries; otherwise the photos would stay, tracked by nothing.
+                errors = result.get("Errors") or []
+                if errors:
+                    codes = sorted({str(error.get("Code", "?")) for error in errors})
+                    raise DeleteFailed(
+                        f"S3 didn't delete {len(errors)} of {len(keys)} objects under "
+                        f"{prefix} ({', '.join(codes)})"
+                    )
                 deleted += len(keys)
             token = page.get("NextContinuationToken")
             if not token:

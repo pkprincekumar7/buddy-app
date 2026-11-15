@@ -5,8 +5,10 @@ is internal (port 8001, Cloud Map only). Each endpoint is in docs/auth-users-spl
 
 - `GET /api/v1/children/{id}/growth-areas`: every area, in one query;
 - `PUT …/growth-areas/{area_id}`: the parent's progress through an area, and its completion;
-- `POST …/growth-areas/{area_id}/generation` (`kind`: `parent_questions`, `child_rounds`,
+- `POST …/growth-areas/{area_id}/generation` (`kind`: `parent_questions` or
   `recommendations`) and `GET …/generation/{job_id}`;
+- `GET …/growth-areas/worlds` and `POST …/worlds/{world}/runs`: the child's world runs in
+  child view (grow.app.worlds), the child's input to the area's recommendations;
 - `GET /internal/grow/children/{id}/status` (transform's confirm-before-deny) and `…/areas`
   (transform's and release's read-through of `growth_inputs`).
 
@@ -14,8 +16,9 @@ is internal (port 8001, Cloud Map only). Each endpoint is in docs/auth-users-spl
 with `children:read:any` reading with the owner's `?location=` (audited); unlocked once
 Discover is done. **Events:** completing an area publishes `grow.area_completed` (and, the
 first time for the child, `grow.completed`); editing a completed one, `grow.area_updated`;
-each in the save's transaction. The HTTP runtime also publishes the job metrics from one
-leader per region.
+each in the save's transaction. An answered area is also completed by its recommendations'
+job, with the same events in the job's transaction (grow.app.generation). The HTTP runtime
+also publishes the job metrics from one leader per region.
 """
 
 from __future__ import annotations
@@ -24,26 +27,28 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 import bson
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from limits import parse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic.json_schema import SkipJsonSchema
 from pymongo import ASCENDING, ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import add_to_outbox, is_tombstoned, tombstone_key
+from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key, write_guards
 from common.generation.jobs import JobRefused, TargetRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
-from common.models import CHILD_ID_PATTERN, JOBS
+from common.models import CHILD_ID_PATTERN, JOBS, stage_done
 from common.routers import PolicyRouter, public
-from grow.app import generation
+from common.telemetry import current_traceparent
+from grow.app import generation, worlds
 from grow.app.access import (
     answers_for,
     child_for,
@@ -68,7 +73,6 @@ from grow.app.store import (
     RECOMMENDATIONS_MAX,
     RESERVED_PREFIXES,
     SCHEMA_VERSION,
-    SELECTIONS_MAX,
     STEP_MAX,
     SUMMARY_MAX,
     Kind,
@@ -232,6 +236,16 @@ async def _parents_child(runtime: Runtime, caller: Caller, child_id: str) -> dic
     return child
 
 
+async def _child_view_child(runtime: Runtime, caller: Caller, child_id: str) -> dict[str, Any]:
+    """The caller's own child for child view's routes, which open in child view's own order
+    (docs/child-view-build-plan.md): here only once the parent's chat is done; the children
+    service decides the rest."""
+    child = await child_for(runtime, child_id, location=caller.location, owner=caller.user_id)
+    if not stage_done(child, "conversation"):
+        raise error(403, "circle_locked", "Finish the chat about your child first.")
+    return child
+
+
 def _selector(child: Mapping[str, Any], area_id: str) -> dict[str, Any]:
     return {
         "_id": area_doc_id(child["_id"], area_id),
@@ -263,11 +277,10 @@ class ActivityResults(BaseModel):
 
 
 class ChildActivity(BaseModel):
-    """The child's picks (option ids from `child_rounds`) and, for older flows, results."""
+    """The child's activity results, carried by the area's events (`child_activity_results`)."""
 
     model_config = _Strict
 
-    selections: Annotated[list[_Item], Field(max_length=SELECTIONS_MAX)] | None = None
     results: ActivityResults | None = None
 
 
@@ -287,17 +300,33 @@ class AreaIn(BaseModel):
     feedback: Annotated[str, StringConstraints(max_length=FEEDBACK_MAX)] | None = None
 
 
+class Recommendation(BaseModel):
+    """One of the area's AI recommendations (grow.app.areas.normalize_recommendations)."""
+
+    title: str
+    detail: str
+    # What it's grounded in: the answers and the games, the games, the answers, the next
+    # step. Left out (never null) when the stored item has none.
+    source: Literal["both", "kid", "you", "step"] | SkipJsonSchema[None] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+
 class Area(BaseModel):
     area_id: str
     area_name: str
     status: Literal["in_progress", "completed"]
     step: str | None
     parent_questions: dict[str, Any] | None
-    child_rounds: dict[str, Any] | None
     answers: dict[str, str]
     child_activity: dict[str, Any] | None
     recommendations: list[str] | None
-    ai_three_month_recommendations: list[dict[str, str]] | None
+    ai_three_month_recommendations: list[Recommendation] | None
+    # The `at` of the world run the recommendations were written from; null without one.
+    recommendations_run_at: datetime | None
+    # Whether the recommendations were written from the area's present answers and
+    # feedback (false without recommendations, or after a save changed either since).
+    recommendations_current: bool
     feedback: str | None
     generating: list[Kind]
     completed_at: datetime | None
@@ -349,7 +378,7 @@ class AreaCopy(BaseModel):
     recommendations: list[str] | None
     ai_three_month_recommendations: list[dict[str, str]] | None
     reflections: list[dict[str, str]]
-    child_choices: list[str]
+    child_games: list[str]
     version: int
 
 
@@ -365,11 +394,12 @@ def _view(doc: Mapping[str, Any]) -> Area:
         status=doc["status"],
         step=doc.get("step"),
         parent_questions=doc.get("parent_questions"),
-        child_rounds=doc.get("child_rounds"),
         answers=doc.get("answers") or {},
         child_activity=doc.get("child_activity"),
         recommendations=doc.get("recommendations"),
         ai_three_month_recommendations=doc.get("ai_three_month_recommendations"),
+        recommendations_run_at=doc.get("recommendations_run_at"),
+        recommendations_current=generation.recommendations_current(doc),
         feedback=doc.get("feedback"),
         generating=[KINDS[job_type] for job_type in JOB_TYPES.values() if running.get(job_type)],
         completed_at=doc.get("completed_at"),
@@ -382,9 +412,7 @@ class _Stale(Exception):
 
 
 def _now() -> datetime:
-    """To the millisecond, as MongoDB keeps it: a response shows what a later GET will."""
-    moment = datetime.now(UTC)
-    return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    return generation.now_ms()
 
 
 # ── public routes ──────────────────────────────────────────────────────────────
@@ -448,7 +476,8 @@ async def list_areas(
     dependencies=[Depends(per_user("60/minute"))],
     description="Save one area: the parent's progress through its wizard, and its "
     "completion (`grow.area_completed`, and `grow.completed` for the child's first). "
-    "Editing a completed area publishes `grow.area_updated`. Answer keys must be ids from "
+    "Editing a completed area publishes `grow.area_updated`; a completed area stays "
+    "completed (a save sending `in_progress` is an edit of it). Answer keys must be ids from "
     "the area's `parent_questions`; the generated parts can't be sent.",
 )
 async def save_area(
@@ -465,21 +494,32 @@ async def save_area(
         existing = await areas.find_one(selector)
 
         async def write(session: AsyncClientSession, existing: Any = existing) -> None:
-            tombstones = [tombstone_key("child", id), tombstone_key("user", child["user_id"])]
-            if await is_tombstoned(runtime.db, tombstones, session=session):
+            # The child's guards first: a deletion in flight conflicts with this save (so a
+            # first save's insert can't commit after it), and so does another of the
+            # child's areas completing at once (grow.completed once; generation.guard_keys).
+            tombstones = generation.guard_keys(id, child["user_id"])
+            await write_guards(runtime.db, tombstones, location=child["location"], session=session)
+            if await is_tombstoned(
+                runtime.db, tombstones, session=session, location=child["location"]
+            ):
                 raise not_found()  # deleted meanwhile: nothing may come back
             was_completed = existing is not None and existing["status"] == "completed"
-            if was_completed and fields["status"] == "in_progress":
-                raise error(422, "area_completed", "A completed area can't go back in progress.")
             questions = ((existing or {}).get("parent_questions") or {}).get("questions") or []
             unknown = set(fields["answers"]) - {q["id"] for q in questions}
             if unknown:
                 raise error(422, "unknown_question", "Answers must use the area's question ids.")
             completing = fields["status"] == "completed" and not was_completed
             now = _now()
-            changes = {**fields, "step": None} if fields["status"] == "completed" else dict(fields)
+            changes = dict(fields)
+            if was_completed:
+                # A completed area stays completed: a save from a copy that hasn't seen the
+                # recommendations job complete it (another device, the sheet while the job
+                # ran) sends `in_progress`, and is an edit of the completed area (review).
+                changes["status"] = "completed"
+            if changes["status"] == "completed":
+                changes["step"] = None
             if completing:
-                changes["completed_at"] = now
+                changes.update(generation.completion_fields(now))
             if existing is not None and all(
                 existing.get(name) == changes[name] for name in SAVED_FIELDS
             ):
@@ -511,22 +551,7 @@ async def save_area(
                 if doc is None:
                     raise _Stale()
             if completing:
-                await add_to_outbox(
-                    runtime.db, generation.area_event(runtime, "grow.area_completed", doc), session
-                )
-                others = await areas.count_documents(
-                    {
-                        "location": child["location"],
-                        "child_id": id,
-                        "status": "completed",
-                        "_id": {"$ne": doc["_id"]},
-                    },
-                    session=session,
-                )
-                if others == 0:
-                    await add_to_outbox(
-                        runtime.db, generation.area_event(runtime, "grow.completed", doc), session
-                    )
+                await generation.publish_completion(runtime, doc, session)
             elif was_completed:
                 await add_to_outbox(
                     runtime.db, generation.area_event(runtime, "grow.area_updated", doc), session
@@ -543,6 +568,16 @@ async def save_area(
     return _view(result["doc"])
 
 
+async def _started_anyway(runtime: Runtime, selector: Mapping[str, Any], kind: Kind) -> bool:
+    """Whether the area has a job of this kind running after a start that failed with a
+    database error (its commit may have gone through). Unknown counts as not started."""
+    try:
+        area = await runtime.db[GROWTH_AREAS].find_one(selector)
+        return await generation.running_job(runtime, area, kind) is not None
+    except PyMongoError:
+        return False
+
+
 @router.post(
     "/{area_id}/generation",
     status_code=202,
@@ -550,9 +585,13 @@ async def save_area(
     responses={200: {"model": Started, "description": "The job already running"}},
     description="Generate one of the area's AI parts (`kind`). `parent_questions` on a new "
     "area creates it (with `area_name`). The question sets are generated once "
-    "(`409 already_generated`); recommendations need the answers saved (`409 needs_answers`) "
-    "and replace the last ones. The running job is returned with `200`. Counts against the "
-    "hourly LLM limit (`429 llm_limit`).",
+    "(`409 already_generated`). Recommendations need the parent's answers saved or a run of "
+    "the area's world (`409 needs_input`), are written from both, and replace the last ones; "
+    "the area's `recommendations_run_at` is the run they used, and its "
+    "`recommendations_current` says whether they're from its present answers and feedback. "
+    "An answered area is completed by its recommendations' job (`grow.area_completed`, and "
+    "`grow.completed` for the child's first). The running job is returned with `200`. "
+    "Counts against the hourly LLM limit (`429 llm_limit`).",
 )
 async def start_generation(
     id: ChildId,
@@ -574,7 +613,11 @@ async def start_generation(
     if kind in generation.GENERATED_ONCE and area and area.get(kind):
         raise error(409, "already_generated", f"The area's {kind} are already generated.")
     if kind == "recommendations" and not (area or {}).get("answers"):
-        raise error(409, "needs_answers", "Save the parent's answers first.")
+        played = await runtime.db[worlds.WORLD_RUNS].find_one(_runs_selector(child))
+        if not worlds.runs_for(played, area_id):
+            raise error(
+                409, "needs_input", "Save the parent's answers or play the area's games first."
+            )
     running = await generation.running_job(runtime, area, kind)
     if running is None:
         answers = await answers_for(runtime, child)
@@ -601,16 +644,25 @@ async def start_generation(
                 area_name=name,
                 input_version=int(answers["version"]),
             )
-        except JobRefused:
-            raise not_found() from None
-        except TargetRefused:
-            await runtime.llm_limit.give_back(caller.user_id)
-            raise error(
-                409, "already_generated", f"The area's {kind} are already generated."
-            ) from None
-        except PyMongoError as exc:
-            _logger.exception("grow: the job couldn't be stored")
-            raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+        except Exception as exc:
+            # No job was started: no LLM call to count (review). Every failed start, the
+            # refusals below and anything unexpected alike. A database error can follow a
+            # start that did commit (an unknown commit result): its job runs, so it keeps
+            # the slot (review).
+            if not (
+                isinstance(exc, PyMongoError) and await _started_anyway(runtime, selector, kind)
+            ):
+                await runtime.llm_limit.give_back(caller.user_id)
+            if isinstance(exc, JobRefused):
+                raise not_found() from None
+            if isinstance(exc, TargetRefused):
+                raise error(
+                    409, "already_generated", f"The area's {kind} are already generated."
+                ) from None
+            if isinstance(exc, PyMongoError):
+                _logger.exception("grow: the job couldn't be stored")
+                raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+            raise
         if created:
             return Started(job_id=running, status="pending")
         await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call
@@ -650,6 +702,148 @@ async def get_job(
         created_at=job["created_at"],
         completed_at=job.get("completed_at"),
     )
+
+
+# ── the child's worlds (child view) ────────────────────────────────────────────
+
+
+class WorldGame(BaseModel):
+    type: Literal["dash", "sort", "timing", "catch", "memory", "spark", "react"]
+    title: str
+    skill: str
+    how: str
+    tip: str
+    # The game's settings (its words, counts and timings), shaped by `type`.
+    cfg: dict[str, Any]
+
+
+class World(BaseModel):
+    name: str
+    icon: str
+    mission: str
+    hint: str
+    games: list[WorldGame]
+
+
+class Band(BaseModel):
+    min: int
+    label: str
+    color: Literal["gold", "cyan", "violet"]
+
+
+class WorldRun(BaseModel):
+    total: int
+    scores: list[int]
+    at: datetime
+
+
+class Worlds(BaseModel):
+    """The six worlds and their games, the score bands, and the child's runs per world
+    (`"0"`…`"5"`, oldest first, the last 10)."""
+
+    worlds: list[World]
+    bands: list[Band]
+    runs: dict[str, list[WorldRun]]
+
+
+Score = Annotated[int, Field(ge=0, le=100)]
+
+
+class RunIn(BaseModel):
+    model_config = _Strict
+    scores: Annotated[
+        list[Score],
+        Field(min_length=worlds.GAMES_PER_WORLD, max_length=worlds.GAMES_PER_WORLD),
+    ]
+
+
+WorldIndex = Annotated[int, Path(ge=0, le=worlds.WORLD_COUNT - 1, description="The world, 0 to 5")]
+
+
+def _runs_selector(child: Mapping[str, Any]) -> dict[str, Any]:
+    return {"_id": child["_id"], "location": child["location"], "user_id": child["user_id"]}
+
+
+async def _worlds_view(runtime: Runtime, child: Mapping[str, Any]) -> Worlds:
+    doc = await runtime.db[worlds.WORLD_RUNS].find_one(_runs_selector(child)) or {}
+    return Worlds(
+        worlds=[World(**w) for w in worlds.WORLDS],
+        bands=[Band(**b) for b in worlds.BANDS],
+        runs={k: [WorldRun(**r) for r in v] for k, v in doc.get("runs", {}).items()},
+    )
+
+
+@router.get(
+    "/worlds",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="Child view's six worlds with their games, the score bands, and the child's "
+    "last runs per world. Parents only (the parent's Growth page reads it too).",
+)
+async def get_worlds(id: ChildId, runtime: Ready, caller: SignedIn) -> Worlds:
+    child = await _child_view_child(runtime, caller, id)
+    return await _worlds_view(runtime, child)
+
+
+@router.post(
+    "/worlds/{world}/runs",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="A finished world: its three games' scores (0 to 100). The world keeps its "
+    "last 10 runs, and publishes `grow.world_played` in the same transaction (children marks "
+    "Grow done in child view from it). Parents only.",
+)
+async def add_world_run(
+    id: ChildId, world: WorldIndex, body: RunIn, runtime: Ready, caller: SignedIn
+) -> Worlds:
+    child = await _child_view_child(runtime, caller, id)
+    db = runtime.db
+    selector = _runs_selector(child)
+    now = _now()
+    run = {"total": worlds.total(body.scores), "scores": body.scores, "at": now}
+
+    async def write(session: AsyncClientSession) -> None:
+        # Not for a child or account being deleted: their tombstones, behind their guards,
+        # so a deletion in flight and this write conflict and one runs again.
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", id)]
+        await write_guards(db, stones, location=child["location"], session=session)
+        if await is_tombstoned(db, stones, session, location=child["location"]):
+            raise not_found()
+        await db[worlds.WORLD_RUNS].update_one(
+            selector,
+            {"$setOnInsert": worlds.empty(id, child["user_id"], child["location"], now)},
+            upsert=True,
+            session=session,
+        )
+        played = await db[worlds.WORLD_RUNS].find_one_and_update(
+            selector,
+            {
+                "$push": {f"runs.{world}": {"$each": [run], "$slice": -worlds.RUNS_KEPT}},
+                "$set": {"updated_at": now},
+                "$inc": {"version": 1},
+            },
+            return_document=ReturnDocument.AFTER,
+            session=session,
+        )
+        if played is None:  # made just above, in this transaction
+            raise RuntimeError("the world runs document is missing")
+        # In the same transaction: children marks Grow done in child view from it, so the
+        # run and the child's progress can't disagree (the app sends nothing else).
+        await add_to_outbox(
+            db,
+            Event.new(
+                "grow.world_played",
+                producer=SERVICE,
+                aggregate_id=id,
+                location=child["location"],
+                version=played["version"],
+                region=runtime.settings.aws_region,
+                payload={"world": world},
+                traceparent=current_traceparent(),
+            ),
+            session,
+        )
+
+    await _transaction(runtime, write)
+    return await _worlds_view(runtime, child)
 
 
 app.include_router(health_router)

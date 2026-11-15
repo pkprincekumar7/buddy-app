@@ -1,7 +1,7 @@
 [
   {
     "allowed": [
-      "Chose “Build a robot” over “Tell a story”"
+      "Played Healthy Catch (Healthy habits): 80 of 100, Super strong"
     ],
     "sources": [
       "onboarding",
@@ -35,11 +35,11 @@
           ]
         },
         {
-          "title": "Picks making over telling",
+          "title": "Plays healthy-habit games strongly",
           "summary": "She settles outdoors.",
           "notes": [
-            "Chose “Build a robot” over “Tell a story”",
-            "Chose “Fly” over “Swim”",
+            "Played Healthy Catch (Healthy habits): 80 of 100, Super strong",
+            "Played Healthy Catch (Healthy habits): 100 of 100, Super strong",
             "“Prefers hands-on work”"
           ],
           "icon": "social",
@@ -223,7 +223,7 @@
         "title": "Child one",
         "summary": "She settles outdoors.",
         "notes": [
-          "Chose “A” over “B”"
+          "Played Kind Reply (Kindness): 60 of 100, Growing well"
         ],
         "icon": "social",
         "sources": [
@@ -255,7 +255,7 @@
           "title": "Only child lines",
           "summary": "She settles outdoors.",
           "notes": [
-            "Chose “A” over “B”"
+            "Played Kind Reply (Kindness): 60 of 100, Growing well"
           ],
           "icon": "social",
           "sources": [

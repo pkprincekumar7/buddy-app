@@ -32,13 +32,13 @@ variable "queue_visibility_timeout_seconds" {
 }
 
 variable "queue_retention_seconds" {
-  description = "How long an unconsumed message is kept in a service's queue (AWS default 4 days)."
+  description = "How long an unconsumed message is kept in a service's queue. Default 7 days (AWS's own default is 4): a consumer down over a long weekend must not lose events. At most 7: SQS keeps a message's original enqueue time when it moves to the DLQ, so the DLQ's 14 days count from the first delivery, and this leaves a message that failed late at least 7 days there to investigate and redrive. The inbox's 15-day TTL outlasts both."
   type        = number
-  default     = 345600
+  default     = 604800
 
   validation {
-    condition     = var.queue_retention_seconds >= 60 && var.queue_retention_seconds <= 1209600
-    error_message = "queue_retention_seconds must be 60-1209600 (14 days)."
+    condition     = var.queue_retention_seconds >= 60 && var.queue_retention_seconds <= 604800
+    error_message = "queue_retention_seconds must be 60-604800 (7 days), half the DLQ's 14 days."
   }
 }
 

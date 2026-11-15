@@ -18,13 +18,17 @@ A job writes only to its own service's documents. Its target is the circle's doc
   completed and failed jobs alike (the TTL deletes them 7 days later).
 - A deleted child or user (a tombstone) cancels: a running job's result is dropped, and
   `cancel_jobs` ends every open job for them.
+- `supersede_jobs`: the inputs a running job was built from changed (the circle cleared or
+  replaced what it generates from), so its result must never be stored. In the caller's
+  transaction with that change, it releases the target's lock and ends the job: a worker
+  still running it then finds the lock gone and drops the result (complete_job).
 """
 
 from __future__ import annotations
 
 import random
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -44,6 +48,7 @@ STALE_CLAIM_AFTER = timedelta(minutes=10)
 BACKOFF_BASE_SECONDS = 30
 BACKOFF_MAX_SECONDS = 900
 CANCELLED = "cancelled"
+SUPERSEDED = "superseded: its inputs changed"
 EXHAUSTED = "gave up: the job stalled or crashed on every attempt"
 
 Doc = dict[str, Any]
@@ -340,6 +345,8 @@ async def complete_job(
 
     async def run(session: AsyncClientSession) -> None:
         stones = _tombstones(job["user_id"], job["child_id"])
+        # Conflicts with a deletion in flight, so `in_transaction`'s writes can't outlive it.
+        await write_guards(db, stones, location=job["location"], session=session)
         if await is_tombstoned(db, stones, location=job["location"], session=session):
             await _end(db, session, job, "failed", CANCELLED)
             applied["ok"] = False
@@ -442,6 +449,43 @@ async def cancel_jobs(
         session=session,
     )
     return result.modified_count
+
+
+async def supersede_jobs(
+    db: Db, targets: Iterable[Target], *, location: str, session: AsyncClientSession
+) -> int:
+    """In the transaction that changes the targets' inputs: release each target's lock and
+    end the open job holding it (`failed`, SUPERSEDED). The job's result is then dropped
+    whenever it finishes (complete_job matches the lock), and a new start runs a new job
+    from the changed inputs. Returns how many jobs it ended."""
+    ended = 0
+    for target in targets:
+        current = await db[target.collection].find_one(
+            {"_id": target.doc_id, "location": location}, {target.lock: 1}, session=session
+        )
+        held = _get_path(current, target.lock)
+        if not held:
+            continue
+        now = _now()
+        await db[target.collection].update_one(
+            {"_id": target.doc_id, "location": location, target.lock: held},
+            {"$unset": {target.lock: ""}},
+            session=session,
+        )
+        result = await db[JOBS].update_one(
+            {"_id": held, "location": location, "status": {"$in": list(OPEN_STATUSES)}},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": SUPERSEDED,
+                    "completed_at": now,
+                    "updated_at": now,
+                }
+            },
+            session=session,
+        )
+        ended += result.modified_count
+    return ended
 
 
 # ── the metrics' inputs (15.5) ─────────────────────────────────────────────────

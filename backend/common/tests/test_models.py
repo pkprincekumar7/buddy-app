@@ -286,8 +286,9 @@ def test_stage_done_takes_progress_or_a_confirmed_unlock():
 def test_job_types_belong_to_the_generating_services():
     assert set(models.JOB_TYPES) == {"discover", "grow", "transform", "release"}
     every = [t for types in models.JOB_TYPES.values() for t in types]
-    assert len(every) == len(set(every)) == 8
+    assert len(every) == len(set(every)) == 7
     assert "generate_activity" not in every  # dropped (section 8)
+    assert "generate_growth_child_rounds" not in every  # the rounds are gone (child view 3.6)
 
 
 # ── deletion participants (10.3) ───────────────────────────────────────────────

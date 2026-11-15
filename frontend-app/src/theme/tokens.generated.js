@@ -275,9 +275,9 @@ module.exports = {
       32
     ],
     "constellation-slate-pale": [
-      168,
-      193,
-      209
+      157,
+      178,
+      192
     ],
     "constellation-card": [
       9,
@@ -292,6 +292,26 @@ module.exports = {
     "constellation-slate-soft": [
       157,
       180,
+      196
+    ],
+    "constellation-lavender": [
+      179,
+      170,
+      255
+    ],
+    "constellation-sky": [
+      143,
+      216,
+      255
+    ],
+    "constellation-lilac": [
+      195,
+      166,
+      255
+    ],
+    "constellation-mint": [
+      95,
+      232,
       196
     ],
     "constellation-cyan-frost": [
@@ -340,9 +360,9 @@ module.exports = {
       249
     ],
     "constellation-slate-dim": [
-      92,
+      95,
       118,
-      136
+      134
     ],
     "constellation-ink": [
       8,
@@ -413,6 +433,26 @@ module.exports = {
       111,
       134,
       151
+    ],
+    "constellation-panel": [
+      7,
+      13,
+      25
+    ],
+    "constellation-ring-core": [
+      8,
+      16,
+      30
+    ],
+    "constellation-teal": [
+      60,
+      225,
+      190
+    ],
+    "constellation-teal-pale": [
+      143,
+      232,
+      212
     ],
     "constellation-gold-cream2": [
       255,
@@ -843,6 +883,251 @@ module.exports = {
       179,
       170,
       255
+    ],
+    "profile-pill": [
+      11,
+      18,
+      32
+    ],
+    "profile-pill-border": [
+      24,
+      34,
+      52
+    ],
+    "profile-parent-deep": [
+      138,
+      106,
+      58
+    ],
+    "kids-discover": [
+      75,
+      233,
+      255
+    ],
+    "kids-discover-shade": [
+      27,
+      138,
+      163
+    ],
+    "kids-grow": [
+      75,
+      233,
+      255
+    ],
+    "kids-grow-shade": [
+      27,
+      138,
+      163
+    ],
+    "kids-transform": [
+      255,
+      201,
+      75
+    ],
+    "kids-transform-shade": [
+      179,
+      134,
+      28
+    ],
+    "kids-connect": [
+      255,
+      143,
+      177
+    ],
+    "kids-connect-shade": [
+      179,
+      82,
+      111
+    ],
+    "kids-release": [
+      157,
+      140,
+      255
+    ],
+    "kids-release-shade": [
+      90,
+      74,
+      168
+    ],
+    "kids-teal": [
+      60,
+      225,
+      190
+    ],
+    "kids-teal-shade": [
+      29,
+      143,
+      119
+    ],
+    "kids-orange": [
+      255,
+      159,
+      90
+    ],
+    "kids-orange-shade": [
+      179,
+      100,
+      42
+    ],
+    "kids-area": [
+      75,
+      233,
+      255
+    ],
+    "kids-area-shade": [
+      27,
+      138,
+      163
+    ],
+    "kids-bg": [
+      6,
+      10,
+      24
+    ],
+    "kids-text": [
+      242,
+      251,
+      255
+    ],
+    "kids-body": [
+      198,
+      219,
+      230
+    ],
+    "kids-muted": [
+      169,
+      198,
+      212
+    ],
+    "kids-subtle": [
+      132,
+      160,
+      178
+    ],
+    "kids-ink": [
+      8,
+      16,
+      31
+    ],
+    "kids-off": [
+      26,
+      36,
+      66
+    ],
+    "kids-off-shade": [
+      12,
+      19,
+      40
+    ],
+    "kids-streak": [
+      255,
+      224,
+      138
+    ],
+    "kids-heading": [
+      231,
+      245,
+      249
+    ],
+    "kids-world-name": [
+      234,
+      253,
+      255
+    ],
+    "kids-world-card": [
+      14,
+      58,
+      74
+    ],
+    "kids-world-deep": [
+      5,
+      19,
+      26
+    ],
+    "kids-world-shadow": [
+      2,
+      6,
+      15
+    ],
+    "kids-gold": [
+      255,
+      217,
+      138
+    ],
+    "kids-gold-shade": [
+      138,
+      100,
+      32
+    ],
+    "kids-wrong": [
+      255,
+      122,
+      122
+    ],
+    "kids-white": [
+      255,
+      255,
+      255
+    ],
+    "kids-empty": [
+      60,
+      85,
+      104
+    ],
+    "kids-how": [
+      212,
+      230,
+      238
+    ],
+    "kids-card-name": [
+      29,
+      22,
+      64
+    ],
+    "kids-orb-cyan-hi": [
+      234,
+      253,
+      255
+    ],
+    "kids-orb-cyan": [
+      75,
+      233,
+      255
+    ],
+    "kids-orb-cyan-lo": [
+      10,
+      91,
+      116
+    ],
+    "kids-orb-gold-hi": [
+      255,
+      246,
+      220
+    ],
+    "kids-orb-gold": [
+      255,
+      217,
+      138
+    ],
+    "kids-orb-gold-lo": [
+      138,
+      100,
+      32
+    ],
+    "kids-orb-sky-hi": [
+      212,
+      246,
+      255
+    ],
+    "kids-orb-sky": [
+      30,
+      196,
+      232
+    ],
+    "kids-orb-sky-lo": [
+      14,
+      58,
+      74
     ]
   },
   "raw": {

@@ -263,6 +263,10 @@ run "prod_stack_wiring" {
     condition     = aws_cloudwatch_log_metric_filter.deletion_stuck[0].log_group_name == aws_cloudwatch_log_group.service["auth-worker"].name && aws_cloudwatch_metric_alarm.deletion_stuck[0].namespace == "Superpower/auth"
     error_message = "A deletion stuck over 24 h alarms, from the auth-worker's log line."
   }
+  assert {
+    condition     = aws_cloudwatch_log_metric_filter.authz_change_skipped[0].log_group_name == aws_cloudwatch_log_group.service["auth-worker"].name && aws_cloudwatch_metric_alarm.authz_change_skipped[0].namespace == "Superpower/auth"
+    error_message = "A change the authz stream skipped alarms, from the auth-worker's log line."
+  }
 
   # -- the generating circles -------------------------------------------------------
   assert {
@@ -672,7 +676,7 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     error_message = "Dev: no sustained alarms."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.outbox_stale) == 0 && length(aws_cloudwatch_metric_alarm.pending_jobs_high) == 0 && length(aws_cloudwatch_metric_alarm.deletion_stuck) == 0
+    condition     = length(aws_cloudwatch_metric_alarm.outbox_stale) == 0 && length(aws_cloudwatch_metric_alarm.pending_jobs_high) == 0 && length(aws_cloudwatch_metric_alarm.deletion_stuck) == 0 && length(aws_cloudwatch_metric_alarm.authz_change_skipped) == 0
     error_message = "Dev: no job or outbox alarms (enable_all_alarms)."
   }
   assert {

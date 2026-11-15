@@ -12,13 +12,15 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import boto3
 from pydantic import Field
 from pymongo import AsyncMongoClient
 
+from children.app.kids import ensure_kid_activity
 from children.app.store import ensure_children
 from common import upload_tracking
 from common.authz import Authorizer, AuthzConfig
@@ -60,6 +62,8 @@ class Runtime:
     cloudwatch: Any = None
     cache: Any = None
     uploads: Uploads | None = None
+    # Children whose purge just failed, and when to try again (lifecycle.purge).
+    purge_retry_at: dict[str, datetime] = field(default_factory=dict)
 
     # The background index build this task started, if any (prepare).
     index_build: asyncio.Task[Outcome] | None = None
@@ -112,6 +116,7 @@ class Runtime:
 
         async def ensure(db: Db) -> None:
             await ensure_children(db)
+            await ensure_kid_activity(db)
             await upload_tracking.ensure_pending_uploads(db)
             await ensure_outbox(db)
             await ensure_tombstones(db)

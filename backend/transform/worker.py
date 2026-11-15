@@ -2,7 +2,8 @@
 
     python -m transform.worker
 
-The relay publishes `transform.completed`; the consumer keeps the copies, clears Life Pathway
+The relay publishes `transform.completed` and `transform.quest_logged`; the consumer keeps
+the copies, clears Life Pathway
 milestones whose inputs changed, and deletes on `child.deleted` and `user.deletion_requested`
 (transform.app.lifecycle); the job loop claims this region's transform jobs and calls the
 LLM (transform.app.generation). Only this runtime has LLM keys. Needs the service's configuration plus EVENTS_TOPIC_ARN and

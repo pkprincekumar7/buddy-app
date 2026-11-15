@@ -10,7 +10,7 @@ import { isAbort } from '@/api/polling';
 import { release, RELEASE_ERRORS, runObservationsGeneration } from '@/api/release';
 import { jobProgressMessage } from '@/lib/jobProgress';
 import { httpErrorMessage } from '@/lib/apiError';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import {
   OBSERVATION_ICONS,
   formatObservationSources,
@@ -19,6 +19,7 @@ import {
 } from '@/lib/observationsData';
 import { fillTemplate } from '@/lib/growthAreaData';
 import { useUnmountSignal } from '@/hooks/useUnmountSignal';
+import RecentMoods from '@/components/observations/RecentMoods';
 
 /**
  * Multiplies a design-time pixel value by `--obs-type-scale` — 1 on phones, 1.2
@@ -527,17 +528,13 @@ export default function Observations() {
 
   if (isLoading) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center"
+      <PageLoader
         style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
-      >
-        <Spinner
-          style={{
-            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
-            borderTopColor: 'transparent',
-          }}
-        />
-      </div>
+        spinnerStyle={{
+          borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+          borderTopColor: 'transparent',
+        }}
+      />
     );
   }
 
@@ -1205,6 +1202,8 @@ export default function Observations() {
             </div>
           </section>
         )}
+
+        <RecentMoods childId={childId} childName={childName} />
 
         {/* What you can do with this */}
         <section style={{ marginTop: 44, animation: 'obsFadeUp .7s ease .32s both' }}>

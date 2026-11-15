@@ -133,9 +133,10 @@ run "topics_queues_and_subscriptions_from_the_catalogue" {
       && aws_sqs_queue.dlq["grow"].name == "superpower-prod-grow-events-dlq"
       && aws_sqs_queue.consumer["grow"].sqs_managed_sse_enabled
       && aws_sqs_queue.dlq["grow"].message_retention_seconds == 1209600
+      && aws_sqs_queue.consumer["grow"].message_retention_seconds == 604800
       && aws_sqs_queue.consumer["grow"].receive_wait_time_seconds == 20
     )
-    error_message = "Queue and DLQ names, SSE-SQS, 14-day DLQ retention, long polling."
+    error_message = "Queue and DLQ names, SSE-SQS, 7-day queue and 14-day DLQ retention, long polling."
   }
   assert {
     condition     = jsondecode(aws_sqs_queue.consumer["grow"].redrive_policy).maxReceiveCount == 5 && jsondecode(aws_sqs_queue.consumer["grow"].redrive_policy).deadLetterTargetArn == aws_sqs_queue.dlq["grow"].arn
@@ -304,11 +305,12 @@ run "visibility_timeout_is_at_most_12_hours" {
   expect_failures = [var.queue_visibility_timeout_seconds]
 }
 
-run "retention_is_at_most_14_days" {
+# At most half the DLQ's 14 days, so a message that failed late still has a week there.
+run "retention_is_at_most_7_days" {
   command = plan
 
   variables {
-    queue_retention_seconds = 1209601
+    queue_retention_seconds = 604801
   }
 
   expect_failures = [var.queue_retention_seconds]

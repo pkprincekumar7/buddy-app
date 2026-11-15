@@ -21,8 +21,14 @@ so one service can't confirm for another. When every expected service has confir
 credentials go **last**: `email_index`, then `auth.auth`, then `authz:{id}`, then the
 `deletions` row. So a stuck deletion can't be signed into, and can still be resumed.
 
+The steps can't share a transaction (`email_index` and `deletions` are unsharded, 14), so
+each is safe to run again, and a `deletions` row whose account is already gone means
+`finish` stopped part-way: a late confirmation or the stuck check runs it again instead of
+ignoring the row (which would alarm forever).
+
 **Stuck:** a deletion older than 24 hours is logged as `auth.deletion.stuck` (a CloudWatch
-log metric filter alarms on it); a service hasn't confirmed.
+log metric filter alarms on it); a service hasn't confirmed. One that every service has
+confirmed, or whose account is gone, is finished instead.
 """
 
 from __future__ import annotations
@@ -152,7 +158,14 @@ async def confirm(runtime: Runtime, received: ReceivedEvent) -> bool:
     account = await runtime.db[AUTH].find_one(
         {"_id": user_id, "location": location}, {"is_being_deleted": 1}
     )
-    if account is None or not account.get("is_being_deleted"):
+    if account is None:
+        leftover = await runtime.db[DELETIONS].find_one({"_id": user_id}, {"location": 1})
+        if leftover is not None:
+            # finish() stopped after the credentials went: complete it (module docstring).
+            await finish(runtime, user_id, leftover["location"])
+        _logger.info("user.data_deleted.late id=%s from=%s", user_id, received.source_service)
+        return False
+    if not account.get("is_being_deleted"):
         _logger.info("user.data_deleted.late id=%s from=%s", user_id, received.source_service)
         return False
     deletions = runtime.db[DELETIONS]
@@ -182,7 +195,8 @@ async def confirm(runtime: Runtime, received: ReceivedEvent) -> bool:
 
 
 async def finish(runtime: Runtime, user_id: str, location: str) -> None:
-    """Every service has confirmed: the credentials go last, in this order (10.3)."""
+    """Every service has confirmed: the credentials go last, in this order (10.3). Each step
+    is safe to repeat, so a run that stopped part-way is completed by running it again."""
     await runtime.db[EMAIL_INDEX].delete_many({"user_id": user_id})
     await runtime.db[AUTH].delete_one({"_id": user_id, "location": location})
     await delete_entry(runtime.cache, user_id)
@@ -191,13 +205,22 @@ async def finish(runtime: Runtime, user_id: str, location: str) -> None:
 
 
 async def report_stuck(runtime: Runtime, locations: list[str] | None) -> int:
-    """Log each of this region's deletions older than 24 h; returns how many."""
+    """Log each of this region's deletions older than 24 h; returns how many. One that
+    only `finish` left unfinished (every service confirmed, or the account already gone) is
+    finished instead, not reported."""
     selector: dict[str, Any] = {"requested_at": {"$lt": datetime.now(UTC) - STUCK_AFTER}}
     if locations is not None:
         selector["location"] = {"$in": locations}
-    stuck = await runtime.db[DELETIONS].find(selector).to_list(None)
-    for doc in stuck:
+    stuck = []
+    for doc in await runtime.db[DELETIONS].find(selector).to_list(None):
         missing = sorted(set(doc["expected"]) - set(doc["confirmed"]))
+        account = await runtime.db[AUTH].find_one(
+            {"_id": doc["_id"], "location": doc["location"]}, {"_id": 1}
+        )
+        if account is None or not missing:
+            await finish(runtime, doc["_id"], doc["location"])
+            continue
+        stuck.append(doc)
         _logger.error(
             "auth.deletion.stuck id=%s since=%s waiting_for=%s",
             doc["_id"],

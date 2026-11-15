@@ -314,20 +314,63 @@ def test_a_late_confirmation_after_the_deletion_finished_is_ignored(mongo_uri):
 @pytest.mark.live_service
 def test_a_deletion_older_than_24_hours_is_reported(mongo_uri, caplog):
     async def test(r: Running) -> None:
+        jane = await _signed_up(r)
+        await r.allow("sam@example.com")
+        sam = await r.register(email="sam@example.com", country_code="US")
+        sam_id = claims(sam.json()["access_token"])["sub"]
         old = datetime.now(UTC) - timedelta(hours=25)
         await r.db[DELETIONS].insert_many(
             [
-                {"_id": "u-in", "location": "in", "requested_at": old, "expected": ["users", "grow"], "confirmed": ["users"]},
-                {"_id": "u-us", "location": "us", "requested_at": old, "expected": ["users"], "confirmed": []},
+                {"_id": jane["id"], "location": "in", "requested_at": old, "expected": ["users", "grow"], "confirmed": ["users"]},
+                {"_id": sam_id, "location": "us", "requested_at": old, "expected": ["users"], "confirmed": []},
                 {"_id": "u-new", "location": "in", "requested_at": datetime.now(UTC), "expected": ["users"], "confirmed": []},
             ]
         )  # fmt: skip
         with caplog.at_level("ERROR"):
             assert await deletion.report_stuck(r.runtime, ["in"]) == 1
             assert await deletion.report_stuck(r.runtime, None) == 2
-        assert "auth.deletion.stuck id=u-in" in caplog.text and "waiting_for=grow" in caplog.text
+        assert f"auth.deletion.stuck id={jane['id']}" in caplog.text
+        assert "waiting_for=grow" in caplog.text
 
     live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_finish_that_stopped_part_way_is_completed_not_reported(mongo_uri, caplog):
+    # finish() can't be one transaction (email_index and deletions are unsharded, 14): a
+    # crash after the account went left a row that a late confirmation ignored and the stuck
+    # check reported for ever (review).
+    async def test(r: Running) -> None:
+        jane = await _signed_up(r)
+        assert (await _delete(r, jane)).status_code == 202
+        # The crash: the account deleted, the email row and the tracking row left.
+        await r.db[AUTH].delete_one({"_id": jane["id"]})
+        received = worker.build_consumer(r.runtime).check(
+            sns_envelope(_confirmation(jane["id"], "users"), r.layout["topics"]["users"])
+        )
+        # The redelivered confirmation completes it.
+        assert await deletion.confirm(r.runtime, received) is False
+        assert await r.db[DELETIONS].find_one({"_id": jane["id"]}) is None
+        assert await r.db[EMAIL_INDEX].count_documents({"user_id": jane["id"]}) == 0
+
+        # Without one, the stuck check does: a row whose account is gone, and one every
+        # service confirmed whose credentials are still there, are finished, not reported.
+        sam = await _signed_up(r, "sam@example.com")
+        old = datetime.now(UTC) - timedelta(hours=25)
+        await r.db[DELETIONS].insert_many(
+            [
+                {"_id": "gone", "location": "in", "requested_at": old, "expected": ["users"], "confirmed": []},
+                {"_id": sam["id"], "location": "in", "requested_at": old, "expected": ["users"], "confirmed": ["users"]},
+            ]
+        )  # fmt: skip
+        with caplog.at_level("ERROR"):
+            assert await deletion.report_stuck(r.runtime, None) == 0
+        assert "auth.deletion.stuck" not in caplog.text
+        assert await r.db[DELETIONS].count_documents({}) == 0
+        assert await r.db[AUTH].find_one({"_id": sam["id"]}) is None
+        assert await r.db[EMAIL_INDEX].count_documents({"user_id": sam["id"]}) == 0
+
+    live(mongo_uri, test, aws=True)
 
 
 # ── the worker ─────────────────────────────────────────────────────────────────

@@ -288,6 +288,28 @@ def test_the_conversation_completing_starts_the_personality_once(mongo_uri):
 
 
 @pytest.mark.live_service
+def test_a_redelivery_after_the_generation_failed_starts_nothing(mongo_uri):
+    # Found by review: a failed personality was startable again, so a redelivered event
+    # started a second generation outside the hourly LLM limit.
+    async def test(r: Running) -> None:
+        child = r.owners.add_child()
+        consumer = worker.build_consumer(r.runtime)
+        body = _completed(r, child)
+        assert (await consumer.handle_body(body)).value == "handled"
+        await generation.fail_job(r.runtime, await claim(r.db), "the LLM call failed")
+        assert (await r.db[PERSONALITIES].find_one({"_id": child}))["status"] == "failed"
+        assert await lifecycle.conversation_completed(r.runtime, consumer.check(body)) is False
+        assert (await consumer.handle_body(body)).value == "handled"
+        assert await r.db[JOBS].count_documents({"child_id": child}) == 1
+        assert (await r.db[PERSONALITIES].find_one({"_id": child}))["status"] == "failed"
+        # A start in flight that finds the document there meanwhile is refused too.
+        with pytest.raises(jobs.TargetRefused):
+            await generation._start_job(r.runtime, child, PARENT, LOCATION, 1, first_only=True)
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
 def test_the_owner_comes_from_the_copy_or_the_message_is_retried(mongo_uri):
     async def test(r: Running) -> None:
         consumer = worker.build_consumer(r.runtime)

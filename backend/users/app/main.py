@@ -20,7 +20,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from fastapi.exception_handlers import http_exception_handler
@@ -28,12 +28,12 @@ from fastapi.responses import JSONResponse
 from limits import parse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo.asynchronous.client_session import AsyncClientSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from common.audit import AuditEvent, route_template, source_ip
 from common.authz import Access, Caller, current_caller, require, require_self_or
-from common.events import is_tombstoned, tombstone_key
+from common.events import is_tombstoned, tombstone_key, write_guards, write_tombstone
 from common.internal_client import allow_callers
 from common.logging import current_request_id
 from common.routers import PolicyRouter, public
@@ -485,7 +485,8 @@ def ping() -> dict[str, str]:
     "/users/{user_id}",
     tags=["internal"],
     description="Create or replace a profile: auth's registration saga (10.1). A retry with "
-    "the same body changes nothing; the location never changes.",
+    "the same body changes nothing; the location never changes. Refused (409 "
+    "`profile_deleted`) once the id was deleted, by account deletion or by `DELETE`.",
     responses={201: {"description": "Created"}, 200: {"description": "Already existed"}},
 )
 async def put_profile(
@@ -498,33 +499,51 @@ async def put_profile(
     user_id = _user_id(user_id)
     users = runtime.db[USERS]
     fields = body.fields()
-    existing = await users.find_one({"_id": user_id})
-    if existing is None:
-        # A deleted account's id never comes back (7.4).
-        if await is_tombstoned(runtime.db, [tombstone_key("user", user_id)]):
-            raise _error(409, "profile_deleted", "This account was deleted")
-        doc = new_profile(user_id, body.location, fields, datetime.now(UTC))
-        try:
-            await users.insert_one(doc)
-        except DuplicateKeyError:
-            # A concurrent retry inserted it first: answer as for an existing profile.
-            existing = await users.find_one({"_id": user_id})
-        else:
-            response.status_code = 201
-            return Profile(**profile_view(doc))
-        if existing is None:
-            # …and something deleted it again in between: the saga retries.
-            raise _error(409, "profile_conflict", "The profile changed concurrently; retry")
-    if existing["location"] != body.location:
+    stone = [tombstone_key("user", user_id)]
+    result: dict[str, Any] = {}
+    # Another location's profile or tombstone for this id, read before the transaction so
+    # the transaction stays on this location's shard (14). A plain read is enough: inside
+    # the transaction it was only a snapshot read too, which a concurrent write to another
+    # location never conflicted with. Auth sends one location per id for good (it's the
+    # account's), so these catch a caller's mistake, not a race; the race that matters (a
+    # PUT and the DELETE undoing it) is in this location, behind the guard below.
+    if await users.find_one({"_id": user_id, "location": {"$ne": body.location}}, {"_id": 1}):
         raise _error(409, "location_mismatch", "A profile's location never changes")
-    if any(existing.get(name) != value for name, value in fields.items()):
-        updated = await users.find_one_and_update(
-            {"_id": user_id, "location": body.location},
-            {"$set": {**fields, "updated_at": datetime.now(UTC)}, "$inc": {"version": 1}},
-            return_document=ReturnDocument.AFTER,
+    # A deleted account's id never comes back (7.4), whichever location it was in.
+    if await is_tombstoned(runtime.db, stone):
+        raise _error(409, "profile_deleted", "This account was deleted")
+
+    async def write(session: AsyncClientSession) -> None:
+        # Behind the user's guard, which DELETE writes with its tombstone: a PUT that auth
+        # gave up on and a DELETE undoing it conflict, and the one run again sees the
+        # other's write. So a profile can't be created after the undo answered (review).
+        await write_guards(runtime.db, stone, location=body.location, session=session)
+        if await is_tombstoned(runtime.db, stone, session, location=body.location):
+            raise _error(409, "profile_deleted", "This account was deleted")
+        existing = await users.find_one(
+            {"_id": user_id, "location": body.location}, session=session
         )
-        existing = updated if updated is not None else existing
-    return Profile(**profile_view(existing))
+        if existing is None:
+            doc = new_profile(user_id, body.location, fields, datetime.now(UTC))
+            await users.insert_one(doc, session=session)
+            result.update(doc=doc, created=True)
+            return
+        if any(existing.get(name) != value for name, value in fields.items()):
+            updated = await users.find_one_and_update(
+                {"_id": user_id, "location": body.location},
+                {"$set": {**fields, "updated_at": datetime.now(UTC)}, "$inc": {"version": 1}},
+                return_document=ReturnDocument.AFTER,
+                session=session,
+            )
+            existing = updated if updated is not None else existing
+        result.update(doc=existing, created=False)
+
+    # with_transaction runs it again after a conflict (a concurrent retry or the DELETE).
+    async with runtime.client.start_session() as session:
+        await session.with_transaction(write)
+    if result["created"]:
+        response.status_code = 201
+    return Profile(**profile_view(result["doc"]))
 
 
 @internal_router.delete(
@@ -532,7 +551,8 @@ async def put_profile(
     status_code=204,
     tags=["internal"],
     description="Delete a profile: auth undoing a failed registration, or its reaper (10.1). "
-    "Not account deletion, which is event-driven (10.3).",
+    "Writes the id's tombstone, so a `PUT` still in flight can't create it again; safe to "
+    "repeat. Not account deletion, which is event-driven (10.3).",
 )
 async def delete_profile(
     user_id: str,
@@ -540,7 +560,32 @@ async def delete_profile(
     _caller: Annotated[str, Depends(allow_callers("auth"))],
     location: Annotated[str, Query(pattern=LOCATION_PATTERN)],
 ) -> Response:
-    await runtime.db[USERS].delete_one({"_id": _user_id(user_id), "location": location})
+    user_id = _user_id(user_id)
+    stone = tombstone_key("user", user_id)
+
+    # The wrong location: this id lives in another, so nothing here to undo. Read before
+    # the transaction, which then stays on this location's shard (14); as in put_profile, a
+    # snapshot read inside it never conflicted with a write elsewhere either.
+    elsewhere = await runtime.db[USERS].find_one(
+        {"_id": user_id, "location": {"$ne": location}}, {"_id": 1}
+    )
+    if elsewhere is not None:
+        return Response(status_code=204)
+
+    async def write(session: AsyncClientSession) -> None:
+        deleted = await runtime.db[USERS].find_one_and_delete(
+            {"_id": user_id, "location": location}, {"version": 1}, session=session
+        )
+        # The user id is never used again (a new registration mints a new one), so a
+        # tombstone keeps a PUT that was still in flight from creating the profile after
+        # this answer (put_profile). It touches the guard the PUT writes too.
+        await write_tombstone(
+            runtime.db, stone, location=location,
+            version=deleted["version"] + 1 if deleted else 1, session=session,
+        )  # fmt: skip
+
+    async with runtime.client.start_session() as session:
+        await session.with_transaction(write)
     return Response(status_code=204)
 
 

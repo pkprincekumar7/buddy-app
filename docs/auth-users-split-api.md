@@ -1095,7 +1095,7 @@ Creates or replaces a profile. Called only by auth, in the registration saga (pr
 
 ### Processing
 
-An upsert on `{_id: user_id, location}`, setting `preferences` to the defaults on insert. A retry with the same body changes nothing, so the saga can retry safely. A different `location` for an existing profile is `409 location_mismatch`: location never changes.
+An upsert on `{_id: user_id, location}`, setting `preferences` to the defaults on insert. A retry with the same body changes nothing, so the saga can retry safely. A different `location` for an existing profile is `409 location_mismatch`: location never changes. An id with a `user:` tombstone (account deletion, or the `DELETE` below) is `409 profile_deleted`: the tombstone check and the insert run in one transaction behind the user's write guard, so a slow `PUT` auth has already given up on can't create the profile after auth's undo `DELETE` answered.
 
 ---
 
@@ -1111,7 +1111,7 @@ Deletes a profile. Called only by auth, to undo registration step 6 when a later
 | **Success** | `204 No Content`, also when there was no profile |
 | **Today** | None |
 
-Query `location` is required. **This isn't account deletion:** that's the event-driven saga, where users deletes the profile on `user.deletion_requested` and publishes `user.data_deleted` (proposal 10.3).
+Query `location` is required. In one transaction it deletes the profile and writes a `user:` tombstone (ids only, expiring with the others) and its write guard, so a `PUT` still in flight is refused afterwards (`409 profile_deleted`); the user id is never used again. A call with the wrong `location` for an existing profile changes nothing. **This isn't account deletion** (no event): that's the event-driven saga, where users deletes the profile on `user.deletion_requested` and publishes `user.data_deleted` (proposal 10.3).
 
 ---
 
@@ -1334,7 +1334,7 @@ The flow:
 2. **Save:** it then sends `PATCH /api/v1/children/{id}` with `{"avatar_key": …}`.
 3. **Preview:** `avatar_url` is a short-lived GET URL, so the photo can be shown at once.
 
-A photo refused at save (not an allowed image, or over 5 MB) is deleted at once. One presigned but never saved is deleted after a day: children records each presigned key in `pending_uploads`, the save removes it, and children's worker sweeps what's left. transform does the same for plan photos.
+A photo refused at save (not an allowed image, or over 5 MB) is deleted at once. One presigned but never saved is deleted after a day: children records each presigned key in `pending_uploads`, the save removes it, and children's worker sweeps what's left. A replaced or cleared photo is recorded as due at once in the save's transaction, then deleted; if that delete fails, the sweep does it. When the child (or the account) is deleted, its prefix is emptied and its rows are kept, due once the 5-minute forms can no longer be used (plus a margin), so the sweep also deletes a photo uploaded after the deletion. transform does the same for plan photos (`common.upload_tracking`).
 
 The key is created with `build_upload_key` under `uploads/{location}/{child_id}/avatar/`. Today avatars sit directly under the child's prefix, which also contains the plan photos; the `avatar/` sub-prefix keeps each service's objects, and its IAM access, apart.
 
@@ -1658,11 +1658,11 @@ Returns all of the child's growth areas, with their questions, answers and recom
       "status": "completed",
       "step": null,
       "parent_questions": { "...": "…" },
-      "child_rounds": { "...": "…" },
       "answers": { "q1": "Often", "q2": "Sometimes" },
-      "child_activity": { "selections": ["…"], "results": { "summary": "…", "strengths": [], "suggested_activities": [] } },
+      "child_activity": { "results": { "summary": "…", "strengths": [], "suggested_activities": [] } },
       "recommendations": ["…"],
-      "ai_three_month_recommendations": [{ "...": "…" }],
+      "ai_three_month_recommendations": [{ "title": "…", "detail": "…", "source": "both" }],
+      "recommendations_run_at": "2026-10-23T17:05:00Z",
       "feedback": null,
       "generating": [],
       "completed_at": "2026-10-24T10:20:00Z",
@@ -1674,7 +1674,8 @@ Returns all of the child's growth areas, with their questions, answers and recom
 
 - Areas come back in the order they were started.
 - `generating` lists the kinds with a job running for that area, so the page knows what to poll.
-- **The generated parts are stored normalised,** by today's normalisers run on the server: `parent_questions` is `{"questions": [{"id": "self_care_gq1", "question", "hint"}, …]}` (five), `child_rounds` is `{"rounds": [{"a": {"id": "self_care_gr1a", "text", "star", "tag", "icon"}, "b": {…}}, …]}` (six; `icon` is a key such as `rocket`, which the apps draw), and `ai_three_month_recommendations` is `[{"title", "detail"}]`. The apps' own normalisers give the same result again, so they keep working as they are.
+- **The generated parts are stored normalised,** by today's normalisers run on the server: `parent_questions` is `{"questions": [{"id": "self_care_gq1", "question", "hint"}, …]}` (five), and `ai_three_month_recommendations` is five `{"title", "detail", "source"}`, `source` being `both` (the parent's answers and the child's games), `kid` (the games), `you` (the answers) or `step` (the next step); an unknown `source` is left out.
+- `recommendations_run_at` is the `at` of the world run (`…/growth-areas/worlds`) the recommendations were written from, or null when the child hadn't played the area's world. The apps regenerate when the latest run's `at` differs. The apps' own normalisers give the same result again, so they keep working as they are.
 - **An admin** with `children:read:any` passes the owner's `?location=` (`422 location_required` without it); audited, no unlock check.
 - It's one query (proposal 12.2). There's no pagination: a child has a handful of areas, each at most 64 KB.
 
@@ -1700,14 +1701,14 @@ Saves one growth area: the parent's progress through its wizard, and its complet
 | Field | Type | Required | Rules |
 |---|---|---|---|
 | `area_name` | string | ✅ | 1–100 |
-| `status` | enum `in_progress` / `completed` | ✅ | `completed` can't go back to `in_progress` (`422 area_completed`) |
+| `status` | enum `in_progress` / `completed` | ✅ | A completed area stays completed: `in_progress` on one (a stale copy, or a save while its recommendations job completed it) saves the rest and keeps it completed |
 | `step` | string | — | ≤ 100; the wizard step, while `in_progress` |
 | `answers` | map of question id → string | ✅ | ≤ 100 keys; each value ≤ 1,000. Keys must be ids from the area's `parent_questions`. |
-| `child_activity` | object | — | `selections` ≤ 50 items; `results.summary` ≤ 2,000, `results.strengths` ≤ 20, `results.suggested_activities` ≤ 20 |
+| `child_activity` | object | — | `results.summary` ≤ 2,000, `results.strengths` ≤ 20, `results.suggested_activities` ≤ 20 |
 | `recommendations` | string[] | — | ≤ 50 |
 | `feedback` | string | — | ≤ 2,000 |
 
-- The generated fields are **not** accepted: `parent_questions`, `child_rounds` and `ai_three_month_recommendations` are written by grow's jobs only (`422`). So are today's dropped wizard fields (proposal 12.1).
+- The generated fields are **not** accepted: `parent_questions`, `ai_three_month_recommendations` and `recommendations_run_at` are written by grow's jobs only (`422`). So are today's dropped wizard fields (proposal 12.1).
 - The whole area must be ≤ 64 KB, as today.
 
 ### Processing
@@ -1724,7 +1725,7 @@ Saves one growth area: the parent's progress through its wizard, and its complet
 
 ### Errors
 
-Circle errors (`403 circle_locked` once discover confirms Discover isn't done; `503 …_unavailable` when an owner can't be asked); `409 area_changed`; `422` (validation, `unknown_question`, a generated field sent, `area_completed`, `area_too_large`, `invalid_area_id`).
+Circle errors (`403 circle_locked` once discover confirms Discover isn't done; `503 …_unavailable` when an owner can't be asked); `409 area_changed`; `422` (validation, `unknown_question`, a generated field sent, `area_too_large`, `invalid_area_id`).
 
 ---
 
@@ -1745,30 +1746,29 @@ Generates one of an area's AI parts.
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `kind` | enum | ✅ | One of the three below |
+| `kind` | enum | ✅ | One of the two below |
 | `area_name` | string | Only for `parent_questions` on a new area | 1–100; ignored otherwise |
 
 | `kind` | Today's job type | Generated once? | Needs | Writes |
 |---|---|---|---|---|
 | `parent_questions` | `generate_growth_parent_questions` | Yes, per area (`409 already_generated` after) | Discover done | `parent_questions` |
-| `child_rounds` | `generate_growth_child_rounds` | Yes, per area | Discover done | `child_rounds` |
-| `recommendations` | `generate_recommendations` | No; a new job replaces the result | The area's answers saved | `ai_three_month_recommendations` (no `pending_recommendations` staging) |
+| `recommendations` | `generate_recommendations` | No; a new job replaces the result | The area's answers saved, or a run of the area's world (`409 needs_input` with neither) | `ai_three_month_recommendations` and `recommendations_run_at` (no `pending_recommendations` staging) |
 
 ### Processing
 
 1. **Create the job.** For `parent_questions` on an area that doesn't exist yet, first create the area document with `status: "in_progress"`, the path's `area_id` and the body's `area_name`.
 2. **The worker:**
-   - builds the prompt from the area document and grow's local copies: `child_access` (name, age, gender), `onboarding_inputs` and `personality_inputs`;
+   - builds the prompt from the area document and grow's local copies: `child_access` (name, age, gender), `onboarding_inputs` and `personality_inputs`; for `recommendations`, also the child's latest run of the area's world (`world_runs`, matched by the area's name): each game's skill, title, score and band, the total, the tries, the change since the run before, the days since, and the best game's "Build on" and the weakest game's "Support" suggestion;
    - calls the LLM, and checks the answer against the kind's schema;
    - writes the result to the area's field (as in the table above).
    - **For `recommendations` on a completed area,** it also publishes `grow.area_updated`, because transform's Life Pathway prompt uses `ai_three_month_recommendations` first, as today's `useLifePathwayArea` does. The question sets publish nothing: no other service uses them.
 
 3. **Before the job:** the copies its prompt uses are read through if missing (onboarding's answers, discover's summary), and the hourly LLM limit is counted for a new job only. Each kind has its own lock, so different kinds can run at once for one area.
-4. **What's stored** goes through today's normalisers (word caps, ids assigned by the server, icons checked against the keys); an answer they reject is retried, then the job fails and the area keeps what it had. A job never changes the area's `status`.
+4. **What's stored** goes through today's normalisers (word caps, ids assigned by the server, `source` checked against its four values); an answer they reject is retried, then the job fails and the area keeps what it had. A job never changes the area's `status`.
 
 ### Errors
 
-Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an area that doesn't exist); `409 already_generated`; `409 needs_answers`; `422 unknown_area` (generation is for the six areas the apps show) or `invalid_area_id`; `429 llm_limit`; `503 generation_unavailable`.
+Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an area that doesn't exist); `409 already_generated`; `409 needs_input` (recommendations with neither answers nor a run of the area's world); `422 unknown_area` (generation is for the six areas the apps show) or `invalid_area_id`; `429 llm_limit`; `503 generation_unavailable`.
 
 ---
 
@@ -2107,7 +2107,7 @@ The worker:
 3. replaces `items`, sets `source: "llm"` and `status: "ready"`, and clears `watching`, as today's promote step does: a tick against an older set of cards has no meaning against a new one.
    - `completed_at` stays: Release remains done.
 
-- **The evidence** comes from release's copies. Each completed area's `growth_inputs` copy carries `reflections` (the questions with the parent's answers) and `child_choices` (the picks as `Chose “X” over “Y”` lines); grow sends both in `grow.area_completed` / `grow.area_updated` (optional fields, added for this). Before the job, missing copies are read through from onboarding and grow, and with nothing to read back the start is `409 needs_evidence`.
+- **The evidence** comes from release's copies. Each completed area's `growth_inputs` copy carries `reflections` (the questions with the parent's answers) and `child_games` (the child's child view game results for the area, from the world run its recommendations were written from, as `Played X (Skill): N of 100, Band` lines, which a note must copy exactly); grow sends both in `grow.area_completed` / `grow.area_updated` (optional fields, added for this; `child_games` on 2026-11-12, replacing `child_choices`, the removed Grow rounds' picks, which grow no longer sends). Before the job, missing copies are read through from onboarding and grow, and with nothing to read back the start is `409 needs_evidence`.
 
 ### Errors
 

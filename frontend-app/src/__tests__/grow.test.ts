@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import {
   areaSave,
   grow,
+  recommendationsAreCurrent,
   runGrowGeneration,
   type GrowthAreaDoc,
 } from '@/api/grow';
@@ -48,18 +49,19 @@ const STORED: GrowthAreaDoc = {
   status: 'in_progress',
   step: 'activity_summary',
   parent_questions: { questions: [{ id: 'self_care_gq1' }] },
-  child_rounds: null,
   answers: { self_care_gq1: 'Often' },
-  child_activity: { selections: ['a'] },
+  child_activity: { results: { summary: 'Calm' } },
   recommendations: null,
   ai_three_month_recommendations: null,
+  recommendations_run_at: null,
+  recommendations_current: false,
   feedback: 'Nice',
   generating: [],
   completed_at: null,
   updated_at: '2026-10-31T00:00:00Z',
 };
 const job = (status: string) =>
-  json(200, { job_id: 'j1', kind: 'child_rounds', status });
+  json(200, { job_id: 'j1', kind: 'recommendations', status });
 
 beforeEach(async () => {
   await SecureStore.setItemAsync('superpower.access_token', 'parent-token');
@@ -68,13 +70,13 @@ beforeEach(async () => {
 describe('the growth-area saves (build plan 7.6)', () => {
   it('carry every stored field, since a save replaces them all', () => {
     expect(
-      areaSave(STORED, 'Self care', { child_activity: { selections: ['b'] } }),
+      areaSave(STORED, 'Self care', { answers: { self_care_gq1: 'Daily' } }),
     ).toEqual({
       area_name: 'Self care',
       status: 'in_progress',
       step: 'activity_summary',
-      answers: { self_care_gq1: 'Often' },
-      child_activity: { selections: ['b'] },
+      answers: { self_care_gq1: 'Daily' },
+      child_activity: { results: { summary: 'Calm' } }, // kept
       recommendations: null,
       feedback: 'Nice', // kept, not cleared
     });
@@ -112,6 +114,55 @@ describe('the growth-area saves (build plan 7.6)', () => {
   });
 });
 
+describe('whether stored recommendations are current', () => {
+  const RUN = '2026-11-01T10:00:00Z';
+  const written: GrowthAreaDoc = {
+    ...STORED,
+    ai_three_month_recommendations: [{ title: 'Walk', detail: 'Daily' }],
+    recommendations_run_at: RUN,
+    recommendations_current: true,
+  };
+
+  it('follow grow: from the present answers and feedback, and the latest run', () => {
+    expect(recommendationsAreCurrent(written, RUN)).toBe(true);
+    // The same moment written another way is the same run.
+    expect(recommendationsAreCurrent(written, '2026-11-01T10:00:00.000Z')).toBe(
+      true,
+    );
+    expect(
+      recommendationsAreCurrent(
+        { ...written, recommendations_run_at: null },
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it('are stale when grow says the answers or feedback changed since', () => {
+    // Saved elsewhere, or while the job ran: nothing kept in this app's memory says so.
+    const changed = { ...written, recommendations_current: false };
+    expect(recommendationsAreCurrent(changed, RUN)).toBe(false);
+    expect(
+      recommendationsAreCurrent(changed, RUN, {
+        runsUnknown: true,
+        writtenHere: true,
+      }),
+    ).toBe(false);
+    expect(recommendationsAreCurrent(undefined, RUN)).toBe(false);
+  });
+
+  it('are stale after a newer run, unless the runs are unknown or written here', () => {
+    const later = '2026-11-02T10:00:00Z';
+    expect(recommendationsAreCurrent(written, later)).toBe(false);
+    expect(recommendationsAreCurrent(written, null)).toBe(false);
+    expect(
+      recommendationsAreCurrent(written, later, { runsUnknown: true }),
+    ).toBe(true);
+    expect(
+      recommendationsAreCurrent(written, later, { writtenHere: true }),
+    ).toBe(true);
+  });
+});
+
 describe('a growth-area generation (build plan 7.6)', () => {
   it('asks for a kind (with the name for a new area), then polls its job', async () => {
     const sent = network({
@@ -143,13 +194,13 @@ describe('a growth-area generation (build plan 7.6)', () => {
       [`GET ${AREA}/generation/j1`]: job('failed'),
     });
     expect(
-      await runGrowGeneration(ID, 'self_care', 'child_rounds', {
+      await runGrowGeneration(ID, 'self_care', 'recommendations', {
         intervalMs: 1,
       }),
     ).toBe('failed');
-    expect(sent[0]?.body).toEqual({ kind: 'child_rounds' });
+    expect(sent[0]?.body).toEqual({ kind: 'recommendations' });
     expect(
-      await runGrowGeneration(ID, 'self_care', 'child_rounds', {
+      await runGrowGeneration(ID, 'self_care', 'recommendations', {
         intervalMs: 1,
       }),
     ).toBe('completed');

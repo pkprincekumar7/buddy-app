@@ -44,6 +44,7 @@ from common.models import (
 from common.regions import locations_for_region
 from common.settings_base import ServiceSettings
 from common.uploads import Uploads, UploadsConfig
+from transform.app.quests import ensure_kid_quests
 from transform.app.store import ensure_plans
 
 SERVICE = "transform"
@@ -142,6 +143,7 @@ class Runtime:
 
         async def ensure(db: Db) -> None:
             await ensure_plans(db)
+            await ensure_kid_quests(db)
             await upload_tracking.ensure_pending_uploads(db)
             await ensure_jobs(db, SERVICE)
             await ensure_child_access(db)

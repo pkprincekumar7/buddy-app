@@ -422,16 +422,28 @@ async def google(
     return (await sign_in(runtime, response, account, browser=_browser(request))).body
 
 
-async def _revoke(runtime: Runtime, user_id: str, location: str) -> None:
-    """Log the account out everywhere: `tokens_revoked_at = now`, a new authz_version."""
+async def _revoke_family(runtime: Runtime, user_id: str, location: str, family_id: str) -> None:
+    """A stolen refresh token's family: its sessions deleted and the account logged out
+    everywhere (`tokens_revoked_at = now`, a new authz_version), in one transaction, so a
+    crash can't leave one done without the other (both in the user's zone)."""
     now = datetime.now(UTC)
-    account = await runtime.db[AUTH].find_one_and_update(
-        {"_id": user_id, "location": location},
-        authz_change({"tokens_revoked_at": now}, now),
-        return_document=ReturnDocument.AFTER,
-    )
-    if account is not None:
-        await write_entry(runtime.cache, user_id, entry_from_account(account))
+    found: dict[str, Any] = {}
+
+    async def write(session: AsyncClientSession) -> None:
+        await runtime.db[SESSIONS].delete_many(
+            {"location": location, "family_id": family_id}, session=session
+        )
+        found["account"] = await runtime.db[AUTH].find_one_and_update(
+            {"_id": user_id, "location": location},
+            authz_change({"tokens_revoked_at": now}, now),
+            return_document=ReturnDocument.AFTER,
+            session=session,
+        )
+
+    async with runtime.client.start_session() as session:
+        await session.with_transaction(write)
+    if found["account"] is not None:
+        await write_entry(runtime.cache, user_id, entry_from_account(found["account"]))
 
 
 def _refuse_refresh(
@@ -492,8 +504,7 @@ async def refresh(request: Request, response: Response, runtime: Ready) -> Any:
     if rotated_at is not None and now - rotated_at > CONCURRENT_REFRESH_WINDOW:
         # A rotated token used again later: treat it as stolen (9.1). security_event: the
         # backend stack counts these lines and alarms (AUTH-02).
-        await sessions.delete_many({"location": location, "family_id": session["family_id"]})
-        await _revoke(runtime, user_id, location)
+        await _revoke_family(runtime, user_id, location, session["family_id"])
         _logger.warning(
             "auth.refresh.reuse sub=%s family revoked",
             user_id,

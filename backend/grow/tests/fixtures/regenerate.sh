@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Regenerates grow's data and its parity fixtures from the web app's lib/growthAreaData.ts,
 # run by Node with the types stripped (Node 22.18+):
-#   - grow/app/area_data.json: the six areas (id, name, description), each area's archetypes
-#     (the child rounds' tags), the icon keys and the per-area counts;
-#   - tests/fixtures/normalised.json: what normalizeGeneratedQuestions, normalizeGeneratedRounds
-#     and normalizeRecommendations return for tests/fixtures/llm_answers.json (icons as keys).
+#   - grow/app/area_data.json: the six areas (id, name, description), the number of parent
+#     questions per area and the pronoun tokens (copy_tokens) the prompts use;
+#   - tests/fixtures/normalised.json: what normalizeGeneratedQuestions and
+#     normalizeRecommendations return for tests/fixtures/llm_answers.json.
 # grow's port must give the same output (test_areas.py).
 #
 #   backend/grow/tests/fixtures/regenerate.sh
@@ -21,14 +21,9 @@ trap 'rm -rf "$work"' EXIT
   cat <<'JS'
 import { readFileSync, writeFileSync } from 'node:fs';
 const [, , answersPath, dataPath, outPath] = process.argv;
-const keyFor = new Map(Object.entries(ICON_PATHS).map(([k, v]) => [v, k]));
-if (keyFor.size !== Object.keys(ICON_PATHS).length) throw new Error('icon paths are not unique');
 const data = {
   areas: GROWTH_AREAS.map((a) => ({ id: a.id, name: a.name, description: a.description })),
-  archetypes: AREA_ARCHETYPES,
-  icon_keys: ICON_KEYS,
   parent_questions_per_area: PARENT_QUESTIONS_PER_AREA,
-  game_rounds_per_area: GAME_ROUNDS_PER_AREA,
   copy_tokens: { male: copyTokensFor('male'), female: copyTokensFor('female'), other: copyTokensFor('') },
 };
 writeFileSync(dataPath, JSON.stringify(data, null, 2) + '\n');
@@ -37,11 +32,7 @@ const cases = JSON.parse(readFileSync(answersPath, 'utf8')) as Case[];
 const out = cases.map((c) => {
   if (c.kind === 'parent_questions') return normalizeGeneratedQuestions(c.answer, c.area_id);
   if (c.kind === 'recommendations') return normalizeRecommendations(c.answer);
-  const rounds = normalizeGeneratedRounds(c.answer, c.area_id);
-  return rounds && rounds.map((r) => ({
-    a: { ...r.a, icon: keyFor.get(r.a.icon) },
-    b: { ...r.b, icon: keyFor.get(r.b.icon) },
-  }));
+  throw new Error(`unknown kind ${c.kind}`);
 });
 writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n');
 JS

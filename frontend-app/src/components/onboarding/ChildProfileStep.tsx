@@ -40,6 +40,10 @@ interface Props {
   onContinue: (data: ChildFormData, photo?: ChildPhoto) => void | Promise<void>;
   initialData?: Partial<ChildFormData>;
   isLoading?: boolean;
+  /** The submit button's label: "Continue →" in setup, "Save changes" when editing. */
+  submitLabel?: string;
+  /** Opens the finished chat's answers (read-only); shown when editing a finished child. */
+  onViewAnswers?: () => void;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -118,6 +122,8 @@ export default function ChildProfileStep({
   onContinue,
   initialData,
   isLoading,
+  submitLabel = 'Continue →',
+  onViewAnswers,
 }: Props) {
   const [form, setForm] = useState<ChildFormData>({
     name: initialData?.name ?? '',
@@ -582,29 +588,44 @@ export default function ChildProfileStep({
         </View>
 
         {/* Footer */}
-        <View className="flex-row items-center justify-between pt-1">
+        <View className="flex-row flex-wrap items-center justify-between gap-3 pt-1">
           <Text className="text-xs text-muted-foreground/40">* Required</Text>
-          <Button
-            onPress={handleContinue}
-            disabled={busy}
-            accessibilityLabel={busy ? 'Saving' : 'Continue'}
-            className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground"
-            style={CTA_STYLE}
-          >
-            {busy ? (
-              <View className="flex-row items-center gap-2">
-                <Spinner
-                  durationSeconds={1}
-                  className="h-3.5 w-3.5 border-2 border-white/30 border-t-white"
-                />
-                <Text className="text-sm font-semibold text-primary-foreground">
-                  Saving…
-                </Text>
-              </View>
-            ) : (
-              'Continue →'
-            )}
-          </Button>
+          <View className="flex-row flex-wrap items-center gap-3">
+            {onViewAnswers ? (
+              <Button
+                variant="outline"
+                onPress={onViewAnswers}
+                disabled={busy}
+                accessibilityLabel="See chat answers"
+                className="h-11 rounded-full px-5"
+              >
+                See chat answers
+              </Button>
+            ) : null}
+            <Button
+              onPress={handleContinue}
+              disabled={busy}
+              accessibilityLabel={
+                busy ? 'Saving' : submitLabel.replace(/\s*→$/, '')
+              }
+              className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground"
+              style={CTA_STYLE}
+            >
+              {busy ? (
+                <View className="flex-row items-center gap-2">
+                  <Spinner
+                    durationSeconds={1}
+                    className="h-3.5 w-3.5 border-2 border-white/30 border-t-white"
+                  />
+                  <Text className="text-sm font-semibold text-primary-foreground">
+                    Saving…
+                  </Text>
+                </View>
+              ) : (
+                submitLabel
+              )}
+            </Button>
+          </View>
         </View>
       </View>
     </Animated.View>

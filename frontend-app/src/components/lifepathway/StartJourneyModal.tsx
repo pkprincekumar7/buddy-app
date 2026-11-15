@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { ChevronRight, X } from 'lucide-react-native';
 
+import { modalFade, useModalExit } from '@/lib/useModalExit';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import { fillTemplate } from '@/lib/growthAreaData';
 import {
@@ -346,16 +347,22 @@ export default function StartJourneyModal({
       ? 'Step 3 of 3 · Secure checkout'
       : 'Subscription active';
 
+  // The Modal stays up while the content fades out (lib/useModalExit).
+  const modalShown = useModalExit(open);
   return (
     <Modal
-      visible={open}
+      visible={modalShown}
       transparent
       animationType="none"
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      {open ? (
-        <Animated.View {...MODAL_BACKDROP} className="flex-1 bg-overlay">
+      {modalShown ? (
+        <Animated.View
+          entering={MODAL_BACKDROP.entering}
+          style={modalFade(open)}
+          className="flex-1 bg-overlay"
+        >
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={{ flex: 1 }}
@@ -367,7 +374,7 @@ export default function StartJourneyModal({
                 onPress={onClose}
               />
               <Animated.View
-                {...MODAL_SCALE}
+                entering={MODAL_SCALE.entering}
                 accessibilityViewIsModal
                 style={{
                   width: '100%',

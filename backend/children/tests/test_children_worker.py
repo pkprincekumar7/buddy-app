@@ -24,6 +24,7 @@ from children_testkit import (
 
 from children import worker
 from children.app import lifecycle
+from children.app.kids import KID_ACTIVITY, empty
 from children.app.store import CHILDREN
 from common import upload_tracking
 from common.events import Event, SnsPublisher
@@ -35,6 +36,7 @@ from common.events.testing import (
     seeded_outbox_left,
     sns_envelope,
 )
+from common.uploads import DeleteFailed
 
 API = "/api/v1/children"
 
@@ -208,6 +210,54 @@ def test_a_child_restored_meanwhile_isnt_purged(mongo_uri, monkeypatch):
     live(mongo_uri, test)
 
 
+@pytest.mark.live_service
+def test_a_child_whose_photos_wont_delete_doesnt_hold_up_the_others(mongo_uri, monkeypatch):
+    # Review: one DeleteFailed aborted the whole batch, and as the batch had no order the
+    # same child came first every round, so the children after it were never purged.
+    async def test(r: Running) -> None:
+        stuck = await _deleted_days_ago(r, 40)
+        b = await _deleted_days_ago(r, 35)
+        c = await _deleted_days_ago(r, 31)
+        real = r.runtime.uploads.delete_child
+        tried: list[str] = []
+
+        async def refuses_stuck(location: str, child_id: str, kind: Any) -> int:
+            tried.append(child_id)
+            if child_id == stuck["id"]:
+                raise DeleteFailed("S3 didn't delete 1 of 1 objects (AccessDenied)")
+            return await real(location, child_id, kind)
+
+        monkeypatch.setattr(r.runtime.uploads, "delete_child", refuses_stuck)
+        # One failing child, the others in its batch still go; it stays.
+        assert await lifecycle.purge(r.runtime, None) == 2
+        assert tried == [stuck["id"], b["id"], c["id"]]  # oldest first
+        assert await r.db[CHILDREN].find_one({"_id": stuck["id"]}) is not None
+        for gone in (b, c):
+            assert await r.db[CHILDREN].find_one({"_id": gone["id"]}) is None
+        assert await r.db.outbox.count_documents({"event_type": "child.deleted"}) == 2
+        # Later batches this round skip it.
+        tried.clear()
+        assert await lifecycle.purge(r.runtime, None) == 0
+        assert tried == []
+
+        # Batches of one: the failing child, the oldest, doesn't fill every batch.
+        monkeypatch.setattr(lifecycle, "PURGE_BATCH", 1)
+        r.runtime.purge_retry_at.clear()
+        d = await _deleted_days_ago(r, 33)
+        e = await _deleted_days_ago(r, 32)
+        tried.clear()
+        assert [await lifecycle.purge(r.runtime, None) for _ in range(4)] == [0, 1, 1, 0]
+        assert tried == [stuck["id"], d["id"], e["id"]]
+        # Next round, once its wait is over, it's tried again and goes.
+        r.runtime.purge_retry_at[stuck["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+        monkeypatch.setattr(r.runtime.uploads, "delete_child", real)
+        assert await lifecycle.purge(r.runtime, None) == 1
+        assert r.runtime.purge_retry_at == {}
+        assert await r.db[CHILDREN].count_documents({}) == 0
+
+    live(mongo_uri, test)
+
+
 # ── account deletion ───────────────────────────────────────────────────────────
 
 
@@ -224,6 +274,10 @@ def test_account_deletion_removes_every_child_at_once_and_confirms(mongo_uri):
     async def test(r: Running) -> None:
         a = (await add_child(r, name="A")).json()
         b = await _deleted_days_ago(r, 3, name="B")  # soft-deleted: no 30-day wait
+        for child in (a, b):
+            await r.db[KID_ACTIVITY].insert_one(
+                empty(child["id"], PARENT, LOCATION, datetime.now(UTC))
+            )
         theirs = (await add_child(r, OTHER, name="Theirs")).json()
         await seed_user_outbox(
             r.db, user_id=PARENT, child_id=a["id"], other_user_id=OTHER, other_child_id=theirs["id"]
@@ -236,6 +290,8 @@ def test_account_deletion_removes_every_child_at_once_and_confirms(mongo_uri):
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
         assert await seeded_outbox_left(r.db) == {"other"}
         assert await r.db[CHILDREN].count_documents({"user_id": PARENT}) == 0
+        # What the child did in child view goes too (docs/child-view-build-plan.md, 2.1).
+        assert await r.db[KID_ACTIVITY].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILDREN].find_one({"_id": theirs["id"]}) is not None
         assert r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0
         stones = {t["_id"]: t["version"] for t in await r.db.tombstones.find({}).to_list(None)}
@@ -352,6 +408,49 @@ def test_each_purge_round_also_sweeps_unsaved_avatars(mongo_uri, monkeypatch):
         monkeypatch.setattr(lifecycle, "purge", purge)
         await asyncio.wait_for(worker.run_purge(r.runtime, stop, interval=0.01), 5)
         assert len(sweeps) == 2
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_late_childs_avatar_that_wont_delete_is_retried_by_the_redelivery(mongo_uri, monkeypatch):
+    # Review: the late child's avatars were deleted after the commit, so a DeleteFailed
+    # there left them for good: the redelivered message found no children to retry.
+    async def test(r: Running) -> None:
+        await add_child(r, name="First")
+        late: dict[str, str] = {}
+        real_avatars = lifecycle._delete_avatars
+        real_delete = r.runtime.uploads.delete_child
+        refusals = {"left": 1}
+
+        async def and_one_more(runtime: Any, docs: Any) -> None:
+            if not late:
+                child = (await add_child(r, name="Late")).json()
+                late["id"] = child["id"]
+                key = f"uploads/{LOCATION}/{child['id']}/avatar/{uuid.uuid4()}.jpg"
+                r.runtime.uploads.client.put_object(
+                    Bucket=BUCKET, Key=key, Body=b"x", ContentType="image/jpeg"
+                )
+            await real_avatars(runtime, docs)
+
+        async def refuses_late_once(location: str, child_id: str, kind: Any) -> int:
+            if child_id == late.get("id") and refusals["left"]:
+                refusals["left"] -= 1
+                raise DeleteFailed("S3 didn't delete 1 of 1 objects (SlowDown)")
+            return await real_delete(location, child_id, kind)
+
+        monkeypatch.setattr(lifecycle, "_delete_avatars", and_one_more)
+        monkeypatch.setattr(r.runtime.uploads, "delete_child", refuses_late_once)
+        consumer = worker.build_consumer(r.runtime)
+        with pytest.raises(DeleteFailed):
+            await consumer.handle_body(_deletion(r))
+        # Nothing committed: the late child is still there for the redelivery to find.
+        assert await r.db[CHILDREN].find_one({"_id": late["id"]}) is not None
+        assert await r.db.outbox.count_documents({"event_type": "user.data_deleted"}) == 0
+        assert (await consumer.handle_body(_deletion(r))).value == "handled"
+        assert await r.db[CHILDREN].count_documents({"user_id": PARENT}) == 0
+        assert r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0
+        assert await r.db.outbox.count_documents({"event_type": "user.data_deleted"}) == 1
 
     live(mongo_uri, test)
 

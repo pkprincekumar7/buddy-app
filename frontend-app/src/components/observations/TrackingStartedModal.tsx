@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
+import { modalFade, useModalExit } from '@/lib/useModalExit';
 import { MODAL_BACKDROP } from '@/lib/animations';
 import { css, font, rgb } from '@/theme';
 import { ClockIcon } from './Icons';
@@ -35,19 +36,24 @@ export default function TrackingStartedModal({
   onClose: () => void;
   line: string;
 }) {
+  // The Modal stays up while the content fades out (lib/useModalExit).
+  const modalShown = useModalExit(open);
   return (
     <Modal
-      visible={open}
+      visible={modalShown}
       transparent
       animationType="none"
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      {open ? (
+      {modalShown ? (
         <Animated.View
-          {...MODAL_BACKDROP}
+          entering={MODAL_BACKDROP.entering}
           className="flex-1 items-center justify-center"
-          style={{ padding: 26, experimental_backgroundImage: BACKDROP }}
+          style={[
+            { padding: 26, experimental_backgroundImage: BACKDROP },
+            modalFade(open),
+          ]}
         >
           <Pressable
             className="absolute inset-0"

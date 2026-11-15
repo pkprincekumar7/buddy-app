@@ -20,7 +20,7 @@ import {
 import { jobProgressMessage } from '@/lib/jobProgress';
 import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import { httpErrorMessage } from '@/lib/apiError';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import { Button } from '@/components/ui/button';
 import PageBackRow from '@/components/layout/PageBackRow';
 import PageScroll from '@/components/layout/PageScroll';
@@ -42,6 +42,7 @@ import ObservationsSection from '@/components/observations/ObservationsSection';
 import WatchOverTime from '@/components/observations/WatchOverTime';
 import StartTrackingCard from '@/components/observations/StartTrackingCard';
 import NextSteps from '@/components/observations/NextSteps';
+import RecentMoods from '@/components/observations/RecentMoods';
 import TrackingStartedModal from '@/components/observations/TrackingStartedModal';
 import { font, recipe, rgb } from '@/theme';
 
@@ -260,9 +261,10 @@ export default function Observations() {
     return (
       <View className="flex-1 bg-background">
         <PageBackRow />
-        <View className="flex-1 items-center justify-center bg-constellation-navy-deepest">
-          <Spinner style={SPINNER_RING} />
-        </View>
+        <PageLoader
+          className="bg-constellation-navy-deepest"
+          spinnerStyle={SPINNER_RING}
+        />
       </View>
     );
   }
@@ -381,6 +383,8 @@ export default function Observations() {
                 }}
               />
             )}
+
+            <RecentMoods childId={childId} childName={childName} />
 
             <NextSteps childName={childName} childGender={childGender} />
           </View>

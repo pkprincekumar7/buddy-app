@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useStartOver } from '@/hooks/useStartOver';
 import { cn } from '@/lib/utils';
+import { START_OVER_DESCRIPTION } from '@/lib/startOverCopy';
 import { color, recipe } from '@/theme';
 import Spinner from './Spinner';
 
@@ -13,6 +14,9 @@ interface ConfirmModalProps {
   onCancel: () => void;
   onConfirm: () => void;
   isStartingOver: boolean;
+  /** Defaults to the Start Over copy; the profile menu's delete passes its own. */
+  title?: string;
+  description?: string;
 }
 
 /** "Start Over?" confirmation — same copy, icon and colors as the web ConfirmModal. */
@@ -21,12 +25,14 @@ export function ConfirmModal({
   onCancel,
   onConfirm,
   isStartingOver,
+  title = 'Start Over?',
+  description = START_OVER_DESCRIPTION,
 }: ConfirmModalProps) {
   return (
     <Dialog open={open} onOpenChange={o => !o && onCancel()}>
       <DialogContent
         hideClose
-        accessibilityLabel="Confirm start over"
+        accessibilityLabel={title}
         className="max-w-sm rounded-2xl border border-edge-strong bg-surface-elevated p-8"
       >
         <View className="mb-5 items-center">
@@ -40,12 +46,10 @@ export function ConfirmModal({
             accessibilityRole="header"
             className="text-center text-lg font-bold text-foreground"
           >
-            Start Over?
+            {title}
           </Text>
           <Text className="text-center text-sm leading-relaxed text-muted-foreground">
-            All progress for this child will be permanently deleted —
-            personality results, growth area answers, and goal plans. You will
-            need to restart the onboarding from the beginning.
+            {description}
           </Text>
           <Text className="text-center text-xs font-medium text-error">
             This cannot be undone.

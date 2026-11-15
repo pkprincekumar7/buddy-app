@@ -1,41 +1,47 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
+import { useHideAppBar } from '@/lib/appBar';
 import { discover } from '@/api/discover';
 import { useJourney } from '@/hooks/useJourney';
 import { useStartOver } from '@/hooks/useStartOver';
 import { useNavigate, useParams } from '@/lib/router';
 import StageSplash from '@/components/shared/StageSplash';
 import { ConfirmModal as StartOverConfirmModal } from '@/components/shared/StartOverButton';
+import { startOverCopy } from '@/lib/startOverCopy';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import PageBackRow from '@/components/layout/PageBackRow';
 import BuddyOrbScreen from '@/components/personalityJourney/BuddyOrbScreen';
 import DimensionCirclesScreen from '@/components/personalityJourney/DimensionCirclesScreen';
 import WarpOverlay from '@/components/personalityJourney/WarpOverlay';
 import {
+  LAND_IN,
   SCOPE_DOLLY,
-  fadeIn,
+  preEnter,
 } from '@/components/personalityJourney/animations';
 import type { ActiveDimension } from '@/components/personalityJourney/geometry';
 import { useJourneyViewport } from '@/components/personalityJourney/viewport';
 import { css, recipe, rgb } from '@/theme';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { kidsPath, type KidsArea } from '@/lib/childView';
 
 type Phase = 1 | 2;
 
 const ORB_VOICE = require('../../assets/audio/orb-voice.mp3');
-/** Height of the Layout's Back row (pt-4 + h-8 sm button) above the page content. */
+/** Height of the Layout's Back row (pt-4 + h-8 sm button) above the page content; none in
+ * child view (the journey is the child's home). */
 const BACK_ROW_H = 48;
 const NAVY_DEEP = rgb('constellation-navy-deep');
 const AMBIENT_BLOB = css(
   'radial-gradient(circle, rgb(var(--constellation-teal-deep-rgb) / 0.35) 0%, transparent 60%)',
 );
-const PHASE1_FADE = fadeIn(0.3);
 
 function pausePlayer(p: VideoPlayer | null) {
   try {
@@ -52,6 +58,9 @@ export default function PersonalityJourney() {
   const { childId, sub } = useParams<{ childId?: string; sub?: string }>();
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const viewport = useJourneyViewport();
+  const reduceMotion = useReducedMotion();
+  // Set a frame after the orb screen is laid out: its landing starts then.
+  const [landReady, setLandReady] = useState(false);
   const isFocused = useIsFocused();
   const phase: Phase = sub === 'DimensionCircles' ? 2 : 1;
   const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
@@ -61,6 +70,9 @@ export default function PersonalityJourney() {
   const [discoverViewed, setDiscoverViewed] = useState(false);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const { doStartOver, isStartingOver } = useStartOver(childId);
+  // Child view (docs/child-view-build-plan.md, 1.3): each circle opens the kids page.
+  const { view, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
 
   // The child and its personality (build plan 7.5): discover generates the personality on
   // its own once the chat is saved, so the hub only waits for it (or retries a failure).
@@ -103,11 +115,29 @@ export default function PersonalityJourney() {
   const isAnalyzing = journey.status === 'analyzing';
 
   // Each circle's state, set by the services when it's completed (build plan 7.4).
-  const discoverCompleted = discoverViewed || Boolean(child?.progress.discover);
-  const growCompleted = Boolean(child?.progress.grow);
-  const transformCompleted = Boolean(child?.progress.transform);
-  const releaseCompleted = Boolean(child?.progress.release);
-  const connectVisited = Boolean(child?.progress.connect);
+  // In child view they follow what the child has done there instead (child view's own
+  // order, decided 2026-11-11): each circle opens once the one before is done in child view.
+  const kidDone = useKidActivity(childView ? childId : undefined).activity
+    ?.circles_done;
+  const done = (kid: boolean | undefined, parent: boolean) =>
+    childView ? Boolean(kid) : parent;
+  const discoverCompleted = done(
+    kidDone?.discover,
+    discoverViewed || Boolean(child?.progress.discover),
+  );
+  const growCompleted = done(kidDone?.grow, Boolean(child?.progress.grow));
+  const transformCompleted = done(
+    kidDone?.transform,
+    Boolean(child?.progress.transform),
+  );
+  const releaseCompleted = done(
+    kidDone?.release,
+    Boolean(child?.progress.release),
+  );
+  const connectVisited = done(
+    kidDone?.connect,
+    Boolean(child?.progress.connect),
+  );
 
   // The splash stays up (on its last frame) until the profile opens: hiding it first would
   // show the hub's circles while `viewed` is recorded. That's awaited before navigating, so
@@ -117,6 +147,11 @@ export default function PersonalityJourney() {
     if (leavingForProfileRef.current) return;
     leavingForProfileRef.current = true;
     void (async () => {
+      if (childView) {
+        // The child's Discover: no `viewed`, so the parent still sees the reveal first.
+        if (childId) void navigate(kidsPath(childId, 'discover'));
+        return;
+      }
       if (childId && !discoverCompleted) {
         setDiscoverViewed(true);
         // Passing the reveal makes Discover done; children then unlocks Grow.
@@ -128,7 +163,11 @@ export default function PersonalityJourney() {
       }
       void navigate(`/PersonalityProfile/${childId ?? ''}`);
     })();
-  }, [navigate, childId, discoverCompleted]);
+  }, [navigate, childId, discoverCompleted, childView]);
+
+  // A circle's page: the parent's, or in child view the kids page at that circle.
+  const circlePath = (area: KidsArea, parentPath: string) =>
+    childView && childId ? kidsPath(childId, area) : parentPath;
 
   // Grow unlocks Transform once one of the six growth areas is completed: grow publishes
   // `grow.completed` then, and children sets `progress.grow`, so the client can't forge it.
@@ -152,6 +191,8 @@ export default function PersonalityJourney() {
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
   const { ttsEnabled: soundOn } = useTts();
   const [isEntering, setIsEntering] = useState(false);
+  // No app bar during the warp: it comes back with the circles.
+  useHideAppBar(isEntering);
   const enterTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Play intro voice when orb screen (phase 1) is active — mirrors HTML's playVoice().
@@ -228,12 +269,24 @@ export default function PersonalityJourney() {
     if (!isAuthenticated) {
       void navigate('/Onboarding', { replace: true });
     } else if (!childId || journey.status === 'missing') {
+      // In child view Home would bounce straight back here: leave child view first.
+      if (childView) exitChildView();
       void navigate('/Home', { replace: true });
     } else if (journey.status === 'locked') {
-      // The chat isn't done yet: back to it.
+      // The chat isn't done yet: back to it. Child view can't open the chat (its guard would
+      // send it straight back here), so it ends first: the chat is the parent's to finish.
+      if (childView) exitChildView();
       void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
     }
-  }, [isLoadingAuth, isAuthenticated, childId, journey.status, navigate]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    childId,
+    journey.status,
+    navigate,
+    childView,
+    exitChildView,
+  ]);
 
   const status =
     journey.status === 'failed'
@@ -245,18 +298,14 @@ export default function PersonalityJourney() {
   if (status === 'loading') {
     return (
       <View className="flex-1 bg-background">
-        <PageBackRow />
-        <View
-          className="flex-1 items-center justify-center"
+        {!childView && <PageBackRow />}
+        <PageLoader
           style={{ backgroundColor: NAVY_DEEP }}
-        >
-          <Spinner
-            style={{
-              borderColor: rgb('constellation-cyan-bright', 0.6),
-              borderTopColor: 'transparent',
-            }}
-          />
-        </View>
+          spinnerStyle={{
+            borderColor: rgb('constellation-cyan-bright', 0.6),
+            borderTopColor: 'transparent',
+          }}
+        />
       </View>
     );
   }
@@ -264,7 +313,7 @@ export default function PersonalityJourney() {
   if (status === 'error') {
     return (
       <View className="flex-1 bg-background">
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View className="flex-1 items-center justify-center gap-4 px-4">
           <Text className="text-center text-muted-foreground">
             {journey.status === 'failed'
@@ -293,11 +342,14 @@ export default function PersonalityJourney() {
   }
 
   const { width, vh } = viewport;
+  // The window's centre (where the warp's stars start) below the screens' top, under the Back
+  // row: the orb and the hub are centred there.
+  const centerY = viewport.centerY - (childView ? 0 : BACK_ROW_H);
 
   return (
     <View className="flex-1 bg-background">
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View
           style={{
             minHeight: vh,
@@ -311,7 +363,7 @@ export default function PersonalityJourney() {
             style={{
               position: 'absolute',
               left: width / 2 - 350,
-              top: vh / 2 - 64 - BACK_ROW_H - 350,
+              top: centerY - 350,
               width: 700,
               height: 700,
               borderRadius: 350,
@@ -323,15 +375,28 @@ export default function PersonalityJourney() {
             {phase === 1 && (
               <Animated.View
                 style={[
-                  { minHeight: vh },
-                  isEntering ? SCOPE_DOLLY : PHASE1_FADE,
+                  // The zoom goes into the orb, at its centre.
+                  {
+                    minHeight: vh,
+                    transformOrigin: [width / 2, centerY, 0],
+                  },
+                  // Transparent until the landing takes hold (animations.preEnter). It starts a
+                  // frame after the screen is laid out: building the screen can hold the UI for
+                  // longer than the landing (iOS), which would otherwise be over before it's seen.
+                  preEnter(reduceMotion),
+                  isEntering ? SCOPE_DOLLY : landReady ? LAND_IN : null,
                 ]}
+                onLayout={() => {
+                  if (!landReady)
+                    requestAnimationFrame(() => setLandReady(true));
+                }}
               >
                 <BuddyOrbScreen
                   childName={childName}
                   isAnalyzing={isAnalyzing}
                   onTap={handleEnterNav}
                   viewport={viewport}
+                  centerY={centerY}
                 />
               </Animated.View>
             )}
@@ -339,19 +404,34 @@ export default function PersonalityJourney() {
             {phase === 2 && (
               <DimensionCirclesScreen
                 childName={childName}
-                onConnect={() => void navigate(`/Connect/${childId ?? ''}`)}
+                onConnect={() =>
+                  void navigate(
+                    circlePath('connect', `/Connect/${childId ?? ''}`),
+                  )
+                }
                 onDiscover={() => setShowDiscoverSplash(true)}
                 onGoHome={() =>
                   void navigate(`/PersonalityJourney/${childId ?? ''}`)
                 }
-                onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
+                onGrow={() =>
+                  void navigate(
+                    circlePath('grow', `/GrowthAreas/${childId ?? ''}`),
+                  )
+                }
                 onTransform={() =>
-                  void navigate(`/LifePathway/${childId ?? ''}`)
+                  void navigate(
+                    circlePath('transform', `/LifePathway/${childId ?? ''}`),
+                  )
                 }
                 onRelease={() =>
-                  void navigate(`/Observations/${childId ?? ''}`)
+                  void navigate(
+                    circlePath('release', `/Observations/${childId ?? ''}`),
+                  )
                 }
-                onStartAgain={() => setConfirmingStartOver(true)}
+                {...(!childView && {
+                  onStartAgain: () => setConfirmingStartOver(true),
+                })}
+                childView={childView}
                 enabled={{
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
@@ -360,6 +440,7 @@ export default function PersonalityJourney() {
                 }}
                 current={currentDimension}
                 viewport={viewport}
+                centerY={centerY}
               />
             )}
           </View>
@@ -370,7 +451,7 @@ export default function PersonalityJourney() {
       {isEntering && <WarpOverlay />}
 
       {showDiscoverSplash && (
-        <StageSplash stage={2} onReady={handleDiscoverSplashReady} />
+        <StageSplash stage={2} portal onReady={handleDiscoverSplashReady} />
       )}
 
       <StartOverConfirmModal
@@ -381,6 +462,7 @@ export default function PersonalityJourney() {
           void doStartOver();
         }}
         isStartingOver={isStartingOver}
+        {...startOverCopy(child?.name)}
       />
     </View>
   );

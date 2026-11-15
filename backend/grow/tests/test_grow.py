@@ -9,6 +9,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -22,7 +23,6 @@ from grow_testkit import (
     OTHER,
     PARENT,
     RECOMMENDATIONS_ANSWER,
-    ROUNDS_ANSWER,
     FakeOpenAI,
     Running,
     auth_header,
@@ -35,7 +35,7 @@ from grow_testkit import (
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
-from common.generation.jobs import TargetRefused
+from common.generation.jobs import JobRefused, TargetRefused
 from common.models import CHILD_ACCESS, JOBS
 from common.routers import assert_every_route_has_a_policy
 from grow.app import generation, main
@@ -74,9 +74,33 @@ async def _generate(r: Running, child: str, area: str, kind: str, answer: Any = 
     return str(started.json()["job_id"])
 
 
+async def _play(r: Running, child: str, world: int, scores: list[int]) -> dict[str, Any]:
+    """A run of the world in child view; the run as stored."""
+    played = await r.http.post(
+        _path(child, f"/worlds/{world}/runs"), json={"scores": scores}, headers=auth_header()
+    )
+    assert played.status_code == 200, played.text
+    return dict(played.json()["runs"][str(world)][-1])
+
+
 async def _events(r: Running) -> list[tuple[str, int]]:
-    rows = await r.db.outbox.find({}).sort("created_at", 1).to_list(None)
+    """The growth areas' events (a world run's `grow.world_played` is the child's, not an
+    area's: _played reads those)."""
+    rows = (
+        await r.db.outbox.find({"event_type": {"$ne": "grow.world_played"}})
+        .sort("created_at", 1)
+        .to_list(None)
+    )
     return [(row["event_type"], row["version"]) for row in rows]
+
+
+async def _played(r: Running) -> list[dict[str, Any]]:
+    rows = (
+        await r.db.outbox.find({"event_type": "grow.world_played"})
+        .sort("created_at", 1)
+        .to_list(None)
+    )
+    return [{"child": row["aggregate_id"], **row["payload"]} for row in rows]
 
 
 # ── shape ──────────────────────────────────────────────────────────────────────
@@ -89,7 +113,8 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
     assert public == {
         "/health", base, f"{base}/{{area_id}}", f"{base}/{{area_id}}/generation",
-        f"{base}/{{area_id}}/generation/{{job_id}}",
+        f"{base}/{{area_id}}/generation/{{job_id}}", f"{base}/worlds",
+        f"{base}/worlds/{{world}}/runs",
     }  # fmt: skip
     internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
     assert internal == {
@@ -157,52 +182,58 @@ def test_an_area_from_its_questions_to_completion(mongo_uri):
         )
         assert saved.status_code == 200 and saved.json()["answers"] == answers
         assert saved.json()["step"] == "q2"
-        # The child's rounds, grounded in those answers; then the child plays.
-        await _generate(r, child, "life_ambition", "child_rounds", ROUNDS_ANSWER)
-        picks = ["life_ambition_gr1a", "life_ambition_gr2b"]
-        await r.http.put(
-            _path(child, "/life_ambition"),
-            json=_area(
-                area_name="Life Ambition", answers=answers, child_activity={"selections": picks}
-            ),
-            headers=auth_header(),
-        )
+        assert saved.json()["recommendations_run_at"] is None
+        assert saved.json()["recommendations_current"] is False  # none yet
+        # The child plays the area's world (Life Ambition is world 0); the recommendations
+        # are written from the answers and that run, and record which run it was.
+        played = await _play(r, child, 0, [80, 50, 30])
+        # The run publishes grow.world_played with it, for children's child-view progress.
+        assert await _played(r) == [{"child": child, "world": 0}]
         await _generate(r, child, "life_ambition", "recommendations", RECOMMENDATIONS_ANSWER)
         (area,) = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
         recs = area["ai_three_month_recommendations"]
         assert recs[0] == {
-            "title": "Start a bedtime routine",
-            "detail": "Every night at eight, read together for ten minutes.",
+            "title": "Name the bedtime worry",
+            "detail": "Each night, ask what felt hard today.",
+            "source": "both",
         }
-        assert area["status"] == "in_progress"  # jobs never change the parent's status
-        assert await _events(r) == []  # nothing published before completion
-        done = await r.http.put(
-            _path(child, "/life_ambition"),
-            json=_area(area_name="Life Ambition", answers=answers, status="completed", step="summary",
-                       child_activity={"selections": picks}),
-            headers=auth_header(),
-        )  # fmt: skip
-        body = done.json()
-        assert body["status"] == "completed" and body["step"] is None and body["completed_at"]
+        assert [rec["source"] for rec in recs] == ["both", "kid", "you", "both", "step"]
+        assert area["recommendations_run_at"] == played["at"]
+        assert area["recommendations_current"] is True
+        assert "child_games" not in area and "recommendations_input" not in area
+        # An answered area is completed by its recommendations' job, as the parent's
+        # completing save would: the app needs no save of its own (review).
+        assert area["status"] == "completed" and area["step"] is None and area["completed_at"]
         doc = await r.db[GROWTH_AREAS].find_one({"_id": area_doc_id(child, "life_ambition")})
         assert await _events(r) == [
             ("grow.area_completed", doc["version"]),
             ("grow.completed", doc["version"]),
         ]
+        # A completing save afterwards changes nothing and publishes nothing.
+        done = await r.http.put(
+            _path(child, "/life_ambition"),
+            json=_area(area_name="Life Ambition", answers=answers, status="completed",
+                       step="summary"),
+            headers=auth_header(),
+        )  # fmt: skip
+        assert done.json()["status"] == "completed" and len(await _events(r)) == 2
         row = await r.db.outbox.find_one({"event_type": "grow.area_completed"})
         assert row["aggregate_id"] == child and row["payload"]["area_id"] == "life_ambition"
         assert row["payload"]["ai_three_month_recommendations"] == recs
         assert row["payload"]["user_id"] == PARENT
-        # What release's observations read: the questions with the answers, and the picks.
+        # What release's observations read: the questions with the answers.
         assert [pair["answer"] for pair in row["payload"]["reflections"]] == list(answers.values())
         assert (
             row["payload"]["reflections"][0]["question"]
             == "What does Aarav do when question 1 happens?"
         )
-        assert row["payload"]["child_choices"] == [
-            "Chose “Build a thing number 0” over “Tell a story number 0”",
-            "Chose “Tell a story number 1” over “Build a thing number 1”",
+        # And the child's games from the run the recommendations were written from.
+        assert row["payload"]["child_games"] == [
+            "Played Dream Catcher (Big dreams): 80 of 100, Super strong",
+            "Played Rocket Fuel (Smart choices): 50 of 100, Keep practising",
+            "Played Goal Ladder (Steady effort): 30 of 100, Keep practising",
         ]
+        assert "child_choices" not in row["payload"]
 
     live(mongo_uri, test)
 
@@ -232,10 +263,16 @@ def test_completions_edits_and_identical_saves(mongo_uri):
         )
         assert edited.json()["feedback"] == "More outdoor ideas"
         assert (await _events(r))[-1] == ("grow.area_updated", 2)
+        # A completed area stays completed: an in_progress save is an edit of it (here
+        # identical once kept completed, so nothing to publish).
         back = await r.http.put(
-            _path(child, "/self_care"), json=_area(area_name="X"), headers=auth_header()
+            _path(child, "/self_care"),
+            json=_area(area_name="X", feedback="More outdoor ideas", step="answers"),
+            headers=auth_header(),
         )
-        assert back.status_code == 422 and _code(back) == "area_completed"
+        assert back.status_code == 200
+        assert back.json()["status"] == "completed" and back.json()["step"] is None
+        assert len(await _events(r)) == 4
         # A child's areas come back in the order they were started.
         listed = (await r.http.get(_path(child), headers=auth_header())).json()["areas"]
         assert [a["area_id"] for a in listed] == ["life_ambition", "self_care"]
@@ -248,14 +285,15 @@ def test_completions_edits_and_identical_saves(mongo_uri):
     ("body", "code"),
     [
         (_area(parent_questions={"questions": []}), None),  # generated: grow's jobs only
-        (_area(child_rounds={}), None),
+        (_area(recommendations_run_at=None), None),
+        (_area(child_activity={"selections": []}), None),  # the rounds' picks are gone
         (_area(ai_three_month_recommendations=[]), None),
         (_area(selected_activity="x"), None),  # a dropped wizard field
         (_area(answers={"made_up": "x"}), "unknown_question"),
         (_area(status="done"), None),
         (_area(area_name=""), None),
         (_area(answers={"q": 3}), None),  # strict: no coercion
-        (_area(child_activity={"selections": ["x" * 1000] * 50},
+        (_area(child_activity={"results": {"strengths": ["x" * 1000] * 20}},
                recommendations=["y" * 1000] * 50), "area_too_large"),
     ],
 )  # fmt: skip
@@ -298,6 +336,14 @@ def test_area_ids(mongo_uri):
         assert (
             await r.http.post(
                 _path(child, "/transform/generation"),
+                json={"kind": "recommendations"},
+                headers=auth_header(),
+            )
+        ).status_code == 422
+        # The rounds are gone as a kind.
+        assert (
+            await r.http.post(
+                _path(child, "/self_care/generation"),
                 json={"kind": "child_rounds"},
                 headers=auth_header(),
             )
@@ -321,7 +367,7 @@ def test_generation_needs_its_area_and_answers_and_returns_the_running_job(mongo
                 headers=auth_header(),
             )
 
-        missing = await start("creativity", "child_rounds")
+        missing = await start("creativity", "recommendations")
         assert missing.status_code == 404 and _code(missing) == "area_not_found"
         named = await start("creativity", "parent_questions", area_name="Making things")
         assert named.status_code == 202
@@ -329,17 +375,23 @@ def test_generation_needs_its_area_and_answers_and_returns_the_running_job(mongo
         assert doc["area_name"] == "Making things" and doc["version"] == 1
         running = await start("creativity", "parent_questions")
         assert running.status_code == 200 and running.json()["job_id"] == named.json()["job_id"]
+        # Neither the answers nor a run of the area's world: nothing to write them from.
         needs = await start("creativity", "recommendations")
-        assert needs.status_code == 409 and _code(needs) == "needs_answers"
-        # Each kind has its own lock: the rounds start while the questions run.
-        rounds = await start("creativity", "child_rounds")
-        assert rounds.status_code == 202 and await r.db[JOBS].count_documents({}) == 2
+        assert needs.status_code == 409 and _code(needs) == "needs_input"
+        await _play(r, child, 0, [50, 50, 50])  # another area's world doesn't count
+        needs = await start("creativity", "recommendations")
+        assert needs.status_code == 409 and _code(needs) == "needs_input"
+        # A run of Creativity's world (3) is enough without answers. Each kind has its own
+        # lock: the recommendations start while the questions run.
+        await _play(r, child, 3, [70, 40, 90])
+        recs = await start("creativity", "recommendations")
+        assert recs.status_code == 202 and await r.db[JOBS].count_documents({}) == 2
         job = await r.http.get(
-            _path(child, f"/creativity/generation/{rounds.json()['job_id']}"), headers=auth_header()
+            _path(child, f"/creativity/generation/{recs.json()['job_id']}"), headers=auth_header()
         )
-        assert job.json()["kind"] == "child_rounds" and job.json()["status"] == "pending"
+        assert job.json()["kind"] == "recommendations" and job.json()["status"] == "pending"
         wrong_area = await r.http.get(
-            _path(child, f"/self_care/generation/{rounds.json()['job_id']}"), headers=auth_header()
+            _path(child, f"/self_care/generation/{recs.json()['job_id']}"), headers=auth_header()
         )
         assert wrong_area.status_code == 404 and _code(wrong_area) == "job_not_found"
 
@@ -413,6 +465,60 @@ def test_a_start_reads_the_copies_through_and_reports_failures(mongo_uri, monkey
         monkeypatch.setattr(generation, "start", broken)
         down = await r.http.post(_path(other, "/self_care/generation"), **start)
         assert down.status_code == 503 and _code(down) == "generation_unavailable"
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_start_that_fails_gives_its_llm_slot_back(mongo_uri, monkeypatch):
+    # Found by review: a refused or failed start kept the hour's slot it had taken.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        start = {"json": {"kind": "parent_questions"}, "headers": auth_header()}
+        for failure in (
+            OperationFailure("primary stepped down"),
+            JobRefused("deleted meanwhile"),
+            RuntimeError("unexpected"),
+        ):
+
+            async def failing(*args: Any, failure: Exception = failure, **kwargs: Any) -> Any:
+                raise failure
+
+            monkeypatch.setattr(generation, "start", failing)
+            if isinstance(failure, RuntimeError):  # a 500, raised through the test client
+                with pytest.raises(RuntimeError):
+                    await r.http.post(_path(child, "/self_care/generation"), **start)
+            else:
+                failed = await r.http.post(_path(child, "/self_care/generation"), **start)
+                assert failed.status_code == (503 if isinstance(failure, OperationFailure) else 404)
+            assert not r.runtime.llm_limit._memory.get(PARENT), failure
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_start_that_committed_before_its_error_keeps_its_llm_slot(mongo_uri, monkeypatch):
+    # Found by review: an unknown commit result can follow a start that did commit; its job
+    # runs, so its slot isn't given back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        start = {"json": {"kind": "parent_questions"}, "headers": auth_header()}
+        real = generation.start
+
+        async def committed_then_failed(*args: Any, **kwargs: Any) -> Any:
+            await real(*args, **kwargs)
+            raise OperationFailure("unknown transaction commit result")
+
+        monkeypatch.setattr(generation, "start", committed_then_failed)
+        failed = await r.http.post(_path(child, "/self_care/generation"), **start)
+        assert failed.status_code == 503 and _code(failed) == "generation_unavailable"
+        assert await r.db[JOBS].count_documents({}) == 1
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
+        # The retry finds the job running, and gives its own slot back.
+        monkeypatch.setattr(generation, "start", real)
+        retried = await r.http.post(_path(child, "/self_care/generation"), **start)
+        assert retried.status_code == 200
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
 
     live(mongo_uri, test)
 
@@ -532,6 +638,82 @@ def test_two_first_saves_at_once_make_one_area(mongo_uri, monkeypatch):
     live(mongo_uri, test)
 
 
+def _purge(mongo: MongoClient[dict[str, Any]], db_name: str, child: str) -> str:
+    """The child's deletion as a tombstone write does it (its guard, then the tombstone), in
+    a transaction of its own: "committed", or "conflicted" with a write in flight."""
+    db = mongo[db_name]
+    with mongo.start_session() as session:
+        session.start_transaction()
+        try:
+            db.guards.update_one(
+                {"_id": f"child:{child}", "location": LOCATION},
+                {"$set": {"touched_at": datetime.now(UTC)}},
+                upsert=True,
+                session=session,
+            )
+            db.tombstones.insert_one(
+                {"_id": f"child:{child}", "location": LOCATION, "version": 2,
+                 "deleted_at": datetime.now(UTC)},
+                session=session,
+            )  # fmt: skip
+            session.commit_transaction()
+            return "committed"
+        except OperationFailure as exc:
+            session.abort_transaction()
+            assert exc.has_error_label("TransientTransactionError")
+            return "conflicted"  # it runs again after the write in flight
+
+
+@pytest.mark.live_service
+def test_a_deletion_during_a_first_save_conflicts_with_it(mongo_uri, monkeypatch):
+    # Found by review: the first save checked the tombstones without touching their guards,
+    # so a deletion committing after the check let the new area come back.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        real = main.is_tombstoned
+        mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_uri)
+        deletion: list[str] = []
+
+        async def deleted_after_the_check(*args: Any, **kwargs: Any) -> bool:
+            found = await real(*args, **kwargs)
+            if not deletion:  # the purge commits after the save's check, before its insert
+                deletion.append(_purge(mongo, r.db.name, child))
+            return found
+
+        monkeypatch.setattr(main, "is_tombstoned", deleted_after_the_check)
+        saved = await r.http.put(_path(child, "/self_care"), json=_area(), headers=auth_header())
+        mongo.close()
+        # They conflicted: the deletion runs again, and then finds the area to delete.
+        assert deletion == ["conflicted"] and saved.status_code == 200
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_two_areas_completing_at_once_complete_grow_once(mongo_uri):
+    # Found by review: each completion counted the others in its own snapshot, so two at
+    # once could both see themselves as the first and publish grow.completed twice.
+    async def test(r: Running) -> None:
+        for _ in range(5):
+            child = await r.ready_child()
+            first, second = await asyncio.gather(
+                *(
+                    r.http.put(
+                        _path(child, f"/{area}"),
+                        json=_area(status="completed"),
+                        headers=auth_header(),
+                    )  # fmt: skip
+                    for area in ("self_care", "creativity")
+                )
+            )
+            assert (first.status_code, second.status_code) == (200, 200)
+            rows = await r.db.outbox.find({"aggregate_id": child}).to_list(None)
+            kinds = sorted(row["event_type"] for row in rows)
+            assert kinds == ["grow.area_completed", "grow.area_completed", "grow.completed"]
+
+    live(mongo_uri, test)
+
+
 @pytest.mark.live_service
 def test_an_area_that_keeps_changing_is_409_and_a_deletion_meanwhile_404(mongo_uri, monkeypatch):
     async def test(r: Running) -> None:
@@ -596,7 +778,7 @@ def test_transform_confirms_grow_and_circles_read_the_completed_areas(mongo_uri)
                 "child_activity_results": {"summary": "Loves rest", "strengths": None,
                                            "suggested_activities": None},
                 "recommendations": None, "ai_three_month_recommendations": None,
-                "reflections": [], "child_choices": [], "version": 2,
+                "reflections": [], "child_games": [], "version": 2,
             }]
         }  # fmt: skip
         # Only transform confirms; children reads neither; a token is required.
@@ -780,9 +962,6 @@ def datetime_now() -> Any:
 def test_reflections_keep_answers_whose_questions_are_gone():
     doc = {"answers": {"old_q1": " Brushes alone ", "old_q2": " "}, "parent_questions": None}
     assert generation.reflections(doc) == [{"question": "", "answer": "Brushes alone"}]
-    assert generation.child_choices({"child_rounds": {"rounds": [
-        {"a": {"id": "a1", "text": "A"}, "b": {"id": "b1", "text": "B"}},
-    ]}, "child_activity": {"selections": ["nope"]}}) == []  # fmt: skip
 
 
 @pytest.mark.live_service

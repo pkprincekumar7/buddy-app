@@ -7,6 +7,8 @@ endpoint is in docs/auth-users-split-api.md:
 - `GET /api/v1/children` (Home, one query), `POST`, and `GET` / `PATCH` / `DELETE
   /api/v1/children/{id}`; `POST …/{id}/avatar/presign` for a photo;
 - `POST /api/v1/children/{id}/connect/visit`: served here until a connect service exists;
+- `GET /api/v1/children/{id}/kids` and `POST …/kids/events`: what the child does in child
+  view (`kid_activity`, children/app/kids.py; docs/child-view-build-plan.md, 2.1);
 - `GET /internal/children/{id}`: the circles' read-through for their child_access copy.
 
 **Ownership (12.3):** a parent's queries filter by their own `{location, user_id}`, so
@@ -26,15 +28,17 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from limits import parse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.asynchronous.client_session import AsyncClientSession
 
+from children.app import kids
+from children.app.kids import KID_ACTIVITY
 from children.app.runtime import SERVICE, Runtime
 from children.app.store import (
     AGE_MAX,
@@ -415,19 +419,21 @@ async def create_child(body: ChildIn, runtime: Ready, caller: SignedIn) -> Child
     _parents_only(caller)
     children = runtime.db[CHILDREN]
     live = {"location": caller.location, "user_id": caller.user_id, "is_deleted": False}
-    if await children.count_documents(live) >= MAX_CHILDREN:
-        raise _error(422, "child_limit", f"A parent can have at most {MAX_CHILDREN} children.")
     doc = new_child(
         str(uuid.uuid4()), caller.user_id, caller.location, body.model_dump(), datetime.now(UTC)
     )
 
     async def write(session: AsyncClientSession) -> None:
-        # Not for an account being deleted: the user's tombstone, checked behind its guard
-        # so a deletion in flight and this create conflict (review).
+        # Behind the user's guard: a deletion in flight and this create conflict (review),
+        # and so do two creates at once, so the limit below is counted with the other's
+        # child either committed or not started, and two can't both take the last place.
         user_stone = [tombstone_key("user", caller.user_id)]
         await write_guards(runtime.db, user_stone, location=caller.location, session=session)
+        # Not for an account being deleted: the user's tombstone.
         if await is_tombstoned(runtime.db, user_stone, session, location=caller.location):
             raise _error(409, "account_deleting", "This account is being deleted.")
+        if await children.count_documents(live, session=session) >= MAX_CHILDREN:
+            raise _error(422, "child_limit", f"A parent can have at most {MAX_CHILDREN} children.")
         await children.insert_one(doc, session=session)
         await _event(runtime, doc, session)
 
@@ -526,6 +532,13 @@ async def update_child(id: ChildId, body: ChildPatch, runtime: Ready, caller: Si
             await upload_tracking.attached(
                 runtime.db, [changes["avatar_key"]], location=before["location"], session=session
             )
+        old_key = before.get("avatar_key")
+        if old_key and old_key != updated.get("avatar_key"):
+            # The replaced or cleared photo: tracked in this commit, so the sweep deletes it
+            # if the delete after the commit fails.
+            await upload_tracking.replaced(
+                runtime.db, old_key, location=before["location"], child_id=id, session=session
+            )
         if copied_changed:
             await _event(runtime, updated, session)
         result["doc"] = updated
@@ -540,11 +553,10 @@ async def update_child(id: ChildId, body: ChildPatch, runtime: Ready, caller: Si
         raise _error(409, "child_changed", "The child changed while updating; try again.")
     old_key = before.get("avatar_key")
     if old_key and old_key != result["doc"].get("avatar_key") and runtime.uploads is not None:
-        # The replaced or cleared photo, after the change committed.
-        try:
-            await runtime.uploads.delete(old_key)
-        except Exception:
-            _logger.warning("children: old avatar not deleted; the purge removes it later")
+        # The replaced or cleared photo, after the change committed (tracked by `replaced`).
+        await upload_tracking.delete_now(
+            runtime.db, runtime.uploads, old_key, location=before["location"]
+        )
     return await _view(runtime, result["doc"])
 
 
@@ -680,6 +692,242 @@ async def connect_visit(id: ChildId, runtime: Ready, caller: SignedIn) -> Progre
     # None: another visit set it first, or the child was deleted meanwhile (404).
     doc = result["doc"] or await _owned(runtime, caller, id)
     return ProgressOut(progress=Progress(**doc["progress"]))
+
+
+# ── child view: the child's activity (docs/child-view-build-plan.md, 2.1) ──────────
+
+ChildDay = Annotated[
+    str,
+    Query(
+        alias="date",
+        pattern=kids.DATE_PATTERN,
+        description="The child's own day (their device's date), YYYY-MM-DD: within a day of "
+        "the server's.",
+    ),
+]
+PowerIndex = Annotated[int, Field(ge=0, le=kids.POWER_COUNT - 1)]
+
+
+class FlipPower(BaseModel):
+    """The child opened a Discover power: +1 the first time, +3 once all are open."""
+
+    model_config = _Strict
+    type: Literal["flip_power"]
+    power: PowerIndex
+
+
+class TryPower(BaseModel):
+    """The child did a power's "Try this today": +1 once a day per power."""
+
+    model_config = _Strict
+    type: Literal["try_power"]
+    power: PowerIndex
+
+
+class GameBest(BaseModel):
+    """A Discover mini game finished: kept when it's the child's best time. No stars."""
+
+    model_config = _Strict
+    type: Literal["game_best"]
+    game: Literal["focus", "curious", "order", "draw", "climb", "voice", "energy"]
+    seconds: float = Field(ge=kids.BEST_MIN_SECONDS, le=kids.BEST_MAX_SECONDS)
+
+
+class MoodIn(BaseModel):
+    """Release's check-in for the child's day: +1 once a day; a second one that day
+    replaces it."""
+
+    model_config = _Strict
+    type: Literal["mood"]
+    mood: Literal["great", "good", "okay", "low", "upset"]
+    note: str | None = Field(default=None, max_length=kids.NOTE_MAX)
+
+
+class ShowWin(BaseModel):
+    """Connect's "Show my grown-up": keeps a win for the parent to share (P.2). No stars."""
+
+    model_config = _Strict
+    type: Literal["show_win"]
+    key: Annotated[str, StringConstraints(pattern=kids.WIN_KEY_PATTERN)]
+    title: Annotated[
+        str, StringConstraints(min_length=1, max_length=kids.WIN_TITLE_MAX, strip_whitespace=True)
+    ]
+
+
+KidEvent = Annotated[
+    FlipPower | TryPower | GameBest | MoodIn | ShowWin,
+    Field(discriminator="type"),
+]
+
+
+class KidMood(BaseModel):
+    mood: str
+    note: str | None
+
+
+class ShownWin(BaseModel):
+    title: str
+    at: datetime
+
+
+class KidCircles(BaseModel):
+    """Which circles the child has done in child view; each opens the next."""
+
+    discover: bool
+    grow: bool
+    transform: bool
+    release: bool
+    connect: bool
+
+
+class KidActivity(BaseModel):
+    stars: int
+    circles_done: KidCircles
+    flipped_powers: list[int]
+    discover_badge: bool
+    tried_today: list[int] = Field(description='Powers whose "Try this today" is done today.')
+    best_times: dict[str, float]
+    moods: dict[str, KidMood] = Field(description="The last 62 days' moods, newest first.")
+    shown: dict[str, ShownWin] = Field(
+        default_factory=dict, description='The wins "Show my grown-up" kept, by key.'
+    )
+
+
+def _kid_view(doc: Mapping[str, Any], day: str) -> KidActivity:
+    awards = doc.get("awards", {})
+    return KidActivity(
+        stars=int(doc.get("stars", 0)),
+        circles_done=KidCircles(**kids.circles_done(doc)),
+        flipped_powers=sorted(set(doc.get("flipped_powers", []))),
+        discover_badge=kids.BADGE_DISCOVER in awards,
+        tried_today=kids.tried_on(awards, day),
+        best_times={game: float(t) for game, t in doc.get("best_times", {}).items()},
+        moods={
+            d: KidMood(**m)
+            for d, m in kids.recent_moods(doc.get("moods", {}), date.fromisoformat(day)).items()
+        },
+        shown={key: ShownWin(**win) for key, win in doc.get("shown", {}).items()},
+    )
+
+
+def _child_day(day: str, now: datetime) -> str:
+    try:
+        return kids.check_day(day, now).isoformat()
+    except ValueError as exc:
+        raise _error(422, "bad_date", "That isn't today's date.") from exc
+
+
+async def _kid_doc(
+    runtime: Runtime, child: Mapping[str, Any], session: AsyncClientSession | None = None
+) -> Mapping[str, Any]:
+    doc = await runtime.db[KID_ACTIVITY].find_one(
+        {"_id": child["_id"], "location": child["location"]}, session=session
+    )
+    return doc or kids.empty(child["_id"], child["user_id"], child["location"], datetime.now(UTC))
+
+
+@router.get(
+    "/{id}/kids",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="What the child has done in child view (parents only): stars, Discover's "
+    "flipped powers and best times, and the last 62 days' moods. `?date=` is the child's day.",
+)
+async def kid_activity(id: ChildId, day: ChildDay, runtime: Ready, caller: SignedIn) -> KidActivity:
+    _parents_only(caller)
+    child = await _owned(runtime, caller, id)
+    return _kid_view(await _kid_doc(runtime, child), _child_day(day, datetime.now(UTC)))
+
+
+@router.post(
+    "/{id}/kids/events",
+    dependencies=[Depends(per_user("120/minute"))],
+    description="One thing the child did in child view (parents only; the child uses the "
+    "parent's session). The server gives the stars, each once. Refused with `circle_locked` "
+    "while the action's circle isn't open in child view: Discover once the chat is done, "
+    "each other once the one before is done there (`circles_done`). Grow's worlds and "
+    "Transform's quests aren't sent here: grow and transform publish them (`grow.world_played`, "
+    "`transform.quest_logged`) with the run or the log, and children records them.",
+)
+async def kid_event(
+    id: ChildId,
+    day: ChildDay,
+    runtime: Ready,
+    caller: SignedIn,
+    body: Annotated[KidEvent, Body()],
+) -> KidActivity:
+    _parents_only(caller)
+    child = await _owned(runtime, caller, id)
+    now = datetime.now(UTC)
+    today = _child_day(day, now)
+    circle = kids.ACTION_CIRCLE[body.type]
+    done = kids.circles_done(await _kid_doc(runtime, child))
+    if not kids.circle_open(circle, child["progress"], done):
+        raise _error(403, "circle_locked", f"{circle.capitalize()} isn't open yet.")
+    db = runtime.db
+    where = {"_id": id, "location": child["location"]}
+    result: dict[str, Any] = {}
+
+    async def write(session: AsyncClientSession) -> None:
+        # Not for a child or account being deleted: their tombstones, behind their guards,
+        # so a deletion in flight and this write conflict and one runs again.
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", id)]
+        await write_guards(db, stones, location=child["location"], session=session)
+        if await is_tombstoned(db, stones, session, location=child["location"]):
+            raise _not_found()
+        live = await db[CHILDREN].find_one({**where, "is_deleted": False}, session=session)
+        if live is None:
+            raise _not_found()
+        await kids.ensure_doc(db, child, now, session)
+        if isinstance(body, FlipPower):
+            await kids.give_award(
+                db, child, f"power:{body.power}", now,
+                {"$addToSet": {"flipped_powers": body.power}}, session,
+            )  # fmt: skip
+            doc = await _kid_doc(runtime, child, session)
+            if len(set(doc["flipped_powers"])) >= kids.POWER_COUNT:
+                await kids.give_award(db, child, kids.BADGE_DISCOVER, now, session=session)
+        elif isinstance(body, TryPower):
+            await kids.give_award(db, child, f"try:{body.power}:{today}", now, session=session)
+        elif isinstance(body, ShowWin):
+            doc = await _kid_doc(runtime, child, session)
+            if body.key not in doc.get("shown", {}) and len(doc.get("shown", {})) >= kids.SHOWN_MAX:
+                raise _error(409, "shown_full", "Your grown-up has lots to see already.")
+            await db[KID_ACTIVITY].update_one(
+                where,
+                {
+                    "$set": {
+                        f"shown.{body.key}": {"title": body.title, "at": now},
+                        "updated_at": now,
+                    },
+                    "$inc": {"version": 1},
+                },
+                session=session,
+            )
+        elif isinstance(body, GameBest):
+            best = f"best_times.{body.game}"
+            await db[KID_ACTIVITY].update_one(
+                {**where, "$or": [{best: {"$exists": False}}, {best: {"$gt": body.seconds}}]},
+                {"$set": {best: body.seconds, "updated_at": now}, "$inc": {"version": 1}},
+                session=session,
+            )
+        else:
+            note = body.note or None
+            await db[KID_ACTIVITY].update_one(
+                where,
+                {
+                    "$set": {
+                        f"moods.{today}": {"mood": body.mood, "note": note, "at": now},
+                        "updated_at": now,
+                    },
+                    "$inc": {"version": 1},
+                },
+                session=session,
+            )
+            await kids.give_award(db, child, f"mood:{today}", now, session=session)
+        result["doc"] = await _kid_doc(runtime, child, session)
+
+    await _transaction(runtime, write)
+    return _kid_view(result["doc"], today)
 
 
 app.include_router(health_router)

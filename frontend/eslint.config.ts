@@ -69,4 +69,28 @@ export default tseslint.config(
       'security/detect-object-injection': 'off',
     },
   },
+
+  // The kids page takes every colour and font from the theme (docs/child-view-build-plan.md
+  // "Theming"): no literals, so a palette change stays a one-file edit. index.css and the
+  // Tailwind config hold the values.
+  {
+    files: ['src/components/kids/**/*.{ts,tsx}', 'src/pages/KidsMode.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: String.raw`Literal[value=/#[0-9a-fA-F]{3,8}\b|\b(rgba?|hsla?)\(\s*[\d.]/]`,
+          message: 'Use a theme token (index.css --kids-*, bg-kids-*), not a colour literal.',
+        },
+        {
+          selector: String.raw`TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\b|\b(rgba?|hsla?)\(\s*[\d.]/]`,
+          message: 'Use a theme token (index.css --kids-*, bg-kids-*), not a colour literal.',
+        },
+        {
+          selector: "Property[key.name='fontFamily']",
+          message: 'Use font-orbitron / font-rajdhani, not an inline fontFamily.',
+        },
+      ],
+    },
+  },
 );

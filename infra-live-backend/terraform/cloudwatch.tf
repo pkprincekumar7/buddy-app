@@ -531,6 +531,42 @@ resource "aws_cloudwatch_metric_alarm" "deletion_stuck" {
   ok_actions          = local.alarm_actions
 }
 
+# The authz change stream skipped a change that failed MAX_CHANGE_ATTEMPTS times for a
+# reason other than Valkey being unreachable (auth.app.authz_stream). The user's cache entry
+# was deleted, so their next request reads authz from Mongo, but the failure itself needs a
+# look: the log line names the user id and the error class.
+resource "aws_cloudwatch_log_metric_filter" "authz_change_skipped" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  name           = "${var.app_name}-auth-authz-change-skipped-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["auth-worker"].name
+  pattern        = "\"authz.stream.change_skipped\""
+
+  metric_transformation {
+    name          = "AuthzChangesSkipped"
+    namespace     = "Superpower/auth"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "authz_change_skipped" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-auth-authz-change-skipped-${var.environment}"
+  alarm_description   = "The authz change stream skipped a change it couldn't apply after 3 tries (not a Valkey outage). The auth-worker log line names the user id and the error; their cache entry was dropped, so authz is read from Mongo meanwhile."
+  namespace           = "Superpower/auth"
+  metric_name         = aws_cloudwatch_log_metric_filter.authz_change_skipped[0].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 900
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
 # ---------------------------------------------------------------------------
 # Generation and runtime alarms — enable_all_alarms (stg, prod)
 # (production-readiness review: OBS-02, JOB-02, JOB-03, OBS-03)

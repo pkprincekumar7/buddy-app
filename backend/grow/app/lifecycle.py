@@ -42,6 +42,7 @@ from common.models import (
 from common.telemetry import current_traceparent
 from grow.app.runtime import SERVICE, Runtime
 from grow.app.store import GROWTH_AREAS
+from grow.app.worlds import WORLD_RUNS
 
 COPIES = (CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS)
 
@@ -110,7 +111,7 @@ async def copy_inputs(runtime: Runtime, received: ReceivedEvent) -> bool:
 
 
 async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
-    """A purged child's areas, copies and jobs, and its tombstone."""
+    """A purged child's areas, world runs, copies and jobs, and its tombstone."""
     event = received.event
     child_id, location = event.aggregate_id, event.location
 
@@ -118,7 +119,7 @@ async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
         await runtime.db[GROWTH_AREAS].delete_many(
             {"location": location, "child_id": child_id}, session=session
         )
-        for name in COPIES:
+        for name in (WORLD_RUNS, *COPIES):
             await runtime.db[name].delete_one(
                 {"_id": child_id, "location": location}, session=session
             )
@@ -153,7 +154,7 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
         child_ids = await runtime.db[CHILD_ACCESS].distinct(
             "_id", {"location": location, "user_id": user_id}, session=session
         )
-        for name in (GROWTH_AREAS, *COPIES):
+        for name in (GROWTH_AREAS, WORLD_RUNS, *COPIES):
             await runtime.db[name].delete_many(
                 {"location": location, "user_id": user_id}, session=session
             )

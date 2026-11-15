@@ -13,14 +13,24 @@ import {
 import { useStartOver } from '@/hooks/useStartOver';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import { cn } from '@/lib/utils';
+import { START_OVER_DESCRIPTION } from '@/lib/startOverCopy';
 
 interface ConfirmModalProps {
   onCancel: () => void;
   onConfirm: () => void;
   isStartingOver: boolean;
+  /** Defaults to the Start Over copy; the profile menu's delete passes its own. */
+  title?: string;
+  description?: string;
 }
 
-export function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps) {
+export function ConfirmModal({
+  onCancel,
+  onConfirm,
+  isStartingOver,
+  title = 'Start Over?',
+  description = START_OVER_DESCRIPTION,
+}: ConfirmModalProps) {
   // Radix AlertDialog supplies Escape, focus move/trap/restore and the
   // accessible name/description; the motion divs keep the original visuals.
   return (
@@ -55,12 +65,10 @@ export function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmMod
                 {/* Text */}
                 <div className="mb-7 space-y-2 text-center">
                   <AlertDialogTitle className="text-lg font-bold text-foreground">
-                    Start Over?
+                    {title}
                   </AlertDialogTitle>
                   <AlertDialogDescription className="text-sm leading-relaxed text-muted-foreground">
-                    All progress for this child will be permanently deleted — personality results,
-                    growth area answers, and goal plans. You will need to restart the onboarding
-                    from the beginning.
+                    {description}
                   </AlertDialogDescription>
                   <p className="text-xs font-medium text-error">This cannot be undone.</p>
                 </div>

@@ -67,10 +67,16 @@ ANSWERS: dict[str, Any] = {
     "emotional_behaviour": "steady",
 }
 _CASES = json.loads((FIXTURES / "llm_answers.json").read_text())
-# Valid LLM answers for each kind: the first fixture of each (life_ambition's rounds).
+# Valid LLM answers for each kind: the first set of questions, and the recommendations with
+# a source on each.
 QUESTIONS_ANSWER: dict[str, Any] = _CASES[0]["answer"]
-ROUNDS_ANSWER: dict[str, Any] = _CASES[8]["answer"]
-RECOMMENDATIONS_ANSWER: dict[str, Any] = _CASES[17]["answer"]
+RECOMMENDATIONS_ANSWER: dict[str, Any] = next(
+    case["answer"]
+    for case in _CASES
+    if case["kind"] == "recommendations"
+    and isinstance(case["answer"], dict)
+    and all("source" in item for item in case["answer"].get("recommendations", []))
+)
 SUMMARY: dict[str, Any] = {
     "traits": {
         "dominant_style": "Thinker",

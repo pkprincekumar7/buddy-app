@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
-import Animated from 'react-native-reanimated';
-import Svg, { G } from 'react-native-svg';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import Svg, { G, Path } from 'react-native-svg';
 import { css, font, rgb } from '@/theme';
 import {
   LOCKED_ICON_STROKE,
@@ -64,7 +64,30 @@ const GLOW_DISC = {
 } as const;
 
 const FROST = rgb('constellation-text-frost');
+/** A tapped circle's ring before it opens (web SELECTED_GLOW, the prototype's `sel`). */
+const SELECTED_GLOW = `0 0 0 3px ${rgb(
+  'constellation-cyan',
+  0.9,
+)}, 0 0 26px ${rgb('constellation-cyan')}, 0 0 46px ${rgb(
+  'constellation-cyan-bright',
+  0.6,
+)}`;
 const SLATE_DARK = rgb('constellation-slate-dark');
+/** The done tick's badge: 22pt at the circle's top right corner, -4pt out. */
+const TICK_BADGE = {
+  position: 'absolute',
+  top: -4,
+  right: -4,
+  width: 22,
+  height: 22,
+  borderRadius: 11,
+  backgroundColor: rgb('constellation-navy-deep'),
+  borderWidth: 1.5,
+  borderColor: rgb('constellation-slate-deep'),
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 3,
+} as const;
 
 export interface DimensionNodeProps {
   /** Node center in the 700px ring box. */
@@ -84,6 +107,10 @@ export interface DimensionNodeProps {
   labelColor?: string;
   /** Discover's bobbing "Start here" pill. */
   startHereBadge?: boolean;
+  /** Tapped: ringed for a moment before its page opens. */
+  selected?: boolean;
+  /** Done (child view's Start Again): a tick badge and "Completed" under the label. */
+  done?: boolean;
 }
 
 /**
@@ -101,8 +128,13 @@ export default function DimensionNode({
   label,
   labelColor,
   startHereBadge = false,
+  selected = false,
+  done = false,
 }: DimensionNodeProps) {
-  const glowing = !locked && highlighted;
+  const glowing = !locked && highlighted && !selected;
+  // The disc grows a little while pressed (web .hub-disc's hover, the prototype's).
+  const [pressed, setPressed] = useState(false);
+  const reduced = useReducedMotion();
   return (
     <Animated.View
       style={[
@@ -119,9 +151,11 @@ export default function DimensionNode({
     >
       <Pressable
         onPress={locked ? undefined : onPress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
         disabled={locked}
         accessibilityRole="button"
-        accessibilityLabel={label}
+        accessibilityLabel={done ? `${label}, completed` : label}
         accessibilityState={{ disabled: locked }}
         style={{
           width: NODE,
@@ -210,21 +244,31 @@ export default function DimensionNode({
             />
           </>
         )}
-        <View
+        <Animated.View
           pointerEvents="none"
-          style={{
-            width: INNER,
-            height: INNER,
-            borderRadius: INNER / 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-            experimental_backgroundImage: locked ? INACTIVE_BG : ACTIVE_BG,
-            boxShadow: locked
-              ? INACTIVE_SHADOW
-              : glowing
-              ? undefined
-              : ACTIVE_SHADOW,
-          }}
+          style={[
+            {
+              width: INNER,
+              height: INNER,
+              borderRadius: INNER / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+              experimental_backgroundImage: locked ? INACTIVE_BG : ACTIVE_BG,
+              boxShadow: locked
+                ? INACTIVE_SHADOW
+                : selected
+                ? SELECTED_GLOW
+                : glowing
+                ? undefined
+                : ACTIVE_SHADOW,
+              transform: [{ scale: pressed && !locked ? 1.08 : 1 }],
+            },
+            !reduced && {
+              transitionProperty: 'transform',
+              transitionDuration: 200,
+              transitionTimingFunction: 'ease',
+            },
+          ]}
         >
           <Svg width={23} height={23} viewBox="0 0 24 24">
             <G
@@ -235,7 +279,22 @@ export default function DimensionNode({
               {icon}
             </G>
           </Svg>
-        </View>
+        </Animated.View>
+
+        {done && (
+          <View pointerEvents="none" style={TICK_BADGE}>
+            <Svg width={12} height={12} viewBox="0 0 24 24">
+              <Path
+                d="M5 13l4 4L19 7"
+                stroke={FROST}
+                fill="none"
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </View>
+        )}
 
         <View
           pointerEvents="none"
@@ -259,6 +318,21 @@ export default function DimensionNode({
           >
             {label}
           </Text>
+          {done && (
+            <Text
+              className="uppercase"
+              style={[
+                font('rajdhani', 600),
+                {
+                  fontSize: 10.5,
+                  letterSpacing: 10.5 * 0.15,
+                  color: SLATE_DARK,
+                },
+              ]}
+            >
+              Completed
+            </Text>
+          )}
         </View>
       </Pressable>
     </Animated.View>
