@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import { useKidActivity } from '@/hooks/useKidActivity';
 import { daysAgo } from '@/api/kidWorlds';
 import { Button } from '@/components/ui/button';
@@ -232,17 +232,13 @@ export default function Connect() {
 
   if (isLoading) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center"
+      <PageLoader
         style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
-      >
-        <Spinner
-          style={{
-            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
-            borderTopColor: 'transparent',
-          }}
-        />
-      </div>
+        spinnerStyle={{
+          borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+          borderTopColor: 'transparent',
+        }}
+      />
     );
   }
 

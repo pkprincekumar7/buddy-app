@@ -318,3 +318,77 @@ Applying an item from group 1 means changing both apps the same way.
   under the pointer, as the prototype's (web `.hub-disc`, on devices that hover); on mobile, while
   it's pressed. The pulses already matched (2.6 s single ring; the next circle's 1.7 s double ring
   and glow, on the child's next circle rather than always on Discover, as decided in section 3).
+- The profile menu's position on mobile (2026-11-15): the panel's top sits 2 px above the app
+  bar's bottom edge, as the web's does at phone width (it was 8 px below it), and its Modal is
+  `statusBarTranslucent`, so Android no longer counts the status bar twice (the panel had sat a
+  status bar lower than on iOS and the web). Checked on the iOS simulator and the Android
+  emulator.
+- The journey's screen transitions on mobile (2026-11-15): the stack's card animation is off for
+  PersonalityJourney (`animation: 'none'`, navigation/index.tsx), as the web swaps routes with no
+  page animation, so Home → the orb screen no longer slides in (iOS) or fades up (Android) over
+  the screen's own fade-in, and the orb → circles warp isn't crossed by a card push. Recorded
+  on the iOS simulator and the Android emulator.
+- The warp's centre (2026-11-15, both apps): the orb and the circles' hub now sit on the
+  window's centre, where the warp's stars and glow start (the orb and hub had sat 48 px lower,
+  their layout taking off the 64 px app bar but not the Back row). Each screen measures its own
+  top (web) or works it out (mobile: status bar, app bar and Back row) and centres on 50vh less
+  it; the zoom and the hub's entrance scale about that point, and the ring is sized to the room
+  above and below it. On a short window the orb shrinks (to its 100 px minimum radius) so its
+  heading still fits under the Back row: 200 px across on a 1280x800 desktop, about 200 pt on
+  an iPhone 17 Pro, unchanged at phone width on the web. Checked on the web, the iOS simulator
+  and the Android emulator.
+- Page loading spinners (2026-11-15, both apps): every page's loader is now the shared
+  `PageLoader`, whose spinner sits on the window's centre, where the journey's orb and hub
+  appear, wherever the loader starts (under the app bar, the Back row or a page's own header):
+  the journey, Home, Growth, Kids, Account settings, the onboarding chat, Connect, Life Pathway,
+  Observations and Onboarding (each keeping its own colours). The web measures the loader's top
+  on the page (`hooks/usePageTop`, shared with the journey's screens); mobile measures it in the
+  window (Android's `measureInWindow` leaves out the status bar, so its top inset is added
+  back). The app's start-up spinner (before any app bar) was already on the window's centre. On
+  mobile the orb's first frame starts from a three-line heading estimate, so it no longer shows
+  larger and then shrinks. Checked on the web, the iOS simulator and the Android emulator.
+- The circles' pages open with no stack animation on mobile (2026-11-15): the Discover page,
+  Growth, Life Pathway, Observations, Connect and the kids page join the journey in
+  `animation: 'none'` (navigation/index.tsx), as the web swaps routes with no page animation.
+  The circles had shown again for a moment between a splash and its page: Discover's portal
+  faded out over the hub while the profile slid in (iOS) or faded up (Android), and the other
+  circles' pages slid in over the hub before their own splash. Recorded on the iOS simulator
+  (Discover, Transform) and the Android emulator (Discover). With no card animation, iOS's
+  edge-swipe back doesn't run on these pages; the Back row and Android's back still do.
+- The app bar during the warp and the splashes (2026-11-15, both apps): the app bar and the Back
+  row now hide the moment the orb is tapped or a stage splash opens (a circle's avatar video,
+  Discover's portal), stay hidden through it, and fade back in (.5 s) with the page, instead of
+  showing in between (the page under a splash had drawn its bar before the splash covered it,
+  and the warp's veil let it show through). A shared count (`lib/appBar`: `useHideAppBar`,
+  `useAppBarHidden`) so the warp and a splash can overlap; `StageSplash` and the journey's warp
+  hold it, and the web Layout, mobile AppHeader and PageBackRow read it. Checked on the web
+  (warp, Discover, Transform), the iOS simulator (warp, Transform) and the Android emulator
+  (Transform).
+- Closing the profile menu and dialogs on mobile (2026-11-15): on Android, tapping Home (or any
+  row) in the profile menu made it vanish, come back and fade out before the page changed. Its
+  Modal went at the same time as its content's Reanimated `exiting` started, and Android
+  re-drew the leaving content a frame late, over the app. The menu, `Dialog`, Start Journey and
+  Tracking started modals now keep their Modal up for 300 ms and fade the content out with an
+  opacity transition (`lib/useModalExit`: `useModalExit`, `modalFade`, tested); the entrances
+  are unchanged. Recorded on the Android emulator (from the orb screen and the hub) and the iOS
+  simulator.
+- Home → the orb screen without a flash (2026-11-15, both apps), checked frame by frame. Android:
+  the orb screen showed fully drawn for one frame, dropped to dark and faded in, as Reanimated
+  applies a CSS animation's first keyframe a frame after the view is drawn; its fading views
+  (the screen, heading, orb, hint, and the hub's wrapper) now start transparent
+  (`animations.preEnter`, visible under reduced motion). Web: framer ran the screen's, heading's,
+  orb's and hint's entrances as Web Animations and, as each ended, dropped it a frame before
+  writing the end value (the orb, through the buttons' .15 s opacity transition, for about
+  130 ms), so each blinked out once at its end; they're now CSS animations with `backwards` fill
+  (`.journey-*-in`, and the hub's `.journey-hub-in`), framer keeping only the exits and the orb's
+  press, and the orb has no button transition. iOS showed no flash: the screen is built while
+  the spinner holds (about .4 s), so it appears in one step with the hint fading after.
+- Home → the orb screen as one smooth hand-off (2026-11-15, both apps): "Continue Your Journey"
+  fades Home out (.3 s) before opening the journey (at once under reduced motion; mobile shows
+  Home again when it's back on top), the orb screen lands with the prototype's `landIn` (.6 s,
+  from 1.08x and transparent, about the orb's centre: web `.journey-screen-in`, mobile
+  `LAND_IN`), and the page loaders' spinner shows only after .3 s (`.page-loader-spin`, mobile
+  `PageLoader`), so a quick load goes straight from Home to the orb. On mobile the landing starts
+  a frame after the screen is laid out: iOS holds the UI about .4 s while building it, which had
+  used the landing up before anything was drawn. Measured frame by frame on the web, the iOS
+  simulator and the Android emulator.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { useHideAppBar } from '@/lib/appBar';
 
 /**
  * Full-screen stage splash — image for most stages, video for stages 1, 2, 4, and 7.
@@ -33,6 +34,8 @@ export default function StageSplash({ stage, portal = false, onReady }: StageSpl
   const padded = String(stage).padStart(2, '0');
   const isVideo = VIDEO_STAGES.has(stage);
   const theme = 'dark';
+  // No app bar behind the splash: the page it opens over shows none until it's revealed.
+  useHideAppBar(true);
 
   return (
     <motion.div

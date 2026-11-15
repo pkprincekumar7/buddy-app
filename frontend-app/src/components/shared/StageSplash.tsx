@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { rgb } from '@/theme';
+import { useHideAppBar } from '@/lib/appBar';
 import { Portal } from '@/components/ui/portal';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { useEventListener } from 'expo';
@@ -48,6 +49,8 @@ export default function StageSplash({
   portal = false,
   onReady,
 }: StageSplashProps) {
+  // No app bar behind the splash: the page it opens over shows none until it's revealed.
+  useHideAppBar(true);
   const padded = String(stage).padStart(2, '0');
   const isVideo = VIDEO_STAGES.has(stage);
   const theme = 'dark';

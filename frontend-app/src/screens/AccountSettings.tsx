@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { account, type Profile, type ProfilePatch } from '@/api/account';
 import FormInput from '@/components/auth/FormInput';
 import PageScroll from '@/components/layout/PageScroll';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -75,11 +75,7 @@ export default function AccountSettings() {
   }, [profile]);
 
   if (isLoading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <Spinner className="h-8 w-8" durationSeconds={1} />
-      </View>
-    );
+    return <PageLoader spinnerClassName="h-8 w-8" durationSeconds={1} />;
   }
   if (error || !profile || !draft) {
     return (

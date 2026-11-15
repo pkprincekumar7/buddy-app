@@ -1258,6 +1258,13 @@
   .kids-confetti-piece {
     @apply absolute left-1/2 top-[46%] opacity-0;
   }
+  /* The app bar and Back row while a splash or the warp plays (lib/appBar): gone at once, so a
+     page opening behind a splash never shows them first; they fade back with the page. */
+  .app-bar-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transition: none;
+  }
   /* A live hub circle's disc grows a little under the pointer (the prototype's hover). */
   @media (hover: hover) {
     .hub-disc:hover {
@@ -2672,6 +2679,34 @@
   }
 }
 @media (prefers-reduced-motion: no-preference) {
+  /* The journey's entrances (PersonalityJourney): the orb screen, its heading, orb and hint,
+     and the circles' hub. `backwards` holds the start until they run and hands over to the
+     element's own style when they end, with nothing written in between. */
+  .journey-screen-in {
+    animation: journey-land-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .page-leaving {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .page-loader-spin {
+    animation: kids-fade 0.3s ease 0.3s backwards;
+  }
+  .journey-heading-in {
+    animation: journey-heading-in 0.7s ease-out backwards;
+  }
+  .journey-orb-in {
+    animation: journey-orb-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .journey-hint-in {
+    animation: kids-fade 0.7s ease 0.5s backwards;
+  }
+  .journey-hub-in {
+    animation: journey-hub-in 0.5s ease-out backwards;
+  }
+  .app-bar:not(.app-bar-hidden) {
+    transition: opacity 0.5s ease;
+  }
   .hub-disc {
     transition: transform 0.2s ease;
   }
@@ -2809,5 +2844,31 @@
   }
   .kids-enter-unfold-y {
     animation: kids-unfold-y 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+  }
+}
+
+@keyframes journey-heading-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+@keyframes journey-orb-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+@keyframes journey-hub-in {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+/* The prototype's landIn: the orb screen settles in from a little closer. */
+@keyframes journey-land-in {
+  from {
+    opacity: 0;
+    transform: scale(1.08);
   }
 }

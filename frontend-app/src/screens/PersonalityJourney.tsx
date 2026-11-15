@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
+import { useHideAppBar } from '@/lib/appBar';
 import { discover } from '@/api/discover';
 import { useJourney } from '@/hooks/useJourney';
 import { useStartOver } from '@/hooks/useStartOver';
@@ -20,8 +21,9 @@ import BuddyOrbScreen from '@/components/personalityJourney/BuddyOrbScreen';
 import DimensionCirclesScreen from '@/components/personalityJourney/DimensionCirclesScreen';
 import WarpOverlay from '@/components/personalityJourney/WarpOverlay';
 import {
+  LAND_IN,
   SCOPE_DOLLY,
-  fadeIn,
+  preEnter,
 } from '@/components/personalityJourney/animations';
 import type { ActiveDimension } from '@/components/personalityJourney/geometry';
 import { useJourneyViewport } from '@/components/personalityJourney/viewport';
@@ -40,7 +42,6 @@ const NAVY_DEEP = rgb('constellation-navy-deep');
 const AMBIENT_BLOB = css(
   'radial-gradient(circle, rgb(var(--constellation-teal-deep-rgb) / 0.35) 0%, transparent 60%)',
 );
-const PHASE1_FADE = fadeIn(0.3);
 
 function pausePlayer(p: VideoPlayer | null) {
   try {
@@ -57,6 +58,9 @@ export default function PersonalityJourney() {
   const { childId, sub } = useParams<{ childId?: string; sub?: string }>();
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const viewport = useJourneyViewport();
+  const reduceMotion = useReducedMotion();
+  // Set a frame after the orb screen is laid out: its landing starts then.
+  const [landReady, setLandReady] = useState(false);
   const isFocused = useIsFocused();
   const phase: Phase = sub === 'DimensionCircles' ? 2 : 1;
   const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
@@ -187,6 +191,8 @@ export default function PersonalityJourney() {
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
   const { ttsEnabled: soundOn } = useTts();
   const [isEntering, setIsEntering] = useState(false);
+  // No app bar during the warp: it comes back with the circles.
+  useHideAppBar(isEntering);
   const enterTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Play intro voice when orb screen (phase 1) is active — mirrors HTML's playVoice().
@@ -293,17 +299,13 @@ export default function PersonalityJourney() {
     return (
       <View className="flex-1 bg-background">
         {!childView && <PageBackRow />}
-        <View
-          className="flex-1 items-center justify-center"
+        <PageLoader
           style={{ backgroundColor: NAVY_DEEP }}
-        >
-          <Spinner
-            style={{
-              borderColor: rgb('constellation-cyan-bright', 0.6),
-              borderTopColor: 'transparent',
-            }}
-          />
-        </View>
+          spinnerStyle={{
+            borderColor: rgb('constellation-cyan-bright', 0.6),
+            borderTopColor: 'transparent',
+          }}
+        />
       </View>
     );
   }
@@ -340,6 +342,9 @@ export default function PersonalityJourney() {
   }
 
   const { width, vh } = viewport;
+  // The window's centre (where the warp's stars start) below the screens' top, under the Back
+  // row: the orb and the hub are centred there.
+  const centerY = viewport.centerY - (childView ? 0 : BACK_ROW_H);
 
   return (
     <View className="flex-1 bg-background">
@@ -358,7 +363,7 @@ export default function PersonalityJourney() {
             style={{
               position: 'absolute',
               left: width / 2 - 350,
-              top: vh / 2 - 64 - (childView ? 0 : BACK_ROW_H) - 350,
+              top: centerY - 350,
               width: 700,
               height: 700,
               borderRadius: 350,
@@ -370,15 +375,28 @@ export default function PersonalityJourney() {
             {phase === 1 && (
               <Animated.View
                 style={[
-                  { minHeight: vh },
-                  isEntering ? SCOPE_DOLLY : PHASE1_FADE,
+                  // The zoom goes into the orb, at its centre.
+                  {
+                    minHeight: vh,
+                    transformOrigin: [width / 2, centerY, 0],
+                  },
+                  // Transparent until the landing takes hold (animations.preEnter). It starts a
+                  // frame after the screen is laid out: building the screen can hold the UI for
+                  // longer than the landing (iOS), which would otherwise be over before it's seen.
+                  preEnter(reduceMotion),
+                  isEntering ? SCOPE_DOLLY : landReady ? LAND_IN : null,
                 ]}
+                onLayout={() => {
+                  if (!landReady)
+                    requestAnimationFrame(() => setLandReady(true));
+                }}
               >
                 <BuddyOrbScreen
                   childName={childName}
                   isAnalyzing={isAnalyzing}
                   onTap={handleEnterNav}
                   viewport={viewport}
+                  centerY={centerY}
                 />
               </Animated.View>
             )}
@@ -422,6 +440,7 @@ export default function PersonalityJourney() {
                 }}
                 current={currentDimension}
                 viewport={viewport}
+                centerY={centerY}
               />
             )}
           </View>

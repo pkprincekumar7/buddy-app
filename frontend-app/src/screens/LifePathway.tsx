@@ -12,7 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import PageScroll from '@/components/layout/PageScroll';
 import StageSplash from '@/components/shared/StageSplash';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import StartJourneyModal from '@/components/lifepathway/StartJourneyModal';
 import ChartSection from '@/components/lifePathwayPage/ChartSection';
 import CompareSection from '@/components/lifePathwayPage/CompareSection';
@@ -281,9 +281,7 @@ export default function LifePathway() {
     <View className="flex-1 bg-background">
       <Animated.View style={[{ flex: 1 }, pageStyle]}>
         {isLoading || !childId || redirectCode ? (
-          <View className="flex-1 items-center justify-center bg-background">
-            <Spinner className="h-12 w-12 border-4" />
-          </View>
+          <PageLoader spinnerClassName="h-12 w-12 border-4" />
         ) : loadFailed ? (
           <View
             className="flex-1 items-center justify-center gap-4 px-6"

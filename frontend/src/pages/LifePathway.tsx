@@ -10,7 +10,7 @@ import StartJourneyModal from '@/components/lifepathway/StartJourneyModal';
 import ChildQuests from '@/components/lifepathway/ChildQuests';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { useLifePathwayArea } from '@/hooks/useLifePathwayArea';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import {
   GROWTH_AREAS,
   copyTokensFor,
@@ -438,9 +438,7 @@ export default function LifePathway() {
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
         {isLoading || !childId || redirectCode ? (
-          <div className="flex min-h-screen items-center justify-center bg-background">
-            <Spinner className="h-12 w-12 border-4" />
-          </div>
+          <PageLoader spinnerClassName="h-12 w-12 border-4" />
         ) : loadFailed ? (
           <div
             className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center font-rajdhani"

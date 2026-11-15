@@ -10,7 +10,7 @@ import { isAbort } from '@/api/polling';
 import { release, RELEASE_ERRORS, runObservationsGeneration } from '@/api/release';
 import { jobProgressMessage } from '@/lib/jobProgress';
 import { httpErrorMessage } from '@/lib/apiError';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import {
   OBSERVATION_ICONS,
   formatObservationSources,
@@ -528,17 +528,13 @@ export default function Observations() {
 
   if (isLoading) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center"
+      <PageLoader
         style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
-      >
-        <Spinner
-          style={{
-            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
-            borderTopColor: 'transparent',
-          }}
-        />
-      </div>
+        spinnerStyle={{
+          borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+          borderTopColor: 'transparent',
+        }}
+      />
     );
   }
 

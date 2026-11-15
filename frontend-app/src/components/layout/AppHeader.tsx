@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Modal, Platform, Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import {
   ArrowLeft,
   House,
@@ -48,6 +48,8 @@ import {
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import { color, css, font, gradient, hsl, rgb } from '@/theme';
 import { childSubtitle } from '@/lib/childPaths';
+import { appBarFade, useAppBarHidden } from '@/lib/appBar';
+import { modalFade, useModalExit } from '@/lib/useModalExit';
 
 // Maps a page to the seven-circle node label that leads to it, so the header
 // shows the same text as the circle the user tapped (web Layout CIRCLE_LABELS).
@@ -60,6 +62,9 @@ const CIRCLE_LABELS: Partial<Record<PageName, string>> = {
 };
 
 export const HEADER_HEIGHT = 64;
+/** The profile panel's top against the bar's bottom edge: the web's `top-full mt-2` under the
+ * avatar comes to 2px above it (measured at phone width), so the panel just overlaps the bar. */
+const PANEL_OFFSET = -2;
 
 interface AppHeaderProps {
   currentPageName: PageName;
@@ -81,6 +86,8 @@ export default function AppHeader({
   const { doStartOver, isStartingOver } = useStartOver(childId);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // The menu's Modal stays up while its panel fades out (lib/useModalExit).
+  const profileShown = useModalExit(profileOpen);
   // The Children group is for parents; admins have no children.
   const isParent = isAuthenticated && user?.role === 'parent';
   const kids = useChildren(isParent);
@@ -126,6 +133,8 @@ export default function AppHeader({
   // Child view (docs/child-view-build-plan.md, 1.2): the button and menu show the child.
   const { view, enterChildView, exitChildView } = useViewMode();
   const childView = view.mode === 'child';
+  const barHidden = useAppBarHidden();
+  const reduceMotion = useReducedMotion();
   const viewChild = childView
     ? kids.list.find(c => c.id === view.childId)
     : undefined;
@@ -134,11 +143,16 @@ export default function AppHeader({
   const profileInitial = getInitials(profileName).charAt(0);
 
   return (
-    <View
-      style={{
-        paddingTop: insets.top,
-        backgroundColor: hsl('sidebar-background', 0.9),
-      }}
+    <Animated.View
+      style={[
+        {
+          paddingTop: insets.top,
+          backgroundColor: hsl('sidebar-background', 0.9),
+        },
+        // Hidden while a splash or the journey's warp plays (lib/appBar).
+        appBarFade(barHidden, reduceMotion),
+      ]}
+      pointerEvents={barHidden ? 'none' : 'auto'}
       className="z-40"
     >
       <View className="h-16 flex-row items-center justify-between px-4">
@@ -232,139 +246,150 @@ export default function AppHeader({
 
       {/* Profile panel — web: absolute w-72 dropdown under the avatar. */}
       <Modal
-        visible={profileOpen}
+        visible={profileShown}
         transparent
+        // Android lays a Modal out under the status bar unless it's translucent; this makes it
+        // full screen as on iOS, so insets.top below places the panel the same on both.
+        statusBarTranslucent
         animationType="none"
         onRequestClose={() => setProfileOpen(false)}
         onDismiss={showPendingDelete}
       >
-        <Pressable
-          className="flex-1"
-          accessibilityLabel="Close profile"
-          onPress={() => setProfileOpen(false)}
-        >
-          <Animated.View
-            {...MODAL_BACKDROP}
-            className="absolute right-4 w-72 overflow-hidden p-2"
-            style={[PANEL, { top: insets.top + HEADER_HEIGHT + 8 }]}
+        {profileShown ? (
+          <Pressable
+            className="flex-1"
+            accessibilityLabel="Close profile"
+            onPress={() => setProfileOpen(false)}
           >
-            <Pressable
-              accessibilityViewIsModal
-              accessibilityLabel="User profile"
+            <Animated.View
+              entering={MODAL_BACKDROP.entering}
+              className="absolute right-4 w-72 overflow-hidden p-2"
+              style={[
+                PANEL,
+                { top: insets.top + HEADER_HEIGHT + PANEL_OFFSET },
+                modalFade(profileOpen),
+              ]}
             >
-              <Animated.View {...MODAL_SCALE}>
-                <Text className="px-2.5 pb-2 pt-1.5" style={HEADING}>
-                  Signed-in profile
-                </Text>
+              <Pressable
+                accessibilityViewIsModal
+                accessibilityLabel="User profile"
+              >
+                <Animated.View entering={MODAL_SCALE.entering}>
+                  <Text className="px-2.5 pb-2 pt-1.5" style={HEADING}>
+                    Signed-in profile
+                  </Text>
 
-                {childView ? (
-                  <>
-                    {/* Child view: only the child, and the way back to parent view. */}
-                    <View
-                      className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
-                      style={ROW_SELECTED}
-                    >
-                      <AvatarDot
-                        initial={profileInitial}
-                        size={28}
-                        fontSize={12}
-                        child
-                      />
-                      <View className="min-w-0 flex-1">
-                        <Text numberOfLines={1} style={NAME}>
-                          {profileName}
-                        </Text>
-                        <Text numberOfLines={1} style={DESC}>
-                          {viewChild ? childSubtitle(viewChild) : 'Child view'}
-                        </Text>
+                  {childView ? (
+                    <>
+                      {/* Child view: only the child, and the way back to parent view. */}
+                      <View
+                        className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
+                        style={ROW_SELECTED}
+                      >
+                        <AvatarDot
+                          initial={profileInitial}
+                          size={28}
+                          fontSize={12}
+                          child
+                        />
+                        <View className="min-w-0 flex-1">
+                          <Text numberOfLines={1} style={NAME}>
+                            {profileName}
+                          </Text>
+                          <Text numberOfLines={1} style={DESC}>
+                            {viewChild
+                              ? childSubtitle(viewChild)
+                              : 'Child view'}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    <View style={DIVIDER} />
-                    <PanelRow
-                      icon={ArrowLeft}
-                      label="Back to parent view"
-                      onPress={() => {
-                        setProfileOpen(false);
-                        const id = view.mode === 'child' ? view.childId : '';
-                        exitChildView();
-                        navigate(`/PersonalityJourney/${id}`);
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    {/* The signed-in parent: the profile this view belongs to. */}
-                    <View
-                      className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
-                      style={ROW_SELECTED}
-                    >
-                      <AvatarDot
-                        initial={profileInitial}
-                        size={28}
-                        fontSize={12}
-                      />
-                      <View className="min-w-0 flex-1">
-                        <Text numberOfLines={1} style={NAME}>
-                          {profileName}
-                        </Text>
-                        <Text numberOfLines={1} style={DESC}>
-                          {isParent ? 'Parent · sees everything' : 'Admin'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {isParent ? (
-                      <ProfileChildren
-                        list={kids.list}
-                        isLoading={kids.isLoading}
-                        isLoadingError={kids.isLoadingError}
-                        isFetching={kids.isFetching}
-                        onRetry={() => void kids.refetch()}
-                        currentChildId={childId}
-                        onClose={() => setProfileOpen(false)}
-                        onDelete={requestDelete}
-                        onChildView={(child: Child) => {
-                          enterChildView(child.id);
-                          // The child's circles alone: nothing of the parent's under them.
-                          resetTo(childViewHome(child.id));
+                      <View style={DIVIDER} />
+                      <PanelRow
+                        icon={ArrowLeft}
+                        label="Back to parent view"
+                        onPress={() => {
+                          setProfileOpen(false);
+                          const id = view.mode === 'child' ? view.childId : '';
+                          exitChildView();
+                          navigate(`/PersonalityJourney/${id}`);
                         }}
                       />
-                    ) : null}
+                    </>
+                  ) : (
+                    <>
+                      {/* The signed-in parent: the profile this view belongs to. */}
+                      <View
+                        className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
+                        style={ROW_SELECTED}
+                      >
+                        <AvatarDot
+                          initial={profileInitial}
+                          size={28}
+                          fontSize={12}
+                        />
+                        <View className="min-w-0 flex-1">
+                          <Text numberOfLines={1} style={NAME}>
+                            {profileName}
+                          </Text>
+                          <Text numberOfLines={1} style={DESC}>
+                            {isParent ? 'Parent · sees everything' : 'Admin'}
+                          </Text>
+                        </View>
+                      </View>
 
-                    <View style={DIVIDER} />
+                      {isParent ? (
+                        <ProfileChildren
+                          list={kids.list}
+                          isLoading={kids.isLoading}
+                          isLoadingError={kids.isLoadingError}
+                          isFetching={kids.isFetching}
+                          onRetry={() => void kids.refetch()}
+                          currentChildId={childId}
+                          onClose={() => setProfileOpen(false)}
+                          onDelete={requestDelete}
+                          onChildView={(child: Child) => {
+                            enterChildView(child.id);
+                            // The child's circles alone: nothing of the parent's under them.
+                            resetTo(childViewHome(child.id));
+                          }}
+                        />
+                      ) : null}
 
-                    <PanelRow
-                      icon={House}
-                      label="Home"
-                      active={currentPageName === 'Home'}
-                      onPress={() => {
-                        setProfileOpen(false);
-                        navigate('/Home');
-                      }}
-                    />
-                    <PanelRow
-                      icon={Settings}
-                      label="Account settings"
-                      active={currentPageName === 'AccountSettings'}
-                      onPress={() => {
-                        setProfileOpen(false);
-                        navigate('/AccountSettings');
-                      }}
-                    />
-                    <PanelRow
-                      icon={LogOut}
-                      label="Sign out"
-                      onPress={() => {
-                        setProfileOpen(false);
-                        void logout(true);
-                      }}
-                    />
-                  </>
-                )}
-              </Animated.View>
-            </Pressable>
-          </Animated.View>
-        </Pressable>
+                      <View style={DIVIDER} />
+
+                      <PanelRow
+                        icon={House}
+                        label="Home"
+                        active={currentPageName === 'Home'}
+                        onPress={() => {
+                          setProfileOpen(false);
+                          navigate('/Home');
+                        }}
+                      />
+                      <PanelRow
+                        icon={Settings}
+                        label="Account settings"
+                        active={currentPageName === 'AccountSettings'}
+                        onPress={() => {
+                          setProfileOpen(false);
+                          navigate('/AccountSettings');
+                        }}
+                      />
+                      <PanelRow
+                        icon={LogOut}
+                        label="Sign out"
+                        onPress={() => {
+                          setProfileOpen(false);
+                          void logout(true);
+                        }}
+                      />
+                    </>
+                  )}
+                </Animated.View>
+              </Pressable>
+            </Animated.View>
+          </Pressable>
+        ) : null}
       </Modal>
 
       <ConfirmModal
@@ -390,7 +415,7 @@ export default function AppHeader({
         }
         description="Their profile, chat, results and plan are deleted for good."
       />
-    </View>
+    </Animated.View>
   );
 }
 

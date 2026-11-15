@@ -1,10 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { font, rgb } from '@/theme';
 import BuddyOrb from './BuddyOrb';
-import { HEADING_ENTER, ORB_ENTER, dotBounce, fadeIn } from './animations';
+import {
+  HEADING_ENTER,
+  ORB_ENTER,
+  dotBounce,
+  fadeIn,
+  preEnter,
+} from './animations';
 import type { JourneyViewport } from './viewport';
 
 const HEADING_SIZE = 28; // clamp(28px, 4vw, 42px) at phone width
@@ -22,6 +28,8 @@ interface BuddyOrbScreenProps {
   isAnalyzing: boolean;
   onTap: () => void;
   viewport: JourneyViewport;
+  /** How far the window's centre (the warp's) lies below this screen's top: the orb's centre. */
+  centerY: number;
 }
 
 /** Phase 1 — the Buddy orb: heading above, tappable core, hint below. */
@@ -30,11 +38,19 @@ export default function BuddyOrbScreen({
   isAnalyzing,
   onTap,
   viewport,
+  centerY,
 }: BuddyOrbScreenProps) {
-  const { vh, orbRadius: r } = viewport;
+  const { vh, orbRadius } = viewport;
+  // Transparent until each entrance takes hold (animations.preEnter).
+  const hidden = preEnter(useReducedMotion());
+  // The radius (web clamp(100px, 36vmin, 150px)) also leaves the heading room above it: 32px
+  // over the orb and 8px inside the screen, now that the orb sits on the window's centre.
+  // Measured once laid out; it starts at three heading lines, its usual height at phone width,
+  // so the first frame doesn't show a larger orb that then shrinks.
+  const [headingH, setHeadingH] = useState(HEADING_SIZE * 1.25 * 3);
+  const r = Math.max(100, Math.min(orbRadius, centerY - headingH - 32 - 8));
   const orbSize = r * 2;
-  // web: orb top = calc(50vh - 64px - clamp(100px, 36vmin, 150px))
-  const orbTop = vh / 2 - 64 - r;
+  const orbTop = centerY - r;
   // web: heading bottom pinned 32px above the orb top (top: …-32px + translateY(-100%))
   const headingBottom = vh - (orbTop - 32);
 
@@ -44,8 +60,9 @@ export default function BuddyOrbScreen({
       <View
         className="absolute left-0 right-0 px-6"
         style={{ bottom: headingBottom }}
+        onLayout={e => setHeadingH(e.nativeEvent.layout.height)}
       >
-        <Animated.View style={HEADING_ENTER}>
+        <Animated.View style={[hidden, HEADING_ENTER]}>
           {isAnalyzing ? (
             <View className="items-center gap-4">
               <Text
@@ -90,7 +107,7 @@ export default function BuddyOrbScreen({
         className="absolute"
         style={{ top: orbTop, left: 0, right: 0, alignItems: 'center' }}
       >
-        <Animated.View style={ORB_ENTER}>
+        <Animated.View style={[hidden, ORB_ENTER]}>
           <Pressable
             onPress={isAnalyzing ? undefined : onTap}
             disabled={isAnalyzing}
@@ -123,7 +140,7 @@ export default function BuddyOrbScreen({
         <Animated.View
           pointerEvents="none"
           className="absolute left-0 right-0 items-center"
-          style={[{ top: vh / 2 - 64 + r + 32 }, HINT_FADE]}
+          style={[{ top: centerY + r + 32 }, hidden, HINT_FADE]}
         >
           <Text
             numberOfLines={1}

@@ -6,7 +6,7 @@ import { useNavigate, useParams } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
 import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import { useKidActivity } from '@/hooks/useKidActivity';
 import { daysAgo } from '@/api/kidWorlds';
 import { Button } from '@/components/ui/button';
@@ -299,17 +299,13 @@ export default function Connect() {
 
   if (isLoading) {
     return (
-      <View
-        className="flex-1 items-center justify-center"
+      <PageLoader
         style={{ backgroundColor: rgb('constellation-navy-deepest') }}
-      >
-        <Spinner
-          style={{
-            borderColor: rgb('constellation-cyan-bright', 0.6),
-            borderTopColor: 'transparent',
-          }}
-        />
-      </View>
+        spinnerStyle={{
+          borderColor: rgb('constellation-cyan-bright', 0.6),
+          borderTopColor: 'transparent',
+        }}
+      />
     );
   }
 

@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
 import { services, unwrap } from '@/api/services';
@@ -80,8 +80,25 @@ const PILLARS = [
   },
 ];
 
+/** How long Home fades out before a journey opens. */
+const LEAVE_MS = 300;
+
 export default function Home() {
   const navigate = useNavigate();
+  // "Continue Your Journey" fades the page out before the journey lands (index.css
+  // .page-leaving), rather than cutting to it; at once under reduced motion.
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  const leaveTo = (path: string) => {
+    if (leaving) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      void navigate(path);
+      return;
+    }
+    setLeaving(true);
+    leaveTimer.current = setTimeout(() => void navigate(path), LEAVE_MS);
+  };
   const [apkDownloading, setApkDownloading] = useState(false);
 
   const handleDownloadApk = async () => {
@@ -134,7 +151,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={cn('min-h-screen bg-background', leaving && 'page-leaving')}>
       {/* Hero */}
       <section className="relative overflow-hidden">
         {/* Ambient glows */}
@@ -185,7 +202,7 @@ export default function Home() {
                   <Button
                     key={child.id}
                     size="xl"
-                    onClick={() => void navigate(childPath(child))}
+                    onClick={() => leaveTo(childPath(child))}
                     className="btn-primary rounded-full transition-all duration-200"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />

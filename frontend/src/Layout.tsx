@@ -21,6 +21,7 @@ import { useStartOver } from '@/hooks/useStartOver';
 import { useViewMode } from '@/lib/ViewModeContext';
 import { childViewHome } from '@/lib/childView';
 import { childSubtitle } from '@/lib/childPaths';
+import { useAppBarHidden } from '@/lib/appBar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -62,6 +63,8 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   // Child view (docs/child-view-build-plan.md, 1.2): the button and menu show the child.
   const { view, enterChildView, exitChildView } = useViewMode();
   const childView = view.mode === 'child';
+  // Hidden while a splash or the journey's warp plays (lib/appBar).
+  const barHidden = useAppBarHidden();
   const viewChild = childView ? kids.list.find((c) => c.id === view.childId) : undefined;
   const parentName = displayName(user) ?? 'You';
   const profileName = childView ? (viewChild?.name ?? 'Child') : parentName;
@@ -141,7 +144,12 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
-      <nav className="sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
+      <nav
+        className={cn(
+          'app-bar sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl',
+          barHidden && 'app-bar-hidden',
+        )}
+      >
         {/*
           Full-bleed on purpose — a max-w cap here pinned the wordmark and the
           controls ~350px in from the edges on a 1920 display. Padding only, and
@@ -386,7 +394,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
           whose own header has the Back to the circles, nor on the journey in child view: it's
           the child's home, with nowhere to go back to. */}
       {currentPageName !== 'Kids' && !(childView && currentPageName === 'PersonalityJourney') && (
-        <div className="px-4 pt-4 sm:px-6 lg:px-10">
+        <div className={cn('app-bar px-4 pt-4 sm:px-6 lg:px-10', barHidden && 'app-bar-hidden')}>
           <Button
             variant="ghost"
             size="sm"

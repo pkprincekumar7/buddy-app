@@ -90,6 +90,22 @@ const PROTECTED_PAGES = {
   AccountSettings: page(AccountSettings),
 } as const;
 
+// Pages whose own entrance is the transition, as on the web (which swaps routes with no page
+// animation): the journey fades its orb screen in and warps into the circles, and each circle's
+// page opens behind a splash (Discover's portal on the hub, the others' stage video on their
+// own page), so the stack's card slide (iOS) or fade-up (Android) would play on top of it and
+// show the circles again in between.
+const OWN_ENTRANCE = {
+  PersonalityJourney: true,
+  PersonalityProfile: true,
+  GrowthAreas: true,
+  LifePathway: true,
+  Observations: true,
+  Connect: true,
+  Kids: true,
+} as const;
+const OWN_ENTRANCE_OPTIONS: StackNavigationOptions = { animation: 'none' };
+
 function FullScreenSpinner() {
   return (
     <View className="flex-1 items-center justify-center bg-background">
@@ -146,6 +162,7 @@ function RootNavigator() {
               key={name}
               name={name}
               component={PROTECTED_PAGES[name]}
+              options={name in OWN_ENTRANCE ? OWN_ENTRANCE_OPTIONS : undefined}
             />
           ))}
           <Stack.Screen

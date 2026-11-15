@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { children, CHILD_ERRORS, type Child, type ChildIn } from '@/api/children';
 import { httpErrorMessage } from '@/lib/apiError';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
 import ChildProfileStep from '@/components/onboarding/ChildProfileStep';
 import type { ChildFormData } from '@/components/onboarding/ChildProfileStep';
@@ -202,9 +202,7 @@ export default function Onboarding() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
         {isLoadingAuth || checking ? (
-          <div className="flex min-h-[60vh] items-center justify-center">
-            <Spinner durationSeconds={1} />
-          </div>
+          <PageLoader className="min-h-[60vh] bg-transparent" durationSeconds={1} />
         ) : (
           <AnimatePresence mode="wait">
             {step === 1 ? (

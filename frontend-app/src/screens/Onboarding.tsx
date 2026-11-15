@@ -17,7 +17,7 @@ import {
   type ChildIn,
 } from '@/api/children';
 import { httpErrorMessage } from '@/lib/apiError';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import PageScroll from '@/components/layout/PageScroll';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
 import ChildProfileStep from '@/components/onboarding/ChildProfileStep';
@@ -246,9 +246,10 @@ export default function Onboarding() {
       <PageScroll>
         <View className="w-full max-w-3xl self-center px-4 py-8">
           {isLoadingAuth || checking ? (
-            <View className="min-h-[60vh] items-center justify-center">
-              <Spinner durationSeconds={1} />
-            </View>
+            <PageLoader
+              className="min-h-[60vh] bg-transparent"
+              durationSeconds={1}
+            />
           ) : step === 1 ? (
             <Animated.View key="step1" exiting={STEP1_EXIT}>
               <WelcomePhase

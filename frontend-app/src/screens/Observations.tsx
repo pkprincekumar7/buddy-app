@@ -20,7 +20,7 @@ import {
 import { jobProgressMessage } from '@/lib/jobProgress';
 import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import { httpErrorMessage } from '@/lib/apiError';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
 import { Button } from '@/components/ui/button';
 import PageBackRow from '@/components/layout/PageBackRow';
 import PageScroll from '@/components/layout/PageScroll';
@@ -261,9 +261,10 @@ export default function Observations() {
     return (
       <View className="flex-1 bg-background">
         <PageBackRow />
-        <View className="flex-1 items-center justify-center bg-constellation-navy-deepest">
-          <Spinner style={SPINNER_RING} />
-        </View>
+        <PageLoader
+          className="bg-constellation-navy-deepest"
+          spinnerStyle={SPINNER_RING}
+        />
       </View>
     );
   }

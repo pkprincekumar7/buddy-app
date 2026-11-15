@@ -1,10 +1,12 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
+import { usePageTop } from '@/hooks/usePageTop';
+import { useHideAppBar } from '@/lib/appBar';
+import PageLoader from '@/components/shared/PageLoader';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import Spinner from '@/components/shared/Spinner';
 import { discover } from '@/api/discover';
 import { useJourney } from '@/hooks/useJourney';
 import { useMediaQuery } from '@/hooks/use-mobile';
@@ -36,23 +38,39 @@ function BuddyOrbScreen({
 }: {
   childName: string;
   isAnalyzing: boolean;
-  onTap: () => void;
+  /** Gets the orb's centre on screen, which the warp's zoom goes into. */
+  onTap: (center: { x: number; y: number }) => void;
 }) {
+  // The orb's centre is the window's (50vh), where the warp's stars start.
+  const screenRef = useRef<HTMLDivElement>(null);
+  const top = usePageTop(screenRef, 112);
+  // Its radius (clamp(100px, 36vmin, 150px)) also leaves the heading room on a short window:
+  // 32px above the orb and 8px inside the page (which starts under the Back row and clips
+  // anything above it).
+  const headingRef = useRef<HTMLDivElement>(null);
+  const [headingH, setHeadingH] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => setHeadingH(headingRef.current?.offsetHeight ?? 0);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [isAnalyzing]);
+  const r = `clamp(100px, min(36vmin, 50vh - ${top + headingH + 32 + 8}px), 150px)`;
   return (
-    <div className="relative" style={{ minHeight: '100vh', width: '100%' }}>
+    <div ref={screenRef} className="relative" style={{ minHeight: '100vh', width: '100%' }}>
       {/* Text above — heading bottom pinned 32px above orb top */}
       <div
+        ref={headingRef}
         className="absolute left-0 right-0 px-6 text-center"
         style={{
-          top: 'calc(50vh - 64px - clamp(100px, 36vmin, 150px) - 32px)',
+          top: `calc(50vh - ${top}px - ${r} - 32px)`,
           transform: 'translateY(-100%)',
         }}
       >
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: 'easeOut' }}
-        >
+        {/* CSS entrances, not framer's: framer ran these as Web Animations and, as each
+            ended, dropped them a frame before writing the end value, so they blinked out
+            (index.css .journey-*-in). */}
+        <motion.div initial={false} className="journey-heading-in">
           {isAnalyzing ? (
             <div className="flex flex-col items-center gap-4">
               <h1
@@ -101,25 +119,33 @@ function BuddyOrbScreen({
         </motion.div>
       </div>
 
-      {/* Orb centered at device vertical center (50vh) */}
+      {/* Orb centred on the window's centre (50vh) */}
       <div
         className="absolute"
         style={{
           left: '50%',
-          top: 'calc(50vh - 64px - clamp(100px, 36vmin, 150px))',
+          top: `calc(50vh - ${top}px - ${r})`,
           transform: 'translateX(-50%)',
         }}
       >
         <motion.button
-          onClick={isAnalyzing ? undefined : onTap}
+          onClick={
+            isAnalyzing
+              ? undefined
+              : (e) => {
+                  const b = e.currentTarget.getBoundingClientRect();
+                  onTap({ x: b.left + b.width / 2, y: b.top + b.height / 2 });
+                }
+          }
           whileTap={isAnalyzing ? undefined : { scale: 0.94 }}
           className={cn(
-            'relative focus:outline-none',
+            'journey-orb-in relative focus:outline-none',
             isAnalyzing ? 'cursor-default' : 'cursor-pointer',
           )}
-          initial={{ opacity: 0, scale: 0.7 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          initial={false}
+          // No button transition (index.css): framer's press scale writes its end value at
+          // the end, which a transition would animate again.
+          style={{ transition: 'none' }}
         >
           <svg
             viewBox="0 0 350 350"
@@ -127,8 +153,8 @@ function BuddyOrbScreen({
             style={{
               display: 'block',
               overflow: 'visible',
-              width: 'clamp(200px, 72vmin, 300px)',
-              height: 'clamp(200px, 72vmin, 300px)',
+              width: `calc(2 * ${r})`,
+              height: `calc(2 * ${r})`,
             }}
           >
             <style>{`
@@ -279,13 +305,12 @@ function BuddyOrbScreen({
       {/* Text below orb — 32px gap below orb bottom */}
       {!isAnalyzing && (
         <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.7, delay: 0.5 }}
+          initial={false}
+          className="journey-hint-in"
           style={{
             position: 'absolute',
             left: '50%',
-            top: 'calc(50vh - 64px + clamp(100px, 36vmin, 150px) + 32px)',
+            top: `calc(50vh - ${top}px + ${r} + 32px)`,
             transform: 'translateX(-50%)',
             whiteSpace: 'nowrap',
             fontFamily: 'sans-serif',
@@ -521,6 +546,14 @@ function DimensionCirclesScreen({
 }) {
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
+  // The hub is centred on the window's centre (50vh), where the warp's stars start: the ring
+  // area's page top is taken off, and the focus-in scales about the same point (the ring area
+  // sits below the eyebrow in child view).
+  const ringPageTop = usePageTop(ringAreaRef, 112);
+  const [ringTop, setRingTop] = useState(0);
+  useLayoutEffect(() => {
+    setRingTop(ringAreaRef.current?.offsetTop ?? 0);
+  }, [childView]);
   const isMobile = useMediaQuery('(max-width: 639px)');
   // Discover's tooltip, on devices that hover (a phone's tap would only flash it).
   const canHover = useMediaQuery('(hover: hover)');
@@ -552,11 +585,14 @@ function DimensionCirclesScreen({
     const measure = () => {
       const el = ringAreaRef.current;
       if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      const s = isMobile
-        ? Math.min(r.width / 488, r.height / 560, 1)
-        : Math.min(r.width / 730, r.height / 730, 1);
+      // Layout size (not the rect, which the entrance animation scales). The ring is centred on
+      // the window's centre, not the area's, so it fits the room above and below that point.
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (!w || !h) return;
+      const c = window.innerHeight / 2 - ringPageTop;
+      const room = 2 * Math.max(0, Math.min(c, h - c));
+      const s = isMobile ? Math.min(w / 488, room / 560, 1) : Math.min(w / 730, room / 730, 1);
       setRingScale((prev) => (Math.abs(s - prev) > 0.005 ? s : prev));
     };
     measure();
@@ -566,7 +602,7 @@ function DimensionCirclesScreen({
       clearInterval(id);
       window.removeEventListener('resize', measure);
     };
-  }, [isMobile]);
+  }, [isMobile, ringPageTop]);
 
   const SK = isMobile ? 'spokeDrawSm' : 'spokeDraw';
   const SD = isMobile ? '200' : '260';
@@ -614,7 +650,7 @@ function DimensionCirclesScreen({
         justifyContent: 'space-between',
         minHeight: '100vh',
         padding: '0 0 18px',
-        transformOrigin: '50% 50%',
+        transformOrigin: `50% calc(${ringTop}px + 50vh - ${ringPageTop}px)`,
         animation: 'scopeFocus 2.4s cubic-bezier(.22,.9,.25,1) both',
         width: '100vw',
         marginLeft: 'calc(50% - 50vw)',
@@ -695,7 +731,7 @@ function DimensionCirclesScreen({
           style={{
             position: 'absolute',
             left: '50%',
-            top: 'calc(50vh - 64px)',
+            top: `calc(50vh - ${ringPageTop}px)`,
             width: 700,
             height: 700,
             transform: `translate(-50%, -50%) scale(${ringScale})`,
@@ -1327,6 +1363,12 @@ function DimensionCirclesScreen({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+/** The journey's spinner ring, cyan on its navy. */
+const JOURNEY_SPINNER = {
+  borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+  borderTopColor: 'transparent',
+} as const;
+
 export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
@@ -1419,9 +1461,17 @@ export default function PersonalityJourney() {
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
   const { ttsEnabled: soundOn } = useTts();
   const [isEntering, setIsEntering] = useState(false);
+  // No app bar during the warp: it comes back with the circles.
+  useHideAppBar(isEntering);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const warpCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const warpRafRef = useRef<number | null>(null);
+  // The zoom goes into the orb, at its centre (measured on tap).
+  const phase1Ref = useRef<HTMLDivElement | null>(null);
+  const phase2Ref = useRef<HTMLDivElement | null>(null);
+  const phase1Top = usePageTop(phase1Ref, 112);
+  const phase2Top = usePageTop(phase2Ref, 112);
+  const [dollyOrigin, setDollyOrigin] = useState('50% 50%');
   const enterTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Play intro voice when orb screen (phase 1) is active — mirrors HTML's playVoice()
@@ -1572,8 +1622,10 @@ export default function PersonalityJourney() {
     };
   }, [isEntering]);
 
-  const handleEnterNav = () => {
+  const handleEnterNav = (center: { x: number; y: number }) => {
     if (isEntering) return;
+    const box = phase1Ref.current?.getBoundingClientRect();
+    if (box) setDollyOrigin(`${center.x - box.left}px ${center.y - box.top}px`);
     setIsEntering(true);
     whoosh();
     duckAmbient(0.12, 1600);
@@ -1611,17 +1663,10 @@ export default function PersonalityJourney() {
 
   if (status === 'loading') {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center"
+      <PageLoader
         style={{ background: 'rgb(var(--constellation-navy-deep-rgb))' }}
-      >
-        <Spinner
-          style={{
-            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
-            borderTopColor: 'transparent',
-          }}
-        />
-      </div>
+        spinnerStyle={JOURNEY_SPINNER}
+      />
     );
   }
 
@@ -1739,13 +1784,21 @@ export default function PersonalityJourney() {
           {phase === 1 && (
             <motion.div
               key="phase-1"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              // The landing is CSS (.journey-screen-in, the prototype's landIn); framer only runs
+              // the exit.
+              initial={false}
               exit={{ opacity: 0, transition: { duration: 0.05 } }}
+              ref={phase1Ref}
               style={
-                isEntering ? { animation: 'scopeDolly 3.4s cubic-bezier(.35,0,.3,1) forwards' } : {}
+                isEntering
+                  ? {
+                      animation: 'scopeDolly 3.4s cubic-bezier(.35,0,.3,1) forwards',
+                      transformOrigin: dollyOrigin,
+                    }
+                  : // The landing settles onto the orb, on the window's centre.
+                    { transformOrigin: `50% calc(50vh - ${phase1Top}px)` }
               }
-              className="min-h-screen"
+              className="journey-screen-in min-h-screen"
             >
               <BuddyOrbScreen
                 childName={childName}
@@ -1758,11 +1811,14 @@ export default function PersonalityJourney() {
           {phase === 2 && (
             <motion.div
               key="phase-2"
-              initial={{ opacity: 0, scale: 1.06 }}
-              animate={{ opacity: 1, scale: 1 }}
+              // The entrance is CSS (.journey-hub-in); framer only runs the exit.
+              initial={false}
               exit={{ opacity: 0, scale: 0.94 }}
               transition={{ duration: 0.5 }}
-              className="min-h-screen"
+              // Scales about the hub's centre (the window's), not the page's.
+              ref={phase2Ref}
+              style={{ transformOrigin: `50% calc(50vh - ${phase2Top}px)` }}
+              className="journey-hub-in min-h-screen"
             >
               <DimensionCirclesScreen
                 childName={childName}

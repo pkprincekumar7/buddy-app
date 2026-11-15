@@ -1,6 +1,11 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, Keyframe } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  Keyframe,
+  useReducedMotion,
+} from 'react-native-reanimated';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ArrowRight,
   Brain,
@@ -200,6 +205,9 @@ const s = StyleSheet.create({
 
 const ICON_WHITE = rgb('white');
 
+/** How long Home fades out before a journey opens (web LEAVE_MS). */
+const LEAVE_MS = 300;
+
 export default function Home() {
   const navigate = useNavigate();
   const { notify, value: revealCtx } = useRevealNotifier();
@@ -214,6 +222,26 @@ export default function Home() {
 
   const handleStartJourney = () => {
     void navigate('/Onboarding');
+  };
+
+  // "Continue Your Journey" fades the page out before the journey lands (web .page-leaving),
+  // rather than cutting to it; at once under reduced motion. The stack keeps Home under the
+  // journey, so it's shown again when it's back on top.
+  const reduceMotion = useReducedMotion();
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  useFocusEffect(useCallback(() => setLeaving(false), []));
+  const leaveTo = (path: string) => {
+    if (leaving) return;
+    if (reduceMotion) {
+      void navigate(path);
+      return;
+    }
+    setLeaving(true);
+    leaveTimer.current = setTimeout(() => void navigate(path), LEAVE_MS);
   };
 
   if (isLoading) {
@@ -242,280 +270,292 @@ export default function Home() {
 
   return (
     <RevealProvider value={revealCtx}>
-      <PageScroll onScroll={notify} scrollEventThrottle={32}>
-        {/* Hero */}
-        <View className="relative overflow-hidden">
-          {/* Ambient glows */}
-          <View
-            pointerEvents="none"
-            className="absolute top-0 h-[400px] w-[600px] rounded-full"
-            style={[s.heroGlowTop, HERO_GLOW_TOP]}
-          />
-          <View
-            pointerEvents="none"
-            className="absolute left-10 top-40 h-72 w-72 rounded-full"
-            style={HERO_GLOW_LEFT}
-          />
-          <View
-            pointerEvents="none"
-            className="absolute bottom-0 right-10 h-96 w-96 rounded-full"
-            style={HERO_GLOW_RIGHT}
-          />
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: leaving ? 0 : 1,
+          transitionProperty: 'opacity',
+          transitionDuration: leaving ? LEAVE_MS : 0,
+        }}
+      >
+        <PageScroll onScroll={notify} scrollEventThrottle={32}>
+          {/* Hero */}
+          <View className="relative overflow-hidden">
+            {/* Ambient glows */}
+            <View
+              pointerEvents="none"
+              className="absolute top-0 h-[400px] w-[600px] rounded-full"
+              style={[s.heroGlowTop, HERO_GLOW_TOP]}
+            />
+            <View
+              pointerEvents="none"
+              className="absolute left-10 top-40 h-72 w-72 rounded-full"
+              style={HERO_GLOW_LEFT}
+            />
+            <View
+              pointerEvents="none"
+              className="absolute bottom-0 right-10 h-96 w-96 rounded-full"
+              style={HERO_GLOW_RIGHT}
+            />
 
-          <View className="relative px-4 py-24">
-            <Animated.View entering={HERO_ENTER} className="items-center">
-              <View className="mb-8 flex-row items-center gap-2 self-center rounded-full border border-primary/20 bg-primary/10 px-4 py-2">
-                <Text className="text-center text-sm font-medium text-primary">
-                  A Transformational Journey for Your Child
+            <View className="relative px-4 py-24">
+              <Animated.View entering={HERO_ENTER} className="items-center">
+                <View className="mb-8 flex-row items-center gap-2 self-center rounded-full border border-primary/20 bg-primary/10 px-4 py-2">
+                  <Text className="text-center text-sm font-medium text-primary">
+                    A Transformational Journey for Your Child
+                  </Text>
+                </View>
+
+                <Text
+                  accessibilityRole="header"
+                  className="mb-6 px-4 text-center font-bold text-foreground"
+                  style={s.h1}
+                >
+                  Preparing Children to{' '}
+                  {HEADLINE_ACCENT_WORDS.map((word, i) => (
+                    <Text
+                      key={word}
+                      style={{ color: HEADLINE_ACCENT_COLORS[i] }}
+                    >
+                      {word}
+                      {i < HEADLINE_ACCENT_WORDS.length - 1 ? ' ' : ''}
+                    </Text>
+                  ))}
                 </Text>
-              </View>
 
+                <Text
+                  className="mb-10 text-center text-lg text-muted-foreground"
+                  style={s.leadLg}
+                >
+                  A guided journey to uncover strengths, build confidence, and
+                  grow into a thoughtful, capable individual.
+                </Text>
+
+                <View className="items-center justify-center gap-4">
+                  {children.length === 0 ? (
+                    <Button
+                      size="xl"
+                      onPress={handleStartJourney}
+                      accessibilityLabel="Start Your Journey"
+                      className="rounded-full font-semibold text-primary-foreground"
+                      style={recipe.btnPrimary}
+                    >
+                      <Sparkles
+                        size={16}
+                        color={color['primary-foreground']}
+                        style={s.iconLeft}
+                      />
+                      Start Your Journey
+                      <ArrowRight
+                        size={16}
+                        color={color['primary-foreground']}
+                        style={s.iconRight}
+                      />
+                    </Button>
+                  ) : (
+                    // One child: "Continue Your Journey". Several: one button each. The
+                    // profile menu lists them too, and adds or deletes them.
+                    children.map(child => {
+                      const label =
+                        children.length === 1
+                          ? 'Continue Your Journey'
+                          : `Continue with ${child.name}`;
+                      return (
+                        <Button
+                          key={child.id}
+                          size="xl"
+                          onPress={() => leaveTo(childPath(child))}
+                          accessibilityLabel={label}
+                          className="rounded-full font-semibold text-primary-foreground"
+                          style={recipe.btnPrimary}
+                        >
+                          <Sparkles
+                            size={16}
+                            color={color['primary-foreground']}
+                            style={s.iconLeft}
+                          />
+                          {label}
+                          <ArrowRight
+                            size={16}
+                            color={color['primary-foreground']}
+                            style={s.iconRight}
+                          />
+                        </Button>
+                      );
+                    })
+                  )}
+                </View>
+                {/* What each child did in child view: their parent pages open later. */}
+                {children
+                  .filter(child => child.progress.conversation)
+                  .map(child => (
+                    <ChildViewNews key={child.id} child={child} />
+                  ))}
+              </Animated.View>
+            </View>
+          </View>
+
+          {/* 6 Pillars */}
+          <View className="px-4 py-20">
+            <Reveal y={20} className="mb-14">
               <Text
                 accessibilityRole="header"
-                className="mb-6 px-4 text-center font-bold text-foreground"
-                style={s.h1}
+                className="mb-4 text-center font-bold text-foreground"
+                style={s.h2}
               >
-                Preparing Children to{' '}
-                {HEADLINE_ACCENT_WORDS.map((word, i) => (
-                  <Text key={word} style={{ color: HEADLINE_ACCENT_COLORS[i] }}>
-                    {word}
-                    {i < HEADLINE_ACCENT_WORDS.length - 1 ? ' ' : ''}
-                  </Text>
-                ))}
+                6 Pillars of Holistic Growth
               </Text>
+              <Text className="text-center text-base text-muted-foreground">
+                We nurture every dimension of your child&apos;s development for
+                balanced, sustainable growth.
+              </Text>
+            </Reveal>
 
+            <View className="gap-4">
+              {PILLARS.map((pillar, index) => {
+                const Icon = pillar.icon;
+                return (
+                  <Reveal
+                    key={pillar.label}
+                    y={20}
+                    delay={index * 0.12}
+                    className="rounded-2xl border border-edge-faint bg-card p-6"
+                  >
+                    <View
+                      className="mb-4 h-12 w-12 items-center justify-center rounded-xl"
+                      style={PILLAR_STYLES[index]}
+                    >
+                      <Icon size={24} color={ICON_WHITE} />
+                    </View>
+                    <Text
+                      accessibilityRole="header"
+                      className="mb-1.5 text-lg font-semibold text-foreground"
+                    >
+                      {pillar.label}
+                    </Text>
+                    <Text className="text-sm text-muted-foreground">
+                      {pillar.description}
+                    </Text>
+                  </Reveal>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* How It Works */}
+          <View className="bg-section-alt px-4 py-20">
+            <Reveal y={20} className="mb-14">
               <Text
-                className="mb-10 text-center text-lg text-muted-foreground"
-                style={s.leadLg}
+                accessibilityRole="header"
+                className="mb-4 text-center font-bold text-foreground"
+                style={s.h2}
               >
-                A guided journey to uncover strengths, build confidence, and
-                grow into a thoughtful, capable individual.
+                How It Works
               </Text>
+            </Reveal>
 
-              <View className="items-center justify-center gap-4">
-                {children.length === 0 ? (
+            <View className="gap-8">
+              {FEATURES.map((feature, index) => {
+                const Icon = feature.icon;
+                return (
+                  <Reveal
+                    key={feature.title}
+                    y={20}
+                    delay={index * 0.225}
+                    className="items-center"
+                  >
+                    <View className="mb-5 h-14 w-14 items-center justify-center rounded-2xl border border-edge bg-surface-elevated">
+                      <Icon size={24} color={color.primary} />
+                    </View>
+                    <Text
+                      accessibilityRole="header"
+                      className="mb-2 text-center text-lg font-semibold text-foreground"
+                    >
+                      {feature.title}
+                    </Text>
+                    <Text
+                      className="text-center text-sm text-muted-foreground"
+                      style={s.leadSm}
+                    >
+                      {feature.description}
+                    </Text>
+                  </Reveal>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* CTA — only shown to first-time visitors with no children yet */}
+          {children.length === 0 && (
+            <View className="px-4 py-20">
+              <Reveal
+                scale={0.97}
+                className="relative overflow-hidden rounded-3xl border border-edge-faint bg-section-dark p-10"
+              >
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-0"
+                  style={CTA_TINT}
+                />
+                <View
+                  pointerEvents="none"
+                  className="absolute top-0 h-32 w-96 rounded-full"
+                  style={[s.ctaGlow, CTA_GLOW]}
+                />
+                <View className="relative items-center">
+                  <Text
+                    accessibilityRole="header"
+                    className="mb-4 text-center font-bold text-foreground"
+                    style={s.h2}
+                  >
+                    Begin Your Child&apos;s Journey Today
+                  </Text>
+                  <Text
+                    className="mb-8 text-center text-base text-muted-foreground"
+                    style={s.leadBase}
+                  >
+                    No pressure. No comparisons. Just guided, consistent growth
+                    towards becoming their best self.
+                  </Text>
                   <Button
                     size="xl"
                     onPress={handleStartJourney}
-                    accessibilityLabel="Start Your Journey"
+                    accessibilityLabel="Get Started Free"
                     className="rounded-full font-semibold text-primary-foreground"
                     style={recipe.btnPrimary}
                   >
-                    <Sparkles
-                      size={16}
-                      color={color['primary-foreground']}
-                      style={s.iconLeft}
-                    />
-                    Start Your Journey
+                    Get Started Free
                     <ArrowRight
                       size={16}
                       color={color['primary-foreground']}
                       style={s.iconRight}
                     />
                   </Button>
-                ) : (
-                  // One child: "Continue Your Journey". Several: one button each. The
-                  // profile menu lists them too, and adds or deletes them.
-                  children.map(child => {
-                    const label =
-                      children.length === 1
-                        ? 'Continue Your Journey'
-                        : `Continue with ${child.name}`;
-                    return (
-                      <Button
-                        key={child.id}
-                        size="xl"
-                        onPress={() => void navigate(childPath(child))}
-                        accessibilityLabel={label}
-                        className="rounded-full font-semibold text-primary-foreground"
-                        style={recipe.btnPrimary}
-                      >
-                        <Sparkles
-                          size={16}
-                          color={color['primary-foreground']}
-                          style={s.iconLeft}
-                        />
-                        {label}
-                        <ArrowRight
-                          size={16}
-                          color={color['primary-foreground']}
-                          style={s.iconRight}
-                        />
-                      </Button>
-                    );
-                  })
-                )}
-              </View>
-              {/* What each child did in child view: their parent pages open later. */}
-              {children
-                .filter(child => child.progress.conversation)
-                .map(child => (
-                  <ChildViewNews key={child.id} child={child} />
-                ))}
-            </Animated.View>
-          </View>
-        </View>
-
-        {/* 6 Pillars */}
-        <View className="px-4 py-20">
-          <Reveal y={20} className="mb-14">
-            <Text
-              accessibilityRole="header"
-              className="mb-4 text-center font-bold text-foreground"
-              style={s.h2}
-            >
-              6 Pillars of Holistic Growth
-            </Text>
-            <Text className="text-center text-base text-muted-foreground">
-              We nurture every dimension of your child&apos;s development for
-              balanced, sustainable growth.
-            </Text>
-          </Reveal>
-
-          <View className="gap-4">
-            {PILLARS.map((pillar, index) => {
-              const Icon = pillar.icon;
-              return (
-                <Reveal
-                  key={pillar.label}
-                  y={20}
-                  delay={index * 0.12}
-                  className="rounded-2xl border border-edge-faint bg-card p-6"
-                >
-                  <View
-                    className="mb-4 h-12 w-12 items-center justify-center rounded-xl"
-                    style={PILLAR_STYLES[index]}
-                  >
-                    <Icon size={24} color={ICON_WHITE} />
-                  </View>
-                  <Text
-                    accessibilityRole="header"
-                    className="mb-1.5 text-lg font-semibold text-foreground"
-                  >
-                    {pillar.label}
-                  </Text>
-                  <Text className="text-sm text-muted-foreground">
-                    {pillar.description}
-                  </Text>
-                </Reveal>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* How It Works */}
-        <View className="bg-section-alt px-4 py-20">
-          <Reveal y={20} className="mb-14">
-            <Text
-              accessibilityRole="header"
-              className="mb-4 text-center font-bold text-foreground"
-              style={s.h2}
-            >
-              How It Works
-            </Text>
-          </Reveal>
-
-          <View className="gap-8">
-            {FEATURES.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <Reveal
-                  key={feature.title}
-                  y={20}
-                  delay={index * 0.225}
-                  className="items-center"
-                >
-                  <View className="mb-5 h-14 w-14 items-center justify-center rounded-2xl border border-edge bg-surface-elevated">
-                    <Icon size={24} color={color.primary} />
-                  </View>
-                  <Text
-                    accessibilityRole="header"
-                    className="mb-2 text-center text-lg font-semibold text-foreground"
-                  >
-                    {feature.title}
-                  </Text>
-                  <Text
-                    className="text-center text-sm text-muted-foreground"
-                    style={s.leadSm}
-                  >
-                    {feature.description}
-                  </Text>
-                </Reveal>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* CTA — only shown to first-time visitors with no children yet */}
-        {children.length === 0 && (
-          <View className="px-4 py-20">
-            <Reveal
-              scale={0.97}
-              className="relative overflow-hidden rounded-3xl border border-edge-faint bg-section-dark p-10"
-            >
-              <View
-                pointerEvents="none"
-                className="absolute inset-0"
-                style={CTA_TINT}
-              />
-              <View
-                pointerEvents="none"
-                className="absolute top-0 h-32 w-96 rounded-full"
-                style={[s.ctaGlow, CTA_GLOW]}
-              />
-              <View className="relative items-center">
-                <Text
-                  accessibilityRole="header"
-                  className="mb-4 text-center font-bold text-foreground"
-                  style={s.h2}
-                >
-                  Begin Your Child&apos;s Journey Today
-                </Text>
-                <Text
-                  className="mb-8 text-center text-base text-muted-foreground"
-                  style={s.leadBase}
-                >
-                  No pressure. No comparisons. Just guided, consistent growth
-                  towards becoming their best self.
-                </Text>
-                <Button
-                  size="xl"
-                  onPress={handleStartJourney}
-                  accessibilityLabel="Get Started Free"
-                  className="rounded-full font-semibold text-primary-foreground"
-                  style={recipe.btnPrimary}
-                >
-                  Get Started Free
-                  <ArrowRight
-                    size={16}
-                    color={color['primary-foreground']}
-                    style={s.iconRight}
-                  />
-                </Button>
-              </View>
-            </Reveal>
-          </View>
-        )}
-
-        {/* Footer */}
-        <View className="border-t border-edge-faint px-4 py-8">
-          <View className="mb-2 flex-row items-center justify-center gap-2">
-            <View
-              className="h-5 w-5 items-center justify-center rounded-md"
-              style={FOOTER_LOGO}
-            >
-              <Text className="text-[10px] font-bold text-white">S</Text>
+                </View>
+              </Reveal>
             </View>
-            <Text className="text-sm font-semibold text-foreground">
-              Superpower
+          )}
+
+          {/* Footer */}
+          <View className="border-t border-edge-faint px-4 py-8">
+            <View className="mb-2 flex-row items-center justify-center gap-2">
+              <View
+                className="h-5 w-5 items-center justify-center rounded-md"
+                style={FOOTER_LOGO}
+              >
+                <Text className="text-[10px] font-bold text-white">S</Text>
+              </View>
+              <Text className="text-sm font-semibold text-foreground">
+                Superpower
+              </Text>
+            </View>
+            <Text className="text-center text-xs text-muted-foreground">
+              A Growth Companion for Raising Self-Aware, Capable, and
+              Purpose-Driven Humans
             </Text>
           </View>
-          <Text className="text-center text-xs text-muted-foreground">
-            A Growth Companion for Raising Self-Aware, Capable, and
-            Purpose-Driven Humans
-          </Text>
-        </View>
-      </PageScroll>
+        </PageScroll>
+      </Animated.View>
     </RevealProvider>
   );
 }

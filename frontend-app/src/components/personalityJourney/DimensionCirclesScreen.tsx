@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View, type LayoutChangeEvent } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { Circle, Path } from 'react-native-svg';
 import { font, rgb } from '@/theme';
 import DimensionNode from './DimensionNode';
 import HubOrb from './HubOrb';
 import Spokes from './Spokes';
-import { PHASE2_ENTER, SCOPE_FOCUS, fadeIn } from './animations';
+import { PHASE2_ENTER, SCOPE_FOCUS, fadeIn, preEnter } from './animations';
 import { NODE_CENTER, ringScaleFor, type ActiveDimension } from './geometry';
 import type { JourneyViewport } from './viewport';
 
@@ -43,6 +43,8 @@ interface DimensionCirclesScreenProps {
   };
   current: ActiveDimension;
   viewport: JourneyViewport;
+  /** How far the window's centre (the warp's) lies below this screen's top: the hub's centre. */
+  centerY: number;
 }
 
 /** How long a tapped circle shows its ring before its page opens (web). */
@@ -61,8 +63,10 @@ export default function DimensionCirclesScreen({
   enabled,
   current,
   viewport,
+  centerY,
 }: DimensionCirclesScreenProps) {
   const { width, vh } = viewport;
+  const reduceMotion = useReducedMotion();
   const [ringScale, setRingScale] = useState(1);
 
   // A tapped circle shows its ring for a moment, then opens (web, the prototype's `sel`).
@@ -83,18 +87,37 @@ export default function DimensionCirclesScreen({
   };
 
   // web watchRing: scale the 700px ring box to fit the ring area.
-  const onRingAreaLayout = useCallback((e: LayoutChangeEvent) => {
-    const { width: w, height: h } = e.nativeEvent.layout;
-    if (!w || !h) return;
-    const s = ringScaleFor(w, h);
-    setRingScale(prev => (Math.abs(s - prev) > 0.005 ? s : prev));
-  }, []);
+  // The hub is centred on the window's centre, where the warp's stars start: centerY below
+  // this screen's top, so the ring box sits that far down less the ring area's own top (below
+  // the eyebrow in child view). The entrance scales about the same point.
+  const [ringTop, setRingTop] = useState(0);
+  const hubOrigin = [width / 2, centerY, 0];
+  const onRingAreaLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const { width: w, height: h, y } = e.nativeEvent.layout;
+      setRingTop(y);
+      if (!w || !h) return;
+      // The ring is centred on the window's centre, not the area's: it fits the room above and
+      // below that point.
+      const c = centerY - y;
+      const s = ringScaleFor(w, 2 * Math.max(0, Math.min(c, h - c)));
+      setRingScale(prev => (Math.abs(s - prev) > 0.005 ? s : prev));
+    },
+    [centerY],
+  );
 
   return (
-    <Animated.View style={PHASE2_ENTER}>
+    <Animated.View
+      style={[
+        { transformOrigin: hubOrigin },
+        preEnter(reduceMotion),
+        PHASE2_ENTER,
+      ]}
+    >
       <Animated.View
         style={[
           {
+            transformOrigin: hubOrigin,
             height: vh,
             width,
             alignItems: 'center',
@@ -127,7 +150,7 @@ export default function DimensionCirclesScreen({
             style={{
               position: 'absolute',
               left: width / 2 - 350,
-              top: vh / 2 - 64 - 350,
+              top: centerY - ringTop - 350,
               width: 700,
               height: 700,
               transform: [{ scale: ringScale }],
