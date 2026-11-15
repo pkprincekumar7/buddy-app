@@ -14,6 +14,9 @@ import {
 import type { JourneyViewport } from './viewport';
 
 const HEADING_SIZE = 28; // clamp(28px, 4vw, 42px) at phone width
+/** The heading's gap above the orb, and its least room below the screen's top (web). */
+const HEADING_GAP = 20;
+const HEADING_MARGIN = 4;
 const CYAN = rgb('constellation-cyan');
 const DOT_DELAYS = [0, 0.15, 0.3] as const;
 const DOTS = DOT_DELAYS.map(d => dotBounce(d));
@@ -43,26 +46,40 @@ export default function BuddyOrbScreen({
   const { vh, orbRadius } = viewport;
   // Transparent until each entrance takes hold (animations.preEnter).
   const hidden = preEnter(useReducedMotion());
-  // The radius (web clamp(100px, 36vmin, 150px)) also leaves the heading room above it: 32px
-  // over the orb and 8px inside the screen, now that the orb sits on the window's centre.
+  // The radius (viewport.orbRadius) also leaves the heading room above it: 20px
+  // over the orb and 4px inside the screen, now that the orb sits on the window's centre.
   // Measured once laid out; it starts at three heading lines, its usual height at phone width,
   // so the first frame doesn't show a larger orb that then shrinks.
   const [headingH, setHeadingH] = useState(HEADING_SIZE * 1.25 * 3);
-  const r = Math.max(100, Math.min(orbRadius, centerY - headingH - 32 - 8));
+  const r = Math.max(
+    100,
+    Math.min(orbRadius, centerY - headingH - HEADING_GAP - HEADING_MARGIN),
+  );
   const orbSize = r * 2;
   const orbTop = centerY - r;
-  // web: heading bottom pinned 32px above the orb top (top: …-32px + translateY(-100%))
-  const headingBottom = vh - (orbTop - 32);
+  // web: the heading's bottom HEADING_GAP above the orb's top
+  const headingBottom = vh - (orbTop - HEADING_GAP);
 
   return (
     <View style={{ minHeight: vh, width: '100%' }}>
-      {/* Text above — heading bottom pinned 32px above orb top */}
+      {/* Text above: the eyebrow and heading, their bottom HEADING_GAP above the orb */}
       <View
         className="absolute left-0 right-0 px-6"
         style={{ bottom: headingBottom }}
         onLayout={e => setHeadingH(e.nativeEvent.layout.height)}
       >
         <Animated.View style={[hidden, HEADING_ENTER]}>
+          {/* The prototype's eyebrow over the heading (web). */}
+          <Text
+            className="mb-4 text-center uppercase text-constellation-cyan-bright"
+            style={[
+              font('rajdhani', 700),
+              // The spacing trails the last letter too; as much on the left keeps it centred.
+              { fontSize: 12, letterSpacing: 12 * 0.4, paddingLeft: 12 * 0.4 },
+            ]}
+          >
+            Your child&apos;s next chapter
+          </Text>
           {isAnalyzing ? (
             <View className="items-center gap-4">
               <Text
@@ -91,7 +108,7 @@ export default function BuddyOrbScreen({
               accessibilityRole="header"
               className="text-center text-white"
               style={[
-                font('orbitron', 900),
+                font('orbitron', 700),
                 { fontSize: HEADING_SIZE, lineHeight: HEADING_SIZE * 1.25 },
               ]}
             >

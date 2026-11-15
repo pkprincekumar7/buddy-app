@@ -31,6 +31,17 @@ type ActiveDimension = 'discover' | 'grow' | 'transform' | 'release' | 'connect'
 
 // ── Phase 1: Buddy Orb ────────────────────────────────────────────────────
 
+/** The orb screen's heading: the prototype's clamp(28px, 4vw, 42px), and no more than 5.5vh,
+ *  so on a short window it stays two lines that fit above the orb. */
+const HEADING_SIZE = 'clamp(28px, min(4vw, 5.5vh), 42px)';
+/** The heading's gap above the orb, and its least room below the page top: kept small so the
+ *  orb has the most room to grow. */
+const HEADING_GAP = 20;
+const HEADING_MARGIN = 4;
+/** The orb's largest radius, 440px across (past the prototype's 300px): on a laptop it fills
+ *  the room the heading leaves, never more than that room or 36vmin. */
+const ORB_MAX_RADIUS = 220;
+
 function BuddyOrbScreen({
   childName,
   isAnalyzing,
@@ -44,9 +55,9 @@ function BuddyOrbScreen({
   // The orb's centre is the window's (50vh), where the warp's stars start.
   const screenRef = useRef<HTMLDivElement>(null);
   const top = usePageTop(screenRef, 112);
-  // Its radius (clamp(100px, 36vmin, 150px)) also leaves the heading room on a short window:
-  // 32px above the orb and 8px inside the page (which starts under the Back row and clips
-  // anything above it).
+  // Its radius (36vmin, 72px to ORB_MAX_RADIUS) also leaves the heading room on a short window:
+  // HEADING_GAP above the orb and HEADING_MARGIN inside the page (which starts under the Back
+  // row and clips anything above it). The heading (HEADING_SIZE) shrinks on a short window too.
   const headingRef = useRef<HTMLDivElement>(null);
   const [headingH, setHeadingH] = useState(0);
   useLayoutEffect(() => {
@@ -55,29 +66,44 @@ function BuddyOrbScreen({
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, [isAnalyzing]);
-  const r = `clamp(100px, min(36vmin, 50vh - ${top + headingH + 32 + 8}px), 150px)`;
+  const r = `clamp(72px, min(36vmin, 50vh - ${top + headingH + HEADING_GAP + HEADING_MARGIN}px), ${ORB_MAX_RADIUS}px)`;
   return (
     <div ref={screenRef} className="relative" style={{ minHeight: '100vh', width: '100%' }}>
       {/* Text above — heading bottom pinned 32px above orb top */}
       <div
         ref={headingRef}
-        className="absolute left-0 right-0 px-6 text-center"
+        // The window's width, not the page column's (max-w-lg, which wrapped it onto three
+        // lines): the prototype's heading has the screen, up to its own 640px.
+        className="absolute left-1/2 w-screen px-6 text-center"
         style={{
-          top: `calc(50vh - ${top}px - ${r} - 32px)`,
-          transform: 'translateY(-100%)',
+          top: `calc(50vh - ${top}px - ${r} - ${HEADING_GAP}px)`,
+          transform: 'translate(-50%, -100%)',
         }}
       >
         {/* CSS entrances, not framer's: framer ran these as Web Animations and, as each
             ended, dropped them a frame before writing the end value, so they blinked out
             (index.css .journey-*-in). */}
         <motion.div initial={false} className="journey-heading-in">
+          {/* The prototype's eyebrow over the heading. */}
+          <p
+            className="mb-4 font-rajdhani font-bold uppercase"
+            style={{
+              fontSize: 12,
+              letterSpacing: '0.4em',
+              // The spacing trails the last letter too; as much on the left keeps it centred.
+              paddingLeft: '0.4em',
+              color: 'rgb(var(--constellation-cyan-bright-rgb))',
+            }}
+          >
+            Your child&apos;s next chapter
+          </p>
           {isAnalyzing ? (
             <div className="flex flex-col items-center gap-4">
               <h1
-                className="font-orbitron text-white"
+                className="mx-auto font-orbitron text-white"
                 style={{
                   fontWeight: 700,
-                  fontSize: 'clamp(28px, 4vw, 42px)',
+                  fontSize: HEADING_SIZE,
                   lineHeight: 1.25,
                   maxWidth: 640,
                   textWrap: 'pretty',
@@ -103,10 +129,10 @@ function BuddyOrbScreen({
             </div>
           ) : (
             <h1
-              className="font-orbitron text-white"
+              className="mx-auto font-orbitron text-white"
               style={{
-                fontWeight: 900,
-                fontSize: 'clamp(28px, 4vw, 42px)',
+                fontWeight: 700,
+                fontSize: HEADING_SIZE,
                 lineHeight: 1.25,
                 maxWidth: 640,
                 textWrap: 'pretty',

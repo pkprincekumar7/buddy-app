@@ -392,3 +392,21 @@ Applying an item from group 1 means changing both apps the same way.
   a frame after the screen is laid out: iOS holds the UI about .4 s while building it, which had
   used the landing up before anything was drawn. Measured frame by frame on the web, the iOS
   simulator and the Android emulator.
+- The orb screen's heading on two lines (2026-11-15): it had three on medium and large screens,
+  as it sat in the page's 512 px column (`max-w-lg`) and at weight 900; it now has the window's
+  width (up to its 640 px, as the prototype's) and the prototype's weight 700 (mobile too). Its
+  size is the prototype's clamp(28px, 4vw, 42px), at most 5.5vh, so on a short window it still
+  fits above the orb; the orb's radius (36vmin, now 72 to 150 px) grows into the room the
+  shorter heading leaves, on the window's centre: 286 to 300 px across at 1280x800, 1440x900
+  and 768x1024, 152 px on a 1000x630 window (where it had cut the heading off under the Back
+  row), and unchanged on a phone (three lines there, as the prototype's). Then the heading sat
+  closer (HEADING_GAP 20 px above the orb, HEADING_MARGIN 4 px under the Back row, from 32 and
+  8; both apps), so the orb takes that room: 300 px from 1280x800 up, 184 px at 1000x630.
+  Then (decided 2026-11-15) the orb may grow past the prototype's 300 px into the room the
+  heading leaves, up to 440 px (`ORB_MAX_RADIUS` 220; mobile `viewport.orbRadius` up to 220):
+  394 px at 1260x876, 318 px at 1280x800, 418 px at 1440x900, 440 px at 1920x1080 and on a
+  768x1024 tablet; a phone is set by its width (270 px at 375x812), as before.
+  The prototype's eyebrow, "Your child's next chapter" (Rajdhani 700, 12 px, .4em, cyan-bright,
+  uppercase, 16 px over the heading), now sits above it (both apps). It's part of the measured
+  heading, so the orb gives up its room: 326 px at 1260x876, 350 px at 1440x900, 262 px at
+  375x812.
