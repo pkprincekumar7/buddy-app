@@ -74,6 +74,10 @@ const COUNTRIES = [
 /** Inner inputs of the unified "Card information" box — transparent, no
  * border of their own; the box around them supplies background/border. */
 const CARD_ROW_INPUT: React.CSSProperties = {
+  // Fills its column: without a width an input keeps the browser's ~20ch default (about
+  // 180px), wider than a phone's expiry and CVC columns, so the card box scrolled sideways.
+  display: 'block',
+  width: '100%',
   minWidth: 0,
   flex: 1,
   boxSizing: 'border-box',

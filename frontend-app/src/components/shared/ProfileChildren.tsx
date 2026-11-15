@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Image, ScrollView, Text, View } from 'react-native';
 import { Pencil, Plus, X } from 'lucide-react-native';
 import { Pressable } from '@/components/ui/pressable';
-import { MAX_CHILDREN, type Child } from '@/api/children';
+import {
+  MAX_CHILDREN,
+  children as childrenApi,
+  type Child,
+} from '@/api/children';
 import { childPath, childSubtitle } from '@/lib/childPaths';
 import { getInitials } from '@/lib/avatarUtils';
 import { navigate } from '@/lib/router';
@@ -62,6 +67,34 @@ function ChildAvatar({ child }: { child: Child }) {
 }
 
 /**
+ * A child's row (the prototype's profile list): child view once their chat is done, else
+ * their onboarding. A child the list still shows in setup is asked for afresh first: the
+ * chat's last answer sets the flag a moment later (an event), after the list was fetched.
+ * The menu closes once that's known (web).
+ */
+async function openChild(
+  child: Child,
+  onClose: () => void,
+  onChildView: ((child: Child) => void) | undefined,
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  let latest = child;
+  if (!child.progress.conversation) {
+    try {
+      latest = await childrenApi.get(child.id);
+      queryClient.setQueryData<Child[]>(['children'], old =>
+        old?.map(c => (c.id === latest.id ? latest : c)),
+      );
+    } catch {
+      // Offline or gone: open what the list says; that page handles it.
+    }
+  }
+  onClose();
+  if (onChildView && latest.progress.conversation) onChildView(latest);
+  else navigate(childPath(latest));
+}
+
+/**
  * One child's row (web `.profile-row-group`): the row is the box, holding the
  * main button and the edit and delete icons, and the whole box shows the
  * press, so the icons sit inside it.
@@ -80,6 +113,9 @@ function ChildRow({
   onChildView?: (child: Child) => void;
 }) {
   const [pressed, setPressed] = useState(false);
+  const queryClient = useQueryClient();
+  // A second press while a child is being checked is ignored.
+  const opening = useRef(false);
   return (
     <View
       className="flex-row items-center gap-1 rounded-[10px] pr-1.5"
@@ -87,11 +123,13 @@ function ChildRow({
     >
       <Pressable
         onPress={() => {
-          onClose();
-          // The prototype's profile list: a child's row switches to their child view.
-          // A child still in setup opens their onboarding instead.
-          if (onChildView && child.progress.conversation) onChildView(child);
-          else navigate(childPath(child));
+          if (opening.current) return;
+          opening.current = true;
+          void openChild(child, onClose, onChildView, queryClient).finally(
+            () => {
+              opening.current = false;
+            },
+          );
         }}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
@@ -162,6 +200,12 @@ export default function ProfileChildren({
   onChildView,
 }: ProfileChildrenProps) {
   const atLimit = list.length >= MAX_CHILDREN;
+  // The list is cached (30s) and the header stays mounted across screens, so a chat
+  // finished since wouldn't show: opening the menu fetches it again.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ['children'] });
+  }, [queryClient]);
 
   return (
     <>
