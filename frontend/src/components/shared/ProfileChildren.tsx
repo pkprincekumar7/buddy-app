@@ -1,6 +1,8 @@
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, X } from 'lucide-react';
-import { MAX_CHILDREN, type Child } from '@/api/children';
+import { MAX_CHILDREN, children as childrenApi, type Child } from '@/api/children';
 import { childPath, childSubtitle } from '@/lib/childPaths';
 import { getInitials } from '@/lib/avatarUtils';
 import { cn } from '@/lib/utils';
@@ -54,7 +56,39 @@ export default function ProfileChildren({
   onChildView,
 }: ProfileChildrenProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const atLimit = list.length >= MAX_CHILDREN;
+
+  // The list is cached (30s) and the menu stays mounted across pages, so a chat finished
+  // since wouldn't show: opening the menu fetches it again.
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ['children'] });
+  }, [queryClient]);
+
+  // A child's row: child view once their chat is done, else their onboarding. A child
+  // the list still shows in setup is asked for afresh first: the chat's last answer sets
+  // the flag a moment later (an event), after the list was fetched. The menu closes once
+  // that's known (closing unmounts this list), and a second click meanwhile is ignored.
+  const opening = useRef(false);
+  const open = async (child: Child) => {
+    if (opening.current) return;
+    opening.current = true;
+    let latest = child;
+    if (!child.progress.conversation) {
+      try {
+        latest = await childrenApi.get(child.id);
+        queryClient.setQueryData<Child[]>(['children'], (old) =>
+          old?.map((c) => (c.id === latest.id ? latest : c)),
+        );
+      } catch {
+        // Offline or gone: open what the list says; that page handles it.
+      }
+    }
+    onClose();
+    opening.current = false;
+    if (onChildView && latest.progress.conversation) onChildView(latest);
+    else void navigate(childPath(latest));
+  };
 
   return (
     <>
@@ -81,11 +115,7 @@ export default function ProfileChildren({
                 <li key={child.id} className="profile-row-group">
                   <button
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      if (onChildView && child.progress.conversation) onChildView(child);
-                      else void navigate(childPath(child));
-                    }}
+                    onClick={() => void open(child)}
                     aria-current={current ? 'page' : undefined}
                     title={
                       onChildView && child.progress.conversation

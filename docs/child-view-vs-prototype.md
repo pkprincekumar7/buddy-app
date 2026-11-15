@@ -410,3 +410,10 @@ Applying an item from group 1 means changing both apps the same way.
   uppercase, 16 px over the heading), now sits above it (both apps). It's part of the measured
   heading, so the orb gives up its room: 326 px at 1260x876, 350 px at 1440x900, 262 px at
   375x812.
+- A child's row in the profile menu after their chat (2026-11-15, both apps): the row opens
+  child view once the child's chat is done (`progress.conversation`), else their onboarding;
+  the flag is set by an event a moment after the chat's last answer, and the menu read it from
+  a list cached for 30 s, which the always-mounted header never fetched again, so a child
+  finished since still opened onboarding until a reload. Opening the menu now fetches the list
+  again, and a row the list still shows in setup asks for that child afresh before choosing
+  (`ProfileChildren`; tested on mobile, with a failed fetch falling back to the list).
