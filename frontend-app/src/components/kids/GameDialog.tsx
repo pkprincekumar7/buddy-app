@@ -13,6 +13,7 @@ import type { KidPower } from '@/api/discover';
 import { GAME_PLAY, bestNote, gameSeconds, winLine } from '@/lib/kidsGames';
 import { POWER_ICONS } from '@/components/kids/icons';
 import KidsGame from '@/components/kids/KidsGames';
+import { ScrollLockProvider, useScrollLockHost } from '@/lib/scrollLock';
 import {
   buttonGlow,
   buttonLine,
@@ -100,6 +101,9 @@ export default function GameDialog({
   onFinish,
 }: GameDialogProps) {
   const [round, setRound] = useState(0);
+  // Drawing locks this scroll view too, as Grow's games lock the page (lib/scrollLock).
+  const scroll = useRef<ScrollView>(null);
+  const scrollLock = useScrollLockHost(scroll);
   const [result, setResult] = useState<{
     secs: number;
     previous: number | undefined;
@@ -154,150 +158,156 @@ export default function GameDialog({
             onStartShouldSetResponder={() => true}
             style={[game.dialog, DIALOG, enter('pop', 0, reduced, 0.35)]}
           >
-            <ScrollView bounces={false}>
-              <View className="flex-row items-center gap-3.5">
-                <View style={d.icon}>
-                  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-                    <Path
-                      d={POWER_ICONS[power.game]}
-                      stroke={color('discover')}
-                      strokeWidth={1.8}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </Svg>
-                </View>
-                <Text
-                  accessibilityRole="header"
-                  style={[d.title, { flexShrink: 1 }]}
-                >
-                  {power.name}
-                </Text>
-                <Pressable
-                  onPress={onClose}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                  style={d.close}
-                >
-                  <X size={20} strokeWidth={2.4} color={d.ink} />
-                </Pressable>
-              </View>
-
-              {result && note ? (
-                <View
-                  accessibilityLiveRegion="polite"
-                  className="px-1.5 pb-1 pt-3"
-                >
-                  {WIN_DOTS.map((dot, i) => (
-                    <Animated.View
-                      key={i}
-                      pointerEvents="none"
-                      style={[
-                        {
-                          position: 'absolute',
-                          ...dot.at,
-                          width: dot.size,
-                          height: dot.size,
-                          borderRadius: dot.size / 2,
-                          backgroundColor: color(
-                            dot.gold ? 'gold' : 'discover',
-                          ),
-                        },
-                        loop(
-                          TWINKLE,
-                          dot.secs,
-                          dot.delay,
-                          'ease-in-out',
-                          reduced,
-                        ),
-                      ]}
-                    />
-                  ))}
-                  <Animated.View
-                    className="self-center"
-                    style={enter('pop', 0, reduced, 0.5)}
-                  >
-                    <Animated.View
-                      pointerEvents="none"
-                      style={[
-                        d.medalGlow,
-                        reduced ? { opacity: 0 } : null,
-                        loop(PULSE, 1.6, 0, 'ease-in-out', reduced),
-                      ]}
-                    />
-                    <View style={d.medal}>
-                      <Check size={36} strokeWidth={2.6} color={d.ink} />
-                    </View>
-                  </Animated.View>
-                  <Text className="mt-3 text-center" style={d.won}>
-                    You did it!
-                  </Text>
-                  <View className="mt-2.5 flex-row items-baseline justify-center gap-2">
-                    <Text style={d.time}>{result.secs.toFixed(1)}</Text>
-                    <Text style={d.sec}>sec</Text>
+            <ScrollLockProvider value={scrollLock.value}>
+              <ScrollView
+                ref={scroll}
+                bounces={false}
+                scrollEnabled={!scrollLock.locked}
+              >
+                <View className="flex-row items-center gap-3.5">
+                  <View style={d.icon}>
+                    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                      <Path
+                        d={POWER_ICONS[power.game]}
+                        stroke={color('discover')}
+                        strokeWidth={1.8}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </Svg>
                   </View>
-                  <View className="mt-2 min-h-[26px] flex-row justify-center">
-                    {newBest ? (
-                      // Pops in a moment after the rest (web .3 s delay).
+                  <Text
+                    accessibilityRole="header"
+                    style={[d.title, { flexShrink: 1 }]}
+                  >
+                    {power.name}
+                  </Text>
+                  <Pressable
+                    onPress={onClose}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                    style={d.close}
+                  >
+                    <X size={20} strokeWidth={2.4} color={d.ink} />
+                  </Pressable>
+                </View>
+
+                {result && note ? (
+                  <View
+                    accessibilityLiveRegion="polite"
+                    className="px-1.5 pb-1 pt-3"
+                  >
+                    {WIN_DOTS.map((dot, i) => (
                       <Animated.View
+                        key={i}
+                        pointerEvents="none"
                         style={[
-                          d.pill,
-                          d.pillBest,
-                          enter('pop', 0.3, reduced, 0.5),
+                          {
+                            position: 'absolute',
+                            ...dot.at,
+                            width: dot.size,
+                            height: dot.size,
+                            borderRadius: dot.size / 2,
+                            backgroundColor: color(
+                              dot.gold ? 'gold' : 'discover',
+                            ),
+                          },
+                          loop(
+                            TWINKLE,
+                            dot.secs,
+                            dot.delay,
+                            'ease-in-out',
+                            reduced,
+                          ),
+                        ]}
+                      />
+                    ))}
+                    <Animated.View
+                      className="self-center"
+                      style={enter('pop', 0, reduced, 0.5)}
+                    >
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          d.medalGlow,
+                          reduced ? { opacity: 0 } : null,
+                          loop(PULSE, 1.6, 0, 'ease-in-out', reduced),
+                        ]}
+                      />
+                      <View style={d.medal}>
+                        <Check size={36} strokeWidth={2.6} color={d.ink} />
+                      </View>
+                    </Animated.View>
+                    <Text className="mt-3 text-center" style={d.won}>
+                      You did it!
+                    </Text>
+                    <View className="mt-2.5 flex-row items-baseline justify-center gap-2">
+                      <Text style={d.time}>{result.secs.toFixed(1)}</Text>
+                      <Text style={d.sec}>sec</Text>
+                    </View>
+                    <View className="mt-2 min-h-[26px] flex-row justify-center">
+                      {newBest ? (
+                        // Pops in a moment after the rest (web .3 s delay).
+                        <Animated.View
+                          style={[
+                            d.pill,
+                            d.pillBest,
+                            enter('pop', 0.3, reduced, 0.5),
+                          ]}
+                        >
+                          <Text style={[d.pillText, d.pillBestText]}>
+                            {note.text}
+                          </Text>
+                        </Animated.View>
+                      ) : (
+                        <View style={d.pill}>
+                          <Text style={d.pillText}>{note.text}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View className="mt-3" style={d.line}>
+                      <Text style={d.lineText}>
+                        {winLine(power.game, result.secs)}
+                      </Text>
+                    </View>
+                    <View className="mt-3 flex-row flex-wrap justify-center gap-2.5">
+                      <Pressable
+                        onPress={again}
+                        accessibilityRole="button"
+                        accessibilityLabel="Play again"
+                        className="h-11 items-center justify-center px-5"
+                        style={({ pressed }) => [
+                          buttonLine(pressed),
+                          { borderColor: color('discover') },
                         ]}
                       >
-                        <Text style={[d.pillText, d.pillBestText]}>
-                          {note.text}
+                        <Text style={[growView.btnText, growView.btnLineText]}>
+                          Play again
                         </Text>
-                      </Animated.View>
-                    ) : (
-                      <View style={d.pill}>
-                        <Text style={d.pillText}>{note.text}</Text>
-                      </View>
-                    )}
+                      </Pressable>
+                      <Pressable
+                        onPress={onClose}
+                        accessibilityRole="button"
+                        accessibilityLabel="Done"
+                        className="h-11 items-center justify-center px-6"
+                        style={({ pressed }) => buttonGlow(pressed)}
+                      >
+                        <Text style={[growView.btnText, growView.btnGlowText]}>
+                          Done
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
-                  <View className="mt-3" style={d.line}>
-                    <Text style={d.lineText}>
-                      {winLine(power.game, result.secs)}
+                ) : (
+                  <>
+                    <Text className="mb-4 mt-3.5" style={d.play}>
+                      {GAME_PLAY[power.game]}
                     </Text>
-                  </View>
-                  <View className="mt-3 flex-row flex-wrap justify-center gap-2.5">
-                    <Pressable
-                      onPress={again}
-                      accessibilityRole="button"
-                      accessibilityLabel="Play again"
-                      className="h-11 items-center justify-center px-5"
-                      style={({ pressed }) => [
-                        buttonLine(pressed),
-                        { borderColor: color('discover') },
-                      ]}
-                    >
-                      <Text style={[growView.btnText, growView.btnLineText]}>
-                        Play again
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={onClose}
-                      accessibilityRole="button"
-                      accessibilityLabel="Done"
-                      className="h-11 items-center justify-center px-6"
-                      style={({ pressed }) => buttonGlow(pressed)}
-                    >
-                      <Text style={[growView.btnText, growView.btnGlowText]}>
-                        Done
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : (
-                <>
-                  <Text className="mb-4 mt-3.5" style={d.play}>
-                    {GAME_PLAY[power.game]}
-                  </Text>
-                  <KidsGame key={round} game={power.game} onWin={win} />
-                </>
-              )}
-            </ScrollView>
+                    <KidsGame key={round} game={power.game} onWin={win} />
+                  </>
+                )}
+              </ScrollView>
+            </ScrollLockProvider>
           </Animated.View>
         </Pressable>
       </Animated.View>

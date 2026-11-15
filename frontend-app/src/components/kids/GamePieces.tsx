@@ -1,5 +1,11 @@
 import React, { useState, type ReactNode } from 'react';
-import { Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import {
+  Text,
+  View,
+  useWindowDimensions,
+  type GestureResponderEvent,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   useReducedMotion,
   type CSSAnimationKeyframes,
@@ -43,6 +49,17 @@ export function useFrameWidth(grow = false): ViewStyle {
         minWidth: 220,
         alignSelf: 'center',
       };
+}
+
+/** A drag game's `onResponderGrant`: runs `grant`, then returns true, which on Android stops
+ * a scroll view round the game from taking the finger. Without it a stroke that goes up or
+ * down scrolls the page instead (Grow's games sit on a page that scrolls), and
+ * `onResponderTerminationRequest` can't refuse that, since a native scroll never asks. */
+export function keepTouch(grant: (e: GestureResponderEvent) => void) {
+  return (e: GestureResponderEvent) => {
+    grant(e);
+    return true;
+  };
 }
 
 /** A wrong memory tap: the frame fades back in (web .kids-game-flash). */

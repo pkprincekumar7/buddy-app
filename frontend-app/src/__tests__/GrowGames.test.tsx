@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import GrowGame from '@/components/kids/GrowGames';
 import type { GrowGameType } from '@/api/kidWorlds';
@@ -69,6 +70,19 @@ describe('the grow games: each one ends and reports once', () => {
     });
   });
 
+  it('memory: pads two to a row, as the web grid, and text hearts', () => {
+    const { getByLabelText, getByText } = play('memory', {
+      pads: ['A', 'B', 'C', 'D'],
+    });
+    // A share of the pads' box, so two always fit a row (sizes in points wrapped on Android).
+    const widths: unknown[] = [];
+    for (let n = getByLabelText('A').parent; n; n = n.parent)
+      widths.push(StyleSheet.flatten(n.props.style)?.width);
+    expect(widths).toContain('47%');
+    // Text-style hearts (U+FE0E), so Android draws them gold, not as red emoji.
+    expect(getByText('♥︎♥︎')).toBeTruthy();
+  });
+
   it('timing: every beat counted, tapped or not', () => {
     const { getByLabelText, onDone } = play('timing', {
       label: 'Jump',
@@ -126,5 +140,30 @@ describe('the grow games: each one ends and reports once', () => {
     expect(onDone.mock.calls[0]?.[0].line).toBe(
       'Lit 10% of the sky with 1 colours',
     );
+  });
+});
+
+describe('the drag games keep the finger, so the scrolling page cannot take it (Android)', () => {
+  const touch = { nativeEvent: { locationX: 20, locationY: 20 } };
+
+  it('spark', () => {
+    const { getByTestId } = play('spark', { time: 15 });
+    const sky = getByTestId('kids-grow-spark');
+    fireEvent(sky, 'layout', {
+      nativeEvent: { layout: { width: SIZE, height: SIZE } },
+    });
+    expect(fireEvent(sky, 'responderGrant', touch)).toBe(true);
+  });
+
+  it('catch', () => {
+    const { getByLabelText } = play('catch', {
+      good: ['Water'],
+      bad: ['Candy'],
+    });
+    const area = getByLabelText('Move the basket with your finger');
+    fireEvent(area, 'layout', {
+      nativeEvent: { layout: { width: SIZE, height: SIZE } },
+    });
+    expect(fireEvent(area, 'responderGrant', touch)).toBe(true);
   });
 });

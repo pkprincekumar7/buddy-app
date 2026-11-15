@@ -76,8 +76,10 @@ import {
   Hud,
   Sky,
   at,
+  keepTouch,
 } from '@/components/kids/GamePieces';
 import { enter } from '@/components/kids/enter';
+import { useLockScroll } from '@/lib/scrollLock';
 import { addBurst, type Burst } from '@/lib/kidsBursts';
 
 /**
@@ -203,6 +205,8 @@ function useLater() {
 function CatchGame({ cfg, onDone }: GrowGameProps) {
   const done = useRef(false);
   const width = useRef(0);
+  const box = useRef<View>(null);
+  useLockScroll(box);
   const basketRef = useRef(50);
   const [basket, setBasket] = useState(50);
   const [state, setState] = useState<{
@@ -254,6 +258,7 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
   };
   return (
     <View
+      ref={box}
       accessibilityLabel="Move the basket with your finger"
       onLayout={e => {
         width.current = e.nativeEvent.layout.width;
@@ -261,7 +266,7 @@ function CatchGame({ cfg, onDone }: GrowGameProps) {
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderTerminationRequest={() => false}
-      onResponderGrant={move}
+      onResponderGrant={keepTouch(move)}
       onResponderMove={move}
     >
       <Frame grow>
@@ -504,18 +509,22 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
           <Bar value={best.current / MEMORY_TOP} />
           <Hud
             left={`Level ${level.current}`}
-            right={'♥'.repeat(Math.max(0, lives.current))}
+            // U+FE0E asks for the text heart: Android draws a bare ♥ as a red emoji, which
+            // ignores the gold.
+            right={'♥︎'.repeat(Math.max(0, lives.current))}
           />
           {/* Web: a 2-column grid over left/right 12%, top 18%, bottom 16%, gap 6% (of its
-              width across, its height down); each pad fills its column. */}
+              width across, its height down); each pad fills its column. Each pad is 47% of
+              this box and the 6% left over is the gap: two pads plus a gap in points summed
+              to the box's width exactly, and rounding then wrapped every pad onto a row of
+              its own (Android). */}
           <View
-            className="absolute flex-row flex-wrap justify-center"
+            className="absolute flex-row flex-wrap justify-between"
             style={{
               left: '12%',
               right: '12%',
               top: '18%',
               bottom: '16%',
-              columnGap: size * 0.76 * 0.06,
               rowGap: size * 0.66 * 0.06,
             }}
           >
@@ -525,7 +534,7 @@ function MemoryGame({ cfg, onDone }: GrowGameProps) {
                 key={p}
                 style={[
                   {
-                    width: (size * 0.76 * 0.94) / 2,
+                    width: '47%',
                     transform: [{ scale: lit === j ? 1.06 : 1 }],
                   },
                   !reduced && {
@@ -910,6 +919,8 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
 function SparkGame({ cfg, onDone }: GrowGameProps) {
   const seconds = Number(cfg.time) || SPARK_SECONDS;
   const width = useRef(0);
+  const box = useRef<View>(null);
+  useLockScroll(box);
   const ended = useRef(false);
   const cells = useRef(new Set<string>());
   const strokeCount = useRef(0);
@@ -936,6 +947,7 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
   };
   return (
     <View
+      ref={box}
       testID="kids-grow-spark"
       accessibilityLabel="Paint here"
       onLayout={e => {
@@ -944,13 +956,13 @@ function SparkGame({ cfg, onDone }: GrowGameProps) {
       onStartShouldSetResponder={() => !ended.current}
       onMoveShouldSetResponder={() => !ended.current}
       onResponderTerminationRequest={() => false}
-      onResponderGrant={e => {
+      onResponderGrant={keepTouch(e => {
         if (ended.current || !width.current) return;
         strokeCount.current += 1;
         const p = point(e);
         setStrokes(all => [...all, []]);
         add(p);
-      }}
+      })}
       onResponderMove={e => {
         if (width.current) add(point(e));
       }}
