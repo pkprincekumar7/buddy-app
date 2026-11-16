@@ -150,6 +150,14 @@ arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { e
 ref="${*: -1}"; repo="${ref%@*}"; repo="${repo#*/}"; hex="${ref##*@sha256:}"
 dir="$FAKE/ecr/$(tr '/' '_' <<<"$repo")"
 signer="${FAKE_SIGNER:-https://github.com/acme/buddy-app/.github/workflows/deploy-live-backend.yml@refs/heads/main}"
+# FAKE_COSIGN_DB=1: like the real trust-root database (~/.sigstore), one call at a time;
+# a second call while one runs fails with the real error.
+if [ -n "${FAKE_COSIGN_DB:-}" ]; then
+  mkdir "$FAKE/sigstore-db" 2>/dev/null \
+    || { echo "Error: getting Rekor public keys: creating cached local store: resource temporarily unavailable"; exit 1; }
+  trap 'rmdir "$FAKE/sigstore-db"' EXIT
+  sleep 0.3
+fi
 check() {  # check FILE: present, signed by an identity the regexp allows, by GitHub's issuer
   [ -f "$1" ] && grep -Eq -- "$(arg --certificate-identity-regexp "$@")" "$1" \
     && [ "$(arg --certificate-oidc-issuer "$@")" = "https://token.actions.githubusercontent.com" ] \
@@ -164,6 +172,16 @@ case "$1" in
 esac
 EOF
 chmod +x "$FAKE/bin/cosign"
+
+# -- fake flock: `flock FILE CMD...` runs CMD once it holds FILE (macOS has no flock).
+cat > "$FAKE/bin/flock" <<'FLOCK'
+#!/usr/bin/env bash
+lock="$1.d"; shift
+until mkdir "$lock" 2>/dev/null; do sleep 0.05; done
+trap 'rmdir "$lock"' EXIT
+"$@"
+FLOCK
+chmod +x "$FAKE/bin/flock"
 export GITHUB_REPOSITORY="acme/buddy-app"
 export PATH="$FAKE/bin:$PATH"
 
@@ -328,6 +346,21 @@ if out=$(copy_signatures "1.dkr.ecr.ap-south-1.amazonaws.com/sp/dev/users" "2.dk
   [[ "$out" == *"has no signature"* ]] && ok "promoting an unsigned image fails" || fail "unsigned promote message" "$out"; fi
 check "a digest's release tag, not its -scanned marker" "$(tag_for_digest ap-south-1 sp/dev/users "$UNSIGNED")" "20261102-abc"
 if tag_for_digest ap-south-1 sp/dev/users "sha256:$(printf '0%.0s' {1..64})" 2>/dev/null; then fail "an unknown digest has no tag"; else ok "an unknown digest has no release tag"; fi
+# deploy_image checks every service's signature at once; cosign's trust-root database
+# opens in one process at a time, so the checks must take turns (FAKE_COSIGN_DB clashes
+# like the real one did on the first dev deploy).
+parallel_failures() {  # parallel_failures CMD...: run CMD three times at once, count failures
+  local pid n=0; local -a pids=()
+  for _ in 1 2 3; do "$@" >/dev/null 2>&1 & pids+=($!); done
+  for pid in "${pids[@]}"; do wait "$pid" || n=$((n + 1)); done
+  echo "$n"
+}
+export FAKE_COSIGN_DB=1
+[ "$(parallel_failures cosign verify --certificate-identity-regexp "$(signer_identity)" \
+    --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$REF")" -gt 0 ] \
+  && ok "the fake clashes on parallel cosign calls, like the real one" || fail "fake cosign database clash"
+check "parallel signature checks take turns and all pass" "$(parallel_failures verify_signature "$REF")" "0"
+unset FAKE_COSIGN_DB
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"
