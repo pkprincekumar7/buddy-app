@@ -417,3 +417,37 @@ Applying an item from group 1 means changing both apps the same way.
   finished since still opened onboarding until a reload. Opening the menu now fetches the list
   again, and a row the list still shows in setup asks for that child afresh before choosing
   (`ProfileChildren`; tested on mobile, with a failed fetch falling back to the list).
+- Drag games on Android (2026-11-15, mobile): Discover's drawing and Grow's Light Painting and
+  catch games follow the finger with the responder system, and refused a hand-over
+  (`onResponderTerminationRequest`), but a native Android scroll view doesn't ask: on Grow's
+  page, which scrolls, a stroke that went up or down scrolled the page, so a painting got only
+  a stub and later strokes nothing. Each drag game's `onResponderGrant` now returns true
+  (`keepTouch`, `components/kids/GamePieces`), which on Android keeps the finger from the
+  scroll view. Seen on the emulator at 411x731 dp: three strokes, before only a 30 px stub,
+  now paint in full, and a diagonal drag moves the basket without scrolling. The return value
+  only matters on Android; the web's games are DOM and untouched. Tested on mobile.
+- Grow's memory games on Android (2026-11-15, mobile; Planet Pattern, Colour Song, Name Game):
+  the pads stacked one to a row and ran out of the box, where the web shows the prototype's
+  2x2 grid. Each pad's width in points plus the gap summed to the pads' box exactly, and
+  rounding wrapped them; each is now 47% of the box, with the rest as the gap. The lives'
+  hearts are the text heart (U+2665 U+FE0E), since Android drew a bare one as a red emoji in
+  place of the gold. Measured against the web at 375 px: pads at 12% and 52% across, 18% and
+  58% down, 35% wide, on both. Tested on mobile.
+- Connect's wins when a source fails (2026-11-15, both apps): the wins are built from the
+  child's activity, quests and world runs (`lib/kidsWins`), and the page drew the list once
+  neither quests nor worlds was loading, so a failed request left it quietly short (a phone on
+  a poor network could show 3 of 10). It now says "We couldn't load all your wins." with Try
+  again, which fetches only what failed. The circles' load-error cards are one `LoadAgain` in
+  `KidsMode` (Grow, Transform, Connect). Tested on mobile.
+- Drag games on a real Android phone (2026-11-15, mobile; follows the entry above): the
+  grant's claim (`keepTouch`) reaches Android a beat after the touch, so on a busy phone (the
+  catch games redraw their falling words many times a second) a quick drag could pass the
+  touch slop first and the native scroll view still took it. The page now stops scrolling
+  while a drag game (Catch, Light Painting, Discover's drawing) is on it (`lib/scrollLock`:
+  `PageScroll` and the game dialog's scroll view host it, the game's `useLockScroll` holds it),
+  so Android's scroll view never tries; it scrolls again once the round ends. As the page
+  can't be scrolled by hand meanwhile, the game box is first scrolled into view, so on a short
+  phone the basket is no longer half below the fold. Seen on the emulator at 411x731 dp: the
+  box scrolls up into view on Play, and quick (120 ms) diagonal drags and strokes move the
+  basket and paint in full with the page still. Tap games leave the page scrolling. Tested on
+  mobile.

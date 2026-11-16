@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useImperativeHandle, useRef } from 'react';
 import { ScrollView, type ScrollViewProps } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cn } from '@/lib/utils';
+import { ScrollLockProvider, useScrollLockHost } from '@/lib/scrollLock';
 import PageBackRow from './PageBackRow';
 
 interface PageScrollProps extends ScrollViewProps {
@@ -17,6 +18,7 @@ interface PageScrollProps extends ScrollViewProps {
  * `bg-background` that starts with the Layout's Back row and pads the bottom
  * for the home indicator. Pages whose web layout is a full-viewport fixed
  * scene (no document scroll) should render <PageBackRow /> themselves instead.
+ * A game inside can stop it scrolling while it follows a finger (lib/scrollLock).
  */
 const PageScroll = React.forwardRef<ScrollView, PageScrollProps>(
   (
@@ -26,26 +28,33 @@ const PageScroll = React.forwardRef<ScrollView, PageScrollProps>(
       hideBackRow,
       children,
       contentContainerStyle,
+      scrollEnabled = true,
       ...props
     },
     ref,
   ) => {
     const insets = useSafeAreaInsets();
+    const scroll = useRef<ScrollView>(null);
+    useImperativeHandle(ref, () => scroll.current as ScrollView);
+    const lock = useScrollLockHost(scroll, insets.bottom + 16);
     return (
-      <ScrollView
-        ref={ref}
-        className={cn('flex-1 bg-background', className)}
-        contentContainerClassName={contentContainerClassName}
-        contentContainerStyle={[
-          { paddingBottom: insets.bottom + 16 },
-          contentContainerStyle,
-        ]}
-        keyboardShouldPersistTaps="handled"
-        {...props}
-      >
-        {hideBackRow ? null : <PageBackRow />}
-        {children}
-      </ScrollView>
+      <ScrollLockProvider value={lock.value}>
+        <ScrollView
+          ref={scroll}
+          className={cn('flex-1 bg-background', className)}
+          contentContainerClassName={contentContainerClassName}
+          contentContainerStyle={[
+            { paddingBottom: insets.bottom + 16 },
+            contentContainerStyle,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={scrollEnabled && !lock.locked}
+          {...props}
+        >
+          {hideBackRow ? null : <PageBackRow />}
+          {children}
+        </ScrollView>
+      </ScrollLockProvider>
     );
   },
 );

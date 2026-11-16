@@ -24,6 +24,31 @@ import ConnectWins from '@/components/kids/ConnectWins';
 import { winsFrom } from '@/lib/kidsWins';
 import { areaVars } from '@/components/kids/palette';
 
+/** A circle's "We couldn't load…" card with Try again. */
+function LoadAgain({
+  message,
+  busy,
+  onRetry,
+}: {
+  message: string;
+  busy: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="kids-card mx-auto max-w-xl text-center">
+      <p className="text-[15px] font-semibold text-kids-body md:text-lg">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={busy}
+        className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
+      >
+        {busy ? 'Trying…' : 'Try again'}
+      </button>
+    </div>
+  );
+}
+
 /**
  * The kids page (docs/child-view-build-plan.md, Phase 2): child view's version of each
  * circle, at `/Kids/:childId/:area`. The stars come from the server (useKidActivity); the
@@ -173,19 +198,11 @@ export default function KidsMode() {
                 awaitProgress={kid.awaitProgress}
               />
             ) : (
-              <div className="kids-card mx-auto max-w-xl text-center">
-                <p className="text-[15px] font-semibold text-kids-body md:text-lg">
-                  We couldn&apos;t load the worlds.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void growWorlds.refetch()}
-                  disabled={growWorlds.isFetching}
-                  className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
-                >
-                  {growWorlds.isFetching ? 'Trying…' : 'Try again'}
-                </button>
-              </div>
+              <LoadAgain
+                message="We couldn't load the worlds."
+                busy={growWorlds.isFetching}
+                onRetry={() => void growWorlds.refetch()}
+              />
             )
           ) : area === 'transform' ? (
             quests.isLoading ? (
@@ -199,19 +216,11 @@ export default function KidsMode() {
                 awaitProgress={kid.awaitProgress}
               />
             ) : (
-              <div className="kids-card mx-auto max-w-xl text-center">
-                <p className="text-[15px] font-semibold text-kids-body md:text-lg">
-                  We couldn&apos;t load your quests.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void quests.refetch()}
-                  disabled={quests.isFetching}
-                  className="kids-btn mt-4 h-11 px-6 text-sm md:h-12 md:text-base"
-                >
-                  {quests.isFetching ? 'Trying…' : 'Try again'}
-                </button>
-              </div>
+              <LoadAgain
+                message="We couldn't load your quests."
+                busy={quests.isFetching}
+                onRetry={() => void quests.refetch()}
+              />
             )
           ) : area === 'release' ? (
             <ReleaseCheckIn
@@ -223,6 +232,17 @@ export default function KidsMode() {
             />
           ) : growWorlds.isLoading || quests.isLoading ? (
             <PageLoader />
+          ) : !growWorlds.worlds || !quests.quests ? (
+            // The wins come from the worlds and quests too (Connect opens after Grow and
+            // Transform, so both are fetched): without one, the list would quietly be short.
+            <LoadAgain
+              message="We couldn't load all your wins."
+              busy={growWorlds.isFetching || quests.isFetching}
+              onRetry={() => {
+                if (!growWorlds.worlds) void growWorlds.refetch();
+                if (!quests.quests) void quests.refetch();
+              }}
+            />
           ) : (
             <ConnectWins
               wins={winsFrom({

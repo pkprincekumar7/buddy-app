@@ -71,10 +71,12 @@ import {
   Frame,
   Sky,
   at,
+  keepTouch,
   useFrameWidth,
   Bursts,
 } from '@/components/kids/GamePieces';
 import { addBurst, type Burst } from '@/lib/kidsBursts';
+import { useLockScroll } from '@/lib/scrollLock';
 
 /**
  * The seven games' views (web components/kids/KidsGames; docs/child-view-build-plan.md,
@@ -418,6 +420,8 @@ function DrawGame({ onWin }: GameProps) {
   const [state, setState] = useState<DrawState>(DRAW_START);
   const width = useFrameWidth();
   const size = useRef(0);
+  const box = useRef<View>(null);
+  useLockScroll(box);
   useWinOnce(state.length >= DRAW_GOAL, onWin);
   const point = (e: GestureResponderEvent) => ({
     x: (e.nativeEvent.locationX / size.current) * 100,
@@ -426,6 +430,7 @@ function DrawGame({ onWin }: GameProps) {
   const line = polyline(state.points);
   return (
     <View
+      ref={box}
       testID="kids-game"
       accessibilityLabel="Draw here"
       style={[game.frame, width]}
@@ -435,10 +440,10 @@ function DrawGame({ onWin }: GameProps) {
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderTerminationRequest={() => false}
-      onResponderGrant={e => {
+      onResponderGrant={keepTouch(e => {
         const p = point(e);
         setState(s => drawTo(s, p, false));
-      }}
+      })}
       onResponderMove={e => {
         const p = point(e);
         setState(s => drawTo(s, p));

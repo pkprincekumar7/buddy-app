@@ -65,6 +65,15 @@ describe('the mini games: each one finishes and reports once', () => {
     expect(onWin).toHaveBeenCalledTimes(1);
   });
 
+  it('draw: keeps the finger, so a scroll view round it cannot take the stroke (Android)', () => {
+    const { getByTestId } = play('draw');
+    expect(
+      fireEvent(getByTestId('kids-game'), 'responderGrant', {
+        nativeEvent: { locationX: 10, locationY: 10 },
+      }),
+    ).toBe(true);
+  });
+
   it('climb: fast taps reach the top', () => {
     const { getByLabelText, onWin } = play('climb');
     for (let i = 0; i < 20; i++) fireEvent(getByLabelText('Climb'), 'pressIn');
