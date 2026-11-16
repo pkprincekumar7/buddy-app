@@ -221,7 +221,13 @@ Everything else (env vars, secret references, CPU/memory, roles) is carried over
 `:latest` placeholder never runs after the first deploy. If a service fails to stabilise, the
 ECS circuit breaker rolls it back and the others carry on. The step then fails, naming the services
 left on their previous image and the `service=` value to re-run them with, and the run shows a
-**Mixed images** warning and a summary table of which service runs which image (CI-12). Because the services
+**Mixed images** warning and a summary table of which service runs which image (CI-12). On a first
+deploy, the "previous image" is the `:latest` placeholder, which doesn't exist, so a failed service runs
+no tasks until it's re-run. A service that failed its signature check was never updated at all: the
+log line `[<service>] ERROR: ... has no valid signature` says why. The checks run in parallel, but each
+`cosign` call takes its turn (`cosign_serial`, under `flock`): cosign's local trust-root database
+(`~/.sigstore`) opens in one process at a time, and parallel calls failed with `creating cached local
+store: resource temporarily unavailable`. Because the services
 are rolled out together, any change must keep working while some services still run the previous
 image (e.g. the API and the worker must both handle a job written by the other version). The rollout logic is shared by all
 three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.test.sh`).

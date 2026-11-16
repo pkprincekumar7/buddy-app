@@ -190,6 +190,21 @@ copy_image() {
 
 COSIGN_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
+# cosign_serial ARGS... — runs `cosign ARGS...` once no other cosign call from this job is
+# running. cosign keeps the Sigstore trust root in one local database (~/.sigstore) that
+# only one process can open at a time, so the parallel signature checks in deploy_image
+# failed with "getting Rekor public keys: creating cached local store: resource
+# temporarily unavailable" and those services were never rolled out. Each check takes
+# about a second, so waiting costs little. flock (util-linux) is on the Linux runners;
+# without it (macOS) cosign runs directly.
+cosign_serial() {
+  if ! command -v flock >/dev/null 2>&1; then
+    cosign "$@"
+    return
+  fi
+  flock "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/cosign.lock" cosign "$@"
+}
+
 # signer_identity → the pattern a valid signature's certificate must match: this repo's
 # deploy-live-backend workflow, run from a branch or tag (a call from terraform-live-all
 # signs as that same workflow file).
@@ -206,7 +221,7 @@ verify_signature() {
     echo "ERROR: $ref isn't pinned to a digest, so its signature can't be checked." >&2
     return 1
   fi
-  if out=$(cosign verify --certificate-identity-regexp "$(signer_identity)" \
+  if out=$(cosign_serial verify --certificate-identity-regexp "$(signer_identity)" \
       --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$ref" 2>&1); then
     return 0
   fi
@@ -222,7 +237,7 @@ sign_image() {
     echo "$ref is already signed."
     return 0
   fi
-  cosign sign --yes "$ref" >/dev/null || return 1
+  cosign_serial sign --yes "$ref" >/dev/null || return 1
   verify_signature "$ref" && echo "Signed $ref."
 }
 
@@ -230,12 +245,12 @@ sign_image() {
 # unless REF already has one.
 attest_sbom() {
   local ref="$1" file="$2"
-  if cosign verify-attestation --type cyclonedx --certificate-identity-regexp "$(signer_identity)" \
+  if cosign_serial verify-attestation --type cyclonedx --certificate-identity-regexp "$(signer_identity)" \
       --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" "$ref" >/dev/null 2>&1; then
     echo "$ref already has its SBOM attestation."
     return 0
   fi
-  cosign attest --yes --type cyclonedx --predicate "$file" "$ref" >/dev/null || return 1
+  cosign_serial attest --yes --type cyclonedx --predicate "$file" "$ref" >/dev/null || return 1
   echo "Attested the SBOM of $ref."
 }
 
