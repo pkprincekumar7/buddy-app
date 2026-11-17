@@ -120,9 +120,11 @@ release_assets() {
 # prune_releases BUCKET [KEEP]: deletes every saved release but the newest KEEP
 # (RELEASES_KEPT). Prints how many it deleted.
 prune_releases() {
-  local bucket="$1" keep="${2:-$RELEASES_KEPT}" old listing keys count i
+  local bucket="$1" keep="${2:-$RELEASES_KEPT}" saved old listing keys count i
   [[ "$keep" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: prune_releases: KEEP must be at least 1." >&2; return 1; }
-  old=$(saved_releases "$bucket" | tail -n +"$((keep + 1))" | jq -R . | jq -sc .) || return 1
+  # Read whole first: in the pipe below, a failed listing looked like nothing to prune.
+  saved=$(saved_releases "$bucket") || return 1
+  old=$(tail -n +"$((keep + 1))" <<<"$saved" | jq -R 'select(. != "")' | jq -sc .) || return 1
   listing=$(aws s3api list-objects-v2 --bucket "$bucket" --prefix releases/ --output json) || return 1
   keys=$(jq -c --argjson old "$old" '
     [(.Contents // [])[] | select((.Key | split("/")[1]) as $sha | $old | index($sha)) | {Key}]' <<<"$listing") || return 1
@@ -181,12 +183,15 @@ cutoff_date() {
 # any kept release uses, and that were last written more than DAYS ago. Prints how many
 # it deleted.
 prune_assets() {
-  local dist="$1" bucket="$2" days="$3" cutoff current kept listing stale releases
+  local dist="$1" bucket="$2" days="$3" cutoff current kept listing stale releases saved
   [[ "$days" =~ ^[0-9]+$ ]] || { echo "ERROR: prune_assets: DAYS must be a whole number." >&2; return 1; }
   cutoff=$(cutoff_date "$days") || return 1
   current=$(build_assets "$dist") || return 1
+  # Read whole first: inside `< <(…)` a failed listing looked like no saved releases, and
+  # the chunks only they use (a rollback's) were then deleted as unused.
+  saved=$(saved_releases "$bucket") || return 1
   releases=()
-  while IFS= read -r sha; do [ -n "$sha" ] && releases+=("$sha"); done < <(saved_releases "$bucket")
+  while IFS= read -r sha; do [ -n "$sha" ] && releases+=("$sha"); done <<<"$saved"
   kept=$(release_assets "$bucket" ${releases[@]+"${releases[@]}"}) || return 1
   current=$(jq -c --argjson kept "$kept" '. + $kept | unique' <<<"$current") || return 1
   listing=$(aws s3api list-objects-v2 --bucket "$bucket" --prefix assets/ --output json) || return 1

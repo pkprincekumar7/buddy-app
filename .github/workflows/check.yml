@@ -266,7 +266,7 @@ jobs:
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 35 # room for the browser tests (an estimated ~10 min on a 4-core runner)
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -312,9 +312,56 @@ jobs:
           echo "Bundle: $BUNDLE — ${SIZE} bytes (limit ${LIMIT})"
           [ "$SIZE" -le "$LIMIT" ] || { echo "Main bundle exceeds 1.4 MB limit"; exit 1; }
 
+  # The frontend's tests, once its lint job passes (as backend-test waits for backend-lint).
+  frontend-test:
+    name: Frontend Tests (Vitest)
+    needs: [frontend-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       # Component and logic tests: jsdom, no server or API (docs/web-ui-test-plan.md).
       - name: Component tests (Vitest)
         run: npm test
+
+  frontend-e2e:
+    name: Frontend Browser Tests (Playwright)
+    needs: [frontend-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35 # an estimated ~10 min on a 4-core runner, with room to spare
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
 
       # Browser tests: the app in Playwright's Chromium against a stubbed API
       # (e2e/fixtures.ts). The browser is cached by Playwright's version, so it downloads
@@ -383,6 +430,30 @@ jobs:
 
       - name: TypeScript type check
         run: node_modules/.bin/tsc --noEmit
+
+  # The app's tests, once its lint job passes.
+  frontend-app-test:
+    name: Frontend App Tests (Jest)
+    needs: [frontend-app-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "yarn"
+          cache-dependency-path: frontend-app/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
 
       - name: Jest (unit tests)
         run: yarn test --ci
@@ -944,7 +1015,11 @@ jobs:
       # the same base a deploy builds on; Debian fixes arrive as Dependabot digest bumps.
       - name: Build the service images
         run: |
-          for svc in $(python backend/tools/services.py); do
+          # Listed first: a failed list would stop the step here, where a `for` over $(…) ran
+          # no iterations and passed, checking nothing.
+          svcs=$(python backend/tools/services.py)
+          [ -n "$svcs" ] || { echo "::error::backend/tools/services.py listed no services."; exit 1; }
+          for svc in $svcs; do
             docker build --build-arg GIT_SHA="${GITHUB_SHA}" --build-arg SERVICE="$svc" \
               -t "superpower-$svc:scan" -f backend/Dockerfile .
           done
@@ -954,7 +1029,11 @@ jobs:
         continue-on-error: true
         run: |
           failed=()
-          for svc in $(python backend/tools/services.py); do
+          # Listed first: a failed list would stop the step here, where a `for` over $(…) ran
+          # no iterations and passed, checking nothing.
+          svcs=$(python backend/tools/services.py)
+          [ -n "$svcs" ] || { echo "::error::backend/tools/services.py listed no services."; exit 1; }
+          for svc in $svcs; do
             echo "── $svc"
             trivy image --severity HIGH,CRITICAL --exit-code 1 --scanners vuln \
               --ignore-unfixed "superpower-$svc:scan" || failed+=("$svc")
@@ -979,7 +1058,11 @@ jobs:
         continue-on-error: true
         run: |
           failed=()
-          for svc in $(python backend/tools/services.py); do
+          # Listed first: a failed list would stop the step here, where a `for` over $(…) ran
+          # no iterations and passed, checking nothing.
+          svcs=$(python backend/tools/services.py)
+          [ -n "$svcs" ] || { echo "::error::backend/tools/services.py listed no services."; exit 1; }
+          for svc in $svcs; do
             echo "── $svc"
             dockle -af settings.py --ignore DKL-DI-0005 "superpower-$svc:scan" || failed+=("$svc")
           done
@@ -988,7 +1071,11 @@ jobs:
       # ── SBOM generation ──────────────────────────────────────────────────────
       - name: Generate SBOMs (service images)
         run: |
-          for svc in $(python backend/tools/services.py); do
+          # Listed first: a failed list would stop the step here, where a `for` over $(…) ran
+          # no iterations and passed, checking nothing.
+          svcs=$(python backend/tools/services.py)
+          [ -n "$svcs" ] || { echo "::error::backend/tools/services.py listed no services."; exit 1; }
+          for svc in $svcs; do
             trivy image --format cyclonedx --output "sbom-backend-$svc.cyclonedx.json" "superpower-$svc:scan"
           done
 
@@ -1129,9 +1216,13 @@ jobs:
       # inside its container.
       - name: Wait for the gateway and the services
         run: |
+          # Listed once, first: a failed list stops the step here, where a `for` over $(…)
+          # ran no iterations and passed, waiting for no service.
+          svcs=$(python backend/tools/services.py)
+          [ -n "$svcs" ] || { echo "::error::backend/tools/services.py listed no services."; exit 1; }
           up() {
             curl -sf http://localhost:8088/gateway/health > /dev/null || return 1
-            for svc in $(python backend/tools/services.py); do
+            for svc in $svcs; do
               docker compose exec -T "$svc" python -c \
                 "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" \
                 > /dev/null 2>&1 || return 1

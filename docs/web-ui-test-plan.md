@@ -668,8 +668,10 @@ hides 42px sideways", so the approach catches real regressions.
 
 ## 12. CI and `check.sh`
 
-In `.github/workflows/check.yml`, job **Frontend Lint**, after "Bundle size budget" (pinned
-actions as the rest of the workflow; `actionlint` passed on this):
+In `.github/workflows/check.yml`, jobs of their own once **Frontend Lint** passes: Vitest in
+**Frontend Tests (Vitest)** (`frontend-test`), and Playwright in **Frontend Browser Tests
+(Playwright)** (`frontend-e2e`), whose steps are these (pinned actions as the rest of the
+workflow; `actionlint` passed on this):
 
 ```yaml
       - name: Component tests (Vitest)

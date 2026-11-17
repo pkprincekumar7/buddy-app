@@ -309,7 +309,10 @@ jobs:
           # backend_regions (JSON array) drives the Lambda@Edge routing map —
           # every region listed there must also have this parameter, or the
           # Terraform plan fails later with a much less clear error.
-          for region in $(jq -r '.[]' <<<"$BACKEND_REGIONS"); do
+          # Read first: a malformed list stops the step here, where a `for` over $(…) ran
+          # no iterations and passed.
+          regions=$(jq -r '.[]' <<<"$BACKEND_REGIONS")
+          for region in $regions; do
             check_ssm "/$APP/$ENV/backend/$region/alb_internal_fqdn"
           done
 

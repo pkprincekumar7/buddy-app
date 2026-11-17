@@ -140,6 +140,18 @@ out=$(ensure_service_token_keys sp prod ap-south-1 "$VERSIONS" auth users 2>&1)
 check "bumping a version makes a new kid and deletes the old one" "$(names | tr ',' '\n' | grep '/auth/' | paste -sd, -)" \
   "$P/auth/service_token/auth-v2/private,$P/auth/service_token/auth-v2/public"
 [[ "$out" == *"auth: deleted the rotated-out auth-v1."* ]] && ok "says what it deleted" || fail "deleted message" "$out"
+# A failed listing of the old kids stops the rotation, not reads as nothing to rotate out
+# (it did, inside `< <(…)`, leaving the old pair behind with a success).
+cp "$FAKE/ssm.json" "$WORK/ssm-before.json"  # this run writes an auth-v3 pair: undone below
+echo '{"users": 2, "auth": 3}' > "$VERSIONS"
+if out=$(FAKE_FAIL=get-parameters-by-path ensure_service_token_keys sp prod ap-south-1 "$VERSIONS" auth 2>&1); then
+  fail "a failed listing of the old kids fails" "$out"
+else
+  [[ "$out" != *"deleted the rotated-out"* ]] && ok "a failed listing of the old kids fails the rotation" \
+    || fail "failed kid listing" "$out"
+fi
+echo '{"users": 2, "auth": 2}' > "$VERSIONS"
+cp "$WORK/ssm-before.json" "$FAKE/ssm.json"
 
 # -- errors ----------------------------------------------------------------------------------
 if out=$(FAKE_FAIL=get-parameter ensure_service_token_keys sp prod ap-south-1 "$VERSIONS" auth 2>&1); then fail "a read error fails"; else
@@ -168,6 +180,13 @@ out=$(delete_service_token_keys sp prod ap-south-1)
 check "destroy deletes every key parameter, in batches of 10, and nothing else" "$(names)" "$P/ecs_services"
 check "says how many" "$out" "Deleted 16 service-token key parameter(s) under $P."
 check "nothing to delete is fine" "$(delete_service_token_keys sp prod ap-south-1)" "Deleted 0 service-token key parameter(s) under $P."
+# A listing that fails stops the cleanup, not reads as nothing to delete (it did, inside
+# `< <(…)`).
+if out=$(FAKE_FAIL=get-parameters-by-path delete_service_token_keys sp prod ap-south-1 2>&1); then
+  fail "a failed listing fails" "$out"
+else
+  [[ "$out" != *"Deleted"* ]] && ok "a failed listing fails, claiming nothing" || fail "failed listing" "$out"
+fi
 
 echo
 echo "$PASS passed, $FAIL failed"

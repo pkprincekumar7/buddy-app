@@ -35,7 +35,7 @@ A change to a workflow keeps to these (production-readiness review SEC-06, SEC-0
 
 **Region inputs.** Every workflow that takes regions (`aws_regions`, `backend_regions`, `target_aws_regions`) takes them as free text: one region or a comma-separated list, such as `ap-south-1,eu-west-1`. A calling workflow may pass a JSON array instead. The first job checks each region against `shared/routing.json`'s regions and turns the list into the JSON array the later jobs read (`regions_json`, `scripts/workflow-inputs.sh`); `bootstrap_region` is free text too (`auto` or one of those regions). Terraform's region validations read the same file, so allowing a new region is one entry in `shared/routing.json` (TF-01); each environment still needs that region's own values (`vpc_cidrs`, its ACM certificate and buckets).
 
-[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has fifteen jobs. `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, `terraform-lint` and `terraform-test` start in parallel immediately; `backend-test` starts once `backend-lint` passes, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `backend-services` waits for the matrix; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
+[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has eighteen jobs. `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, `terraform-lint` and `terraform-test` start in parallel immediately; each area's tests start once its lint passes: `backend-test` after `backend-lint`, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `frontend-test` (Vitest) and `frontend-e2e` (Playwright) after `frontend-lint`; `frontend-app-test` (Jest) after `frontend-app-lint`; `backend-services` waits for the matrix; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 ### `backend-lint` (Python 3.13)
 
@@ -61,6 +61,18 @@ The install step runs `pip install -r requirements-dev.txt -r requirements-lint.
 | `build` | Vite (via `npm run build`) | Production build — catches import errors and missing assets |
 | bundle size | bash + `wc` | Ensures the main JS bundle stays ≤ 1.4 MB (current: ~1.08 MB) |
 
+### `frontend-test` (needs: frontend-lint)
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Component tests | Vitest (via `npm test`) | Components and logic in jsdom, no server or API (`src/**/*.test.{ts,tsx}`) |
+
+### `frontend-e2e` (needs: frontend-lint)
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Browser tests and coverage floor | Playwright (via `npm run test:e2e:ci`) | The app in Playwright's Chromium against a stubbed API (`e2e/`), at phone, tablet and desktop widths; fails if browser-test coverage falls under 90% of lines. Chromium is cached by Playwright's version; screenshots and traces are uploaded on a failure |
+
 ### `frontend-app-lint` (Node.js 22)
 
 | Step | Tool | What it checks |
@@ -68,6 +80,11 @@ The install step runs `pip install -r requirements-dev.txt -r requirements-lint.
 | `eslint` | ESLint (via `yarn lint`) | React Native/hooks rules, unused imports, security — covers `frontend-app/src/**` |
 | `prettier --check` | Prettier (devDependency) | TS/TSX formatting across `src/**/*.{ts,tsx}` — fails if any file is unformatted |
 | `typecheck` | tsc (`--noEmit`) | TypeScript type checking across `frontend-app/src/**` |
+
+### `frontend-app-test` (needs: frontend-app-lint)
+
+| Step | Tool | What it checks |
+|---|---|---|
 | Jest (unit tests) | Jest (via `yarn test --ci`) | The `frontend-app` unit tests (`__tests__/`, `src/__tests__/`) |
 
 ### `terraform-lint`

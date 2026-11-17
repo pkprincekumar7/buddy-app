@@ -238,8 +238,13 @@ jobs:
 
           # Older builds: the timestamped names sort by age, so all but the newest
           # APKS_KEPT go (the one just uploaded is always the newest).
-          mapfile -t OLD < <(aws s3api list-objects-v2 --bucket "$ASSETS_BUCKET_NAME" --prefix "${APK_PREFIX}app-release-" \
-            --query 'Contents[].Key' --output json | jq -r --argjson keep "$APKS_KEPT" '(. // []) | map(select(endswith(".apk"))) | sort | .[:-$keep][]')
+          # Listed first: a failed listing stops the step here, where inside `< <(…)` it read as
+          # nothing to prune and reported "Pruned 0".
+          LISTING=$(aws s3api list-objects-v2 --bucket "$ASSETS_BUCKET_NAME" --prefix "${APK_PREFIX}app-release-" \
+            --query 'Contents[].Key' --output json)
+          OLD_KEYS=$(jq -r --argjson keep "$APKS_KEPT" '(. // []) | map(select(endswith(".apk"))) | sort | .[:-$keep][]' <<<"$LISTING")
+          OLD=()
+          if [ -n "$OLD_KEYS" ]; then mapfile -t OLD <<<"$OLD_KEYS"; fi
           for KEY in "${OLD[@]}"; do
             aws s3 rm "s3://${ASSETS_BUCKET_NAME}/${KEY}"
           done
