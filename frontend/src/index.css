@@ -2287,6 +2287,20 @@
       rgb(var(--profile-parent-deep-rgb))
     );
   }
+  /* The child whose page this is, opposite Back in parent view (Layout): their avatar and
+     name in a cyan glass pill, the child rows' colour in the profile menu. 28 px tall, as
+     on mobile (PageBackRow): inside the 32 px Back button, so the row keeps its height. */
+  .page-child {
+    @apply flex min-w-0 max-w-[60%] items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-3 text-sm font-semibold tracking-wide;
+    color: rgb(var(--constellation-cyan-pale-rgb));
+    background: linear-gradient(
+      90deg,
+      rgb(var(--constellation-cyan-rgb) / 0.16),
+      rgb(var(--constellation-cyan-rgb) / 0.04)
+    );
+    border: 1px solid rgb(var(--constellation-cyan-rgb) / 0.35);
+    box-shadow: 0 0 16px rgb(var(--constellation-cyan-rgb) / 0.18);
+  }
   .avatar-dot-child {
     background: radial-gradient(
       circle at 35% 30%,

@@ -187,24 +187,8 @@ export default function KidsMode() {
             className="px-4 pb-14 pt-6"
             style={enter('up', 0, reduced)}
           >
-            {!isOpen(area) ? (
-              <View className="items-center" style={card(area)}>
-                <Lock size={32} color={color(area)} />
-                <Text
-                  accessibilityRole="header"
-                  className="mt-2.5 text-center text-xl"
-                  style={text.heading}
-                >
-                  {AREA_NAMES[area]} opens later
-                </Text>
-                <Text
-                  className="mt-2.5 text-center text-[15px]"
-                  style={text.body}
-                >
-                  Keep going!
-                </Text>
-              </View>
-            ) : kid.isLoadingError || !kid.activity ? (
+            {/* A failed read first: without the activity every circle would look locked. */}
+            {kid.isLoadingError || !kid.activity ? (
               <View className="items-center" style={card(area)}>
                 <Text className="text-center text-[15px]" style={text.body}>
                   We couldn&apos;t load this.
@@ -224,6 +208,23 @@ export default function KidsMode() {
                     {kid.isFetching ? 'Trying…' : 'Try again'}
                   </Text>
                 </Pressable>
+              </View>
+            ) : !isOpen(area) ? (
+              <View className="items-center" style={card(area)}>
+                <Lock size={32} color={color(area)} />
+                <Text
+                  accessibilityRole="header"
+                  className="mt-2.5 text-center text-xl"
+                  style={text.heading}
+                >
+                  {AREA_NAMES[area]} opens later
+                </Text>
+                <Text
+                  className="mt-2.5 text-center text-[15px]"
+                  style={text.body}
+                >
+                  Keep going!
+                </Text>
               </View>
             ) : area === 'discover' ? (
               powers.isLoading ? (

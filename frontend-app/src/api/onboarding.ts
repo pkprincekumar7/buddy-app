@@ -45,8 +45,16 @@ export const onboarding = {
     const [child, conversation] = await Promise.all([
       children.get(childId),
       onboarding.get(childId).catch((err: unknown) => {
-        // Locked (no profile yet) or unreachable: the chat simply starts from the top.
-        if (!(err instanceof ApiError)) throw err;
+        // No answers to resume (locked: no profile yet; or none saved): the chat starts from
+        // the top. Any other failure is the caller's to show: starting afresh would look as if
+        // saved answers were lost.
+        if (
+          !(
+            err instanceof ApiError &&
+            (err.code === 'circle_locked' || err.status === 404)
+          )
+        )
+          throw err;
         console.warn('[onboarding] No saved answers:', err.code ?? err.status);
         return null;
       }),

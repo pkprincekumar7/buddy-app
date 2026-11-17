@@ -64,6 +64,8 @@ export default function AccountSettings() {
     data: profile,
     isLoading,
     error,
+    refetch,
+    isFetching,
   } = useQuery({
     queryKey: ['profile'],
     queryFn: () => account.profile.get(),
@@ -71,21 +73,33 @@ export default function AccountSettings() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [signingOutAll, setSigningOutAll] = useState(false);
+  // Deleting the account: the dialog, the email typed to confirm it, and the request.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (profile) setDraft(draftOf(profile));
   }, [profile]);
 
   if (isLoading) return <PageLoader />;
-  if (error || !profile || !draft) {
+  if (error || !profile) {
     return (
-      <p className="p-6 text-center text-error-strong">
-        {httpErrorMessage(error, {
-          fallback: 'Could not load your profile. Please try again.',
-        })}
-      </p>
+      <div className="flex flex-col items-center gap-4 p-6 text-center">
+        <p className="text-error-strong">
+          {httpErrorMessage(error, {
+            fallback: 'Could not load your profile. Please try again.',
+          })}
+        </p>
+        <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+          {isFetching ? 'Trying…' : 'Try again'}
+        </Button>
+      </div>
     );
   }
+  // The draft follows the profile in an effect: a render's gap, not an error.
+  if (!draft) return <PageLoader />;
 
   const saved = draftOf(profile);
   const patch = changesOf(draft, saved);
@@ -119,6 +133,28 @@ export default function AccountSettings() {
     } catch (e) {
       setSigningOutAll(false);
       toast.error(httpErrorMessage(e as Error | undefined, { fallback: 'Could not sign out.' }));
+    }
+  };
+
+  // The auth service checks the email too (400 confirmation_mismatch); this only keeps the
+  // button off until it matches.
+  const emailMatches =
+    !!user?.email && confirmEmail.trim().toLowerCase() === user.email.trim().toLowerCase();
+  const onDeleteAccount = async () => {
+    setDeleteError('');
+    setDeleting(true);
+    try {
+      await account.deleteAccount(confirmEmail.trim());
+      toast.success('Your account is being deleted.');
+      await logout(true);
+    } catch (e) {
+      setDeleting(false);
+      setDeleteError(
+        httpErrorMessage(e as Error | undefined, {
+          fallback: 'Could not delete the account. Please try again.',
+          codeMessages: { confirmation_mismatch: "The email doesn't match your account." },
+        }),
+      );
     }
   };
 
@@ -204,6 +240,67 @@ export default function AccountSettings() {
               <AlertDialogAction onClick={() => void onSignOutAll()}>
                 Sign out everywhere
               </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </section>
+
+      <section className="border-edge space-y-3 rounded-2xl bg-card p-6">
+        <h2 className="text-lg font-semibold text-foreground">Delete account</h2>
+        <p className="text-sm text-muted-foreground">
+          Deletes this account and everything in it: your children, their answers, plans and
+          progress. It can&apos;t be undone.
+        </p>
+        <AlertDialog
+          open={deleteOpen}
+          onOpenChange={(open) => {
+            if (deleting) return;
+            setDeleteOpen(open);
+            setConfirmEmail('');
+            setDeleteError('');
+          }}
+        >
+          <AlertDialogTrigger asChild>
+            <Button variant="outline">Delete account</Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Everything goes: your children, their answers, plans and progress. Type your email
+                to confirm.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div>
+              <Label htmlFor="settings-delete-email" className="mb-1 block text-foreground">
+                Your email
+              </Label>
+              <input
+                id="settings-delete-email"
+                type="email"
+                autoComplete="off"
+                value={confirmEmail}
+                onChange={(e) => {
+                  setConfirmEmail(e.target.value);
+                  setDeleteError('');
+                }}
+                className="form-input"
+              />
+              {deleteError && (
+                <p role="alert" className="mt-2 text-sm text-error-strong">
+                  {deleteError}
+                </p>
+              )}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+              <Button
+                variant="destructive"
+                disabled={!emailMatches || deleting}
+                onClick={() => void onDeleteAccount()}
+              >
+                {deleting ? 'Deleting…' : 'Delete account'}
+              </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

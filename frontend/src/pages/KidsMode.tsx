@@ -135,17 +135,8 @@ export default function KidsMode() {
           onToggleReadAloud={toggleTts}
         />
         <main key={area} className="kids-enter-up px-4 pb-12 pt-6 sm:px-7">
-          {!isOpen(area) ? (
-            <div className="kids-card mx-auto max-w-xl text-center">
-              <Lock className="mx-auto h-8 w-8 text-kids-area" aria-hidden="true" />
-              <h1 className="mt-3 font-orbitron text-xl font-black text-kids-text md:text-2xl">
-                {AREA_NAMES[area]} opens later
-              </h1>
-              <p className="mt-3 text-[15px] font-semibold text-kids-body md:text-lg">
-                Keep going!
-              </p>
-            </div>
-          ) : kid.isLoadingError || !kid.activity ? (
+          {/* A failed read first: without the activity every circle would look locked. */}
+          {kid.isLoadingError || !kid.activity ? (
             <div className="kids-card mx-auto max-w-xl text-center">
               <p className="text-[15px] font-semibold text-kids-body md:text-lg">
                 We couldn&apos;t load this.
@@ -158,6 +149,16 @@ export default function KidsMode() {
               >
                 {kid.isFetching ? 'Trying…' : 'Try again'}
               </button>
+            </div>
+          ) : !isOpen(area) ? (
+            <div className="kids-card mx-auto max-w-xl text-center">
+              <Lock className="mx-auto h-8 w-8 text-kids-area" aria-hidden="true" />
+              <h1 className="mt-3 font-orbitron text-xl font-black text-kids-text md:text-2xl">
+                {AREA_NAMES[area]} opens later
+              </h1>
+              <p className="mt-3 text-[15px] font-semibold text-kids-body md:text-lg">
+                Keep going!
+              </p>
             </div>
           ) : area === 'discover' ? (
             powers.isLoading ? (

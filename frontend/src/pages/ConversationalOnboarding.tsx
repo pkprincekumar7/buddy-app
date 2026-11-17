@@ -8,6 +8,7 @@ import { useUnmountSignal } from '@/hooks/useUnmountSignal';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import PageLoader from '@/components/shared/PageLoader';
 import { httpErrorMessage } from '@/lib/apiError';
+import { ApiError } from '@/api/errors';
 import { Button } from '@/components/ui/button';
 
 // The conversational onboarding (build plan 7.5): the chat keeps the answers until the
@@ -22,6 +23,9 @@ export default function ConversationalOnboarding() {
   // What the chat resumed from (the child's fields, and any saved answers).
   const draftRef = useRef<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
+  // The saved answers failed to load (not a missing child): shown with Try again.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   // The answers being saved, kept for "Try again" after a failed save.
   const pendingRef = useRef<Record<string, unknown> | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -48,16 +52,21 @@ export default function ConversationalOnboarding() {
         if (!cancelled) draftRef.current = draft;
       } catch (err) {
         console.warn('[ConversationalOnboarding] Hydration failed:', err);
-        if (!cancelled) void navigate('/Home', { replace: true });
-      } finally {
-        if (!cancelled) setHydrated(true);
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) {
+          void navigate('/Home', { replace: true });
+          return;
+        }
+        setLoadError("We couldn't load your answers. Please try again.");
+        return;
       }
+      if (!cancelled) setHydrated(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reload]);
 
   const save = useCallback(
     async (collected: Record<string, unknown>) => {
@@ -111,7 +120,20 @@ export default function ConversationalOnboarding() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
-        {isLoadingAuth || !hydrated ? (
+        {loadError ? (
+          <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+            <p className="text-muted-foreground">{loadError}</p>
+            <Button
+              onClick={() => {
+                setLoadError(null);
+                setReload((n) => n + 1);
+              }}
+              className="btn-primary rounded-2xl px-8"
+            >
+              Try again
+            </Button>
+          </div>
+        ) : isLoadingAuth || !hydrated ? (
           <PageLoader />
         ) : (
           <div className="relative flex h-[calc(100vh-7rem)] flex-col bg-[var(--bg-deep-3)]">

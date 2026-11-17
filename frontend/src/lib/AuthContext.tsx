@@ -16,6 +16,7 @@ import { ApiError } from '@/api/errors';
 import { queryClientInstance } from '@/lib/query-client';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
+import { afterSignIn, isPublicAuthPath } from '@/lib/authPaths';
 type UserData = CurrentUser;
 
 interface AuthErrorValue {
@@ -112,7 +113,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
-      void navigate('/Login', { replace: true });
+      // On the sign-in pages already (signed out, opening /Register): stay. Elsewhere, sign in
+      // and come back here.
+      const here = window.location.pathname;
+      if (!isPublicAuthPath(here))
+        void navigate('/Login', { replace: true, state: { from: here } });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('superpower:auth-expired', onExpired);
@@ -177,9 +182,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void navigate('/Admin', { replace: true });
         return;
       }
-      void navigate(mainPath, { replace: true });
+      // Back to the page that sent the person to sign in, or Home.
+      void navigate(afterSignIn(location.state, mainPath), { replace: true });
     }
-  }, [isLoadingAuth, isAuthenticated, user?.role, location.pathname, navigate, mainPath]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    user?.role,
+    location.pathname,
+    location.state,
+    navigate,
+    mainPath,
+  ]);
 
   const contextValue = useMemo(
     () => ({

@@ -42,24 +42,37 @@ interface ProfileChildrenProps {
   onChildView?: (child: Child) => void;
 }
 
-/** The child's photo, or the cyan dot with their initial. */
-function ChildAvatar({ child }: { child: Child }) {
+/** The child's photo, or the cyan dot with their initial (`size` points, 28 by default). */
+export function ChildAvatar({
+  child,
+  size = 28,
+  fontSize = 12,
+}: {
+  child: Pick<Child, 'name' | 'avatar_url'>;
+  size?: number;
+  fontSize?: number;
+}) {
   if (child.avatar_url) {
     return (
       <Image
         source={{ uri: child.avatar_url }}
         accessibilityIgnoresInvertColors
-        className="h-7 w-7 rounded-full"
+        className="rounded-full"
+        style={{ width: size, height: size }}
       />
     );
   }
   return (
     <View
       importantForAccessibility="no-hide-descendants"
-      className="h-7 w-7 items-center justify-center rounded-full"
-      style={{ experimental_backgroundImage: CHILD_DOT }}
+      className="items-center justify-center rounded-full"
+      style={{
+        width: size,
+        height: size,
+        experimental_backgroundImage: CHILD_DOT,
+      }}
     >
-      <Text style={[DOT_TEXT, { fontSize: 12 }]}>
+      <Text style={[DOT_TEXT, { fontSize }]}>
         {getInitials(child.name).charAt(0)}
       </Text>
     </View>

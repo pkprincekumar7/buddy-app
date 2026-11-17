@@ -1,9 +1,21 @@
 # Web UI test suite — plan
 
 A plan for automated tests that cover the web app's (`frontend/`) UI flows end to end, so a
-small change no longer needs the whole stack started and clicked through by hand. Nothing here
-is built yet; a first version was set up and removed on 2026-11-15, and what it taught is folded
-in below (section 11).
+small change no longer needs the whole stack started and clicked through by hand. A first
+version was set up and removed on 2026-11-15, and what it taught is folded in below (section 11).
+
+**Status** (kept current as phases land; the per-row state is in `frontend/e2e/FLOWS.md`):
+
+| Phase | State |
+|---|---|
+| 0. Foundation | done 2026-11-16: 14 component tests, 14 browser tests (a smoke test per scenario, plus the first layout, Connect and Planet Pattern tests); coverage 39% of lines, files no test loads counted as 0% |
+| 1. Navigation | done 2026-11-16: 44 tests (`nav.spec.ts`), all NAV rows, KID-01 and KID-10 (partial: see FLOWS.md); the journey's orb got an accessible name |
+| 2. Games | done 2026-11-16: 35 tests (`games/discover.spec.ts`, `games/grow.spec.ts`): KID-02 to KID-05, all 14 games; a stateful kid activity (`e2e/data/kid.ts`); Grow on a paused clock with Math.random fixed (`helpers/games.ts`); 105/105 under `--repeat-each=3`; breaking the best-time or catch rule fails them |
+| 3. States | done 2026-11-16: 42 tests (`states/errors.spec.ts`, `polling.spec.ts`, `session.spec.ts`): ALL-03 (partial), AUTH-05/06, DIS-01, GRW-03, REL-01; 5 app gaps found and kept as `test.fail` (FLOWS.md); TRN-03 and ONB-06 moved to phase 4 with their forms |
+| 4. Writes | done 2026-11-16: 78 tests (`flows/onboarding`, `grow`, `transform`, `parent`, `kid-circles`), every write checked against its body; stateful stand-ins for grow and transform (`e2e/data/grow.ts`, `transform.ts`); 234/234 under `--repeat-each=3`; 2 more gaps as `test.fail` (Connect's sample wins, no delete-account); the profile form's labels tied to their fields |
+| 5. Auth and admin | done 2026-11-16: 28 tests (`auth.spec.ts`): AUTH-01 to 04, 07, 08, ADM-01/02 and DIS-02/03 (not in the earlier phases); 2 more gaps as `test.fail` (sign-in ignores the page asked for; /Register opened directly bounces); the admin page's and the profile's unnamed buttons named |
+| 6. Layout and a11y | done 2026-11-16: `layout.spec.ts` (21 pages × 3 widths: ALL-01, ALL-02, ALL-05) and `dialogs.spec.ts` (12 dialogs: ALL-04); app fixes: accessible names (profile button, Discover circle, Grow areas), the chat's hidden voice button inert, Connect's shares opening from the keyboard; gaps as `test.fail`: the profile form's contrast, focus not returned by state-opened dialogs, the profile menu not taking focus |
+| Gaps fixed | 2026-11-16: all 12 gaps the phases found, fixed in the app (both apps where they share the code) and their tests turned into ordinary ones: focus return (`ReturnFocus`), the profile menu's focus, sign-in returning to the page, /Register opened directly, Account settings / the profile form / the chat / child view Release load errors with Try again, the app error reloading a failed page load, Connect's real wins only, Delete account, the profile form's contrast |
 
 Contents
 
@@ -40,7 +52,7 @@ and desktop widths; basic accessibility.
 
 | Not covered | Why | What covers it instead |
 |---|---|---|
-| The mobile app (`frontend-app/`) | React Native, not a browser | Its Jest suite today; a device-level tool (Maestro) would be a separate plan |
+| The mobile app (`frontend-app/`) | React Native, not a browser | Its Jest suite, and device tests with Maestro: [mobile-ui-test-plan.md](mobile-ui-test-plan.md) |
 | Real Google sign-in | Google's page can't be driven in tests | A stubbed Google Identity Services script (section 6) |
 | Real LLM output | Different every run, costs money | Fixed sample answers in the stubs; the backend's own tests and `scripts/e2e` |
 | Sound and video actually playing | A headless browser has no ears | Tests check the media is requested and the page moves on |
@@ -63,7 +75,7 @@ and desktop widths; basic accessibility.
 
 Rule of thumb: if it's about **where things are or how they flow between pages**, it's a
 browser test; if it's about **what one component does with some data**, it's a component test.
-Pure functions in `src/lib` (wins, streaks, game scoring, plans) get plain unit tests in Vitest.
+Pure functions in `src/lib` (wins, streaks, game scoring, plans) get plain unit tests in Vitest, as do rules with many cases that a browser test would only touch once: the error message order (`lib/apiError.test.ts`) and the two-device rebase (`api/transform.test.ts`).
 
 ---
 
@@ -252,8 +264,13 @@ Every browser test runs the real app with **every `/api/v1` request answered by 
 
 `e2e/fixtures.ts` exports a `test` (Playwright's, extended) whose `api` fixture:
 
-- installs one route for `**/api/v1/**` and looks each request up as `"METHOD /path"` (the path
-  after `/api/v1`, without the query), e.g. `GET /children/c-test/kids`;
+- installs one route for `**/api/v1/**` and looks each request up by its **spec route**,
+  `"METHOD /path"` with the spec's placeholders (the path after `/api/v1`, without the query),
+  e.g. `GET /children/{id}/kids`; literal segments win over placeholders, and a handler gets
+  the path parameters (`params.id`). The keys and each success body are typed from
+  `src/api/generated` (`e2e/data/routes.ts`), so a wrong key or body is a type error;
+- is automatic (`auto: true`): a test that never names `api` still gets the stubs;
+- blocks every host other than the test server (Google, S3, CDNs) unless a test stubs it;
 - answers from a table of **stubs**: a fixed reply `{ status?, body }` or a handler
   `(request, url) => reply` for replies that depend on the query, the body or a call count;
 - **records every call** (method, path, query, JSON body) so tests can assert what was sent;
@@ -581,10 +598,12 @@ natural commit point. Estimates are coding time.
 | 4. Writes | ONB-01…08, GRW-02/04, TRN-02…07, REL-02, CON-01…03, KID-06…09, ACC-01…05, each asserting what was sent | ~30 | ~35 | 2–3 h |
 | 5. Auth and admin | AUTH-01…08, ADM-01/02 | 10 | ~15 | 1 h |
 | 6. Layout and a11y | ALL-01, ALL-02, ALL-04, ALL-05 at three widths | 4 | ~25 (parametrised over routes) | 1 h |
-| **Total** | | | **~200** | **11–14 h** |
+| **Total** | | | **~200** | **11–14 h** by hand; about 5–8 h of Claude Code session time |
 
-Expected run time: component tests a few seconds; browser tests 2–4 minutes in CI with the
-default workers (shard later with `--shard` if it grows).
+Run time (measured 2026-11-16, all six phases, ~450 browser tests): component tests a few
+seconds; browser tests about 3 minutes locally on 7 workers, 5 with coverage; in CI every core
+(`workers: '100%'`): an estimated 10 minutes on a 4-core runner, not yet measured (the job's limit is 35). Shard with
+`--shard` if it grows.
 
 Suggested order inside each phase: the happy path first, then each failure; write the
 inventory row's test name into `FLOWS.md` as each test lands.
@@ -605,7 +624,9 @@ inventory row's test name into `FLOWS.md` as each test lands.
 - **Targets**: lines 85–90%, and every inventory row with a test. Look at the report for
   unrun branches after each phase; each is either a missing test or dead code.
 - Don't gate CI on the percentage until phase 4 is done; then fail below the reached level
-  (a ratchet), so it can only go up.
+  (a ratchet), so it can only go up. **In place since phase 4**: CI and `check.sh` run
+  `npm run test:e2e:ci` (coverage, then `e2e/coverage-floor.mjs`), floor 90% of lines as
+  `coverage-summary.json` counts them (the console table shows about 2 points more).
 
 ---
 
@@ -617,6 +638,8 @@ From the first setup (2026-11-15); each cost time once.
 |---|---|---|
 | `webServer` timed out after 120 s | Vite (Node 24) listened on `::1` for "localhost"; Playwright checked `127.0.0.1` | `--host 127.0.0.1` in the command |
 | Waiting for animations never ended | Pulses and twinkles loop forever | Wait only for animations with a finite end (`settled`, section 6) |
+| Tests passed fast and failed when watched (`SLOWMO`) | They relied on real time staying short between steps: a timed game's clock ran on, a 400 ms flash was gone, a stand-in forgot a child it had added (so the page bounced Home after the check) | Pause the clock before the timed steps (`pauseClock`, before Play); stand-ins keep what they're sent; measure layout (`offsetTop`), not a box mid-animation |
+| A test's result depended on the test before it | `TransformServer` kept the shared constants it was given (an area) and its jobs wrote into them | Copy what a stand-in is given (`structuredClone`) |
 | A layout check passed on a broken step | The popup's title changes before the old step animates out (`AnimatePresence`), so it measured a half-empty dialog | Wait for an element only the new step has, then `settled` |
 | `overflowing` flagged hidden labels | Tailwind's `sr-only` is a 1px clipped box | Skip boxes ≤ 1px wide |
 | CI-mode run found no browser | `npx playwright install` run from the repo root fetched the newest Playwright (1.65.1, Chromium 1255); the project's 1.64.1 needs 1248 | Install from `frontend/` |
@@ -624,6 +647,17 @@ From the first setup (2026-11-15); each cost time once.
 | `/Kids/…` redirected to the parent's pages | Child view lives in `localStorage` (`superpower.view`) | `api.childView(page)` before `goto` |
 | Lint errors in tests | `consistent-type-imports` forbids `import('…')` types; the security plugin forbids `new RegExp(variable)` | `import type * as M from '…'` + `importActual<typeof M>()`; match names with a function |
 | `vi.mock` couldn't see test variables | Mocks are hoisted above the imports | Create the mocks' functions in `vi.hoisted(() => …)` |
+| Random tests timed out (even `page.route` in setup) with 7 workers | Google Chrome (`channel: 'chrome'`) stalls with several headless instances on macOS | Playwright's own Chromium whenever it's installed (`playwright.config.ts`, `BUNDLED`): 132/132 under `--repeat-each=3` |
+| `toBeHidden()` passed nothing for the hidden app bar | It's hidden with `opacity: 0` (it fades back), which Playwright counts as visible | Assert the `app-bar-hidden` class |
+| A click on a power opened another one | The powers unfold from the centre and float without end: never still, and overlapping on entry | Press Enter on the power (`openPower`) |
+| A game's score came out 0 on the fake clock | One `runFor` over the whole game fires every timer with no render between, so a ref set in a state updater was still stale when the countdown read it | `tick()`: advance in steps, awaiting each |
+| `clock.pauseAt` failed: "Cannot fast-forward to the past" | After `resume()` the clock's time can be ahead of the page's `Date.now()` | Pause a little ahead (`pauseClock`) |
+| A `test.fail` gap test was reported as failing | It waited the full 30 s: a timeout isn't the expected failure | Give its last step a short timeout, so it fails fast |
+| Grow regenerated recommendations without end | A fixed stub returned the area without the answers just saved, so the input looked new every time | Stateful stand-ins (`data/grow.ts`, `data/transform.ts`): what's saved stays saved |
+| A `toHaveCount(0)` gap check "passed" | It ran before the page had rendered anything | Wait for the page's heading first |
+| `overflowing` flagged every page's decorative glow | A box with `overflow: hidden` and a glow drawn past its edge counted as clipping | Report only clipped text or controls, not aria-hidden or invisible ones |
+| Discover's powers covered the whole page | The test data gave levels 60 to 90; the spec says 3 to 5 but types it as a number | Fixed the builder (types can't catch a range: read the spec's descriptions) |
+| Accessibility names broke tests' `exact` names | A content-derived name ("Life Ambition Kids 90 (completed) — …") replaced an `aria-label` | Match the start of the name (`/^Self Care Kids 60/`) |
 | Aiming taps at moving game pieces failed | Positions are random and the pieces glide | `freezeRandom` + `page.clock` (section 6) |
 
 What the first version proved: the 4 browser tests ran in ~10 s (also as CI does, with

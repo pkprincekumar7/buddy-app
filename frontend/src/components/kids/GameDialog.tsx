@@ -5,6 +5,7 @@ import { GAME_PLAY, bestNote, gameSeconds, winLine } from '@/lib/kidsGames';
 import { POWER_ICONS } from '@/components/kids/icons';
 import KidsGame from '@/components/kids/KidsGames';
 import { cn } from '@/lib/utils';
+import ReturnFocus from '@/components/shared/ReturnFocus';
 
 /** How long the finished game stays on screen before "You did it!". */
 const WIN_PAUSE_MS = 500;
@@ -88,6 +89,7 @@ export default function GameDialog({ power, best, onClose, onFinish }: GameDialo
         className="kids-dialog"
         onClick={(e) => e.stopPropagation()}
       >
+        <ReturnFocus />
         <div className="flex items-center gap-3.5">
           <span className="kids-dialog-icon" aria-hidden="true">
             <svg

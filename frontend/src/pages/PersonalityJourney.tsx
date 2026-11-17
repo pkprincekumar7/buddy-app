@@ -155,6 +155,9 @@ function BuddyOrbScreen({
         }}
       >
         <motion.button
+          // The orb is the page's one control; without a name a screen reader says "button".
+          aria-label={isAnalyzing ? 'Analysing your answers' : 'Enter the circles'}
+          aria-disabled={isAnalyzing || undefined}
           onClick={
             isAnalyzing
               ? undefined
@@ -1045,7 +1048,7 @@ function DimensionCirclesScreen({
           <div
             role="button"
             tabIndex={0}
-            aria-label="Discover"
+            // Named by its label ("Discover"); the "Start here" tag is hidden from the name.
             aria-describedby={tip && canHover ? 'hub-discover-tip' : undefined}
             onClick={pick('discover', onDiscover)}
             onKeyDown={(e) => {
@@ -1084,6 +1087,8 @@ function DimensionCirclesScreen({
                 boxShadow: '0 0 14px rgb(var(--constellation-cyan-rgb) / .6)',
                 animation: 'tagBob 1.7s ease-in-out infinite',
               }}
+              // A visual cue: the circle's name stays "Discover" (and its tooltip says why).
+              aria-hidden="true"
             >
               Start here
             </div>

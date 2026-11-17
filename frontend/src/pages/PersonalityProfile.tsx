@@ -939,6 +939,7 @@ export default function PersonalityProfile() {
             </div>
             <button
               onClick={() => handleShare('instagram')}
+              aria-label="Share on Instagram"
               className="font-barlow"
               style={{
                 ...GOLD_PILL,
@@ -965,6 +966,7 @@ export default function PersonalityProfile() {
             </button>
             <button
               onClick={() => handleShare('whatsapp')}
+              aria-label="Share on WhatsApp"
               className="font-barlow"
               style={{
                 ...GOLD_PILL,

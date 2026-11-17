@@ -12,8 +12,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
+import ReturnFocus from '@/components/shared/ReturnFocus';
 import { startOverCopy } from '@/lib/startOverCopy';
-import ProfileChildren from '@/components/shared/ProfileChildren';
+import ProfileChildren, { ChildAvatar } from '@/components/shared/ProfileChildren';
 import type { Child } from '@/api/children';
 import { useChildren } from '@/hooks/useChildren';
 import { useDeleteChild } from '@/hooks/useDeleteChild';
@@ -110,6 +111,20 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
+  }, [profileOpen]);
+
+  /** Opening the profile panel moves focus into it (its first control); ReturnFocus, inside
+   *  it, gives focus back to the profile button when it closes. */
+  useEffect(() => {
+    if (!profileOpen) return;
+    const frame = requestAnimationFrame(() =>
+      profileRef.current
+        ?.querySelector<HTMLElement>(
+          '[role="dialog"] button:not([disabled]), [role="dialog"] a[href]',
+        )
+        ?.focus(),
+    );
+    return () => cancelAnimationFrame(frame);
   }, [profileOpen]);
 
   /** Close profile panel on click outside. */
@@ -242,23 +257,32 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                     onClick={() => setProfileOpen((prev) => !prev)}
                     className="profile-pill"
                     title="Your profile"
-                    aria-label="Your profile"
                     aria-expanded={profileOpen}
                     aria-haspopup="true"
                   >
-                    <span
-                      className={cn(
-                        'avatar-dot h-8 w-8 text-[13px]',
-                        childView ? 'avatar-dot-child' : 'avatar-dot-parent',
-                      )}
-                    >
-                      {profileInitial}
-                    </span>
+                    {/* Named by what it shows (the name and view, from sm up) and then "Your
+                        profile": a label replacing the visible text would hide it from voice
+                        control. */}
+                    {/* Child view: the child's photo when they have one (else their dot). */}
+                    {viewChild ? (
+                      <ChildAvatar child={viewChild} className="h-8 w-8 text-[13px]" />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'avatar-dot h-8 w-8 text-[13px]',
+                          childView ? 'avatar-dot-child' : 'avatar-dot-parent',
+                        )}
+                      >
+                        {profileInitial}
+                      </span>
+                    )}
                     {/* Name and view beside the dot from sm up; a 375px header has no room. */}
                     <span className="hidden flex-col items-start gap-0.5 leading-tight sm:flex">
                       <span className="max-w-32 truncate text-sm font-bold">{profileName}</span>
                       <span className="profile-label">{viewLabel}</span>
                     </span>
+                    <span className="sr-only">Your profile</span>
                   </button>
 
                   {profileOpen && (
@@ -267,15 +291,20 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                       aria-label="User profile"
                       className="profile-panel absolute right-0 top-full z-50 mt-2 w-72"
                     >
+                      <ReturnFocus />
                       <p className="profile-heading">Signed-in profile</p>
 
                       {childView ? (
                         <>
                           {/* Child view: only the child, and the way back to parent view. */}
                           <div className="profile-row profile-row-selected">
-                            <span className="avatar-dot avatar-dot-child h-7 w-7 text-xs">
-                              {profileInitial}
-                            </span>
+                            {viewChild ? (
+                              <ChildAvatar child={viewChild} />
+                            ) : (
+                              <span className="avatar-dot avatar-dot-child h-7 w-7 text-xs">
+                                {profileInitial}
+                              </span>
+                            )}
                             <span className="min-w-0">
                               <span className="profile-name block">{profileName}</span>
                               <span className="profile-desc block">
@@ -392,9 +421,15 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
 
       {/* Back — below the header, navigates to the previous route. Not on the kids page,
           whose own header has the Back to the circles, nor on the journey in child view: it's
-          the child's home, with nowhere to go back to. */}
+          the child's home, with nowhere to go back to. On the right, in parent view, the child
+          whose page this is, so a parent of several can tell (child view is that child's own). */}
       {currentPageName !== 'Kids' && !(childView && currentPageName === 'PersonalityJourney') && (
-        <div className={cn('app-bar px-4 pt-4 sm:px-6 lg:px-10', barHidden && 'app-bar-hidden')}>
+        <div
+          className={cn(
+            'app-bar flex items-center justify-between gap-3 px-4 pt-4 sm:px-6 lg:px-10',
+            barHidden && 'app-bar-hidden',
+          )}
+        >
           <Button
             variant="ghost"
             size="sm"
@@ -404,6 +439,15 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
+          {!childView && currentChild && (
+            <p className="page-child" data-testid="page-child">
+              <ChildAvatar child={currentChild} className="h-[22px] w-[22px] text-[10px]" />
+              <span className="min-w-0 truncate">
+                <span className="sr-only">Child: </span>
+                {currentChild.name}
+              </span>
+            </p>
+          )}
         </div>
       )}
 

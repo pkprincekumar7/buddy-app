@@ -73,6 +73,11 @@ export default function Onboarding() {
 
     if (childIdParam) {
       setChildId(childIdParam);
+      // Another child's edit link while this screen is open (the profile menu's pencil)
+      // keeps the screen: drop the last child's data and wait for this one's, so the form
+      // (keyed by child) starts again from it rather than keeping the first child's.
+      setPrefillData({});
+      setChecking(true);
       // Fetch the specific child's saved data to pre-fill the form.
       // Authorization is determined by the API response (404 → redirect to /Home).
       void (async () => {
@@ -261,6 +266,7 @@ export default function Onboarding() {
           ) : (
             <View key="step2">
               <ChildProfileStep
+                key={childIdParam ?? 'new'}
                 onContinue={handleProfileContinue}
                 initialData={prefillData}
                 isLoading={isSaving}

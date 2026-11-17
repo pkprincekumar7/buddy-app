@@ -11,6 +11,7 @@ import type {
   Question,
   RecommendationSource,
 } from '@/lib/growthAreaData';
+import ReturnFocus from '@/components/shared/ReturnFocus';
 
 /**
  * The per-area overlay over the Growth Map, as the prototype has it:
@@ -664,6 +665,7 @@ export default function GrowthAreaSheet({
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      <ReturnFocus />
       <motion.div
         initial={{ opacity: 0, y: 26, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

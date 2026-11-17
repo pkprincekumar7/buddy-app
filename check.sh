@@ -186,7 +186,7 @@ run "eslint" \
     bash -c "cd '$FRONTEND' && npm run lint"
 
 run "prettier (check)" \
-    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{ts,tsx,css}'"
+    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{ts,tsx,css}' 'e2e/**/*.ts' playwright.config.ts vitest.config.ts"
 
 run "typecheck" \
     bash -c "cd '$FRONTEND' && npm run typecheck"
@@ -207,6 +207,24 @@ bundle_size_check() {
   fi
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
+
+# Component tests (jsdom) and browser tests (the app against a stubbed API), as in check.yml;
+# docs/web-ui-test-plan.md. Locally Playwright uses the installed Google Chrome.
+run "vitest (frontend)" \
+    bash -c "cd '$FRONTEND' && npm test"
+
+# Playwright's own Chromium when installed (cd frontend && npx playwright install chromium),
+# else the installed Google Chrome (playwright.config.ts); skipped with neither.
+browser_tests() {
+  local bundled
+  bundled=$(cd "$FRONTEND" && node -e "const fs=require('fs');const {chromium}=require('@playwright/test');process.stdout.write(fs.existsSync(chromium.executablePath())?'1':'')")
+  if [ -z "$bundled" ] && [ ! -d "/Applications/Google Chrome.app" ] && ! command -v google-chrome >/dev/null 2>&1; then
+    echo "Skipped: no browser. Install one with 'cd frontend && npx playwright install chromium'."
+    return 0
+  fi
+  (cd "$FRONTEND" && npm run test:e2e:ci)
+}
+run "playwright (frontend)" browser_tests
 
 # ── frontend-app ─────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND-APP ════${RESET}"

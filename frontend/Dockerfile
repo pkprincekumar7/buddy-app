@@ -9,7 +9,7 @@ RUN npm ci
 
 # Vite + Tailwind/postcss configs + TypeScript project references
 COPY index.html vite.config.ts tailwind.config.ts postcss.config.ts \
-     tsconfig.json tsconfig.app.json tsconfig.node.json ./
+     tsconfig.json tsconfig.app.json tsconfig.node.json tsconfig.e2e.json ./
 COPY public ./public/
 COPY src ./src
 
