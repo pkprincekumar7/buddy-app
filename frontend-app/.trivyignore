@@ -22,3 +22,9 @@ CVE-2026-85393
 # The web frontend, which ships zod, is upgraded to 4.6.7 instead.
 # Remove once @expo/cli moves to zod >=4.6.6.
 CVE-2023-54404
+
+# CVE-2026-112366 / GHSA-fc5q-39xc-vjpf: picomatch <=4.0.7 ReDoS through repeated
+# extglobs — no fixed release exists. Only via build/test tooling (@expo/cli, metro,
+# jest, tailwindcss) — not included in the APK or IPA bundle.
+# Remove once picomatch publishes a fix.
+CVE-2026-112366

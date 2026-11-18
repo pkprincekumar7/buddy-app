@@ -362,10 +362,12 @@ run "pip-audit (services)" \
 # Ignored (no fixed release exists): GHSA-vfj7-8cjw-p6xm — braces <=3.0.3 stack-exhaustion
 # DoS on crafted brace patterns. Reached only via build tooling (tailwindcss, spectral-cli),
 # never in the shipped bundle. Remove once braces publishes a fix.
+# Also GHSA-fc5q-39xc-vjpf — picomatch <=4.0.7 ReDoS, no fixed release; only via build
+# tooling (tailwindcss, vite, vitest, spectral-cli, lint-staged). Remove once one ships.
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg','GHSA-vfj7-8cjw-p6xm'}
+IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg','GHSA-vfj7-8cjw-p6xm','GHSA-fc5q-39xc-vjpf'}
 d=json.load(sys.stdin)
 def is_ignored(v, all_vulns):
     for x in v.get('via',[]):
@@ -390,6 +392,8 @@ sys.exit(1 if bad else 0)
 #     (tailwindcss, @react-native-community/cli, jest), not in the APK/IPA bundle.
 #   1240912 (GHSA-86w9-cpqp-85rv) — node-forge <=1.4.0 RSA signature verification;
 #     only via @expo/cli (dev CLI), not bundled into the app.
+#   1247710 (GHSA-fc5q-39xc-vjpf) — picomatch <=4.0.7 ReDoS; only via build/test
+#     tooling (@expo/cli, metro, jest, tailwindcss), not in the APK/IPA bundle.
 # Ignored (fix needs a major upgrade the dev tools don't support yet):
 #   1243066 (GHSA-mrhx-c7xc-m3w5) — zod <4.6.6 DoS; only via @expo/cli (zod 3) and
 #     eslint-plugin-react-hooks, not in the APK/IPA. Remove once both use zod >=4.6.6.
@@ -399,7 +403,7 @@ sys.exit(1 if bad else 0)
 run "yarn audit (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED_IDS={1124334,1240992,1240912,1243066}
+IGNORED_IDS={1124334,1240992,1240912,1243066,1247710}
 high=0
 for line in sys.stdin:
     line=line.strip()
@@ -463,7 +467,7 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
         && echo 'Frontend SBOM → sbom-frontend.cyclonedx.json'"
 
   # --ignorefile: dev-tooling CVEs with no fix or no forceable one (brace-expansion,
-  # braces, node-forge, zod via @expo/cli), none in the APK or IPA; frontend-app/.trivyignore
+  # braces, node-forge, picomatch, zod via @expo/cli), none in the APK or IPA; frontend-app/.trivyignore
   # has the rationale, and the yarn audit IGNORED_IDS list above the same exceptions.
   run "trivy (frontend-app CVE scan)" \
       bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln \
