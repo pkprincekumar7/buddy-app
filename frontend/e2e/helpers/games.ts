@@ -50,8 +50,12 @@ export async function winDiscover(page: Page, game: DiscoverGame): Promise<void>
       break;
     case 'curious':
       for (let i = 1; i <= 9 && !(await won.isVisible()); i++) {
-        const box = dialog.getByRole('button', { name: `Box ${i}` });
-        if (await box.count()) await tap(box);
+        // The last planet's win screen replaces the boxes a moment later, so the next box
+        // can go between seeing it and tapping it: a tap that waited for it timed out the test.
+        await dialog
+          .getByRole('button', { name: `Box ${i}` })
+          .dispatchEvent('pointerdown', undefined, { timeout: 1_000 })
+          .catch(() => undefined); // gone: the game is won
       }
       break;
     case 'order':
