@@ -130,7 +130,7 @@ _tool() {
 }
 RUFF="$(_tool ruff)"
 MYPY="$(_tool mypy)"
-PIP="$(_tool pip)"
+PYTHON="$(_tool python)"
 BANDIT="$(_tool bandit)"
 PIP_AUDIT="$(_tool pip-audit)"
 # Its own venv (see the sync above); PATH in CI.
@@ -172,9 +172,15 @@ run "import-linter (service boundaries)" \
     bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/import_contracts.py"
 
 # The shared package must install on its own and with each extra, as every service
-# image installs it. A throwaway target keeps the local venv untouched.
+# image installs it. Into a throwaway venv, as an image does: a --target install was
+# checked against the local venv's packages too, so pip printed conflicts that no image
+# has (and couldn't fail on one that it did). pip check after each install fails on one.
 run "common installs (core and extras)" \
-    bash -c "tmp=\$(mktemp -d) && cp -R '$BACKEND/common' \"\$tmp/src\" && cd \"\$tmp\" && '$PIP' install -q --target \"\$tmp/out\" ./src './src[generation,uploads]' && rm -rf \"\$tmp\""
+    bash -c "tmp=\$(mktemp -d) && trap 'rm -rf \"\$tmp\"' EXIT \
+      && cp -R '$BACKEND/common' \"\$tmp/src\" && '$PYTHON' -m venv \"\$tmp/venv\" \
+      && pip() { \"\$tmp/venv/bin/pip\" --disable-pip-version-check \"\$@\"; } \
+      && pip install -q \"\$tmp/src\" && pip check \
+      && pip install -q \"\$tmp/src[generation,uploads]\" && pip check"
 
 # ── frontend lint ─────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND LINT ════${RESET}"
@@ -316,6 +322,9 @@ run "fill-service-secrets.sh tests (scripts)" \
 # The service-token key pairs made outside Terraform (SEC-01), against a fake aws CLI.
 run "service-token-keys.sh tests (scripts)" \
     bash "$ROOT/scripts/service-token-keys.test.sh"
+# terraform-live-backend's retry when Valkey's zone was full, against a fake aws and terraform.
+run "valkey-capacity.sh tests (scripts)" \
+    bash "$ROOT/scripts/valkey-capacity.test.sh"
 # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07), against a fake aws CLI.
 run "frontend-publish.sh tests (scripts)" \
     bash "$ROOT/scripts/frontend-publish.test.sh"

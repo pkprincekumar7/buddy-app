@@ -143,16 +143,28 @@ run "rbac_users_per_service" {
   }
 }
 
-run "preferred_azs_place_the_nodes" {
+run "preferred_azs_place_the_nodes_in_order" {
   command = plan
+  # A group of its own: the shared one already exists, and the zones are ignored once it does.
+  state_key = "zones"
 
   variables {
-    preferred_azs = ["ap-south-1b", "ap-south-1c"]
+    preferred_azs = ["ap-south-1c", "ap-south-1a", "ap-south-1b"]
   }
 
   assert {
-    condition     = aws_elasticache_replication_group.this.preferred_cache_cluster_azs == tolist(["ap-south-1b", "ap-south-1c"])
-    error_message = "The nodes go in the given zones, primary first."
+    condition     = aws_elasticache_replication_group.this.preferred_cache_cluster_azs == tolist(["ap-south-1c", "ap-south-1a"])
+    error_message = "The first zone per node (2 here), primary first."
+  }
+}
+
+run "no_preferred_azs_lets_aws_choose" {
+  command   = plan
+  state_key = "no_zones"
+
+  assert {
+    condition     = aws_elasticache_replication_group.this.preferred_cache_cluster_azs == null
+    error_message = "Without zones, AWS places the nodes."
   }
 }
 

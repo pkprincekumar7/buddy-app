@@ -81,8 +81,9 @@ resource "aws_elasticache_replication_group" "this" {
 
   node_type = var.node_type
 
-  num_cache_clusters          = var.replica_count + 1
-  preferred_cache_cluster_azs = length(var.preferred_azs) > 0 ? var.preferred_azs : null
+  num_cache_clusters = var.replica_count + 1
+  # The first zone per node, primary first; AWS reads them only when it creates the group.
+  preferred_cache_cluster_azs = length(var.preferred_azs) > 0 ? slice(var.preferred_azs, 0, var.replica_count + 1) : null
   automatic_failover_enabled  = var.multi_az
   multi_az_enabled            = var.multi_az
 
@@ -103,13 +104,17 @@ resource "aws_elasticache_replication_group" "this" {
   user_group_ids = local.rbac ? [aws_elasticache_user_group.this[0].user_group_id] : null
 
   lifecycle {
+    # Where the nodes were placed: AWS doesn't report it back or change it later, so a
+    # later apply with other zones (or none: the usual case) has nothing to do.
+    ignore_changes = [preferred_cache_cluster_azs]
+
     precondition {
       condition     = !(var.multi_az && var.replica_count == 0)
       error_message = "elasticache_multi_az = true requires elasticache_replica_count >= 1."
     }
     precondition {
-      condition     = length(var.preferred_azs) == 0 || length(var.preferred_azs) == var.replica_count + 1
-      error_message = "preferred_azs needs one zone per node (replica_count + 1), primary first."
+      condition     = length(var.preferred_azs) == 0 || length(var.preferred_azs) >= var.replica_count + 1
+      error_message = "preferred_azs needs at least one zone per node (replica_count + 1), primary first."
     }
     precondition {
       condition     = local.rbac != (var.auth_token != null)

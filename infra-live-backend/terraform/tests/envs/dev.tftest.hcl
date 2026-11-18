@@ -54,10 +54,6 @@ run "dev_ap_south_1" {
     condition     = length(aws_guardduty_detector.main) == 0 && length(aws_cloudtrail.main) == 0
     error_message = "GuardDuty and CloudTrail off."
   }
-  assert {
-    condition     = lookup(var.elasticache_preferred_azs, var.aws_region, []) == tolist(["ap-south-1b"])
-    error_message = "Valkey's node is in ap-south-1b: 1a had no cache.t4g.micro capacity."
-  }
 }
 
 run "dev_eu_west_1" {

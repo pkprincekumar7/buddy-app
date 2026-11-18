@@ -50,11 +50,14 @@ uploads = ["boto3>=1.35"]
 # `from common.authz import …`. The tests stay out of the installed package.
 [tool.setuptools]
 package-dir = { "common" = "." }
-packages = ["common", "common.events", "common.generation"]
+# events/schemas holds only JSON, but setuptools sees any directory as a package and warned
+# that it wasn't listed: listing it ships the same files to the same place.
+packages = ["common", "common.events", "common.events.schemas", "common.generation"]
 
 # The event catalogue and schemas ship inside the package (common.events reads them).
 [tool.setuptools.package-data]
-"common.events" = ["catalogue.json", "schemas/*.json"]
+"common.events" = ["catalogue.json"]
+"common.events.schemas" = ["*.json"]
 
 [tool.setuptools.dynamic]
 version = { attr = "common.__version__" }
