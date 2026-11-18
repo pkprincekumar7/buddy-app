@@ -110,6 +110,17 @@ variable "elasticache_multi_az" {
   type        = bool
 }
 
+variable "elasticache_preferred_azs" {
+  description = "Valkey's availability zones per region, primary first, one per node (elasticache_replica_count + 1). A region not listed lets AWS choose. Set where AWS chose a zone with no capacity for elasticache_node_type (dev ap-south-1: 1a had no cache.t4g.micro). Read only when the group is created."
+  type        = map(list(string))
+  default     = {}
+
+  validation {
+    condition     = alltrue([for r, azs in var.elasticache_preferred_azs : alltrue([for az in azs : can(regex("^${r}[a-z]$", az))])])
+    error_message = "elasticache_preferred_azs: each zone must be in the region it's listed under (e.g. \"ap-south-1\" = [\"ap-south-1b\"])."
+  }
+}
+
 # -- DNS / TLS ----------------------------------------------------------------
 
 variable "subdomain_internal" {

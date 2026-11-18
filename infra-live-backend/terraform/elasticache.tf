@@ -30,6 +30,7 @@ module "redis" {
   node_type     = var.elasticache_node_type
   replica_count = var.elasticache_replica_count
   multi_az      = var.elasticache_multi_az
+  preferred_azs = lookup(var.elasticache_preferred_azs, var.aws_region, [])
   rbac_services = {
     for s in local.split_services : s => {
       writes_authz = s == "auth"

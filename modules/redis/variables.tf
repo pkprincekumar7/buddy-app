@@ -91,3 +91,9 @@ variable "engine_version" {
     error_message = "engine_version must be major.minor, e.g. \"8.0\"."
   }
 }
+
+variable "preferred_azs" {
+  description = "Availability zones for the nodes, primary first: one per node (replica_count + 1), each with one of subnet_ids. Empty (the default) lets AWS choose, which can pick a zone with no capacity for node_type. AWS reads it only when it creates the group, so changing it later doesn't replace the group."
+  type        = list(string)
+  default     = []
+}

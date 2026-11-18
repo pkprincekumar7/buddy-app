@@ -120,15 +120,15 @@ run "rbac_users_per_service" {
     error_message = "IAM authentication needs user ID = user name: <app>-<env>-<service>."
   }
   assert {
-    condition     = aws_elasticache_user.service["users"].access_string == "on ~LIMITS:LIMITER/users/* ~leader:users:* %R~authz:* -@all +@read +@write +@scripting +@connection -@dangerous"
+    condition     = aws_elasticache_user.service["users"].access_string == "on ~LIMITS:LIMITER/users/* ~leader:users:* %R~authz:* resetchannels -@all +@read +@write +@scripting +@connection -@dangerous"
     error_message = "A service reads authz:* only, and uses its own rate-limit and leader keys."
   }
   assert {
-    condition     = aws_elasticache_user.service["auth"].access_string == "on ~LIMITS:LIMITER/auth/* ~leader:auth:* ~authz:* -@all +@read +@write +@scripting +@connection -@dangerous"
+    condition     = aws_elasticache_user.service["auth"].access_string == "on ~LIMITS:LIMITER/auth/* ~leader:auth:* ~authz:* resetchannels -@all +@read +@write +@scripting +@connection -@dangerous"
     error_message = "Only auth writes authz:* (9.3)."
   }
   assert {
-    condition     = aws_elasticache_user.service["grow"].access_string == "on ~LIMITS:LIMITER/grow/* ~leader:grow:* %R~authz:* ~llm:hourly:* -@all +@read +@write +@scripting +@connection -@dangerous"
+    condition     = aws_elasticache_user.service["grow"].access_string == "on ~LIMITS:LIMITER/grow/* ~leader:grow:* %R~authz:* ~llm:hourly:* resetchannels -@all +@read +@write +@scripting +@connection -@dangerous"
     error_message = "A generating service also shares the hourly LLM limit."
   }
   assert {
@@ -141,6 +141,29 @@ run "rbac_users_per_service" {
     condition     = keys(output.rbac_user_names) == ["auth", "grow", "users"] && output.rbac_user_names["grow"] == "superpower-prod-grow" && length(output.rbac_access_strings) == 3
     error_message = "The user names and access strings are exposed for the task roles and the services' settings."
   }
+}
+
+run "preferred_azs_place_the_nodes" {
+  command = plan
+
+  variables {
+    preferred_azs = ["ap-south-1b", "ap-south-1c"]
+  }
+
+  assert {
+    condition     = aws_elasticache_replication_group.this.preferred_cache_cluster_azs == tolist(["ap-south-1b", "ap-south-1c"])
+    error_message = "The nodes go in the given zones, primary first."
+  }
+}
+
+run "preferred_azs_need_one_zone_per_node" {
+  command = plan
+
+  variables {
+    preferred_azs = ["ap-south-1b"]
+  }
+
+  expect_failures = [aws_elasticache_replication_group.this]
 }
 
 run "the_token_style_has_no_rbac_resources" {
