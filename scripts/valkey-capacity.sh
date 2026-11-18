@@ -12,7 +12,9 @@
 #         → plan again with elasticache_preferred_azs = the zones not yet full, then Z
 #         → apply → … until it works, or every zone has been full.
 #
-# Any other apply failure fails as before, with no retry.
+# Only Terraform's own create-failed error for the group starts this; any other apply
+# failure fails as before, with no retry. AWS's events can lag that error, so the reason
+# is waited for (up to 3 minutes) before it's taken as anything but capacity.
 #
 # Source it (from infra-live-backend/terraform):
 #   source ../../scripts/valkey-capacity.sh
@@ -91,21 +93,61 @@ valkey_delete_failed() {
   fi
 }
 
+# valkey_wait_capacity_zone REGION GROUP_ID SINCE → as valkey_capacity_zone, but asks
+# again every $VALKEY_POLL_SECONDS (15) up to $VALKEY_POLLS (12) times: Terraform sees
+# create-failed before AWS's events (and the group's status) always show why. In CI the
+# capacity event, logged 25 s before, wasn't there yet (2026-11-18). Gives up with what
+# it saw, so the reason is in the log.
+valkey_wait_capacity_zone() {
+  local region="$1" group="$2" since="$3" i status
+  for ((i = 1; i <= ${VALKEY_POLLS:-12}; i++)); do
+    status=0
+    valkey_capacity_zone "$region" "$group" "$since" || status=$?
+    [ "$status" -eq 1 ] || return "$status"
+    [ "$i" -eq "${VALKEY_POLLS:-12}" ] || sleep "${VALKEY_POLL_SECONDS:-15}"
+  done
+  echo "Valkey's group failed, but AWS gave no capacity reason within the wait. What it shows:" >&2
+  aws elasticache describe-replication-groups --region "$region" --replication-group-id "$group" \
+    --query 'ReplicationGroups[0].Status' --output text >&2 || true
+  aws elasticache describe-events --region "$region" --start-time "$since" --output json \
+    | jq -r --arg g "$group" '.Events[] | select(.SourceIdentifier | startswith($g))
+        | "  \(.Date) \(.SourceIdentifier): \(.Message)"' >&2 || true
+  return 1
+}
+
 # valkey_apply_with_zone_retry REGION GROUP_ID SUBNET_GROUP -- PLAN_COMMAND...
 valkey_apply_with_zone_retry() {
-  local region="$1" group="$2" subnets="$3" since zone order status
+  local log status=0
+  [ "${4:-}" = "--" ] && [ "$#" -gt 4 ] || { echo "ERROR: no plan command given." >&2; return 1; }
+  log=$(mktemp)
+  _valkey_apply_loop "$log" "$@" || status=$?
+  rm -f "$log" "$log.rc"
+  return "$status"
+}
+
+# _valkey_apply_loop LOG REGION GROUP_ID SUBNET_GROUP -- PLAN_COMMAND...
+_valkey_apply_loop() {
+  local log="$1" region="$2" group="$3" subnets="$4" since zone order status
   local -a full=() zones=()
-  shift 3
-  [ "${1:-}" = "--" ] && shift
-  [ "$#" -gt 0 ] || { echo "ERROR: no plan command given." >&2; return 1; }
+  shift 5
   while :; do
     since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    "${TERRAFORM:-terraform}" apply -auto-approve tfplan.bin && return 0
-    status=0
-    zone=$(valkey_capacity_zone "$region" "$group" "$since") || status=$?
-    if [ "$status" -eq 1 ]; then
-      echo "The apply failed, and not for want of Valkey capacity: no retry." >&2
+    # Shown as it runs and kept, for its error; the exit status goes through a file, so
+    # the pipe (and pipefail) can't hide or change it.
+    {
+      status=0
+      "${TERRAFORM:-terraform}" apply -auto-approve -no-color tfplan.bin || status=$?
+      echo "$status" > "$log.rc"
+    } 2>&1 | tee "$log"
+    status=$(cat "$log.rc"); rm -f "$log.rc"
+    [ "$status" -ne 0 ] || return 0
+    # Only Terraform's own error for this group starts the wait; the ARN form ends the same.
+    if ! grep -qF "$group) create: unexpected state 'create-failed'" "$log"; then
+      echo "The apply failed, and not on Valkey's group: no retry." >&2
+      return 1
     fi
+    status=0
+    zone=$(valkey_wait_capacity_zone "$region" "$group" "$since") || status=$?
     [ "$status" -eq 0 ] || return 1
     # A zone again: AWS didn't place the node where asked, so another try would too.
     if [[ " ${full[*]-} " == *" $zone "* ]]; then

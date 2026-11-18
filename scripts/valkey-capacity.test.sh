@@ -26,7 +26,11 @@ case "$1 $2" in
     [ -z "${FAKE_DESCRIBE_FAILS:-}" ] || { echo "ThrottlingException: Rate exceeded" >&2; exit 254; }
     [ -f "$FAKE/status" ] && cat "$FAKE/status" \
       || { echo "An error occurred (ReplicationGroupNotFoundFault)" >&2; exit 254; } ;;
-  "elasticache describe-events") cat "$FAKE/events.json" 2>/dev/null || echo '{"Events": []}' ;;
+  "elasticache describe-events")
+    # AWS's lag: the events show only from read number $FAKE_EVENT_AFTER (default 1).
+    n=$(( $(cat "$FAKE/event-reads" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE/event-reads"
+    if [ "$n" -ge "${FAKE_EVENT_AFTER:-1}" ] && [ -f "$FAKE/events.json" ]; then cat "$FAKE/events.json"
+    else echo '{"Events": []}'; fi ;;
   "elasticache describe-cache-subnet-groups") echo '["ap-south-1b", "ap-south-1a", "ap-south-1c"]' ;;
   "elasticache delete-replication-group") rm -f "$FAKE/status"; echo '{}' ;;
   "elasticache wait") ;;
@@ -36,7 +40,9 @@ EOF
 
 # -- fake terraform --------------------------------------------------------------
 # Each apply takes the next outcome from $FAKE/outcomes: "ok"; "full:<zone>" (the group
-# ends create-failed with that zone's capacity event); or "other" (fails, group fine).
+# ends create-failed with that zone's capacity event, and Terraform's error names it by
+# name; "fullarn:<zone>" by ARN); "noreason" (create-failed, no capacity event); or
+# "other" (another error, the group fine).
 cat > "$FAKE/bin/terraform" <<'EOF'
 #!/usr/bin/env bash
 echo "terraform $*" >> "$FAKE/calls"
@@ -45,14 +51,22 @@ n=$(( $(cat "$FAKE/applies" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE/ap
 outcome=$(sed -n "${n}p" "$FAKE/outcomes")
 case "$outcome" in
   ok) exit 0 ;;
-  full:*)
+  full:*|fullarn:*)
     echo create-failed > "$FAKE/status"
-    jq -n --arg z "${outcome#full:}" '{Events: [
+    jq -n --arg z "${outcome#*:}" '{Events: [
       {SourceIdentifier: "superpower-backend-redis-dev", Message: "Failed to create replication group"},
       {SourceIdentifier: "superpower-backend-redis-dev-001",
        Message: "Failed to create cache node superpower-backend-redis-dev-001 because \($z) AZ does not have sufficient capacity. Please try again with another AZ."}]}' \
       > "$FAKE/events.json"
-    echo "Error: unexpected state 'create-failed'" >&2; exit 1 ;;
+    id=superpower-backend-redis-dev
+    [[ "$outcome" == fullarn:* ]] && id="arn:aws:elasticache:ap-south-1:1:replicationgroup:$id"
+    echo "│ Error: waiting for ElastiCache Replication Group ($id) create: unexpected state 'create-failed', wanted target 'available'" >&2
+    exit 1 ;;
+  noreason)
+    echo create-failed > "$FAKE/status"
+    echo '{"Events": [{"SourceIdentifier": "superpower-backend-redis-dev", "Date": "2026-11-18T08:20:31Z", "Message": "Failed to create replication group"}]}' > "$FAKE/events.json"
+    echo "│ Error: waiting for ElastiCache Replication Group (superpower-backend-redis-dev) create: unexpected state 'create-failed', wanted target 'available'" >&2
+    exit 1 ;;
   *) echo available > "$FAKE/status"; echo '{"Events": []}' > "$FAKE/events.json"
      echo "Error: something else" >&2; exit 1 ;;
 esac
@@ -62,6 +76,8 @@ export PATH="$FAKE/bin:$PATH"
 
 # shellcheck source=scripts/valkey-capacity.sh
 source "$HERE/valkey-capacity.sh"
+# No real waiting between AWS reads; three reads before giving up.
+export VALKEY_POLL_SECONDS=0 VALKEY_POLLS=3
 
 PASS=0
 FAIL=0
@@ -70,7 +86,7 @@ fail() { echo "  FAIL $1"; FAIL=$((FAIL + 1)); }
 
 # reset OUTCOME...: a fresh fake, whose applies have these outcomes in turn.
 reset() {
-  rm -f "$FAKE/calls" "$FAKE/applies" "$FAKE/status" "$FAKE/events.json"
+  rm -f "$FAKE/calls" "$FAKE/applies" "$FAKE/status" "$FAKE/events.json" "$FAKE/event-reads"
   touch "$FAKE/calls"
   printf '%s\n' "$@" > "$FAKE/outcomes"
 }
@@ -153,13 +169,49 @@ apply && fail "the same zone twice passed" \
 reset other
 apply && fail "another failure passed" \
   || { [ "$(count '^terraform apply')" = 1 ] && [ "$(count 'delete-replication-group')" = 0 ] \
-    && [ "$(count '^terraform plan')" = 0 ] && grep -q "not for want of Valkey capacity: no retry" "$WORK/out" \
-    && ok "any other failure: fails as before, nothing deleted or retried" || fail "other failure: $(cat "$FAKE/calls")"; }
+    && [ "$(count '^terraform plan')" = 0 ] && grep -q "not on Valkey's group: no retry" "$WORK/out" \
+    && [ "$(count 'aws ')" = 0 ] && grep -q "Error: something else" "$WORK/out" \
+    && ok "any other failure: fails as before (its error shown), AWS not even asked" || fail "other failure: $(cat "$FAKE/calls")"; }
 
 reset full:ap-south-1a ok
 FAKE_DESCRIBE_FAILS=1 apply && fail "an AWS error passed" \
   || { [ "$(count 'delete-replication-group')" = 0 ] && [ "$(count '^terraform apply')" = 1 ] \
     && ok "AWS unreadable after a failure: fails, nothing deleted" || fail "AWS error: $(cat "$FAKE/calls")"; }
+
+reset fullarn:ap-south-1a ok
+apply && [ "$(count 'delete-replication-group')" = 1 ] && [ "$(count '^terraform apply')" = 2 ] \
+  && ok "Terraform's error naming the group by ARN counts too" || fail "ARN form: $(cat "$FAKE/calls")"
+
+reset full:ap-south-1a ok
+FAKE_EVENT_AFTER=3 apply && [ "$(count 'describe-events')" = 3 ] && [ "$(count '^terraform apply')" = 2 ] \
+  && ok "the capacity event shows only on the third read: waited for, then retried" \
+  || fail "late event: $(cat "$FAKE/calls")"
+
+reset noreason ok
+apply && fail "no capacity reason passed" \
+  || { [ "$(count 'describe-events')" = 4 ] && [ "$(count 'delete-replication-group')" = 0 ] \
+    && grep -q "AWS gave no capacity reason within the wait" "$WORK/out" \
+    && grep -q "superpower-backend-redis-dev: Failed to create replication group" "$WORK/out" \
+    && ok "create-failed with no capacity reason: 3 reads, then fails showing the events, nothing deleted" \
+    || fail "no reason: $(cat "$WORK/out")"; }
+
+reset ok
+apply && grep -q -- "^terraform apply -auto-approve -no-color tfplan.bin" "$FAKE/calls" \
+  && ok "the apply is plain text (no colour codes in the error it reads)" || fail "no -no-color: $(cat "$FAKE/calls")"
+
+# As the Apply step runs it: set -euo pipefail, the function called on its own.
+step() {
+  bash -c 'set -euo pipefail; source "$1"; valkey_apply_with_zone_retry ap-south-1 \
+    superpower-backend-redis-dev superpower-backend-redis-subnet-group-dev \
+    -- terraform plan -out=tfplan.bin' _ "$HERE/valkey-capacity.sh" > "$WORK/out" 2>&1
+}
+reset full:ap-south-1a ok
+step && [ "$(count '^terraform apply')" = 2 ] \
+  && ok "under the step's set -euo pipefail: a full zone still retries" || fail "set -e retry: $(cat "$WORK/out")"
+reset other
+step && fail "set -e: another failure passed" \
+  || { grep -q "not on Valkey's group: no retry" "$WORK/out" \
+    && ok "under set -euo pipefail: another failure still fails, with the reason" || fail "set -e other: $(cat "$WORK/out")"; }
 
 reset ok
 valkey_apply_with_zone_retry "$REGION" "$GROUP" "$SUBNETS" -- > "$WORK/out" 2>&1 \
