@@ -81,6 +81,8 @@ case "$1 $2" in
     find "$FAKE/tds" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | grep "^$pre" | sort | jq -Rnc '[inputs]' ;;
   "ecs list-task-definitions")
     fam="$(arg --family-prefix "$@")" want="$(arg --status "$@")"
+    # FAKE_LIST_FAILS=ACTIVE|INACTIVE: that listing fails, as a throttled or denied call would.
+    if [ "${FAKE_LIST_FAILS:-}" = "$want" ]; then echo "An error occurred (ThrottlingException)" >&2; exit 254; fi
     for f in "$FAKE/tds/$fam"/*; do
       [ -f "$f" ] && [ "$(cat "$f")" = "$want" ] && echo "arn:aws:ecs:ap-south-1:1:task-definition/$fam:$(basename "$f")"
     done | jq -Rnc '[inputs]' ;;
@@ -463,6 +465,18 @@ if out=$(FAKE_DELETE_FAILS=1 delete_task_definitions superpower dev ap-south-1 2
   [[ "$out" == *"could not delete task definition(s): arn:aws:ecs:ap-south-1:1:task-definition/superpower-auth-dev:1: TASK_DEFINITION_IN_USE"* ]] \
     && ok "a refused delete fails, naming the revision and the reason" || fail "refused delete" "$out"
 fi
+
+# A listing that fails stops the cleanup, not reads as nothing to delete (it did, inside
+# `< <(…)`: a broken jq once printed "Deleted 0" and passed).
+for status in ACTIVE INACTIVE; do
+  rm -rf "$FAKE/tds" "$FAKE/delete-batches"; tds superpower-auth-dev ACTIVE 2; tds superpower-auth-dev INACTIVE 1
+  if out=$(FAKE_LIST_FAILS=$status delete_task_definitions superpower dev ap-south-1 2>&1); then
+    fail "a failed $status listing fails" "$out"
+  else
+    [[ "$out" != *"Deleted"* ]] && [ ! -f "$FAKE/delete-batches" ] \
+      && ok "a failed $status listing fails, deleting nothing and claiming nothing" || fail "failed $status listing" "$out"
+  fi
+done
 
 echo
 echo "$PASS passed, $FAIL failed"

@@ -8,6 +8,9 @@ import { children } from '@/api/children';
 import { ApiError } from '@/api/errors';
 import PageLoader from '@/components/shared/PageLoader';
 import { useKidActivity } from '@/hooks/useKidActivity';
+import { useKidQuests } from '@/hooks/useKidQuests';
+import { useKidWorlds } from '@/hooks/useKidWorlds';
+import { winsFrom } from '@/lib/kidsWins';
 import { daysAgo } from '@/api/kidWorlds';
 import { Button } from '@/components/ui/button';
 import PageScroll from '@/components/layout/PageScroll';
@@ -138,10 +141,21 @@ export default function Connect() {
 
   // The wins the child chose in child view ("Show my grown-up", P.2), newest first, ahead of
   // the page's own: the parent shares them from here.
-  const { activity: kidActivity } = useKidActivity(childId);
+  // Then everything else the child has done there: quests, worlds, the badge, streaks.
+  const { activity: kidActivity, day } = useKidActivity(childId);
+  const { quests } = useKidQuests(childId);
+  const { worlds } = useKidWorlds(childId);
   const items = useMemo(
-    () => connectItems(kidActivity?.shown ?? {}, childName, daysAgo),
-    [childName, kidActivity],
+    () =>
+      connectItems(
+        kidActivity?.shown ?? {},
+        kidActivity
+          ? winsFrom({ activity: kidActivity, quests, worlds, day })
+          : [],
+        childName,
+        daysAgo,
+      ),
+    [childName, kidActivity, quests, worlds, day],
   );
 
   // The picked card and the parent's edits are kept by the item's id, not its place: the shown
@@ -335,6 +349,24 @@ export default function Connect() {
 
   const name = childName || 'Your child';
   const cardData = { kind: currentItem.kind, title, caption, date: cardDate };
+
+  if (items.length === 0) {
+    return (
+      <View
+        className="flex-1 items-center justify-center gap-3 px-6"
+        style={{ backgroundColor: rgb('constellation-navy-deepest') }}
+      >
+        <Text className="text-center text-2xl font-bold text-foreground">
+          No wins to share yet
+        </Text>
+        <Text className="text-center text-muted-foreground">
+          When {childName || 'your child'} finishes a quest, plays a Grow world
+          or opens all seven superpowers in child view, it shows up here, ready
+          to share.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background">

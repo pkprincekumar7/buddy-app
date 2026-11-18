@@ -10,6 +10,7 @@ import ConversationalOnboardingChat from '@/components/onboarding/Conversational
 import PageLoader from '@/components/shared/PageLoader';
 import PageBackRow from '@/components/layout/PageBackRow';
 import { httpErrorMessage } from '@/lib/apiError';
+import { ApiError } from '@/api/errors';
 import { Button } from '@/components/ui/button';
 import { raw } from '@/theme';
 
@@ -41,6 +42,9 @@ export default function ConversationalOnboarding() {
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
   // What the chat resumed from (the child's fields, and any saved answers).
   const draftRef = useRef<Record<string, unknown>>({});
+  // The saved answers failed to load (not a missing child): shown with Try again.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   // The answers being saved, kept for "Try again" after a failed save.
   const pendingRef = useRef<Record<string, unknown> | null>(null);
@@ -88,16 +92,21 @@ export default function ConversationalOnboarding() {
         if (!cancelled) draftRef.current = draft;
       } catch (err) {
         console.warn('[ConversationalOnboarding] Hydration failed:', err);
-        if (!cancelled) void navigate('/Home', { replace: true });
-      } finally {
-        if (!cancelled) setHydrated(true);
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) {
+          void navigate('/Home', { replace: true });
+          return;
+        }
+        setLoadError("We couldn't load your answers. Please try again.");
+        return;
       }
+      if (!cancelled) setHydrated(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reload]);
 
   const save = useCallback(
     (collected: Record<string, unknown>): Promise<void> => {
@@ -174,7 +183,24 @@ export default function ConversationalOnboarding() {
       <PageBackRow />
       {/* Page content — fades in smoothly */}
       <Animated.View entering={PAGE_FADE} className="flex-1">
-        {isLoadingAuth || !hydrated ? (
+        {loadError ? (
+          <View className="flex-1 items-center justify-center px-6">
+            <Text className="text-center text-base text-muted-foreground">
+              {loadError}
+            </Text>
+            <Button
+              onPress={() => {
+                setLoadError(null);
+                setReload(n => n + 1);
+              }}
+              size="lg"
+              className="mt-4"
+              accessibilityLabel="Try again"
+            >
+              Try again
+            </Button>
+          </View>
+        ) : isLoadingAuth || !hydrated ? (
           <PageLoader />
         ) : (
           <View className="relative flex-1" style={DEEP_BG}>

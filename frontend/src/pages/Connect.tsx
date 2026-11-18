@@ -7,6 +7,9 @@ import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
 import PageLoader from '@/components/shared/PageLoader';
 import { useKidActivity } from '@/hooks/useKidActivity';
+import { useKidQuests } from '@/hooks/useKidQuests';
+import { useKidWorlds } from '@/hooks/useKidWorlds';
+import { winsFrom } from '@/lib/kidsWins';
 import { daysAgo } from '@/api/kidWorlds';
 import { Button } from '@/components/ui/button';
 
@@ -19,6 +22,7 @@ import {
   PencilIcon,
   ToastBanner,
   connectItems,
+  type AccomplishmentItem,
   WA_CONTACTS,
   IG_DESTS,
   IG_BGS,
@@ -34,6 +38,16 @@ import {
 import WhatsAppModal from '@/components/connect/WhatsAppModal';
 import InstagramModal from '@/components/connect/InstagramModal';
 import TwitterModal from '@/components/connect/TwitterModal';
+
+/** The card's stand-in while there are no wins (the page shows its empty state then). */
+const NO_WIN: AccomplishmentItem = {
+  id: 'none',
+  kind: '',
+  when: '',
+  title: '',
+  caption: '',
+  icon: '',
+};
 
 type ItemEdits = Partial<Record<'title' | 'caption', string>>;
 
@@ -90,11 +104,20 @@ export default function Connect() {
   const isNarrow = useMediaQuery('(max-width: 859px)');
   // The wins the child chose in child view ("Show my grown-up", P.2), newest first, ahead of
   // the page's own: the parent shares them from here.
-  const { activity: kidActivity } = useKidActivity(childId);
+  // Then everything else the child has done there: quests, worlds, the badge, streaks.
+  const { activity: kidActivity, day } = useKidActivity(childId);
+  const { quests } = useKidQuests(childId);
+  const { worlds } = useKidWorlds(childId);
 
   const items = useMemo(
-    () => connectItems(kidActivity?.shown ?? {}, childName, daysAgo),
-    [childName, kidActivity],
+    () =>
+      connectItems(
+        kidActivity?.shown ?? {},
+        kidActivity ? winsFrom({ activity: kidActivity, quests, worlds, day }) : [],
+        childName,
+        daysAgo,
+      ),
+    [childName, kidActivity, quests, worlds, day],
   );
 
   // The picked card and the parent's edits are kept by the item's id, not its place: the shown
@@ -103,7 +126,8 @@ export default function Connect() {
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState<Record<string, ItemEdits>>({});
 
-  const currentItem = items.find((it) => it.id === activeId) ?? items[0]!;
+  // With no wins yet the page shows how they get here instead of a card (below).
+  const currentItem = items.find((it) => it.id === activeId) ?? items[0] ?? NO_WIN;
   const currentEdit = edits[currentItem.id] ?? {};
   const title = currentEdit.title ?? currentItem.title;
   const caption = currentEdit.caption ?? currentItem.caption;
@@ -259,6 +283,18 @@ export default function Connect() {
         >
           Try again
         </Button>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-6 text-center">
+        <h1 className="font-orbitron text-2xl font-bold text-foreground">No wins to share yet</h1>
+        <p className="max-w-md text-muted-foreground">
+          When {childName || 'your child'} finishes a quest, plays a Grow world or opens all seven
+          superpowers in child view, it shows up here, ready to share.
+        </p>
       </div>
     );
   }
@@ -496,7 +532,11 @@ export default function Connect() {
                 tabIndex={0}
                 onClick={shareWa}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') shareWa();
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // Else the key's own action lands on the modal's first button (its ×), which
+                  // the modal focuses as it opens: it closed again at once.
+                  e.preventDefault();
+                  shareWa();
                 }}
                 style={{
                   cursor: 'pointer',
@@ -530,7 +570,11 @@ export default function Connect() {
                 tabIndex={0}
                 onClick={shareIg}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') shareIg();
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // Else the key's own action lands on the modal's first button (its ×), which
+                  // the modal focuses as it opens: it closed again at once.
+                  e.preventDefault();
+                  shareIg();
                 }}
                 style={{
                   cursor: 'pointer',
@@ -564,7 +608,11 @@ export default function Connect() {
                 tabIndex={0}
                 onClick={shareX}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') shareX();
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // Else the key's own action lands on the modal's first button (its ×), which
+                  // the modal focuses as it opens: it closed again at once.
+                  e.preventDefault();
+                  shareX();
                 }}
                 style={{
                   cursor: 'pointer',

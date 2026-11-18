@@ -46,8 +46,10 @@ export default function ChatInputBar({
         className,
       )}
     >
-      {/* VoiceInput off-screen — logic only, triggered programmatically via voiceButtonRef */}
-      <div aria-hidden="true" className="fixed -left-[9999px] -top-[9999px] h-px w-px">
+      {/* VoiceInput off-screen — logic only, triggered programmatically via voiceButtonRef.
+          Inert: hidden from screen readers and out of the Tab order (its button is clicked by
+          code, never by a person). */}
+      <div aria-hidden="true" inert className="fixed -left-[9999px] -top-[9999px] h-px w-px">
         <VoiceInput
           isRecording={isRecording}
           setIsRecording={setIsRecording}

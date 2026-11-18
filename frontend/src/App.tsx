@@ -35,16 +35,27 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   hasError: boolean;
+  /** A page's code failed to load (offline, or a deploy replaced it): only a reload helps,
+   *  since React.lazy keeps the failed import. */
+  chunkFailed: boolean;
+}
+
+/** Whether `error` is a page's code that failed to load (Chrome, Firefox, Safari wording). */
+function isChunkLoadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk/i.test(
+    message,
+  );
 }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, chunkFailed: false };
   }
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+    return { hasError: true, chunkFailed: isChunkLoadError(error) };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -58,7 +69,15 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <p className="max-w-lg text-center text-foreground">
             Something went wrong. Please refresh the page.
           </p>
-          <Button type="button" variant="action" onClick={() => this.setState({ hasError: false })}>
+          <Button
+            type="button"
+            variant="action"
+            onClick={() =>
+              this.state.chunkFailed
+                ? window.location.reload()
+                : this.setState({ hasError: false, chunkFailed: false })
+            }
+          >
             Try again
           </Button>
         </div>

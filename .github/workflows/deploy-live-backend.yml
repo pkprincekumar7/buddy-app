@@ -211,7 +211,10 @@ jobs:
         run: |
           source scripts/ecs-services.sh
           : > ecr_targets.txt
-          for REGION in $(jq -r '.[]' <<<"$REGIONS"); do
+          # Read first: a malformed list stops the step here, where a `for` over $(…) ran
+          # no iterations and passed.
+          regions=$(jq -r '.[]' <<<"$REGIONS")
+          for REGION in $regions; do
             SERVICES=$(resolve_services "/${APP_NAME}/${ENVIRONMENT}/backend/$REGION" all)
             REPO=$(repository_for "$SERVICES" "$IMAGE_SERVICE")
             echo "$REGION $REPO" >> ecr_targets.txt

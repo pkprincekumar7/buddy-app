@@ -61,6 +61,8 @@ export default function AccountSettings() {
     data: profile,
     isLoading,
     error,
+    refetch,
+    isFetching,
   } = useQuery({
     queryKey: ['profile'],
     queryFn: () => account.profile.get(),
@@ -69,6 +71,11 @@ export default function AccountSettings() {
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [signingOutAll, setSigningOutAll] = useState(false);
+  // Deleting the account: the dialog, the email typed to confirm it, and the request.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (profile) setDraft(draftOf(profile));
@@ -77,14 +84,28 @@ export default function AccountSettings() {
   if (isLoading) {
     return <PageLoader spinnerClassName="h-8 w-8" durationSeconds={1} />;
   }
-  if (error || !profile || !draft) {
+  if (error || !profile) {
     return (
-      <Text className="p-6 text-center text-error-strong">
-        {httpErrorMessage(error, {
-          fallback: 'Could not load your profile. Please try again.',
-        })}
-      </Text>
+      <View className="items-center gap-4 p-6">
+        <Text className="text-center text-error-strong">
+          {httpErrorMessage(error, {
+            fallback: 'Could not load your profile. Please try again.',
+          })}
+        </Text>
+        <Button
+          variant="outline"
+          disabled={isFetching}
+          accessibilityLabel="Try again"
+          onPress={() => void refetch()}
+        >
+          {isFetching ? 'Trying…' : 'Try again'}
+        </Button>
+      </View>
     );
+  }
+  // The draft follows the profile in an effect: a render's gap, not an error.
+  if (!draft) {
+    return <PageLoader spinnerClassName="h-8 w-8" durationSeconds={1} />;
   }
 
   const patch = changesOf(draft, draftOf(profile));
@@ -109,6 +130,38 @@ export default function AccountSettings() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  // The auth service checks the email too (400 confirmation_mismatch); this only keeps the
+  // button off until it matches.
+  const emailMatches =
+    !!user?.email &&
+    confirmEmail.trim().toLowerCase() === user.email.trim().toLowerCase();
+  const closeDelete = () => {
+    if (deleting) return;
+    setDeleteOpen(false);
+    setConfirmEmail('');
+    setDeleteError('');
+  };
+  const onDeleteAccount = async () => {
+    setDeleteError('');
+    setDeleting(true);
+    try {
+      await account.deleteAccount(confirmEmail.trim());
+      setDeleteOpen(false);
+      toast.success('Your account is being deleted.');
+      await logout(true);
+    } catch (e) {
+      setDeleting(false);
+      setDeleteError(
+        httpErrorMessage(e as Error | undefined, {
+          fallback: 'Could not delete the account. Please try again.',
+          codeMessages: {
+            confirmation_mismatch: "The email doesn't match your account.",
+          },
+        }),
+      );
     }
   };
 
@@ -245,6 +298,88 @@ export default function AccountSettings() {
               className="h-11 flex-1 rounded-xl"
               disabled={signingOutAll}
               onPress={() => setConfirming(false)}
+            >
+              Cancel
+            </Button>
+          </View>
+        </DialogContent>
+      </Dialog>
+
+      <View className="gap-3 rounded-2xl border border-edge bg-card p-6">
+        <Text className="text-lg font-semibold text-foreground">
+          Delete account
+        </Text>
+        <Text className="text-sm text-muted-foreground">
+          Deletes this account and everything in it: your children, their
+          answers, plans and progress. It can't be undone.
+        </Text>
+        <Button
+          variant="outline"
+          accessibilityLabel="Delete account"
+          onPress={() => setDeleteOpen(true)}
+        >
+          Delete account
+        </Button>
+      </View>
+
+      <Dialog open={deleteOpen} onOpenChange={open => !open && closeDelete()}>
+        <DialogContent
+          hideClose
+          accessibilityLabel="Confirm deleting the account"
+          className="max-w-sm rounded-2xl border border-edge-strong bg-surface-elevated p-8"
+        >
+          <View className="mb-5 gap-2">
+            <Text
+              accessibilityRole="header"
+              className="text-center text-lg font-bold text-foreground"
+            >
+              Delete your account?
+            </Text>
+            <Text className="text-center text-sm leading-relaxed text-muted-foreground">
+              Everything goes: your children, their answers, plans and progress.
+              Type your email to confirm.
+            </Text>
+          </View>
+          <Label
+            nativeID="settings-delete-email"
+            className="mb-1 text-foreground"
+          >
+            Your email
+          </Label>
+          <FormInput
+            accessibilityLabel="Your email"
+            accessibilityLabelledBy="settings-delete-email"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            value={confirmEmail}
+            onChangeText={value => {
+              setConfirmEmail(value);
+              setDeleteError('');
+            }}
+          />
+          {deleteError ? (
+            <Text
+              accessibilityRole="alert"
+              className="mt-2 text-sm text-error-strong"
+            >
+              {deleteError}
+            </Text>
+          ) : null}
+          <View className="mt-6 flex-row gap-3">
+            <Button
+              variant="destructive"
+              className="h-11 flex-1 rounded-xl"
+              disabled={!emailMatches || deleting}
+              onPress={() => void onDeleteAccount()}
+            >
+              {deleting ? 'Deleting…' : 'Delete account'}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 flex-1 rounded-xl"
+              disabled={deleting}
+              onPress={closeDelete}
             >
               Cancel
             </Button>

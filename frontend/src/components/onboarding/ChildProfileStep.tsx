@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, Upload, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -216,6 +216,8 @@ export default function ChildProfileStep({
     GIRL_AVATARS.some((a) => a.id === initialData?.avatarId) ? 'girl' : 'boy',
   );
   const [errors, setErrors] = useState<Partial<Record<keyof ChildFormData, string>>>({});
+  // Each label names its field (screen readers, and tests that find fields by label).
+  const fieldId = useId();
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(initialData?.avatarUrl ?? null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -333,7 +335,7 @@ export default function ChildProfileStep({
                 <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Add Photo
                 </span>
-                <span className="text-[8px] text-muted-foreground/50">or pick an avatar</span>
+                <span className="text-[11px] text-muted-foreground">or pick an avatar</span>
               </div>
             )}
           </button>
@@ -360,7 +362,7 @@ export default function ChildProfileStep({
         {/* Avatar picker */}
         <div className="border-edge-faint space-y-3 rounded-xl bg-surface-elevated/40 p-4">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               <span className="text-base">🎭</span> Or pick an avatar
             </span>
             <div className="border-edge-md flex overflow-hidden rounded-lg">
@@ -432,7 +434,7 @@ export default function ChildProfileStep({
         {/* Divider */}
         <div className="flex items-center gap-3">
           <div className="bg-ghost-light h-px flex-1" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             About your child
           </span>
           <div className="bg-ghost-light h-px flex-1" />
@@ -443,10 +445,15 @@ export default function ChildProfileStep({
           {/* Name + Age */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <label
+                htmlFor={`${fieldId}-name`}
+                className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
                 Child's Name <span className="text-primary">*</span>
               </label>
               <input
+                id={`${fieldId}-name`}
+                aria-invalid={!!errors.name || undefined}
                 value={form.name}
                 onChange={(e) => setField('name', e.target.value)}
                 placeholder="Arjun"
@@ -459,10 +466,15 @@ export default function ChildProfileStep({
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <label
+                htmlFor={`${fieldId}-age`}
+                className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
                 Age <span className="text-primary">*</span>
               </label>
               <input
+                id={`${fieldId}-age`}
+                aria-invalid={!!errors.age || undefined}
                 value={form.age}
                 onChange={(e) => setField('age', e.target.value)}
                 placeholder="8"
@@ -480,14 +492,22 @@ export default function ChildProfileStep({
 
           {/* Gender */}
           <div className="space-y-1.5">
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p
+              id={`${fieldId}-gender`}
+              className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            >
               Gender <span className="text-primary">*</span>
-            </label>
-            <div className="grid grid-cols-3 gap-2">
+            </p>
+            <div
+              role="group"
+              aria-labelledby={`${fieldId}-gender`}
+              className="grid grid-cols-3 gap-2"
+            >
               {(['Male', 'Female', 'Other'] as const).map((g) => (
                 <button
                   key={g}
                   type="button"
+                  aria-pressed={form.gender === g}
                   onClick={() => setField('gender', g)}
                   className={cn(
                     'rounded-xl border py-2.5 text-sm font-medium transition-all',
@@ -505,13 +525,17 @@ export default function ChildProfileStep({
 
           {/* School */}
           <div className="space-y-1.5">
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <label
+              htmlFor={`${fieldId}-school`}
+              className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            >
               School{' '}
-              <span className="font-normal normal-case tracking-normal text-muted-foreground/40">
+              <span className="font-normal normal-case tracking-normal text-muted-foreground">
                 (optional)
               </span>
             </label>
             <input
+              id={`${fieldId}-school`}
               value={form.school}
               onChange={(e) => setField('school', e.target.value)}
               placeholder="Greenfield International"
@@ -522,7 +546,7 @@ export default function ChildProfileStep({
 
         {/* Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <p className="text-xs text-muted-foreground/40">* Required</p>
+          <p className="text-xs text-muted-foreground">* Required</p>
           <div className="flex flex-wrap items-center gap-3">
             {onViewAnswers && (
               <Button

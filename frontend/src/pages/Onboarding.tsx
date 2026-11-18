@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { children, CHILD_ERRORS, type Child, type ChildIn } from '@/api/children';
 import { httpErrorMessage } from '@/lib/apiError';
+import { ApiError } from '@/api/errors';
+import { Button } from '@/components/ui/button';
 import PageLoader from '@/components/shared/PageLoader';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
 import ChildProfileStep from '@/components/onboarding/ChildProfileStep';
@@ -24,6 +26,9 @@ export default function Onboarding() {
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [childComplete, setChildComplete] = useState(false);
   const [checking, setChecking] = useState(true);
+  // The child's saved data failed to load (not a missing child): shown with Try again.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<ChildFormData>>({});
 
@@ -49,6 +54,12 @@ export default function Onboarding() {
 
     if (childIdParam) {
       setChildId(childIdParam);
+      // Another child's edit link while this page is open (the profile menu's pencil) keeps
+      // the page: drop the last child's data and wait for this one's, so the form (keyed
+      // by child) starts again from it rather than keeping the first child's.
+      setPrefillData({});
+      setLoadError(null);
+      setChecking(true);
       // Fetch the specific child's saved data to pre-fill the form.
       // Authorization is determined by the API response (404 → redirect to /Home).
       void (async () => {
@@ -61,7 +72,18 @@ export default function Onboarding() {
           setStep(2);
         } catch (err) {
           console.warn('[Onboarding] Could not load child data:', err);
-          if (!cancelled) void navigate('/Home', { replace: true });
+          if (cancelled) return;
+          // Gone (or not this parent's): Home. Anything else is worth another try.
+          if (err instanceof ApiError && err.status === 404) {
+            void navigate('/Home', { replace: true });
+          } else {
+            setLoadError(
+              httpErrorMessage(err as Error, {
+                codeMessages: CHILD_ERRORS,
+                fallback: "We couldn't load this child's profile. Please try again.",
+              }),
+            );
+          }
         } finally {
           if (!cancelled) setChecking(false);
         }
@@ -113,7 +135,7 @@ export default function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, forceNew, childIdParam, navigate]);
+  }, [isLoadingAuth, isAuthenticated, forceNew, childIdParam, navigate, reload]);
 
   // Step 1 → Step 2 (just UI transition, no API call yet)
   const handleWelcomeContinue = useCallback(() => {
@@ -201,7 +223,21 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
-        {isLoadingAuth || checking ? (
+        {loadError ? (
+          <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
+            <p className="text-muted-foreground">{loadError}</p>
+            <Button
+              onClick={() => {
+                setLoadError(null);
+                setChecking(true);
+                setReload((n) => n + 1);
+              }}
+              className="btn-primary rounded-2xl px-8"
+            >
+              Try again
+            </Button>
+          </div>
+        ) : isLoadingAuth || checking ? (
           <PageLoader className="min-h-[60vh] bg-transparent" durationSeconds={1} />
         ) : (
           <AnimatePresence mode="wait">
@@ -216,6 +252,7 @@ export default function Onboarding() {
             ) : (
               <motion.div key="step2">
                 <ChildProfileStep
+                  key={childIdParam ?? 'new'}
                   onContinue={(data, photoFile) => void handleProfileContinue(data, photoFile)}
                   initialData={prefillData}
                   isLoading={isSaving}

@@ -6,6 +6,7 @@
  */
 import React, { useState, type ReactNode } from 'react';
 import { STAR_PATH } from '@/components/kids/icons';
+import type { Win, WinKind } from '@/lib/kidsWins';
 import {
   Linking,
   ScrollView,
@@ -124,13 +125,7 @@ const DIALOG_IN = new Keyframe({
 const IC = {
   star: 'M12 3l2.2 5.6L20 9.4l-4 4 1 6-5-2.9-5 2.9 1-6-4-4 5.8-.8z',
   build: 'M15 4a4 4 0 0 0 5 5l-9 9a3 3 0 1 1-4-4z',
-  mic: 'M12 4a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 12 4zM6 11a6 6 0 0 0 12 0M12 17v4',
   chart: 'M4 20V10M11 20V4M18 20v-7',
-  school: 'M3 9l9-4 9 4-9 4zM7 12v4c0 1.5 2.2 3 5 3s5-1.5 5-3v-4',
-  sport:
-    'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM4.5 9h15M4.5 15h15M12 4c-2.5 4-2.5 12 0 16M12 4c2.5 4 2.5 12 0 16',
-  friends:
-    'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c1-3.5 3.2-5.2 6-5.2S14 16.5 15 20M16 5.5a3 3 0 0 1 0 6M18 14.6c1.7.8 2.8 2.4 3.3 5.4',
   kind: 'M12 20s-7-4.4-7-9.3A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.7C19 15.6 12 20 12 20z',
 };
 
@@ -144,85 +139,51 @@ export interface AccomplishmentItem {
   icon: string;
 }
 
-export const BASE_ITEMS: AccomplishmentItem[] = [
-  {
-    id: 'relay',
-    kind: 'Sport',
-    when: '2 days ago',
-    title: 'First in the district relay',
-    caption: 'Six weeks of practice, two seconds off his time.',
-    icon: IC.sport,
-  },
-  {
-    id: 'build',
-    kind: 'Milestone',
-    when: 'Last week',
-    title: 'He finished his first build',
-    caption: 'One project, one deadline, seen all the way through.',
+/** How each kind of the child's win reads on the card: its tag, its icon, its line. */
+const WIN_CARD: Record<
+  WinKind,
+  { kind: string; icon: string; caption: (who: string) => string }
+> = {
+  quest: {
+    kind: 'Quest',
     icon: IC.build,
+    caption: who => `${who} did it for real, day by day.`,
   },
-  {
-    id: 'science',
-    kind: 'School',
-    when: 'Last week',
-    title: 'Science project picked for the fair',
-    caption: 'The one he kept working on after everyone else stopped.',
-    icon: IC.school,
-  },
-  {
-    id: 'speaking',
-    kind: 'Growth',
-    when: 'This month',
-    title: 'Speaking up, +26 this year',
-    caption: 'From waiting to be asked to saying the hard thing first.',
-    icon: IC.mic,
-  },
-  {
-    id: 'friends',
-    kind: 'Friendship',
-    when: 'This month',
-    title: 'Two new friends at the club',
-    caption: 'He invited them in himself. That part is new.',
-    icon: IC.friends,
-  },
-  {
-    id: 'plan',
-    kind: 'Progress',
-    when: 'Ongoing',
-    title: 'Six weeks of the 90-day plan',
-    caption: 'Twelve minutes a day, not one week skipped.',
+  world: {
+    kind: 'Grow',
     icon: IC.chart,
+    caption: who => `${who} played all three games of a world.`,
   },
-  {
-    id: 'personality',
-    kind: 'Personality',
-    when: 'Profile',
-    title: '{name} is The Thinker',
-    caption: 'Depth on demand, curiosity that outlasts the room.',
+  badge: {
+    kind: 'Discover',
     icon: IC.star,
+    caption: who => `${who} opened all seven superpowers.`,
   },
-  {
-    id: 'kindness',
-    kind: 'Kindness',
-    when: 'Last month',
-    title: 'Stood up for a boy in his class',
-    caption: 'Told us about it three days later, by accident.',
+  powers: {
+    kind: 'Discover',
+    icon: IC.star,
+    caption: who => `${who} is opening up their superpowers.`,
+  },
+  streak: {
+    kind: 'Check-ins',
     icon: IC.kind,
+    caption: who => `${who} said how they feel, day after day.`,
   },
-];
+};
 
-/** The parent's list: the wins the child chose to show (newest first), then the page's own,
- * with the child's first name ("Your child" without one) on the wins and in place of {name}.
- * Each keeps its id (a shown win's is its key), so the list can grow without moving another
- * item's edits. */
+/** The parent's list (as the web's): the wins the child chose to show (newest first), then
+ * the rest of what the child has done in child view (`wins`, kidsWins.ts), each once.
+ * Nothing made up: a child with no wins yet has an empty list. Each keeps its id (a win's
+ * key), so the list can grow without moving another item's edits. */
 export function connectItems(
   shown: Record<string, { title: string; at: string }>,
+  wins: readonly Win[],
   childName: string,
   when: (at: string) => string,
 ): AccomplishmentItem[] {
   const first = childName.trim().split(/\s+/)[0] ?? '';
   const who = first.length > 0 ? first : 'Your child';
-  const wins = Object.entries(shown)
+  const chosen = Object.entries(shown)
     .sort(([, a], [, b]) => b.at.localeCompare(a.at))
     .map(([key, w]) => ({
       id: `shown:${key}`,
@@ -232,14 +193,17 @@ export function connectItems(
       caption: `${who} chose to show you this in child view.`,
       icon: STAR_PATH,
     }));
-  return [
-    ...wins,
-    ...BASE_ITEMS.map(it =>
-      it.title.includes('{name}')
-        ? { ...it, title: it.title.replace('{name}', who) }
-        : it,
-    ),
-  ];
+  const rest = wins
+    .filter(w => !(w.key in shown))
+    .map(w => ({
+      id: `win:${w.key}`,
+      kind: WIN_CARD[w.kind].kind,
+      when: 'In child view',
+      title: w.title,
+      caption: WIN_CARD[w.kind].caption(who),
+      icon: WIN_CARD[w.kind].icon,
+    }));
+  return [...chosen, ...rest];
 }
 
 export interface WaContact {

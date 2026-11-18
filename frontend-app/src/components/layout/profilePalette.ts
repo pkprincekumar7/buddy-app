@@ -101,3 +101,19 @@ export const DOT_TEXT: TextStyle = {
   ...font('orbitron', 900),
   color: rgb('constellation-navy'),
 };
+
+/** `.page-child`: the child opposite Back in parent view, in a cyan glass pill. */
+export const CHILD_CHIP: ViewStyle = {
+  borderWidth: 1,
+  borderColor: rgb('constellation-cyan', 0.35),
+  experimental_backgroundImage: css(
+    'linear-gradient(90deg, rgb(var(--constellation-cyan-rgb) / .16), rgb(var(--constellation-cyan-rgb) / .04))',
+  ),
+  boxShadow: css('0 0 16px rgb(var(--constellation-cyan-rgb) / .18)'),
+};
+export const CHILD_CHIP_TEXT: TextStyle = {
+  ...font('rajdhani', 700),
+  fontSize: 14,
+  letterSpacing: 0.4,
+  color: rgb('constellation-cyan-pale'),
+};

@@ -27,7 +27,9 @@ import { useDeleteChild } from '@/hooks/useDeleteChild';
 import type { Child } from '@/api/children';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
 import { startOverCopy } from '@/lib/startOverCopy';
-import ProfileChildren from '@/components/shared/ProfileChildren';
+import ProfileChildren, {
+  ChildAvatar,
+} from '@/components/shared/ProfileChildren';
 import {
   DESC,
   DIVIDER,
@@ -233,12 +235,17 @@ export default function AppHeader({
             >
               {/* Dot only: the web shows the name and view from sm up, and a phone
                   header has no room for them. */}
-              <AvatarDot
-                initial={profileInitial}
-                size={32}
-                fontSize={13}
-                child={childView}
-              />
+              {/* Child view: the child's photo when they have one (else their dot). */}
+              {viewChild ? (
+                <ChildAvatar child={viewChild} size={32} fontSize={13} />
+              ) : (
+                <AvatarDot
+                  initial={profileInitial}
+                  size={32}
+                  fontSize={13}
+                  child={childView}
+                />
+              )}
             </Pressable>
           ) : null}
         </View>
@@ -286,12 +293,16 @@ export default function AppHeader({
                         className="flex-row items-center gap-2.5 rounded-[10px] px-2.5 py-2"
                         style={ROW_SELECTED}
                       >
-                        <AvatarDot
-                          initial={profileInitial}
-                          size={28}
-                          fontSize={12}
-                          child
-                        />
+                        {viewChild ? (
+                          <ChildAvatar child={viewChild} />
+                        ) : (
+                          <AvatarDot
+                            initial={profileInitial}
+                            size={28}
+                            fontSize={12}
+                            child
+                          />
+                        )}
                         <View className="min-w-0 flex-1">
                           <Text numberOfLines={1} style={NAME}>
                             {profileName}

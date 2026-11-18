@@ -14,6 +14,7 @@ import { useStartOver } from '@/hooks/useStartOver';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 import { START_OVER_DESCRIPTION } from '@/lib/startOverCopy';
+import ReturnFocus from '@/components/shared/ReturnFocus';
 
 interface ConfirmModalProps {
   onCancel: () => void;
@@ -55,6 +56,7 @@ export function ConfirmModal({
                 {...MODAL_SCALE}
                 className="border-edge-strong w-full rounded-2xl bg-surface-elevated p-8"
               >
+                <ReturnFocus />
                 {/* Icon */}
                 <div className="mb-5 flex justify-center">
                   <div className="flex h-14 w-14 items-center justify-center rounded-full border border-error-medium/30 bg-error-medium/10">

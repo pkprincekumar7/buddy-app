@@ -120,7 +120,7 @@ cd frontend-app && yarn test
 
 ### CI
 
-Runs as `yarn test --ci` in the `frontend-app-lint` job ("Frontend App Lint") in
+Runs as `yarn test --ci` in the `frontend-app-test` job ("Frontend App Tests (Jest)", once `frontend-app-lint` passes) in
 [`check.yml`](../.github/workflows/check.yml), and in `check.sh`.
 
 ---

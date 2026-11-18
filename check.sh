@@ -138,8 +138,9 @@ if [ -x "$SEMGREP_VENV/bin/semgrep" ]; then SEMGREP="$SEMGREP_VENV/bin/semgrep";
 CHECKOV="$(_tool checkov)"
 PYTEST="$(_tool pytest)"
 
-# ── backend ───────────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}════ BACKEND ════${RESET}"
+# ── backend lint ──────────────────────────────────────────────────────────────
+# Lint first, every area, then the tests (as check.yml: each test job waits for its lint job).
+echo -e "\n${BOLD}════ BACKEND LINT ════${RESET}"
 
 run "ruff check" \
     bash -c "cd '$BACKEND' && '$RUFF' check ."
@@ -175,8 +176,8 @@ run "import-linter (service boundaries)" \
 run "common installs (core and extras)" \
     bash -c "tmp=\$(mktemp -d) && cp -R '$BACKEND/common' \"\$tmp/src\" && cd \"\$tmp\" && '$PIP' install -q --target \"\$tmp/out\" ./src './src[generation,uploads]' && rm -rf \"\$tmp\""
 
-# ── frontend ──────────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}════ FRONTEND ════${RESET}"
+# ── frontend lint ─────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND LINT ════${RESET}"
 
 # Both apps' typed API files, generated from backend/openapi/*.json (build plan 7.1).
 run "API clients in sync (backend/openapi)" \
@@ -186,7 +187,7 @@ run "eslint" \
     bash -c "cd '$FRONTEND' && npm run lint"
 
 run "prettier (check)" \
-    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{ts,tsx,css}'"
+    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{ts,tsx,css}' 'e2e/**/*.ts' playwright.config.ts vitest.config.ts"
 
 run "typecheck" \
     bash -c "cd '$FRONTEND' && npm run typecheck"
@@ -208,8 +209,8 @@ bundle_size_check() {
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
 
-# ── frontend-app ─────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}════ FRONTEND-APP ════${RESET}"
+# ── frontend-app lint ─────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND-APP LINT ════${RESET}"
 
 run "eslint (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn lint"
@@ -220,17 +221,14 @@ run "prettier (check) (frontend-app)" \
 run "typecheck (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && node_modules/.bin/tsc --noEmit"
 
-run "jest (frontend-app)" \
-    bash -c "cd '$FRONTEND_APP' && CI=true yarn test --ci"
-
-# ── tests ─────────────────────────────────────────────────────────────────────
+# ── backend tests ─────────────────────────────────────────────────────────────
 # common's and the tools' tests, then each service's. Same commands and coverage gates as CI.
 # The real Mongo/Redis integration tests skip unless pointed at throwaway servers — never a
 # real cluster — and without them the coverage gates fail. Each one unset defaults to its
 # docker-compose container when it's running (docker compose up -d mongo valkey), on the port
 # compose published (MONGO_PORT / VALKEY_PORT in .env); set MONGODB_TEST_URI / REDIS_URL
 # yourself to use others.
-echo -e "\n${BOLD}════ TESTS ════${RESET}"
+echo -e "\n${BOLD}════ BACKEND TESTS ════${RESET}"
 
 # compose_port SERVICE PORT → the host port compose published it on, or nothing if it isn't
 # running.
@@ -262,6 +260,38 @@ for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
   run "pytest + coverage ($svc)" \
       bash -c "cd '$BACKEND' && '$PYTEST' '$svc/tests' --cov='$svc' --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
 done
+
+# ── frontend tests ────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND TESTS ════${RESET}"
+
+# Component tests (jsdom) and browser tests (the app against a stubbed API), as check.yml's
+# frontend-test and frontend-e2e jobs; docs/web-ui-test-plan.md.
+run "vitest (frontend)" \
+    bash -c "cd '$FRONTEND' && npm test"
+
+# Playwright's own Chromium when installed (cd frontend && npx playwright install chromium),
+# else the installed Google Chrome (playwright.config.ts); skipped with neither.
+browser_tests() {
+  local bundled
+  bundled=$(cd "$FRONTEND" && node -e "const fs=require('fs');const {chromium}=require('@playwright/test');process.stdout.write(fs.existsSync(chromium.executablePath())?'1':'')")
+  if [ -z "$bundled" ] && [ ! -d "/Applications/Google Chrome.app" ] && ! command -v google-chrome >/dev/null 2>&1; then
+    echo "Skipped: no browser. Install one with 'cd frontend && npx playwright install chromium'."
+    return 0
+  fi
+  (cd "$FRONTEND" && npm run test:e2e:ci)
+}
+run "playwright (frontend)" browser_tests
+
+# ── frontend-app tests ────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND-APP TESTS ════${RESET}"
+
+run "jest (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && CI=true yarn test --ci"
+
+# ── scripts, edge and scheduler ───────────────────────────────────────────────
+# check.yml's lambda-edge-test job: the edge functions, the deploy scripts against fake
+# CLIs, the scheduler, and the checks that generated or listed copies are in sync.
+echo -e "\n${BOLD}════ SCRIPTS, EDGE AND SCHEDULER ════${RESET}"
 
 # Renders the .tpl through real `terraform apply` (not a hand-rolled reimplementation
 # of HCL's templatefile() syntax), so this exercises exactly what gets deployed.

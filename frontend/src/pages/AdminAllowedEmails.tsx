@@ -319,6 +319,7 @@ export default function AdminAllowedEmails() {
               <div className="flex gap-2">
                 <Input
                   className="form-input flex-1"
+                  aria-label="Email to look up"
                   placeholder="user@example.com"
                   value={searchEmail}
                   onChange={(e) => {
@@ -334,6 +335,7 @@ export default function AdminAllowedEmails() {
                   className="border-edge"
                   onClick={() => void handleSearch()}
                   disabled={searching || !searchEmail.trim()}
+                  aria-label="Look up the email"
                 >
                   {searching ? (
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -360,6 +362,7 @@ export default function AdminAllowedEmails() {
                     className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
                     disabled={deleteMutation.isPending}
                     onClick={() => deleteDialog.show(searchResult)}
+                    aria-label={`Remove ${searchResult.email_hint}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -410,6 +413,7 @@ export default function AdminAllowedEmails() {
                           className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
                           disabled={deleteMutation.isPending}
                           onClick={() => deleteDialog.show(item)}
+                          aria-label={`Remove ${item.email_hint}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -465,6 +469,7 @@ export default function AdminAllowedEmails() {
               <div className="flex gap-2">
                 <Input
                   className="form-input flex-1"
+                  aria-label="User email to look up"
                   placeholder="user@example.com"
                   value={userSearchEmail}
                   onChange={(e) => {
@@ -480,6 +485,7 @@ export default function AdminAllowedEmails() {
                   className="border-edge"
                   onClick={() => void handleUserSearch()}
                   disabled={userSearching || !userSearchEmail.trim()}
+                  aria-label="Look up the user"
                 >
                   {userSearching ? (
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -585,6 +591,7 @@ export default function AdminAllowedEmails() {
           </DialogHeader>
           <Input
             className="form-input"
+            aria-label="Email to allow"
             placeholder="user@example.com"
             value={addEmail}
             onChange={(e) => setAddEmail(e.target.value)}

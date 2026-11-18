@@ -15,7 +15,11 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 status=0
-for service in $("$PYTHON" "$ROOT/backend/tools/services.py"); do
+# Listed first: a failed list stops here (set -e), where a `for` over $(…) ran no
+# iterations and passed, auditing nothing.
+services=$("$PYTHON" "$ROOT/backend/tools/services.py")
+[ -n "$services" ] || { echo "ERROR: backend/tools/services.py listed no services." >&2; exit 1; }
+for service in $services; do
   reqs="$tmp/$service-requirements.txt"
   grep -vE '^buddy-common|^[[:space:]]*(#|$)' "$ROOT/backend/$service/requirements.txt" > "$reqs" || true
   if [[ ! -s "$reqs" ]]; then

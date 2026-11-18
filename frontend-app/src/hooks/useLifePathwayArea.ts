@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { isAbort } from '@/api/polling';
 import { ApiError } from '@/api/errors';
@@ -24,7 +24,7 @@ interface UseLifePathwayAreaOptions {
   /** Currently selected growth area, or null when none is available. */
   area: GrowthArea | null;
   /**
-   * Every completed area, as transform returned it to the page. Seeds the cache:
+   * Every completed area, as transform returned it to the page, with what it stores:
    * transform stores each area's milestones and returns them with the area.
    */
   areas: TransformArea[];
@@ -94,25 +94,19 @@ export function useLifePathwayArea({
   const startedAtRef = useRef(0);
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Seed from the milestones already stored on each area's document. Runs whenever
-  // the list changes and only fills gaps, so a completed job's merge is never
-  // overwritten by a subsequent re-fetch.
-  useEffect(() => {
-    if (areas.length === 0) return;
-    setCache(prev => {
-      const next = { ...prev };
-      let changed = false;
-      for (const doc of areas) {
-        const id = doc.area_id;
-        if (!id || next[id]) continue;
-        const ms = normalizeLifePathwayArea(doc.life_pathway_milestones, ages);
-        if (ms) {
-          next[id] = ms;
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
+  // The milestones already stored on each area's document, read as the areas arrive (not
+  // copied into `cache` by an effect: an effect lands a render late, after the effect
+  // below has already started a job for an area that didn't need one). A generated result
+  // in `cache` wins, so a re-fetch of older areas never hides it.
+  const stored = useMemo(() => {
+    const out: Record<string, SlotContent> = {};
+    for (const doc of areas) {
+      const ms = doc.area_id
+        ? normalizeLifePathwayArea(doc.life_pathway_milestones, ages)
+        : null;
+      if (ms) out[doc.area_id] = ms;
+    }
+    return out;
   }, [areas, ages]);
 
   useEffect(() => {
@@ -177,7 +171,7 @@ export function useLifePathwayArea({
   useEffect(() => {
     if (!enabled || !childId || !area) return;
     const areaId = area.id;
-    if (cache[areaId]) return;
+    if (cache[areaId] || stored[areaId]) return;
     // Serialised: whatever is selected when this frees up gets picked up, because
     // settling a job (success or failure) clears `generatingId`, which re-runs this
     // effect — even when nothing new lands in `cache`.
@@ -215,12 +209,13 @@ export function useLifePathwayArea({
     childId,
     area,
     cache,
+    stored,
     generatingId,
     handleCompleted,
     markFailed,
   ]);
 
-  const cached = area ? cache[area.id] ?? null : null;
+  const cached = area ? cache[area.id] ?? stored[area.id] ?? null : null;
   let status: AreaStatus;
   if (!area) {
     status = 'unavailable';

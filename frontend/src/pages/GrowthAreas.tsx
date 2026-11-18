@@ -577,7 +577,6 @@ export default function GrowthAreas() {
                       >
                         <motion.button
                           type="button"
-                          aria-label={`${area.name}${done ? ' (completed)' : ''} — ${area.description}`}
                           initial={{ opacity: 0, scale: 0.8 }}
                           animate={{ opacity: 1, scale: 1 }}
                           transition={{
@@ -661,6 +660,10 @@ export default function GrowthAreas() {
                               Kids {worldSummary(kidWorlds, area.name)?.total}
                             </span>
                           )}
+                          {/* Named by what it shows (the name, the child's score), then this. */}
+                          <span className="sr-only">
+                            {done ? ' (completed)' : ''} — {area.description}
+                          </span>
                         </motion.button>
                       </div>
                     );

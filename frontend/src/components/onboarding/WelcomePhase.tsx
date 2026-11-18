@@ -144,7 +144,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               </p>
             </>
           )}
-          <p className="text-xs text-muted-foreground/50">Takes about 2 minutes</p>
+          <p className="text-xs text-muted-foreground">Takes about 2 minutes</p>
         </motion.div>
       </div>
     </motion.div>

@@ -57,9 +57,11 @@ _param_exists() {
 
 # _kids_under REGION PREFIX → the kids that have parameters under PREFIX, one per line.
 _kids_under() {
-  aws ssm get-parameters-by-path --region "$1" --path "$2" --recursive \
-    --query 'Parameters[].Name' --output json \
-    | jq -r --arg p "$2/" '.[] | ltrimstr($p) | split("/")[0]' | sort -u
+  local listing
+  listing=$(aws ssm get-parameters-by-path --region "$1" --path "$2" --recursive \
+    --query 'Parameters[].Name' --output json) || return 1
+  # jq sorts (unique), so its status is the function's: a `| sort -u` would hide a failure.
+  jq -r --arg p "$2/" '[.[] | ltrimstr($p) | split("/")[0]] | unique | .[]' <<<"$listing"
 }
 
 # _put REGION NAME TYPE FILE: writes FILE's content as the parameter's value (replacing a
@@ -90,7 +92,7 @@ _new_pair() {
 
 # ensure_service_token_keys APP ENV REGION VERSIONS_JSON SERVICE...
 ensure_service_token_keys() {
-  local app="$1" env="$2" region="$3" versions="$4" service prefix kid old private public
+  local app="$1" env="$2" region="$3" versions="$4" service prefix kid kids old private public
   shift 4
   [ "$#" -gt 0 ] || { echo "ERROR: no services given." >&2; return 1; }
   jq -e 'type == "object"' "$versions" >/dev/null 2>&1 || {
@@ -111,28 +113,34 @@ ensure_service_token_keys() {
       _new_pair "$region" "$prefix" "$kid" || return 1
       echo "$service: created $kid."
     fi
+    # Read whole first: inside `< <(…)` a failed listing looked like nothing to rotate out.
+    kids=$(_kids_under "$region" "$prefix") || return 1
     while IFS= read -r old; do
       if [ -z "$old" ] || [ "$old" = "$kid" ]; then continue; fi
       aws ssm delete-parameters --region "$region" \
         --names "$prefix/$old/private" "$prefix/$old/public" >/dev/null || return 1
       echo "$service: deleted the rotated-out $old."
-    done < <(_kids_under "$region" "$prefix")
+    done <<<"$kids"
   done
 }
 
 # delete_service_token_keys APP ENV REGION: every service's pairs, after a destroy.
 delete_service_token_keys() {
-  local app="$1" env="$2" region="$3" path batch count=0
+  local app="$1" env="$2" region="$3" path listing batches batch count=0
   local -a names
   path="/$app/$env/backend/$region"
+  # Read whole first, so a failed listing (or jq) stops here instead of looking like no
+  # keys to delete, as it did inside `< <(…)`.
+  listing=$(aws ssm get-parameters-by-path --region "$region" --path "$path" --recursive \
+    --query 'Parameters[].Name' --output json) || return 1
   # Ten names per line: what delete-parameters takes at most. SSM names have no spaces.
+  batches=$(jq -r '[.[] | select(test("/service_token/[^/]+/(private|public)$"))]
+    | . as $a | range(0; length; 10) | $a[.:. + 10] | join(" ")' <<<"$listing") || return 1
   while IFS= read -r batch; do
     [ -n "$batch" ] || continue
     read -ra names <<<"$batch"
     aws ssm delete-parameters --region "$region" --names "${names[@]}" >/dev/null || return 1
     count=$((count + ${#names[@]}))
-  done < <(aws ssm get-parameters-by-path --region "$region" --path "$path" --recursive \
-    --query 'Parameters[].Name' --output json \
-    | jq -r '[.[] | select(test("/service_token/[^/]+/(private|public)$"))] | _nwise(10) | join(" ")')
+  done <<<"$batches"
   echo "Deleted $count service-token key parameter(s) under $path."
 }

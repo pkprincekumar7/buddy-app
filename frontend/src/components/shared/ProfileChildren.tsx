@@ -24,15 +24,25 @@ interface ProfileChildrenProps {
   onChildView?: (child: Child) => void;
 }
 
-/** The child's photo, or the cyan dot with their initial. */
-function ChildAvatar({ child }: { child: Child }) {
+/** The child's photo, or the cyan dot with their initial (7 by default; `className` sizes it). */
+export function ChildAvatar({
+  child,
+  className = 'h-7 w-7 text-xs',
+}: {
+  child: Pick<Child, 'name' | 'avatar_url'>;
+  className?: string;
+}) {
   if (child.avatar_url) {
     return (
-      <img src={child.avatar_url} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+      <img
+        src={child.avatar_url}
+        alt=""
+        className={cn('shrink-0 rounded-full object-cover', className)}
+      />
     );
   }
   return (
-    <span aria-hidden="true" className="avatar-dot avatar-dot-child h-7 w-7 text-xs">
+    <span aria-hidden="true" className={cn('avatar-dot avatar-dot-child', className)}>
       {getInitials(child.name).charAt(0)}
     </span>
   );

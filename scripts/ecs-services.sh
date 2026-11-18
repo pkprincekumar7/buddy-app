@@ -500,33 +500,41 @@ mixed_images_notice() {
 # So: deregister the ACTIVE ones, then delete every INACTIVE one, ten per call (the
 # API's limit). A destroy leaves nothing behind (production-readiness review, SEC-01).
 delete_task_definitions() {
-  local app="$1" env="$2" region="$3" listing families family arn batch out failures
+  local app="$1" env="$2" region="$3" listing families family arns_json active batches arn
+  local batch out failures
   local -a arns
   local count=0 nfamilies=0
   listing=$(aws ecs list-task-definition-families --region "$region" --family-prefix "$app-" \
     --status ALL --query 'families' --output json) || return 1
   families=$(jq -r --arg s "-$env" '.[] | select(endswith($s))' <<<"$listing") || return 1
+  # Each listing is read whole first, so a failed call (or jq) stops the cleanup instead of
+  # looking like a family with nothing to delete, as it did inside `< <(…)`.
   while IFS= read -r family; do
     [ -n "$family" ] || continue
     nfamilies=$((nfamilies + 1))
+    arns_json=$(aws ecs list-task-definitions --region "$region" --family-prefix "$family" \
+      --status ACTIVE --query 'taskDefinitionArns' --output json) || return 1
+    active=$(jq -r '.[]' <<<"$arns_json") || return 1
     while IFS= read -r arn; do
       [ -n "$arn" ] || continue
       aws ecs deregister-task-definition --region "$region" --task-definition "$arn" >/dev/null || return 1
-    done < <(aws ecs list-task-definitions --region "$region" --family-prefix "$family" \
-      --status ACTIVE --query 'taskDefinitionArns' --output json | jq -r '.[]')
+    done <<<"$active"
+    arns_json=$(aws ecs list-task-definitions --region "$region" --family-prefix "$family" \
+      --status INACTIVE --query 'taskDefinitionArns' --output json) || return 1
+    batches=$(jq -r '. as $a | range(0; length; 10) | $a[.:. + 10] | join(" ")' <<<"$arns_json") ||
+      return 1
     while IFS= read -r batch; do
       [ -n "$batch" ] || continue
       read -ra arns <<<"$batch"
       out=$(aws ecs delete-task-definitions --region "$region" --task-definitions "${arns[@]}" \
         --query 'failures' --output json) || return 1
-      failures=$(jq -r 'map("\(.arn): \(.reason)") | join("; ")' <<<"$out")
+      failures=$(jq -r 'map("\(.arn): \(.reason)") | join("; ")' <<<"$out") || return 1
       if [ -n "$failures" ]; then
         echo "ERROR: could not delete task definition(s): $failures" >&2
         return 1
       fi
       count=$((count + ${#arns[@]}))
-    done < <(aws ecs list-task-definitions --region "$region" --family-prefix "$family" \
-      --status INACTIVE --query 'taskDefinitionArns' --output json | jq -r '_nwise(10) | join(" ")')
+    done <<<"$batches"
   done <<<"$families"
   echo "Deleted $count task definition revision(s) in $nfamilies $app-*-$env famil$([ "$nfamilies" = 1 ] && echo y || echo ies) ($region)."
 }

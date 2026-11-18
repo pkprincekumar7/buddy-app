@@ -21,7 +21,12 @@ arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { e
 case "$1 $2" in
   "s3 sync" | "s3 cp") ;;
   "cloudfront create-invalidation") echo "I123" ;;
-  "s3api list-objects-v2") cat "$FAKE/listing.json" ;;
+  "s3api list-objects-v2")
+    # FAKE_FAIL_RELEASES=1: listing releases/ fails, as a throttled or denied call would.
+    if [ -n "${FAKE_FAIL_RELEASES:-}" ] && [ "$(arg --prefix "$@")" = releases/ ]; then
+      echo "An error occurred (SlowDown)" >&2; exit 254
+    fi
+    cat "$FAKE/listing.json" ;;
   "s3api delete-objects")
     n=$(ls "$FAKE"/deleted-*.json 2>/dev/null | wc -l | tr -d ' ')
     arg --delete "$@" > "$FAKE/deleted-$n.json" ;;
@@ -98,6 +103,23 @@ jq -n --arg m "${old}.000Z" '{Contents: [range(1500) | {Key: "assets/gone-\(.).j
 reset
 check "a large prune is batched" "$(prune_assets "$DIST" bucket 30)" "1500"
 check "in two calls of at most 1,000" "$(jq '.Objects | length' "$FAKE"/deleted-0.json "$FAKE"/deleted-1.json | paste -sd, -)" "1000,500"
+
+# A failed releases/ listing stops both prunes. Inside `< <(…)` it read as no saved
+# releases: prune_assets then took the chunks only they use (a rollback's) for unused.
+reset
+if FAKE_FAIL_RELEASES=1 prune_assets "$DIST" bucket 30 >/dev/null 2>&1; then
+  fail "a failed releases listing stops prune_assets"
+else
+  [ ! -e "$FAKE/deleted-0.json" ] && ok "a failed releases listing stops prune_assets, deleting nothing" \
+    || fail "prune_assets deleted after a failed releases listing"
+fi
+reset
+if FAKE_FAIL_RELEASES=1 prune_releases bucket >/dev/null 2>&1; then
+  fail "a failed releases listing stops prune_releases"
+else
+  [ ! -e "$FAKE/deleted-0.json" ] && ok "a failed releases listing stops prune_releases, deleting nothing" \
+    || fail "prune_releases deleted after a failed releases listing"
+fi
 
 echo
 echo "$PASS passed, $FAIL failed"
