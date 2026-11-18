@@ -21,8 +21,6 @@ nat_gateway_count = 1
 elasticache_node_type     = "cache.t4g.micro"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
-# ap-south-1a had no cache.t4g.micro capacity (create-failed, 2026-11-18).
-elasticache_preferred_azs = { "ap-south-1" = ["ap-south-1b"] }
 
 # ECS — every runtime (9 services, 8 workers, the collector) at Fargate's
 # smallest size (0.25 vCPU / 512 MiB) × 1: a few testers, one process per task

@@ -462,13 +462,29 @@ jobs:
           path: infra-live-backend/terraform/tfplan.txt
           retention-days: 7
 
+      # When Valkey's new group fails because AWS put its node in a zone with no capacity,
+      # the failed group (empty) is deleted and the apply planned again with the subnet
+      # group's other zones first, until one works or every zone was full. Any other
+      # failure fails as before (scripts/valkey-capacity.sh). The re-plan differs only in
+      # where the nodes go, so it needs the Plan step's inputs too.
       - name: Terraform Apply
         if: inputs.action == 'apply'
         env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          REGION: ${{ matrix.aws_region }}
+          TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+          TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
           # The Atlas API key, for the PrivateLink endpoint (atlas.tf); unset in dev and sbx.
           MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
           MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_KEY }}
-        run: terraform apply -auto-approve tfplan.bin
+        run: |
+          set -euo pipefail
+          source ../../scripts/valkey-capacity.sh
+          valkey_apply_with_zone_retry "$REGION" \
+            "${APP_NAME}-backend-redis-${ENVIRONMENT}" \
+            "${APP_NAME}-backend-redis-subnet-group-${ENVIRONMENT}" \
+            -- terraform plan -out=tfplan.bin -input=false -no-color -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       # -------------------------------------------------------------------------
       # Fill each service's Secrets Manager secret on its first apply only

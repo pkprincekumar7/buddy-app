@@ -111,7 +111,7 @@ variable "elasticache_multi_az" {
 }
 
 variable "elasticache_preferred_azs" {
-  description = "Valkey's availability zones per region, primary first, one per node (elasticache_replica_count + 1). A region not listed lets AWS choose. Set where AWS chose a zone with no capacity for elasticache_node_type (dev ap-south-1: 1a had no cache.t4g.micro). Read only when the group is created."
+  description = "Valkey's availability zones per region, in order of preference: the first elasticache_replica_count + 1 hold the nodes, primary first. A region not listed (the usual case) lets AWS choose. Not set in tfvars: which zone is full changes from day to day, so the Apply step sets it with -var only when retrying a create that found a zone full (scripts/valkey-capacity.sh). Read only when the group is created."
   type        = map(list(string))
   default     = {}
 

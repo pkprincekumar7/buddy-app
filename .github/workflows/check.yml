@@ -513,6 +513,11 @@ jobs:
       - name: Run service-token-keys.sh tests
         run: bash scripts/service-token-keys.test.sh
 
+      # terraform-live-backend's retry when Valkey's node found its zone full, against a
+      # fake aws CLI and terraform.
+      - name: Run valkey-capacity.sh tests
+        run: bash scripts/valkey-capacity.test.sh
+
       # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07),
       # against a fake aws CLI.
       - name: Run frontend-publish.sh tests

@@ -93,7 +93,7 @@ variable "engine_version" {
 }
 
 variable "preferred_azs" {
-  description = "Availability zones for the nodes, primary first: one per node (replica_count + 1), each with one of subnet_ids. Empty (the default) lets AWS choose, which can pick a zone with no capacity for node_type. AWS reads it only when it creates the group, so changing it later doesn't replace the group."
+  description = "Availability zones in order of preference, each with one of subnet_ids: the first replica_count + 1 hold the nodes, primary first. Empty (the default) lets AWS choose. terraform-live-backend sets it only when retrying a create that found no capacity in a zone (scripts/valkey-capacity.sh). AWS reads it only when it creates the group, and later changes are ignored."
   type        = list(string)
   default     = []
 }

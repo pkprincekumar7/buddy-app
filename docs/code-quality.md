@@ -116,7 +116,7 @@ brew install shellcheck   # optional
 | service tree valid | `tools/services.py --check` | Every `backend/` directory with a `requirements.txt` is a well-formed service; no orphaned spec in `backend/openapi/` |
 | `mypy (<service>)` | mypy 1.15.0 | Per service — `backend/<service>/` |
 | import-linter (service boundaries) | `tools/import_contracts.py` | `common` never imports service code; services never import each other |
-| common installs (core and extras) | pip | `backend/common` installs on its own and with `[generation,uploads]`, into a throwaway target |
+| common installs (core and extras) | pip | `backend/common` installs on its own and then with `[generation,uploads]` into a throwaway venv, and `pip check` passes after each |
 | API clients in sync | `scripts/sync-api-clients.mjs --check` | Both apps' generated API files match `backend/openapi/*.json` |
 | `eslint` | ESLint (via npm) | `frontend/src/**` (excl. `components/ui/`) — React/hooks rules, unused imports, security |
 | `prettier` | Prettier (devDependency) | `frontend/src/**` — TS/TSX/CSS formatting; Tailwind classes auto-sorted (`prettier-plugin-tailwindcss`) |
