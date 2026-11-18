@@ -81,9 +81,10 @@ resource "aws_elasticache_replication_group" "this" {
 
   node_type = var.node_type
 
-  num_cache_clusters         = var.replica_count + 1
-  automatic_failover_enabled = var.multi_az
-  multi_az_enabled           = var.multi_az
+  num_cache_clusters          = var.replica_count + 1
+  preferred_cache_cluster_azs = length(var.preferred_azs) > 0 ? var.preferred_azs : null
+  automatic_failover_enabled  = var.multi_az
+  multi_az_enabled            = var.multi_az
 
   engine               = "valkey"
   engine_version       = var.engine_version
@@ -105,6 +106,10 @@ resource "aws_elasticache_replication_group" "this" {
     precondition {
       condition     = !(var.multi_az && var.replica_count == 0)
       error_message = "elasticache_multi_az = true requires elasticache_replica_count >= 1."
+    }
+    precondition {
+      condition     = length(var.preferred_azs) == 0 || length(var.preferred_azs) == var.replica_count + 1
+      error_message = "preferred_azs needs one zone per node (replica_count + 1), primary first."
     }
     precondition {
       condition     = local.rbac != (var.auth_token != null)
@@ -142,6 +147,9 @@ locals {
         s.writes_authz ? "~authz:*" : "%R~authz:*",
       ],
       s.llm_limit ? ["~llm:hourly:*"] : [],
+      # No pub/sub channels. Valkey adds this itself, at this spot, when it's left out, and
+      # the plan then showed every user changing on every run.
+      ["resetchannels"],
       ["-@all", "+@read", "+@write", "+@scripting", "+@connection", "-@dangerous"],
     ))
   }
