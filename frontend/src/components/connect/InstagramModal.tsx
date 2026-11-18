@@ -64,6 +64,7 @@ export default function InstagramModal({
 
   return (
     <ModalBackdrop
+      title="Share to Instagram"
       gradient="radial-gradient(ellipse at 50% 40%,rgba(26,12,30,.72),rgba(4,2,8,.94) 72%)"
       onClose={onClose}
     >

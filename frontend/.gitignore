@@ -18,3 +18,9 @@ dist-ssr/
 
 # retire.js vulnerability database (auto-downloaded by check.sh; stays current without committing)
 retire-jsrepo.json
+
+# Test output (npm test, npm run test:e2e, test:e2e:coverage)
+test-results/
+playwright-report/
+blob-report/
+coverage/

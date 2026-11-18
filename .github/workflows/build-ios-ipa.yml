@@ -27,15 +27,50 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # -------------------------------------------------------------------------
+  # Checks the inputs first, in a job with no `environment:`, so a refused run
+  # never loads the signing secrets (like the Terraform workflows' validate job;
+  # scripts/workflow-inputs.sh). prod is built only from the default branch, as
+  # in build-android-apk.yml. It doesn't check that CI passed on the commit
+  # (kept simple; docs/ci-cd.md).
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT:    ${{ inputs.environment }}
+          REF:            ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+          if [[ "$ENVIRONMENT" == "prod" && "$REF" != "refs/heads/${DEFAULT_BRANCH}" ]]; then
+            echo "::error::prod is built only from ${DEFAULT_BRANCH}, not ${REF}. Merge first, then run this from ${DEFAULT_BRANCH}."
+            exit 1
+          fi
+
   build:
     name: Build iOS IPA
+    needs: validate
     # iOS builds MUST run on macOS — xcodebuild and codesign are Apple-only tools.
-    runs-on: macos-latest
+    # A fixed image, not macos-latest: when GitHub moves macos-latest to a new
+    # macOS, its default Xcode changes too, and the build would change with it
+    # unannounced. The build uses the image's default Xcode (no xcode-select);
+    # the DerivedData cache key below includes both, so a new image starts clean.
+    runs-on: macos-15
+    timeout-minutes: 90
     environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # -------------------------------------------------------------------------
       # Validate that all required secrets exist in the selected GitHub environment
@@ -46,28 +81,27 @@ jobs:
           SUBDOMAIN:                       ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME:                     ${{ vars.DOMAIN_NAME }}
           GOOGLE_CLIENT_ID:                ${{ vars.GOOGLE_CLIENT_ID }}
-          IOS_CLIENT_ID:                   ${{ secrets.IOS_CLIENT_ID }}
+          IOS_CLIENT_ID:                   ${{ vars.IOS_CLIENT_ID }}
           ROLE_ARN:                        ${{ vars.ROLE_ARN }}
           ASSETS_BUCKET_NAME:             ${{ vars.ASSETS_BUCKET_NAME }}
           IOS_CERTIFICATE_P12_BASE64:      ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
           IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_APPLE_TEAM_ID:               ${{ secrets.IOS_APPLE_TEAM_ID }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -z "$SUBDOMAIN"                       ]] && missing+=("SUBDOMAIN (variable)")
           [[ -z "$DOMAIN_NAME"                     ]] && missing+=("DOMAIN_NAME (variable)")
           [[ -z "$GOOGLE_CLIENT_ID"                ]] && missing+=("GOOGLE_CLIENT_ID (variable)")
-          [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID")
+          [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID (variable)")
           [[ -z "$ROLE_ARN"                        ]] && missing+=("ROLE_ARN (variable)")
           [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME (variable)")
           [[ -z "$IOS_CERTIFICATE_P12_BASE64"      ]] && missing+=("IOS_CERTIFICATE_P12_BASE64")
           [[ -z "$IOS_CERTIFICATE_PASSWORD"        ]] && missing+=("IOS_CERTIFICATE_PASSWORD")
           [[ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]] && missing+=("IOS_PROVISIONING_PROFILE_BASE64")
-          [[ -z "$IOS_APPLE_TEAM_ID"               ]] && missing+=("IOS_APPLE_TEAM_ID")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
-            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            echo "Add them to the '${ENVIRONMENT}' GitHub environment and re-run."
             exit 1
           fi
 
@@ -80,28 +114,31 @@ jobs:
         env:
           SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+          if [[ "${ENVIRONMENT}" == "prod" ]]; then
             FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
           else
-            FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
+            FQDN="${SUBDOMAIN}-${ENVIRONMENT}.${DOMAIN_NAME}"
           fi
           echo "FQDN=${FQDN}" >> "$GITHUB_ENV"
           echo "Resolved FQDN: ${FQDN}"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22.13.0"
           cache: "yarn"
           cache-dependency-path: frontend-app/yarn.lock
 
+      # postinstall.js patches files inside node_modules, so a change to it must
+      # miss the cache too: a hit skips yarn install, and with it the patch.
       - name: Cache node_modules
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         id: node-modules-cache
         with:
           path: frontend-app/node_modules
-          key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock') }}
+          key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock', 'frontend-app/scripts/postinstall.js') }}
 
       - name: Install JS dependencies
         working-directory: frontend-app
@@ -116,11 +153,11 @@ jobs:
         working-directory: frontend-app
         env:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          IOS_CLIENT_ID:    ${{ secrets.IOS_CLIENT_ID }}
+          IOS_CLIENT_ID:    ${{ vars.IOS_CLIENT_ID }}
         run: |
           {
-            echo "API_URL=https://${{ env.FQDN }}"
-            echo "CDN_BASE_URL=https://${{ env.FQDN }}"
+            echo "API_URL=https://${FQDN}"
+            echo "CDN_BASE_URL=https://${FQDN}"
             echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
             echo "IOS_CLIENT_ID=${IOS_CLIENT_ID}"
           } > .env
@@ -140,7 +177,7 @@ jobs:
       # the correct and predictable behaviour.
       # -------------------------------------------------------------------------
       - name: Cache CocoaPods
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         id: pods-cache
         with:
           path: |
@@ -154,7 +191,7 @@ jobs:
         run: pod install --no-repo-update
 
       - name: Cache Metro bundler
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: frontend-app/node_modules/.cache/metro
           key: metro-${{ runner.os }}-${{ hashFiles('frontend-app/yarn.lock') }}
@@ -163,14 +200,23 @@ jobs:
       # -------------------------------------------------------------------------
       # Cache Xcode DerivedData — significantly speeds up incremental builds.
       # Key covers ios project files and node_modules (native module changes
-      # invalidate the build cache).
+      # invalidate the build cache). It also names the runner image and the Xcode
+      # build: DerivedData from another Xcode is at best unused, at worst a
+      # confusing build failure, so it's never restored across them.
       # -------------------------------------------------------------------------
+      - name: Read the runner image and Xcode version
+        id: toolchain
+        run: |
+          XCODE="$(xcodebuild -version | awk '/Build version/ {print $3}')"
+          echo "Runner image: ${ImageOS}, Xcode build ${XCODE}"
+          echo "key=${ImageOS}-xcode-${XCODE}" >> "$GITHUB_OUTPUT"
+
       - name: Cache Xcode DerivedData
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: xcode-derived-${{ runner.os }}-${{ hashFiles('frontend-app/ios/**/*.pbxproj', 'frontend-app/ios/Podfile.lock') }}
-          restore-keys: xcode-derived-${{ runner.os }}-
+          key: xcode-derived-${{ steps.toolchain.outputs.key }}-${{ hashFiles('frontend-app/ios/**/*.pbxproj', 'frontend-app/ios/Podfile.lock') }}
+          restore-keys: xcode-derived-${{ steps.toolchain.outputs.key }}-
 
       # -------------------------------------------------------------------------
       # Code-signing setup.
@@ -216,9 +262,12 @@ jobs:
           # Export path for subsequent steps
           echo "KEYCHAIN_PATH=${KEYCHAIN_PATH}" >> "$GITHUB_ENV"
 
+      # The Team ID signing needs comes from the profile itself, so the two can't disagree.
+      # IOS_APPLE_TEAM_ID is optional: when set, it must be the profile's team.
       - name: Install provisioning profile
         env:
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
         run: |
           PP_PATH="$RUNNER_TEMP/profile.mobileprovision"
           echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PP_PATH"
@@ -228,12 +277,23 @@ jobs:
           # is unreliable on macOS GitHub runners.
           security cms -D -i "$PP_PATH" > "$RUNNER_TEMP/profile.plist"
           UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$RUNNER_TEMP/profile.plist")
+          if [[ ! "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "ERROR: the provisioning profile has no valid TeamIdentifier ('${TEAM_ID}')."
+            exit 1
+          fi
+          if [[ -n "$IOS_APPLE_TEAM_ID" && "$IOS_APPLE_TEAM_ID" != "$TEAM_ID" ]]; then
+            echo "ERROR: IOS_APPLE_TEAM_ID is ${IOS_APPLE_TEAM_ID}, but the provisioning profile belongs to team ${TEAM_ID}. Fix the variable (or delete it) or use that team's profile."
+            exit 1
+          fi
+          echo "Signing team: ${TEAM_ID} (from the provisioning profile)"
 
           PP_DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PP_DEST"
           cp "$PP_PATH" "$PP_DEST/${UUID}.mobileprovision"
           echo "Installed provisioning profile UUID: ${UUID}"
           echo "IOS_PROVISIONING_PROFILE_UUID=${UUID}" >> "$GITHUB_ENV"
+          echo "IOS_TEAM_ID=${TEAM_ID}" >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
       # Archive the app, then export it as an Ad Hoc .ipa.
@@ -250,8 +310,6 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Build archive
         working-directory: frontend-app/ios
-        env:
-          IOS_APPLE_TEAM_ID: ${{ secrets.IOS_APPLE_TEAM_ID }}
         run: |
           xcodebuild archive \
             -workspace Superpower.xcworkspace \
@@ -259,15 +317,13 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/Superpower.xcarchive" \
-            DEVELOPMENT_TEAM="${IOS_APPLE_TEAM_ID}" \
+            DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="${IOS_PROVISIONING_PROFILE_UUID}" \
             COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Export Ad Hoc IPA
-        env:
-          IOS_APPLE_TEAM_ID: ${{ secrets.IOS_APPLE_TEAM_ID }}
         run: |
           # Write ExportOptions.plist using grouped echo — heredoc delimiters must be
           # at column 0 in shell, but YAML literal blocks require indentation >= the
@@ -280,7 +336,7 @@ jobs:
             echo '  <key>method</key>'
             echo '  <string>ad-hoc</string>'
             echo '  <key>teamID</key>'
-            echo "  <string>${IOS_APPLE_TEAM_ID}</string>"
+            echo "  <string>${IOS_TEAM_ID}</string>"
             echo '  <key>signingStyle</key>'
             echo '  <string>manual</string>'
             echo '  <key>provisioningProfiles</key>'
@@ -312,10 +368,10 @@ jobs:
           # Restore the default search list first, then delete the temp keychain.
           # Without this, the search list retains a dead path after deletion.
           security list-keychains -d user -s login.keychain-db 2>/dev/null || true
-          security delete-keychain "${{ env.KEYCHAIN_PATH }}" 2>/dev/null || true
+          security delete-keychain "${KEYCHAIN_PATH}" 2>/dev/null || true
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: superpower-ios-${{ inputs.environment }}-${{ github.sha }}
           path: ${{ runner.temp }}/ipa/*.ipa
@@ -327,7 +383,7 @@ jobs:
       #   app-assets/applications/ios/Superpower-YYYY-MM-DD-HH-MM-SS.ipa
       # -------------------------------------------------------------------------
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.1
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: build-ios-ipa-${{ inputs.environment }}

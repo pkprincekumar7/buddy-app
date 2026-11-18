@@ -4,8 +4,11 @@
 node_modules/
 __pycache__/
 .venv/
+.venv-*/
 venv/
 dist/
+*.egg-info/
+backend/common/build/
 *.pyc
 .DS_Store
 .docx_extract/
@@ -30,9 +33,6 @@ frontend/retire-jsrepo.json
 # Terraform-generated Lambda zips — rebuilt on every plan/apply
 infra-live-edge/terraform/*.zip
 infra-live-scheduler/lambda/*.zip
-
-# mutmut working copy (backend mutation testing)
-backend/mutants/
 
 # Terraform provider caches (local init)
 .terraform/

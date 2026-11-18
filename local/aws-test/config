@@ -1,0 +1,3 @@
+# The test mode's AWS profile (docker-compose.yml mounts this folder as ~/.aws): an empty
+# [default], so AWS_PROFILE=default resolves while the fake keys in the environment win.
+[default]

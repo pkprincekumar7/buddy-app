@@ -10,25 +10,19 @@ import {
 import type { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
+import { account, type CurrentUser } from '@/api/account';
 import { api, dispatchAuthExpired, resolveAuthExpiry } from '@/api/client';
 import { ApiError } from '@/api/errors';
+import { queryClientInstance } from '@/lib/query-client';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
-import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import type { UserRecord } from '@/types/api';
+import { afterSignIn, isPublicAuthPath } from '@/lib/authPaths';
+type UserData = CurrentUser;
 
-type UserData = UserRecord;
-
-interface AuthErrorUnknown {
+interface AuthErrorValue {
   type: 'unknown';
   message: string;
 }
-
-interface AuthErrorUserNotRegistered {
-  type: 'user_not_registered';
-}
-
-type AuthErrorValue = AuthErrorUnknown | AuthErrorUserNotRegistered;
 
 interface AuthContextValue {
   user: UserData | null;
@@ -41,8 +35,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const BLOCKED_REDIRECT_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -51,37 +43,53 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The account the query cache was filled for: keys like ['children'] aren't per-user,
+  // so the cache is cleared whenever that account changes or signs out.
+  const cachedUserIdRef = useRef<string | null>(null);
 
-  const checkAppState = useCallback(async (options: { withLoading?: boolean } = {}) => {
-    const withLoading = options.withLoading !== false;
-    setAuthError(null);
-    if (withLoading) {
-      setIsLoadingAuth(true);
-    }
-    try {
-      const currentUser = await api.auth.me();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      if (error instanceof ApiError && error.status === 401) {
-        void api.auth.logout();
-        setUser(null);
-        setIsAuthenticated(false);
-        setAuthError(null);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-        const msg =
-          (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
-        setAuthError({ type: 'unknown', message: msg });
-      }
-    } finally {
-      if (withLoading) {
-        setIsLoadingAuth(false);
-      }
-    }
+  const clearUserCache = useCallback(() => {
+    cachedUserIdRef.current = null;
+    queryClientInstance.clear();
   }, []);
+
+  const checkAppState = useCallback(
+    async (options: { withLoading?: boolean } = {}) => {
+      const withLoading = options.withLoading !== false;
+      setAuthError(null);
+      if (withLoading) {
+        setIsLoadingAuth(true);
+      }
+      try {
+        const currentUser = await account.current();
+        if (cachedUserIdRef.current !== null && cachedUserIdRef.current !== currentUser.id) {
+          queryClientInstance.clear();
+        }
+        cachedUserIdRef.current = currentUser.id;
+        setUser(currentUser);
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        if (error instanceof ApiError && error.status === 401) {
+          void account.logout();
+          clearUserCache();
+          setUser(null);
+          setIsAuthenticated(false);
+          setAuthError(null);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+          const msg =
+            (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
+          setAuthError({ type: 'unknown', message: msg });
+        }
+      } finally {
+        if (withLoading) {
+          setIsLoadingAuth(false);
+        }
+      }
+    },
+    [clearUserCache],
+  );
 
   useEffect(() => {
     void checkAppState();
@@ -100,18 +108,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (message && message !== 'Session expired') {
         toast.error(message);
       }
-      void api.auth.logout().catch(() => {});
+      void account.logout();
+      clearUserCache();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
-      void navigate('/Login', { replace: true });
+      // On the sign-in pages already (signed out, opening /Register): stay. Elsewhere, sign in
+      // and come back here.
+      const here = window.location.pathname;
+      if (!isPublicAuthPath(here))
+        void navigate('/Login', { replace: true, state: { from: here } });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('superpower:auth-expired', onExpired);
       return () => window.removeEventListener('superpower:auth-expired', onExpired);
     }
     return undefined;
-  }, [navigate]);
+  }, [navigate, clearUserCache]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -144,20 +157,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const timer = setTimeout(() => {
-      if (BLOCKED_REDIRECT_PATHS.includes(location.pathname)) return;
-      api.preferences
-        .patch({ last_visited_path: location.pathname + location.search })
-        .catch(() => {});
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [location.pathname, location.search, isAuthenticated]);
-
   const logout = useCallback(
     async (shouldRedirect = true) => {
-      await api.auth.logout();
+      await account.logout();
+      clearUserCache();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
@@ -165,7 +168,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void navigate('/Login', { replace: true });
       }
     },
-    [navigate],
+    [navigate, clearUserCache],
   );
 
   const mainPath = createPageUrl(pagesConfig.mainPage ?? 'Home');
@@ -179,9 +182,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void navigate('/Admin', { replace: true });
         return;
       }
-      void navigate(mainPath, { replace: true });
+      // Back to the page that sent the person to sign in, or Home.
+      void navigate(afterSignIn(location.state, mainPath), { replace: true });
     }
-  }, [isLoadingAuth, isAuthenticated, user?.role, location.pathname, navigate, mainPath]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    user?.role,
+    location.pathname,
+    location.state,
+    navigate,
+    mainPath,
+  ]);
 
   const contextValue = useMemo(
     () => ({

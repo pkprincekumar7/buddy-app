@@ -1,0 +1,170 @@
+[
+  [
+    {
+      "id": "life_ambition_gq1",
+      "question": "What does Aarav do when question 1 happens?",
+      "hint": "Think of a recent day 1."
+    },
+    {
+      "id": "life_ambition_gq2",
+      "question": "What does Aarav do when question 2 happens?",
+      "hint": "Think of a recent day 2."
+    },
+    {
+      "id": "life_ambition_gq3",
+      "question": "What does Aarav do when question 3 happens?",
+      "hint": "Think of a recent day 3."
+    },
+    {
+      "id": "life_ambition_gq4",
+      "question": "What does Aarav do when question 4 happens?",
+      "hint": "Think of a recent day 4."
+    },
+    {
+      "id": "life_ambition_gq5",
+      "question": "What does Aarav do when question 5 happens?",
+      "hint": "Think of a recent day 5."
+    }
+  ],
+  [
+    {
+      "id": "self_care_gq1",
+      "question": "word word word word word word word word word word word word word word word word word word word word word word…",
+      "hint": "h h h h h h h h h h h h h h…"
+    },
+    {
+      "id": "self_care_gq2",
+      "question": "What does Aarav do when question 2 happens?",
+      "hint": "Think of a recent day 2."
+    },
+    {
+      "id": "self_care_gq3",
+      "question": "What does Aarav do when question 3 happens?",
+      "hint": "Think of a recent day 3."
+    },
+    {
+      "id": "self_care_gq4",
+      "question": "What does Aarav do when question 4 happens?",
+      "hint": "Think of a recent day 4."
+    },
+    {
+      "id": "self_care_gq5",
+      "question": "What does Aarav do when question 5 happens?",
+      "hint": "Think of a recent day 5."
+    }
+  ],
+  [
+    {
+      "id": "self_care_gq1",
+      "question": "Q?",
+      "hint": ""
+    },
+    {
+      "id": "self_care_gq2",
+      "question": "What does Aarav do when question 2 happens?",
+      "hint": "Think of a recent day 2."
+    },
+    {
+      "id": "self_care_gq3",
+      "question": "What does Aarav do when question 3 happens?",
+      "hint": "Think of a recent day 3."
+    },
+    {
+      "id": "self_care_gq4",
+      "question": "What does Aarav do when question 4 happens?",
+      "hint": "Think of a recent day 4."
+    },
+    {
+      "id": "self_care_gq5",
+      "question": "What does Aarav do when question 5 happens?",
+      "hint": "Think of a recent day 5."
+    }
+  ],
+  null,
+  null,
+  null,
+  null,
+  null,
+  [],
+  [
+    {
+      "title": "Bare array",
+      "detail": "d"
+    }
+  ],
+  [],
+  [
+    {
+      "title": "Start a bedtime routine",
+      "detail": "Every night at eight, read together for ten minutes."
+    },
+    {
+      "title": "t t t t t t t t t t…",
+      "detail": "d d d d d d d d d d d d d d d d d d d d d d d d d…"
+    },
+    {
+      "title": "Shorthand title",
+      "detail": "Shorthand body"
+    },
+    {
+      "title": "A legacy string recommendation that is long but never capped at all by the normaliser rules",
+      "detail": ""
+    },
+    {
+      "title": "Only a title",
+      "detail": ""
+    }
+  ],
+  [],
+  [
+    {
+      "title": "Valid both",
+      "detail": "d",
+      "source": "both"
+    },
+    {
+      "title": "Valid kid",
+      "detail": "d",
+      "source": "kid"
+    },
+    {
+      "title": "Valid you",
+      "detail": "d",
+      "source": "you"
+    },
+    {
+      "title": "Valid step",
+      "detail": "d",
+      "source": "step"
+    },
+    {
+      "title": "Unknown source",
+      "detail": "d"
+    },
+    {
+      "title": "Wrong case",
+      "detail": "d"
+    },
+    {
+      "title": "Padded source",
+      "detail": "d"
+    },
+    {
+      "title": "Not a string",
+      "detail": "d"
+    },
+    {
+      "title": "Null source",
+      "detail": "d"
+    },
+    {
+      "title": "Shorthand with a source",
+      "detail": "b",
+      "source": "you"
+    },
+    {
+      "title": "A plain string stays a title",
+      "detail": ""
+    }
+  ]
+]

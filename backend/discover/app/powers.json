@@ -1,0 +1,97 @@
+{
+  "levels": {
+    "5": 90,
+    "4": 60
+  },
+  "styles": {
+    "Ambitious": "You aim high and go for it. Big goals make you shine.",
+    "Determined": "You keep going when things get hard. You finish what you start.",
+    "Outgoing": "You light up a room. Making friends is your thing.",
+    "Creative": "Your head is full of new ideas. You make things nobody else would.",
+    "Enthusiastic": "You bring the fun everywhere you go. Your energy is catching.",
+    "Restless": "You love trying new things. Every day can be an adventure.",
+    "Highly Energetic": "You are always on the move. Your body loves to go, go, go.",
+    "Thinker": "You can think about one hard thing for a long time. Not many people can.",
+    "Playful": "You turn anything into a game. You make people laugh."
+  },
+  "powers": [
+    {
+      "name": "Focus",
+      "game": "focus",
+      "line": "You can stick with one hard thing for a long time.",
+      "try_this": "Pick one puzzle and finish it. No switching.",
+      "from": [
+        "Determined",
+        "Thinker",
+        "Ambitious"
+      ]
+    },
+    {
+      "name": "Curiosity",
+      "game": "curious",
+      "line": "You always want to know how things work.",
+      "try_this": "Ask one big question at dinner tonight.",
+      "from": [
+        "Thinker",
+        "Restless",
+        "Creative"
+      ]
+    },
+    {
+      "name": "Independence",
+      "game": "order",
+      "line": "You like to figure things out on your own.",
+      "try_this": "Plan your own Saturday morning, start to finish.",
+      "from": [
+        "Ambitious",
+        "Determined",
+        "Restless"
+      ]
+    },
+    {
+      "name": "Imagination",
+      "game": "draw",
+      "line": "Your head is full of new ideas.",
+      "try_this": "Make up a new game and teach it to someone.",
+      "from": [
+        "Creative",
+        "Playful",
+        "Enthusiastic"
+      ]
+    },
+    {
+      "name": "Never Give Up",
+      "game": "climb",
+      "line": "When it gets hard, you keep going.",
+      "try_this": "Finish one thing you stopped halfway.",
+      "from": [
+        "Determined",
+        "Ambitious",
+        "Highly Energetic"
+      ]
+    },
+    {
+      "name": "Brave Voice",
+      "game": "voice",
+      "line": "You are learning to say what you think.",
+      "try_this": "Put your hand up once in class this week.",
+      "from": [
+        "Outgoing",
+        "Enthusiastic",
+        "Playful"
+      ]
+    },
+    {
+      "name": "Energy",
+      "game": "energy",
+      "line": "Your body loves to move.",
+      "try_this": "Play outside for 20 minutes today.",
+      "from": [
+        "Highly Energetic",
+        "Restless",
+        "Enthusiastic",
+        "Playful"
+      ]
+    }
+  ]
+}

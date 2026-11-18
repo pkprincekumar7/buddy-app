@@ -1,67 +1,48 @@
 # ---------------------------------------------------------------------------
-# Secrets Manager — application secrets
+# Secrets Manager — one secret per service (docs/auth-users-split.md, 15.1)
 #
-# One JSON secret holds all sensitive env vars for the backend container.
-# Terraform creates the secret with REPLACE_ME placeholder values.
+# "<app>/<env>/<service>-secrets", a JSON object with the keys in
+# local.secret_keys (services.tf): every service's own MONGODB_URI (its Atlas
+# database user), auth's JWT private key, Google client id and email HMAC pepper,
+# and the LLM keys of the generating services and shared. A service and its
+# worker share it; each runtime injects only the keys it needs.
 #
-# The terraform-live-backend workflow auto-populates real values from GitHub
-# secrets on the FIRST apply only (when REPLACE_ME placeholders are detected).
-# Subsequent applies skip the update to preserve manually rotated values.
+# Terraform creates each secret with REPLACE_ME placeholders and never touches
+# the value again (ignore_changes): the terraform-live-backend workflow fills in
+# real values on the first apply, and later changes are made with
+#   aws secretsmanager put-secret-value --secret-id <arn> --secret-string '{...}'
+# (it replaces the whole JSON: include every key).
 #
-# To rotate or update a secret after initial setup:
-#
-#   aws secretsmanager put-secret-value \
-#     --secret-id "<secret_arn output>" \
-#     --region {backend-region} \
-#     --secret-string '{
-#       "JWT_PRIVATE_KEY":    "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
-#       "GOOGLE_CLIENT_ID":   "<oauth-client-id>.apps.googleusercontent.com",
-#       "OPENAI_API_KEY":     "sk-...",
-#       "ANTHROPIC_API_KEY":  "sk-ant-...",
-#       "GEMINI_API_KEY":     "AIza...",
-#       "MONGODB_URI":        "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/",
-#       "REDIS_AUTH_TOKEN":   "<token>"
-#     }'
-# WARNING: put-secret-value replaces the entire JSON. Always include ALL keys
-# in the payload or omitted keys will be silently dropped from the secret.
-# Note: CORS_ORIGINS and COOKIE_DOMAIN are plain env vars in the task definition,
-# not secrets. Set them via the CORS_ORIGINS / COOKIE_DOMAIN GitHub environment secrets.
+# The service-token signing keys are not here: Terraform generates them
+# (service_tokens.tf).
 # ---------------------------------------------------------------------------
 
-resource "aws_secretsmanager_secret" "app" {
+resource "aws_secretsmanager_secret" "service" {
   #checkov:skip=CKV_AWS_149:AWS-managed encryption is sufficient for this threat model; CMK rotation and key policy overhead deferred
   #checkov:skip=CKV2_AWS_57:Automatic rotation requires a dedicated Lambda rotator function; deferred — secrets are rotated manually via CLI when needed
+  for_each = local.secret_keys
 
-  name        = "${var.app_name}/${var.environment}/backend-secrets"
-  description = "Application secrets for ${var.app_name} backend ECS tasks (${var.environment})"
+  name        = "${var.app_name}/${var.environment}/${each.key}-secrets"
+  description = "Secrets for ${var.app_name}'s ${each.key} service (${var.environment})"
 
-  # Force-delete immediately on destroy so the name is free for re-apply.
-  # Default (30-day recovery window) causes re-apply to fail with
-  # "secret with this name is already scheduled for deletion".
-  # Intentional for ALL environments including prod — operators must back up
-  # credentials externally before running destroy. The GitHub environment
-  # secrets used to populate the secret on apply serve as that backup.
+  # Force-delete on destroy so the name is free for the next apply (the
+  # environments are destroyed and rebuilt; the GitHub environment secrets that
+  # fill these are the backup).
   recovery_window_in_days = 0
 
   tags = {
-    Name = "${var.app_name}-backend-secrets-${var.environment}"
+    Name    = "${var.app_name}-${each.key}-secrets-${var.environment}"
+    Service = each.key
   }
 }
 
-resource "aws_secretsmanager_secret_version" "app_placeholder" {
-  secret_id = aws_secretsmanager_secret.app.id
+resource "aws_secretsmanager_secret_version" "placeholder" {
+  for_each = local.secret_keys
 
-  secret_string = jsonencode({
-    JWT_PRIVATE_KEY   = "REPLACE_ME"
-    GOOGLE_CLIENT_ID  = "REPLACE_ME"
-    OPENAI_API_KEY    = "REPLACE_ME"
-    ANTHROPIC_API_KEY = "REPLACE_ME"
-    GEMINI_API_KEY    = "REPLACE_ME"
-    MONGODB_URI       = "REPLACE_ME"
-    REDIS_AUTH_TOKEN  = "REPLACE_ME"
-  })
+  secret_id     = aws_secretsmanager_secret.service[each.key].id
+  secret_string = jsonencode({ for key in each.value : key => "REPLACE_ME" })
 
-  # Prevent Terraform from overwriting values updated via CLI or Console.
+  # Values set via the workflow, CLI or console are never overwritten.
   lifecycle {
     ignore_changes = [secret_string]
   }

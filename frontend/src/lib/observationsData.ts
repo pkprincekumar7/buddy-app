@@ -1,6 +1,7 @@
 /**
  * Release-page observation patterns: the icon registry, the provenance copy, and
- * the validator that stands between raw provider output and what the page renders.
+ * the validator for what the page renders. Release generates and validates the
+ * patterns on the server (build plan 7.7); this re-checks the stored set.
  *
  * The page makes one factual promise — "Superpower records what you notice. It
  * draws no conclusions and labels nothing." Four rules here exist to keep that
@@ -11,18 +12,15 @@
  *     words, which made them provably grounded but produced cards that read the
  *     parent's own sentences back at them. They are now derived observations, so
  *     grounding rests on the prompt rather than on a string match — except for
- *     child-choice lines, which are still checked exactly (see isAllowedNote).
+ *     the child's game-result lines, which are still checked exactly (see isAllowedNote).
  *  2. `sources` is mandatory and app-labelled. The provider names which evidence
  *     bucket it drew on; the sentence the parent reads is written here. That is
  *     what makes a fabricated frequency ("Noted 7 times") structurally
  *     impossible — there is no field for the model to put a count in.
  *  3. `icon` is a key into the registry below, never geometry from the provider.
  *  4. Every evidence block offered to the provider gets a slot before any block
- *     gets a second one — see selectObservations. Without this, the set tracks
- *     whichever block happened to hold the most text: six completed Grow areas is
- *     ~30 answers against a handful of onboarding fields, so the parent's
- *     onboarding answers would silently vanish from a page that claims to read
- *     back what they told us.
+ *     gets a second one. Release enforces this on the server when it stores a set
+ *     (build plan 7.7); the page only re-checks what it renders.
  */
 
 /** Icon path data, ported 1:1 from the "Observations" mockup's IC constant. */
@@ -44,23 +42,19 @@ export const OBSERVATION_ICONS = {
 
 export type ObservationIconKey = keyof typeof OBSERVATION_ICONS;
 
-const ICON_KEYS = Object.keys(OBSERVATION_ICONS) as ObservationIconKey[];
-/** Keys offered to the provider — `note` is ours to fall back to, not theirs to pick. */
-export const SELECTABLE_ICON_KEYS = ICON_KEYS.filter((k) => k !== 'note');
-
 /**
- * Where an observation came from. Order matters — it is the order the prompt
- * presents the blocks and the order selectObservations reserves slots in.
+ * Where an observation came from. Order matters — it is the order release's prompt
+ * presents the blocks, and the order it reserves slots in.
  *
- * `child` is the one that is not the parent's prose: the child picked between two
- * offered options in the Grow rounds rather than writing anything, so evidence
- * from that block is a *choice*, and the prompt is explicit that it must not be
- * dressed up as something the child said. Everything else here is the parent
- * writing in their own words.
+ * `child` is the one that is not the parent's prose: it is the child's results in
+ * the child view games for each area (their latest try), scored by us rather than
+ * written by anyone, so evidence from that block is a *game score*, and the prompt
+ * is explicit that it must not be dressed up as something the child said or as a
+ * fixed trait. Everything else here is the parent writing in their own words.
  *
  * All three are still single sittings rather than observation over time. What they
- * do give is corroboration: a pattern the parent described that the child's
- * choices also point to has genuinely turned up more than once, which is the only
+ * do give is corroboration: a pattern the parent described that the child's game
+ * results also point to has genuinely turned up more than once, which is the only
  * sense in which this page can currently claim recurrence.
  */
 export const OBSERVATION_SOURCES = ['onboarding', 'grow', 'child'] as const;
@@ -78,7 +72,7 @@ function sourceNoun(source: ObservationSourceKey, childName: string): string {
     case 'grow':
       return 'your Grow answers';
     case 'child':
-      return childName ? `what ${childName} chose` : 'what your child chose';
+      return childName ? `${childName}’s games` : 'your child’s games';
   }
 }
 
@@ -95,16 +89,7 @@ export interface ObservationItem {
   sources: ObservationSourceKey[];
 }
 
-/** How many cards the page shows. */
-export const MAX_OBSERVATIONS = 6;
-/**
- * How many the provider may return. Deliberately above the display cap: the
- * per-source guarantee in selectObservations can only pick from what it is given,
- * so it needs candidates to choose between. With no slack, a set where the first
- * six cards all cite one block leaves nothing to promote and the guarantee is
- * empty. The prompt's "return fewer when the evidence is thin" still governs —
- * this is a ceiling, not a target.
- */
+/** How many stored patterns are kept: release stores at most 8. */
 const MAX_GENERATED_CANDIDATES = 8;
 const MAX_NOTES_PER_OBSERVATION = 3;
 /**
@@ -141,15 +126,13 @@ function readString(value: unknown): string {
 /**
  * Settle how a note is punctuated, because the provider will not do it
  * consistently. Across runs the same prompt returned parent notes wrapped in
- * typographic quotes three times and bare once, while the child-choice lines
- * always carry the straight quotes we put into that block ourselves — so one card
- * could show "…", “…” and unquoted text side by side.
+ * typographic quotes three times and bare once — so one card could show "…", “…”
+ * and unquoted text side by side.
  *
  * Wrapping quotes come off: the bullet already frames a note as evidence, and
- * notes cannot be uniformly quoted anyway, since a child-choice line is a record
- * of a choice rather than something anyone said. Quotes *inside* the text are
- * structural — they delimit the two options in Chose “X” over “Y” — so those stay,
- * normalised to typographic so nothing mixes styles.
+ * notes cannot be uniformly quoted anyway, since a child game-result line is a
+ * score we recorded rather than something anyone said. Quotes *inside* the text
+ * stay, normalised to typographic so nothing mixes styles.
  */
 function tidyNote(text: string): string {
   let out = text.trim();
@@ -182,14 +165,15 @@ function tidyNote(text: string): string {
 }
 
 /**
- * Comparison key for a child-choice note: case, spacing, trailing periods and
+ * Comparison key for a child game-result note: case, spacing, trailing periods and
  * quote style all normalised away, so cosmetic reformatting still matches while
- * any change to the actual options does not.
+ * any change to the game, the skill, the score or the band does not.
  */
-function choiceKey(text: string): string {
+function lineKey(text: string): string {
   return text
     .toLowerCase()
     .replace(/[“”"]/g, '"')
+    .replace(/[‘’]/g, "'")
     .replace(/[\s.]+/g, ' ')
     .trim();
 }
@@ -197,27 +181,22 @@ function choiceKey(text: string): string {
 /**
  * Guard against fabricated child evidence.
  *
- * A real run recombined two genuine choice lines into a third that never happened
- * — it took the rejected half of one and the rejected half of another and paired
- * them. Nothing about the result looks malformed, so no structural check catches
- * it, and it renders to the parent as something their child chose.
- *
- * Child-choice lines are the one kind of note we can verify exactly, because we
- * compose them ourselves from stored picks. So they are whitelisted: a note in
- * "Chose … over …" form must match a line we actually put in the prompt. Parent
+ * The child's evidence is their child view game results, one line per game:
+ * "Played {title} ({skill}): {score} of 100, {band}". These are the one kind of
+ * note we can verify exactly, because we compose them ourselves from stored
+ * scores. So they are whitelisted: a note in "Played …" form must match a line we
+ * actually put in the prompt, and a score the child never got is dropped. Parent
  * notes cannot be checked this way — they are derived observations by design — so
  * they pass through here and rest on the prompt rules instead.
  *
- * This is also why the prompt keeps child lines verbatim while everything else is
- * reworded. Allowing them to be paraphrased was tried, and the very first run
- * produced "Picked fixing something broken over a tournament choice" for a child
- * who had picked teaching OVER fixing — an inverted claim about a real child that
- * no longer matched the literal form, so this guard never saw it.
+ * History: when the child's evidence was either/or picks, a run recombined halves
+ * of two real lines into one that never happened, and a paraphrased line inverted
+ * what the child picked. Hence verbatim child lines, checked here.
  */
-function isAllowedNote(note: string, allowedChoiceKeys: Set<string> | null): boolean {
-  if (!allowedChoiceKeys) return true;
-  if (!/^chose\s/i.test(note)) return true;
-  return allowedChoiceKeys.has(choiceKey(note));
+function isAllowedNote(note: string, allowedLineKeys: Set<string> | null): boolean {
+  if (!allowedLineKeys) return true;
+  if (!/^played\s/i.test(note)) return true;
+  return allowedLineKeys.has(lineKey(note));
 }
 
 function capWords(text: string, maxWords: number): string {
@@ -243,10 +222,9 @@ function readItems(raw: unknown): unknown[] | null {
 }
 
 /**
- * Validate generated observations, assigning stable ids. Per-item validity only —
- * set-level trimming and the per-source guarantee live in selectObservations, so
- * that reading already-promoted items back does not re-run selection on a set
- * whose evidence blocks are no longer in hand.
+ * Validate stored observations, assigning stable ids. Per-item validity only —
+ * set-level trimming and the per-source guarantee are release's, applied when it
+ * stores a set (build plan 7.7).
  *
  * Unlike the growth-area question sets, a short set is a valid result and is kept
  * as-is: three well-evidenced patterns is a better page than eight padded to a
@@ -256,15 +234,15 @@ export function normalizeObservations(
   raw: unknown,
   opts?: {
     /**
-     * The exact child-choice lines this generation was given. Supply on the
-     * promote path so fabricated choices are dropped; omit when re-reading
+     * The exact child game-result lines this generation was given. Supply on
+     * the promote path so fabricated results are dropped; omit when re-reading
      * already-promoted items, whose evidence blocks are no longer in hand.
      */
-    allowedChoiceNotes?: readonly string[];
+    allowedChildLines?: readonly string[];
   },
 ): ObservationItem[] {
-  const allowedChoiceKeys = opts?.allowedChoiceNotes
-    ? new Set(opts.allowedChoiceNotes.map(choiceKey))
+  const allowedLineKeys = opts?.allowedChildLines
+    ? new Set(opts.allowedChildLines.map(lineKey))
     : null;
   const items = readItems(raw);
   if (!items) return [];
@@ -287,8 +265,8 @@ export function normalizeObservations(
       // resolves to '' and is dropped rather than rendering as a bare pair.
       .map(tidyNote)
       .filter(Boolean)
-      // Before the cap, so a fabricated choice cannot displace a real note.
-      .filter((n) => isAllowedNote(n, allowedChoiceKeys))
+      // Before the cap, so a fabricated game result cannot displace a real note.
+      .filter((n) => isAllowedNote(n, allowedLineKeys))
       .slice(0, MAX_NOTES_PER_OBSERVATION)
       .map((n) => capWords(n, NOTE_MAX_WORDS));
     // Rule 1: no evidence, no card.
@@ -318,126 +296,4 @@ export function normalizeObservations(
   }
 
   return out;
-}
-
-export interface ObservationSelection {
-  items: ObservationItem[];
-  /**
-   * Blocks that were in the prompt but that no surviving card cites. Non-empty
-   * means the provider ignored rule 5 and returned nothing to promote — the
-   * guarantee below can reorder candidates, it cannot invent one. Callers should
-   * surface this rather than let it pass as a complete set.
-   */
-  unrepresentedSources: ObservationSourceKey[];
-  /** Valid candidates cut by the display cap. Never drop these silently. */
-  dropped: number;
-}
-
-/**
- * Trim validated candidates to what the page shows, giving every offered evidence
- * block a slot before any block takes a second.
- *
- * This is the enforcement behind rule 5 of the prompt. The instruction alone was
- * not enough — an early run dropped an offered source entirely — and an
- * instruction cannot bind in any case. What this can guarantee: if a candidate
- * citing a given block exists, that block appears on the page. What it cannot:
- * manufacture a card the provider never produced. That case is reported via
- * `unrepresentedSources` instead of being hidden.
- *
- * `availableSources` must be in the order the prompt presented the blocks, so
- * reservation is deterministic rather than dependent on provider ordering.
- */
-export function selectObservations(
-  items: ObservationItem[],
-  availableSources: ObservationSourceKey[],
-): ObservationSelection {
-  const unrepresented = (kept: ObservationItem[]) =>
-    availableSources.filter((s) => !kept.some((o) => o.sources.includes(s)));
-
-  if (items.length <= MAX_OBSERVATIONS) {
-    return { items, unrepresentedSources: unrepresented(items), dropped: 0 };
-  }
-
-  const reserved = new Set<string>();
-  for (const source of availableSources) {
-    if (reserved.size >= MAX_OBSERVATIONS) break;
-    const first = items.find((o) => !reserved.has(o.id) && o.sources.includes(source));
-    if (first) reserved.add(first.id);
-  }
-  for (const item of items) {
-    if (reserved.size >= MAX_OBSERVATIONS) break;
-    reserved.add(item.id);
-  }
-
-  // Filter rather than emit in pick order, so reserving a low-ranked card does not
-  // yank it to the top of the grid — the provider's ordering is its own signal.
-  const kept = items.filter((o) => reserved.has(o.id));
-  return {
-    items: kept,
-    unrepresentedSources: unrepresented(kept),
-    dropped: items.length - kept.length,
-  };
-}
-
-/** Response schema for the generate_observations job. */
-export function observationsLlmSchema(): Record<string, unknown> {
-  return {
-    type: 'object',
-    properties: {
-      observations: {
-        type: 'array',
-        // The page shows exactly MAX_OBSERVATIONS, so that is the floor. The
-        // ceiling stays higher to leave selectObservations room to honour the
-        // per-source guarantee, and to absorb an item lost to validation.
-        minItems: MAX_OBSERVATIONS,
-        maxItems: MAX_GENERATED_CANDIDATES,
-        items: {
-          type: 'object',
-          properties: {
-            title: {
-              type: 'string',
-              maxLength: 60,
-              description:
-                'At most 8 words naming the pattern in the parent’s own vocabulary. Not a sentence, not a label.',
-            },
-            summary: {
-              type: 'string',
-              maxLength: 170,
-              description:
-                'One sentence, at most 28 words, describing what the parent reported. No diagnosis, no frequency claim.',
-            },
-            notes: {
-              type: 'array',
-              // Asks for 2 as the floor to push for substance, while
-              // normalizeObservations still accepts an item that comes back with
-              // one — losing a whole card costs more than a thin one, given the
-              // page needs six.
-              minItems: 2,
-              maxItems: MAX_NOTES_PER_OBSERVATION,
-              items: {
-                type: 'string',
-                maxLength: 140,
-                description:
-                  'A distinct, specific observation derived from the evidence — never a sentence copied out of it, and never a repeat of the summary or another note.',
-              },
-            },
-            icon: {
-              type: 'string',
-              enum: SELECTABLE_ICON_KEYS,
-              description: 'Closest matching icon key for this pattern.',
-            },
-            sources: {
-              type: 'array',
-              minItems: 1,
-              maxItems: OBSERVATION_SOURCES.length,
-              items: { type: 'string', enum: [...OBSERVATION_SOURCES] },
-              description: 'Every evidence block this observation actually draws on.',
-            },
-          },
-          required: ['title', 'summary', 'notes', 'icon', 'sources'],
-        },
-      },
-    },
-    required: ['observations'],
-  };
 }

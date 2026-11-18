@@ -4,15 +4,25 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import { api } from '@/api/client';
+import { account, displayName } from '@/api/account';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { ArrowLeft, Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Home, LogOut, VolumeX, Volume2, RotateCcw, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
+import ReturnFocus from '@/components/shared/ReturnFocus';
+import { startOverCopy } from '@/lib/startOverCopy';
+import ProfileChildren, { ChildAvatar } from '@/components/shared/ProfileChildren';
+import type { Child } from '@/api/children';
+import { useChildren } from '@/hooks/useChildren';
+import { useDeleteChild } from '@/hooks/useDeleteChild';
 import { useStartOver } from '@/hooks/useStartOver';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { childViewHome } from '@/lib/childView';
+import { childSubtitle } from '@/lib/childPaths';
+import { useAppBarHidden } from '@/lib/appBar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -45,6 +55,22 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
+  // The Children group is for parents; admins have no children.
+  const isParent = isAuthenticated && user?.role === 'parent';
+  const kids = useChildren(isParent);
+  const currentChild = kids.list.find((c) => c.id === navChildId);
+  const { deleteChild, deletingId } = useDeleteChild();
+  const [childToDelete, setChildToDelete] = useState<Child | null>(null);
+  // Child view (docs/child-view-build-plan.md, 1.2): the button and menu show the child.
+  const { view, enterChildView, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
+  // Hidden while a splash or the journey's warp plays (lib/appBar).
+  const barHidden = useAppBarHidden();
+  const viewChild = childView ? kids.list.find((c) => c.id === view.childId) : undefined;
+  const parentName = displayName(user) ?? 'You';
+  const profileName = childView ? (viewChild?.name ?? 'Child') : parentName;
+  const profileInitial = getInitials(profileName).charAt(0);
+  const viewLabel = childView ? 'Child view' : isParent ? 'Parent view' : 'Admin';
 
   // Global TTS control and cleanup on load
   useEffect(() => {
@@ -87,6 +113,20 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     return () => document.removeEventListener('keydown', handleKey);
   }, [profileOpen]);
 
+  /** Opening the profile panel moves focus into it (its first control); ReturnFocus, inside
+   *  it, gives focus back to the profile button when it closes. */
+  useEffect(() => {
+    if (!profileOpen) return;
+    const frame = requestAnimationFrame(() =>
+      profileRef.current
+        ?.querySelector<HTMLElement>(
+          '[role="dialog"] button:not([disabled]), [role="dialog"] a[href]',
+        )
+        ?.focus(),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [profileOpen]);
+
   /** Close profile panel on click outside. */
   useEffect(() => {
     if (!profileOpen) return;
@@ -105,10 +145,26 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
 
   const circleLabel = currentPageName ? CIRCLE_LABELS[currentPageName] : undefined;
 
+  const confirmDelete = useCallback(
+    async (child: Child) => {
+      setChildToDelete(null);
+      // Deleting the child whose page is open leaves nothing to show here.
+      if ((await deleteChild(child.id)) && child.id === navChildId) {
+        void navigate('/Home', { replace: true });
+      }
+    },
+    [deleteChild, navChildId, navigate],
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
-      <nav className="sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
+      <nav
+        className={cn(
+          'app-bar sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl',
+          barHidden && 'app-bar-hidden',
+        )}
+      >
         {/*
           Full-bleed on purpose — a max-w cap here pinned the wordmark and the
           controls ~350px in from the edges on a 1920 display. Padding only, and
@@ -181,7 +237,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
               </Button>
 
               {/* Start Over — shown on child-specific pages only */}
-              {isAuthenticated && navChildId && (
+              {isAuthenticated && navChildId && !childView && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -199,66 +255,147 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 <div className="relative" ref={profileRef}>
                   <button
                     onClick={() => setProfileOpen((prev) => !prev)}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-xs font-bold text-white ring-2 ring-transparent transition-all hover:scale-105 hover:ring-primary/40"
+                    className="profile-pill"
                     title="Your profile"
-                    aria-label="Your profile"
                     aria-expanded={profileOpen}
                     aria-haspopup="true"
                   >
-                    {getInitials(user?.full_name ?? user?.email ?? '?')}
+                    {/* Named by what it shows (the name and view, from sm up) and then "Your
+                        profile": a label replacing the visible text would hide it from voice
+                        control. */}
+                    {/* Child view: the child's photo when they have one (else their dot). */}
+                    {viewChild ? (
+                      <ChildAvatar child={viewChild} className="h-8 w-8 text-[13px]" />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'avatar-dot h-8 w-8 text-[13px]',
+                          childView ? 'avatar-dot-child' : 'avatar-dot-parent',
+                        )}
+                      >
+                        {profileInitial}
+                      </span>
+                    )}
+                    {/* Name and view beside the dot from sm up; a 375px header has no room. */}
+                    <span className="hidden flex-col items-start gap-0.5 leading-tight sm:flex">
+                      <span className="max-w-32 truncate text-sm font-bold">{profileName}</span>
+                      <span className="profile-label">{viewLabel}</span>
+                    </span>
+                    <span className="sr-only">Your profile</span>
                   </button>
 
                   {profileOpen && (
                     <div
                       role="dialog"
                       aria-label="User profile"
-                      className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-surface-elevated shadow-2xl"
+                      className="profile-panel absolute right-0 top-full z-50 mt-2 w-72"
                     >
-                      {/* Header gradient strip */}
-                      <div className="bg-gradient-to-r from-primary-dark/30 to-success-strong/20 px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-lg font-bold text-white shadow-lg">
-                            {getInitials(user?.full_name ?? user?.email ?? '?')}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-card-foreground">
-                              {user?.full_name ?? 'User'}
-                            </p>
-                            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                              <Mail className="h-3 w-3 shrink-0" />
-                              {user?.email ?? ''}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                      <ReturnFocus />
+                      <p className="profile-heading">Signed-in profile</p>
 
-                      {/* Divider */}
-                      <div className="border-t border-border" />
+                      {childView ? (
+                        <>
+                          {/* Child view: only the child, and the way back to parent view. */}
+                          <div className="profile-row profile-row-selected">
+                            {viewChild ? (
+                              <ChildAvatar child={viewChild} />
+                            ) : (
+                              <span className="avatar-dot avatar-dot-child h-7 w-7 text-xs">
+                                {profileInitial}
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="profile-name block">{profileName}</span>
+                              <span className="profile-desc block">
+                                {viewChild ? childSubtitle(viewChild) : 'Child view'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="profile-divider" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfileOpen(false);
+                              const childId = view.childId;
+                              exitChildView();
+                              void navigate(`/PersonalityJourney/${childId}`);
+                            }}
+                            className="profile-link"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            Back to parent view
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* The signed-in parent: the profile this view belongs to. */}
+                          <div className="profile-row profile-row-selected">
+                            <span className="avatar-dot avatar-dot-parent h-7 w-7 text-xs">
+                              {profileInitial}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="profile-name block">{profileName}</span>
+                              <span className="profile-desc block">
+                                {isParent ? 'Parent · sees everything' : 'Admin'}
+                              </span>
+                            </span>
+                          </div>
 
-                      {/* Navigation + actions */}
-                      <div className="p-2">
-                        <Link
-                          to={createPageUrl('Home')}
-                          onClick={() => setProfileOpen(false)}
-                          className={cn(
-                            'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent',
-                            currentPageName === 'Home' ? 'text-primary' : 'text-muted-foreground',
+                          {isParent && (
+                            <ProfileChildren
+                              list={kids.list}
+                              isLoading={kids.isLoading}
+                              isLoadingError={kids.isLoadingError}
+                              isFetching={kids.isFetching}
+                              onRetry={() => void kids.refetch()}
+                              currentChildId={navChildId}
+                              onClose={() => setProfileOpen(false)}
+                              onDelete={setChildToDelete}
+                              onChildView={(child: Child) => {
+                                enterChildView(child.id);
+                                void navigate(childViewHome(child.id));
+                              }}
+                            />
                           )}
-                        >
-                          <Home className="h-4 w-4" />
-                          Home
-                        </Link>
-                        <button
-                          onClick={() => {
-                            setProfileOpen(false);
-                            handleLogout();
-                          }}
-                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-error-medium/10 hover:text-error"
-                        >
-                          <LogOut className="h-4 w-4" />
-                          Sign out
-                        </button>
-                      </div>
+
+                          <div className="profile-divider" />
+
+                          {/* Navigation + actions */}
+                          <Link
+                            to={createPageUrl('Home')}
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'profile-link',
+                              currentPageName === 'Home' && 'profile-link-active',
+                            )}
+                          >
+                            <Home className="h-4 w-4" />
+                            Home
+                          </Link>
+                          <Link
+                            to={createPageUrl('AccountSettings')}
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'profile-link',
+                              currentPageName === 'AccountSettings' && 'profile-link-active',
+                            )}
+                          >
+                            <Settings className="h-4 w-4" />
+                            Account settings
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setProfileOpen(false);
+                              handleLogout();
+                            }}
+                            className="profile-link hover:text-error"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            Sign out
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -270,7 +407,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    void api.auth.redirectToLogin();
+                    void account.redirectToLogin();
                   }}
                   className="border-border text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
@@ -282,18 +419,37 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
         </div>
       </nav>
 
-      {/* Back — below the header, navigates to the previous route */}
-      <div className="px-4 pt-4 sm:px-6 lg:px-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void navigate(-1)}
-          className="text-muted-foreground hover:bg-accent hover:text-foreground"
+      {/* Back — below the header, navigates to the previous route. Not on the kids page,
+          whose own header has the Back to the circles, nor on the journey in child view: it's
+          the child's home, with nowhere to go back to. On the right, in parent view, the child
+          whose page this is, so a parent of several can tell (child view is that child's own). */}
+      {currentPageName !== 'Kids' && !(childView && currentPageName === 'PersonalityJourney') && (
+        <div
+          className={cn(
+            'app-bar flex items-center justify-between gap-3 px-4 pt-4 sm:px-6 lg:px-10',
+            barHidden && 'app-bar-hidden',
+          )}
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-      </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void navigate(-1)}
+            className="text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          {!childView && currentChild && (
+            <p className="page-child" data-testid="page-child">
+              <ChildAvatar child={currentChild} className="h-[22px] w-[22px] text-[10px]" />
+              <span className="min-w-0 truncate">
+                <span className="sr-only">Child: </span>
+                {currentChild.name}
+              </span>
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Page Content */}
       {children}
@@ -307,6 +463,19 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
               void doStartOver();
             }}
             isStartingOver={isStartingOver}
+            {...startOverCopy(currentChild?.name)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {childToDelete && (
+          <ConfirmModal
+            onCancel={() => setChildToDelete(null)}
+            onConfirm={() => void confirmDelete(childToDelete)}
+            isStartingOver={deletingId !== null}
+            title={`Delete ${childToDelete.name}?`}
+            description="Their profile, chat, results and plan are deleted for good."
           />
         )}
       </AnimatePresence>

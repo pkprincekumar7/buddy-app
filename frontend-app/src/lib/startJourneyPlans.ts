@@ -2363,16 +2363,6 @@ export const FB_TAGS = [
 ] as const;
 export type FeedbackTag = (typeof FB_TAGS)[number];
 
-export const FB_ACK: Record<FeedbackTag, string> = {
-  'Too hard':
-    'Eased right away \u2014 the session targets below are lower now.',
-  'Too easy':
-    'Raised right away \u2014 the session targets below are higher now.',
-  'No time this week':
-    'Relaxed \u2014 one session is enough here, on no fixed schedule.',
-  'Loved it': 'Noted \u2014 more of this kind of activity next month.',
-};
-
 /** Adjusts a count field's target based on the feedback tag applied to its activity. */
 export function adjTarget(
   tag: FeedbackTag | null | undefined,
@@ -2618,8 +2608,8 @@ export const TRACK: TrackStep[] = [
 ];
 
 /**
- * Zips LLM-generated tracker text (title/short/when/body/fields — see
- * `buildNinetyDayTrackerPrompt` in `@/lib/ninetyDayPlanPrompt`) onto this
+ * Zips the generated tracker text (title/short/when/body/fields, written by
+ * transform's `event_tracker` generation) onto this
  * template's structural shell — icon paths, the photo-import flag, and which
  * step gets the 4-week sittings grid are design decisions fixed by position,
  * never left to the model. Falls back to the template's own text field-by-field

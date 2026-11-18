@@ -35,54 +35,6 @@ function nameToColor(name: string): string {
 }
 
 /**
- * Strips `image` from every `profile.famous_people` entry before persisting
- * the view_model to the backend.
- *
- * SVG data-URI avatars (`data:image/svg+xml;…`) embedded in the JSON body
- * trigger the AWS WAF Core Rule Set's CrossSiteScripting_BODY rule (the rule
- * URL-decodes the body and sees `<svg>/<text>` tags). Stripping images before
- * the API call keeps the payload WAF-safe. On next load, `sanitizeViewModelAvatars`
- * regenerates the avatars from the person's name, so the UI is unaffected.
- */
-export function stripViewModelImages(vm: Record<string, unknown>): Record<string, unknown> {
-  const profile = vm?.profile;
-  if (!profile || typeof profile !== 'object') return vm;
-  const people = (profile as Record<string, unknown>).famous_people;
-  if (!Array.isArray(people)) return vm;
-  const stripped = people.map((person: unknown) => {
-    if (!person || typeof person !== 'object') return person;
-    const { image: _image, ...rest } = person as Record<string, unknown>;
-    return rest;
-  });
-  return {
-    ...vm,
-    profile: { ...(profile as Record<string, unknown>), famous_people: stripped },
-  };
-}
-
-export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<string, unknown> {
-  const profile = vm?.profile;
-  if (!profile || typeof profile !== 'object') return vm;
-  const people = (profile as Record<string, unknown>).famous_people;
-  if (!Array.isArray(people)) return vm;
-
-  const sanitizedPeople = people.map((person: unknown) => {
-    if (!person || typeof person !== 'object') return person;
-    const p = person as Record<string, unknown>;
-    const img = p.image;
-    const isSafe = typeof img === 'string' && img.startsWith('data:image/');
-    if (isSafe) return p;
-    const name = typeof p.name === 'string' ? p.name : 'Guide';
-    return { ...p, image: generateAvatarDataUri(name) };
-  });
-
-  return {
-    ...vm,
-    profile: { ...(profile as Record<string, unknown>), famous_people: sanitizedPeople },
-  };
-}
-
-/**
  * Generates an initials avatar as an inline SVG data URI.
  * Safe for use in <img src> or CSS url() — no external requests.
  */

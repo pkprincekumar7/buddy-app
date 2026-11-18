@@ -1,55 +1,47 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import Animated from 'react-native-reanimated';
-import { useIsFocused } from '@react-navigation/native';
-import { useQuery } from '@tanstack/react-query';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import { api } from '@/api/client';
-import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
-import { mergeChildDraft } from '@/lib/onboardingHelpers';
-import Spinner from '@/components/shared/Spinner';
-import {
-  adaptAiPersonalityToViewModel,
-  PERSONALITY_TYPE_KEYS,
-} from '@/components/shared/PersonalityAnalysis';
-import {
-  sanitizeViewModelAvatars,
-  stripViewModelImages,
-} from '@/lib/avatarUtils';
-import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
-import { personalityLlmSchema } from '@/lib/llmSchemas';
-import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
-import { useJob } from '@/hooks/useJob';
+import PageLoader from '@/components/shared/PageLoader';
+import { useHideAppBar } from '@/lib/appBar';
+import { discover } from '@/api/discover';
+import { useJourney } from '@/hooks/useJourney';
 import { useStartOver } from '@/hooks/useStartOver';
 import { useNavigate, useParams } from '@/lib/router';
 import StageSplash from '@/components/shared/StageSplash';
 import { ConfirmModal as StartOverConfirmModal } from '@/components/shared/StartOverButton';
+import { startOverCopy } from '@/lib/startOverCopy';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import PageBackRow from '@/components/layout/PageBackRow';
 import BuddyOrbScreen from '@/components/personalityJourney/BuddyOrbScreen';
 import DimensionCirclesScreen from '@/components/personalityJourney/DimensionCirclesScreen';
 import WarpOverlay from '@/components/personalityJourney/WarpOverlay';
 import {
+  LAND_IN,
   SCOPE_DOLLY,
-  fadeIn,
+  preEnter,
 } from '@/components/personalityJourney/animations';
 import type { ActiveDimension } from '@/components/personalityJourney/geometry';
 import { useJourneyViewport } from '@/components/personalityJourney/viewport';
 import { css, recipe, rgb } from '@/theme';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { kidsPath, type KidsArea } from '@/lib/childView';
 
 type Phase = 1 | 2;
 
 const ORB_VOICE = require('../../assets/audio/orb-voice.mp3');
-/** Height of the Layout's Back row (pt-4 + h-8 sm button) above the page content. */
+/** Height of the Layout's Back row (pt-4 + h-8 sm button) above the page content; none in
+ * child view (the journey is the child's home). */
 const BACK_ROW_H = 48;
 const NAVY_DEEP = rgb('constellation-navy-deep');
 const AMBIENT_BLOB = css(
   'radial-gradient(circle, rgb(var(--constellation-teal-deep-rgb) / 0.35) 0%, transparent 60%)',
 );
-const PHASE1_FADE = fadeIn(0.3);
 
 function pausePlayer(p: VideoPlayer | null) {
   try {
@@ -66,52 +58,120 @@ export default function PersonalityJourney() {
   const { childId, sub } = useParams<{ childId?: string; sub?: string }>();
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const viewport = useJourneyViewport();
+  const reduceMotion = useReducedMotion();
+  // Set a frame after the orb screen is laid out: its landing starts then.
+  const [landReady, setLandReady] = useState(false);
   const isFocused = useIsFocused();
   const phase: Phase = sub === 'DimensionCircles' ? 2 : 1;
-  const [mergedData, setMergedData] = useState<Record<string, unknown>>({});
-  const [childName, setChildName] = useState('');
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [initError, setInitError] = useState(false);
   const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
-  const [discoverCompleted, setDiscoverCompleted] = useState(false);
-  const [growCompleted, setGrowCompleted] = useState(false);
-  const [transformVisited, setTransformVisited] = useState(false);
-  const [releaseVisited, setReleaseVisited] = useState(false);
-  const [connectVisited, setConnectVisited] = useState(false);
+  // Set once the Discover splash has ended and the profile is being opened (see
+  // handleDiscoverSplashReady).
+  const leavingForProfileRef = useRef(false);
+  const [discoverViewed, setDiscoverViewed] = useState(false);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const { doStartOver, isStartingOver } = useStartOver(childId);
+  // Child view (docs/child-view-build-plan.md, 1.3): each circle opens the kids page.
+  const { view, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
 
-  const handleDiscoverSplashReady = useCallback(() => {
-    setShowDiscoverSplash(false);
-    if (childId && !discoverCompleted) {
-      setDiscoverCompleted(true);
-      api.entities.Child.markProgress(childId, 'discover_completed').catch(
-        console.error,
-      );
-    }
-    void navigate(`/PersonalityProfile/${childId ?? ''}`);
-  }, [navigate, childId, discoverCompleted]);
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(
-    null,
+  // The child and its personality (build plan 7.5): discover generates the personality on
+  // its own once the chat is saved, so the hub only waits for it (or retries a failure).
+  const { journey, retry, refreshChild } = useJourney(
+    childId,
+    !isLoadingAuth && isAuthenticated,
   );
-  const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
-  // Grow unlocks Transform once at least one of the six growth areas is completed.
-  // `growCompleted` (child.grow_completed) is itself computed live server-side
-  // from the growth_areas collection (backend/app/services/journey_progress.py) —
-  // it can no longer go stale or be forged. `hasCompletedGrowthArea` re-runs the
-  // same check client-side via completedGrowthAreas.list; the two are redundant
-  // today (kept as belt-and-suspenders) rather than each independently necessary.
-  const { data: completedGrowthAreasData } = useQuery({
-    queryKey: ['completedGrowthAreas', childId],
-    queryFn: () => api.completedGrowthAreas.list(childId ?? ''),
-    enabled: phase === 2 && Boolean(childId),
-  });
-  const hasCompletedGrowthArea =
-    completedGrowthAreasData?.areas?.some(a => a.status === 'completed') ??
-    false;
-  const growUnlocksTransform = growCompleted && hasCompletedGrowthArea;
+  // Coming back from a circle: the stack kept this screen mounted with the progress it
+  // loaded when it opened, so a circle just completed (e.g. Release, which unlocks
+  // Connect) wouldn't show. Re-read it on every return, and once more a moment later:
+  // a circle's completion reaches the child's progress through an event, which can land
+  // just after the parent is back.
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!focusedBefore.current) {
+        focusedBefore.current = true; // the first load is useJourney's own
+        return;
+      }
+      void refreshChild();
+      const again = setTimeout(() => void refreshChild(), 2500);
+      return () => clearTimeout(again);
+    }, [refreshChild]),
+  );
+  // The Discover splash is a Portal, above every screen, and the stack keeps this one
+  // mounted: it's taken down as the profile opens (this screen loses focus), or it
+  // would stay over the profile.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        setShowDiscoverSplash(false);
+        leavingForProfileRef.current = false;
+      },
+      [],
+    ),
+  );
+  const child = 'child' in journey ? journey.child : null;
+  const childName = child?.name ?? '';
+  const isAnalyzing = journey.status === 'analyzing';
+
+  // Each circle's state, set by the services when it's completed (build plan 7.4).
+  // In child view they follow what the child has done there instead (child view's own
+  // order, decided 2026-11-11): each circle opens once the one before is done in child view.
+  const kidDone = useKidActivity(childView ? childId : undefined).activity
+    ?.circles_done;
+  const done = (kid: boolean | undefined, parent: boolean) =>
+    childView ? Boolean(kid) : parent;
+  const discoverCompleted = done(
+    kidDone?.discover,
+    discoverViewed || Boolean(child?.progress.discover),
+  );
+  const growCompleted = done(kidDone?.grow, Boolean(child?.progress.grow));
+  const transformCompleted = done(
+    kidDone?.transform,
+    Boolean(child?.progress.transform),
+  );
+  const releaseCompleted = done(
+    kidDone?.release,
+    Boolean(child?.progress.release),
+  );
+  const connectVisited = done(
+    kidDone?.connect,
+    Boolean(child?.progress.connect),
+  );
+
+  // The splash stays up (on its last frame) until the profile opens: hiding it first would
+  // show the hub's circles while `viewed` is recorded. That's awaited before navigating, so
+  // the profile's Grow button finds Discover done. Once only, however often onReady fires.
+  // The splash comes down when this screen loses focus to the profile (above).
+  const handleDiscoverSplashReady = useCallback(() => {
+    if (leavingForProfileRef.current) return;
+    leavingForProfileRef.current = true;
+    void (async () => {
+      if (childView) {
+        // The child's Discover: no `viewed`, so the parent still sees the reveal first.
+        if (childId) void navigate(kidsPath(childId, 'discover'));
+        return;
+      }
+      if (childId && !discoverCompleted) {
+        setDiscoverViewed(true);
+        // Passing the reveal makes Discover done; children then unlocks Grow.
+        await discover
+          .viewed(childId)
+          .catch((err: unknown) =>
+            console.warn('[PersonalityJourney] viewed failed:', err),
+          );
+      }
+      void navigate(`/PersonalityProfile/${childId ?? ''}`);
+    })();
+  }, [navigate, childId, discoverCompleted, childView]);
+
+  // A circle's page: the parent's, or in child view the kids page at that circle.
+  const circlePath = (area: KidsArea, parentPath: string) =>
+    childView && childId ? kidsPath(childId, area) : parentPath;
+
+  // Grow unlocks Transform once one of the six growth areas is completed: grow publishes
+  // `grow.completed` then, and children sets `progress.grow`, so the client can't forge it.
+  const growUnlocksTransform = growCompleted;
 
   // The frontier circle the hub's glow/dots should point to: the next step the
   // user hasn't reached yet in Discover → Grow → Transform → Release → Connect.
@@ -120,9 +180,9 @@ export default function PersonalityJourney() {
     ? 'discover'
     : !growUnlocksTransform
     ? 'grow'
-    : !transformVisited
+    : !transformCompleted
     ? 'transform'
-    : !releaseVisited
+    : !releaseCompleted
     ? 'release'
     : !connectVisited
     ? 'connect'
@@ -131,6 +191,8 @@ export default function PersonalityJourney() {
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
   const { ttsEnabled: soundOn } = useTts();
   const [isEntering, setIsEntering] = useState(false);
+  // No app bar during the warp: it comes back with the circles.
+  useHideAppBar(isEntering);
   const enterTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Play intro voice when orb screen (phase 1) is active — mirrors HTML's playVoice().
@@ -202,220 +264,48 @@ export default function PersonalityJourney() {
   };
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const markJourneyComplete = useCallback(async () => {
-    if (!childId) return;
-    try {
-      await api.entities.Child.update(childId, {
-        onboarding_phase: 3,
-        onboarding_completed: true,
-      });
-    } catch {
-      /* non-fatal */
-    }
-  }, [childId]);
-
-  const finalizePersonality = useCallback(async () => {
-    if (!childId) return;
-    try {
-      const child = await api.entities.Child.get(childId);
-      const personality = child?.personality;
-      const pendingVm = (child?.pending_personality_vm ??
-        personality?.pending_view_model) as Record<string, unknown> | undefined;
-      const merged = mergedDataRef.current;
-
-      let vm: Record<string, unknown> | null = null;
-      if (pendingVm && merged) {
-        const adapted = adaptAiPersonalityToViewModel(
-          pendingVm,
-          merged.name as string,
-        );
-        vm = sanitizeViewModelAvatars(adapted);
-        api.entities.Child.update(childId, {
-          personality: {
-            source: 'llm',
-            view_model: stripViewModelImages(adapted),
-          },
-          onboarding_phase: 2,
-        }).catch(err =>
-          console.error(
-            '[PersonalityJourney] Failed to persist personality:',
-            err,
-          ),
-        );
-      } else if (personality?.view_model?.profile?.name) {
-        vm = sanitizeViewModelAvatars(
-          maybeClampStoredPersonalityDescription(personality.view_model, {
-            analysisSource: personality?.source,
-          }),
-        );
-      }
-
-      void vm;
-      setIsAnalyzing(false);
-      await markJourneyComplete();
-    } catch (err) {
-      console.error(
-        '[PersonalityJourney] Failed to finalize personality:',
-        err,
-      );
-      setIsAnalyzing(false);
-      setInitError(true);
-    }
-  }, [childId, markJourneyComplete]);
-
-  const job = useJob({
-    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
-    jobType: 'generate_personality_analysis',
-    onCompleted: finalizePersonality,
-  });
-
-  const { enqueue: enqueueJob } = job;
-
-  // Surface job failures as page error
-  useEffect(() => {
-    if (job.isFailed) {
-      setIsAnalyzing(false);
-      setInitError(true);
-    }
-  }, [job.isFailed]);
-
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
       void navigate('/Onboarding', { replace: true });
-      return;
-    }
-    if (!childId) {
+    } else if (!childId || journey.status === 'missing') {
+      // In child view Home would bounce straight back here: leave child view first.
+      if (childView) exitChildView();
       void navigate('/Home', { replace: true });
-      return;
+    } else if (journey.status === 'locked') {
+      // The chat isn't done yet: back to it. Child view can't open the chat (its guard would
+      // send it straight back here), so it ends first: the chat is the parent's to finish.
+      if (childView) exitChildView();
+      void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
     }
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const child = await api.entities.Child.get(childId);
-        if (cancelled) return;
-        if (!child) {
-          void navigate('/Home', { replace: true });
-          return;
-        }
-
-        const personality = child.personality;
-        const vm = personality?.view_model;
-        const merged = mergeChildDraft(
-          normalizeOnboardingChildDataBlob(child) ?? {},
-        );
-        mergedDataRef.current = merged;
-        setChildName(merged.name || '');
-        setMergedData(merged);
-        setDiscoverCompleted(Boolean(child.discover_completed));
-        setGrowCompleted(Boolean(child.grow_completed));
-        setTransformVisited(Boolean(child.transform_visited));
-        setReleaseVisited(Boolean(child.release_visited));
-        setConnectVisited(Boolean(child.connect_visited));
-
-        if (vm?.profile?.name) {
-          // Personality already analysed — show orb immediately, fully interactive
-          setIsInitializing(false);
-          if (!child.onboarding_completed) {
-            await markJourneyComplete();
-          }
-          return;
-        }
-
-        // No complete personality yet — need to run or resume analysis
-        if (!merged.name?.trim()) {
-          void navigate(`/ConversationalOnboarding/${childId}`, {
-            replace: true,
-          });
-          return;
-        }
-
-        // Check for pending_personality_vm (LLM done but write-back not yet saved as view_model)
-        const pendingVm = (child.pending_personality_vm ??
-          personality?.pending_view_model) as
-          | Record<string, unknown>
-          | undefined;
-        if (pendingVm) {
-          const adapted = adaptAiPersonalityToViewModel(pendingVm, merged.name);
-          if (cancelled) return;
-          setIsInitializing(false);
-          api.entities.Child.update(childId, {
-            personality: {
-              source: 'llm',
-              view_model: stripViewModelImages(adapted),
-            },
-            onboarding_phase: 2,
-          }).catch(console.error);
-          await markJourneyComplete();
-          return;
-        }
-
-        // Show orb in analyzing state while job runs in background
-        setChildData(child);
-        setIsAnalyzing(true);
-        setIsInitializing(false);
-
-        // Only enqueue if no job is already running
-        const activeJobId = child.active_jobs?.generate_personality_analysis;
-        if (!activeJobId) {
-          await enqueueJob({
-            type: 'generate_personality_analysis',
-            child_id: childId,
-            payload: {
-              prompt: buildPersonalityAnalysisPrompt({
-                childData: merged,
-                personalityTypeKeys: PERSONALITY_TYPE_KEYS,
-              }),
-              response_json_schema: personalityLlmSchema(),
-            },
-            write_back: {
-              collection: 'children',
-              filter: {},
-              field: 'pending_personality_vm',
-            },
-          });
-        }
-        // else: useJob picks up activeJobId from setChildData(child) and polls automatically
-      } catch (err) {
-        console.warn('[PersonalityJourney] Load failed:', err);
-        if (!cancelled) {
-          setInitError(true);
-          setIsInitializing(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     isLoadingAuth,
     isAuthenticated,
     childId,
+    journey.status,
     navigate,
-    markJourneyComplete,
-    enqueueJob,
+    childView,
+    exitChildView,
   ]);
 
   const status =
-    isLoadingAuth || isInitializing ? 'loading' : initError ? 'error' : 'ready';
+    journey.status === 'failed'
+      ? 'error'
+      : isLoadingAuth || !child
+      ? 'loading'
+      : 'ready';
 
   if (status === 'loading') {
     return (
       <View className="flex-1 bg-background">
-        <PageBackRow />
-        <View
-          className="flex-1 items-center justify-center"
+        {!childView && <PageBackRow />}
+        <PageLoader
           style={{ backgroundColor: NAVY_DEEP }}
-        >
-          <Spinner
-            style={{
-              borderColor: rgb('constellation-cyan-bright', 0.6),
-              borderTopColor: 'transparent',
-            }}
-          />
-        </View>
+          spinnerStyle={{
+            borderColor: rgb('constellation-cyan-bright', 0.6),
+            borderTopColor: 'transparent',
+          }}
+        />
       </View>
     );
   }
@@ -423,29 +313,43 @@ export default function PersonalityJourney() {
   if (status === 'error') {
     return (
       <View className="flex-1 bg-background">
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View className="flex-1 items-center justify-center gap-4 px-4">
-          <Text className="text-muted-foreground">
-            Something went wrong. Please try again.
+          <Text className="text-center text-muted-foreground">
+            {journey.status === 'failed'
+              ? journey.message
+              : 'Something went wrong. Please try again.'}
           </Text>
-          <Button
-            onPress={() => void navigate('/Home')}
-            className="rounded-2xl px-8 font-semibold text-primary-foreground"
-            style={recipe.btnPrimary}
-          >
-            Go Back
-          </Button>
+          <View className="flex-row gap-3">
+            <Button
+              onPress={retry}
+              className="rounded-2xl px-8 font-semibold text-primary-foreground"
+              style={recipe.btnPrimary}
+            >
+              Try again
+            </Button>
+            <Button
+              variant="outline"
+              onPress={() => void navigate('/Home')}
+              className="rounded-2xl px-8"
+            >
+              Go Back
+            </Button>
+          </View>
         </View>
       </View>
     );
   }
 
   const { width, vh } = viewport;
+  // The window's centre (where the warp's stars start) below the screens' top, under the Back
+  // row: the orb and the hub are centred there.
+  const centerY = viewport.centerY - (childView ? 0 : BACK_ROW_H);
 
   return (
     <View className="flex-1 bg-background">
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <PageBackRow />
+        {!childView && <PageBackRow />}
         <View
           style={{
             minHeight: vh,
@@ -459,7 +363,7 @@ export default function PersonalityJourney() {
             style={{
               position: 'absolute',
               left: width / 2 - 350,
-              top: vh / 2 - 64 - BACK_ROW_H - 350,
+              top: centerY - 350,
               width: 700,
               height: 700,
               borderRadius: 350,
@@ -471,15 +375,28 @@ export default function PersonalityJourney() {
             {phase === 1 && (
               <Animated.View
                 style={[
-                  { minHeight: vh },
-                  isEntering ? SCOPE_DOLLY : PHASE1_FADE,
+                  // The zoom goes into the orb, at its centre.
+                  {
+                    minHeight: vh,
+                    transformOrigin: [width / 2, centerY, 0],
+                  },
+                  // Transparent until the landing takes hold (animations.preEnter). It starts a
+                  // frame after the screen is laid out: building the screen can hold the UI for
+                  // longer than the landing (iOS), which would otherwise be over before it's seen.
+                  preEnter(reduceMotion),
+                  isEntering ? SCOPE_DOLLY : landReady ? LAND_IN : null,
                 ]}
+                onLayout={() => {
+                  if (!landReady)
+                    requestAnimationFrame(() => setLandReady(true));
+                }}
               >
                 <BuddyOrbScreen
                   childName={childName}
                   isAnalyzing={isAnalyzing}
                   onTap={handleEnterNav}
                   viewport={viewport}
+                  centerY={centerY}
                 />
               </Animated.View>
             )}
@@ -487,28 +404,43 @@ export default function PersonalityJourney() {
             {phase === 2 && (
               <DimensionCirclesScreen
                 childName={childName}
-                mergedData={mergedData}
-                onConnect={() => void navigate(`/Connect/${childId ?? ''}`)}
+                onConnect={() =>
+                  void navigate(
+                    circlePath('connect', `/Connect/${childId ?? ''}`),
+                  )
+                }
                 onDiscover={() => setShowDiscoverSplash(true)}
                 onGoHome={() =>
                   void navigate(`/PersonalityJourney/${childId ?? ''}`)
                 }
-                onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
+                onGrow={() =>
+                  void navigate(
+                    circlePath('grow', `/GrowthAreas/${childId ?? ''}`),
+                  )
+                }
                 onTransform={() =>
-                  void navigate(`/LifePathway/${childId ?? ''}`)
+                  void navigate(
+                    circlePath('transform', `/LifePathway/${childId ?? ''}`),
+                  )
                 }
                 onRelease={() =>
-                  void navigate(`/Observations/${childId ?? ''}`)
+                  void navigate(
+                    circlePath('release', `/Observations/${childId ?? ''}`),
+                  )
                 }
-                onStartAgain={() => setConfirmingStartOver(true)}
+                {...(!childView && {
+                  onStartAgain: () => setConfirmingStartOver(true),
+                })}
+                childView={childView}
                 enabled={{
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
-                  release: transformVisited,
-                  connect: transformVisited,
+                  release: transformCompleted,
+                  connect: releaseCompleted,
                 }}
                 current={currentDimension}
                 viewport={viewport}
+                centerY={centerY}
               />
             )}
           </View>
@@ -519,7 +451,7 @@ export default function PersonalityJourney() {
       {isEntering && <WarpOverlay />}
 
       {showDiscoverSplash && (
-        <StageSplash stage={2} onReady={handleDiscoverSplashReady} />
+        <StageSplash stage={2} portal onReady={handleDiscoverSplashReady} />
       )}
 
       <StartOverConfirmModal
@@ -530,6 +462,7 @@ export default function PersonalityJourney() {
           void doStartOver();
         }}
         isStartingOver={isStartingOver}
+        {...startOverCopy(child?.name)}
       />
     </View>
   );

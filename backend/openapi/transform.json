@@ -1,0 +1,1542 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "transform",
+    "description": "Transform: each child's Life Pathway and 90-day plan with its tracker.",
+    "contact": {
+      "name": "Superpower Engineering",
+      "email": "prince.kumar@pearson.com"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current environment"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health",
+        "description": "Liveness check for the load balancer.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform": {
+      "get": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Get Transform",
+        "description": "The Life Pathway (each completed growth area with its milestones) and the 90-day plan with its tracker; photos with their keys and short-lived URLs. An admin with `children:read:any` passes the owner's `?location=` (audited).",
+        "operationId": "get_transform_api_v1_children__id__transform_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_-]{1,16}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The owner's location (admins only)",
+              "title": "Location"
+            },
+            "description": "The owner's location (admins only)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transform"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Patch Transform",
+        "description": "Save the parent's work on the 90-day plan, made on the plan's `version` (from the last GET or PATCH): if the plan was saved since (another device), nothing changes and it's `409 plan_changed`; reload and apply the change again. Each field sent replaces the stored one (`photos`: each field key sent replaces that field's keys; a photo no longer in any field is deleted). A change to `ask` or the Day-90 event, or `clear_track_steps`, ends a plan or tracker generation still building from the old one. Setting the Day-90 event once the plan exists completes Transform (`transform.completed`).",
+        "operationId": "patch_transform_api_v1_children__id__transform_patch",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transform"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/generation": {
+      "post": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Start Generation",
+        "description": "Generate one of Transform's AI parts (`kind`): an area's Life Pathway milestones (`area_id`, a completed growth area), the 90-day `plan` (needs the parent's `ask`), or the `event_tracker` (needs the plan and the Day-90 event). The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).",
+        "operationId": "start_generation_api_v1_children__id__transform_generation_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Started"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The job already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Started"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/generation/{job_id}": {
+      "get": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Get Job",
+        "description": "A transform job's status. When `completed`, reload the transform.",
+        "operationId": "get_job_api_v1_children__id__transform_generation__job_id__get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/photos/presign": {
+      "post": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Presign Photo",
+        "description": "A 5-minute form upload of a plan photo straight to S3: POST `upload_fields`, then the file as `file`, to `upload_url`; S3 refuses another key or type, or over 5 MB. Then add `photo_key` to `photos[field_key]` with PATCH (which checks the photo again).",
+        "operationId": "presign_photo_api_v1_children__id__transform_photos_presign_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/quests": {
+      "get": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Get Quests",
+        "description": "The child's quests in child view: the interests, the quests and their counts, and which were logged on the child's `date`. Parents only.",
+        "operationId": "get_quests_api_v1_children__id__transform_quests_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's day, YYYY-MM-DD",
+              "title": "Date"
+            },
+            "description": "The child's day, YYYY-MM-DD"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidQuests"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/quests/current": {
+      "put": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Put Current Interest",
+        "description": "Show an interest's quests: the plan's own, or one the child adds (kept in `interests`). Parents only.",
+        "operationId": "put_current_interest_api_v1_children__id__transform_quests_current_put",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's day, YYYY-MM-DD",
+              "title": "Date"
+            },
+            "description": "The child's day, YYYY-MM-DD"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CurrentIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidQuests"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/transform/quests/log": {
+      "post": {
+        "tags": [
+          "transform"
+        ],
+        "summary": "Log Quest",
+        "description": "The child did a quest today: `+1` to its count, once a day (a day after the last one logged) and up to its target (anything more changes nothing). A counted log publishes `transform.quest_logged` in the same transaction (children gives the star and marks Transform done in child view from it). The interest must be the plan's or one the child added (`409 interest_not_picked`). Parents only.",
+        "operationId": "log_quest_api_v1_children__id__transform_quests_log_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "The child's day, YYYY-MM-DD",
+              "title": "Date"
+            },
+            "description": "The child's day, YYYY-MM-DD"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestLog"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidQuests"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AreaView": {
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "title": "Area Id"
+          },
+          "area_name": {
+            "type": "string",
+            "title": "Area Name"
+          },
+          "recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendations"
+          },
+          "ai_three_month_recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Three Month Recommendations"
+          },
+          "life_pathway_milestones": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Life Pathway Milestones"
+          },
+          "life_pathway_generating": {
+            "type": "boolean",
+            "title": "Life Pathway Generating"
+          }
+        },
+        "type": "object",
+        "required": [
+          "area_id",
+          "area_name",
+          "recommendations",
+          "ai_three_month_recommendations",
+          "life_pathway_milestones",
+          "life_pathway_generating"
+        ],
+        "title": "AreaView"
+      },
+      "CurrentIn": {
+        "properties": {
+          "interest": {
+            "type": "string",
+            "enum": [
+              "football",
+              "drawing",
+              "music",
+              "building",
+              "cooking",
+              "space",
+              "animals",
+              "reading",
+              "games"
+            ],
+            "title": "Interest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "interest"
+        ],
+        "title": "CurrentIn"
+      },
+      "GenerationIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "life_pathway",
+              "plan",
+              "event_tracker"
+            ],
+            "title": "Kind"
+          },
+          "area_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,50}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "GenerationIn"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Job": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "life_pathway",
+              "plan",
+              "event_tracker"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "kind",
+          "status",
+          "error",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "Job"
+      },
+      "KidQuests": {
+        "properties": {
+          "default_interest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "football",
+                  "drawing",
+                  "music",
+                  "building",
+                  "cooking",
+                  "space",
+                  "animals",
+                  "reading",
+                  "games"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Interest"
+          },
+          "interests": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "football",
+                "drawing",
+                "music",
+                "building",
+                "cooking",
+                "space",
+                "animals",
+                "reading",
+                "games"
+              ]
+            },
+            "type": "array",
+            "title": "Interests"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "football",
+                  "drawing",
+                  "music",
+                  "building",
+                  "cooking",
+                  "space",
+                  "animals",
+                  "reading",
+                  "games"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "logs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Logs"
+          },
+          "last_logged": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Last Logged"
+          },
+          "logged_today": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logged Today"
+          },
+          "catalog": {
+            "items": {
+              "$ref": "#/components/schemas/QuestInterestView"
+            },
+            "type": "array",
+            "title": "Catalog"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_interest",
+          "interests",
+          "current",
+          "logs",
+          "last_logged",
+          "logged_today",
+          "catalog"
+        ],
+        "title": "KidQuests",
+        "description": "The child's quests: the parent's plan's interest (`default_interest`, null when the\n`ask` names none), the ones the child added, the one on screen, and the counts."
+      },
+      "Photo": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "url"
+        ],
+        "title": "Photo"
+      },
+      "PlanPatch": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Version",
+            "description": "The plan's `version` this change was made on (`0` before the first save). Another save since is `409 plan_changed`: reload and apply again."
+          },
+          "ask": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask"
+          },
+          "applied": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied"
+          },
+          "act_inputs": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Act Inputs"
+          },
+          "act_counts": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Act Counts"
+          },
+          "track_done": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Done"
+          },
+          "track_inputs": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Inputs"
+          },
+          "track_sittings": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Sittings"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "event_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Name"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "event_set": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Set"
+          },
+          "photos": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-zA-Z0-9:_-]{1,100}$": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photos"
+          },
+          "clear_track_steps": {
+            "type": "boolean",
+            "title": "Clear Track Steps",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "PlanPatch",
+        "description": "The parent's part of the plan, made on the `version` the app last read; each field\nsent replaces the stored one. `plan`, `track_steps` and the Life Pathway are\ntransform's jobs' only (422)."
+      },
+      "PresignIn": {
+        "properties": {
+          "field_key": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9:_-]{1,100}$",
+            "title": "Field Key"
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Content Type"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field_key",
+          "content_type"
+        ],
+        "title": "PresignIn"
+      },
+      "PresignOut": {
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          },
+          "upload_fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Upload Fields"
+          },
+          "photo_key": {
+            "type": "string",
+            "title": "Photo Key"
+          },
+          "photo_url": {
+            "type": "string",
+            "title": "Photo Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "upload_url",
+          "upload_fields",
+          "photo_key",
+          "photo_url"
+        ],
+        "title": "PresignOut"
+      },
+      "QuestIn": {
+        "properties": {
+          "target": {
+            "type": "integer",
+            "title": "Target"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "how": {
+            "type": "string",
+            "title": "How"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target",
+          "title",
+          "how"
+        ],
+        "title": "QuestIn"
+      },
+      "QuestInterestView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "football",
+              "drawing",
+              "music",
+              "building",
+              "cooking",
+              "space",
+              "animals",
+              "reading",
+              "games"
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "quests": {
+            "items": {
+              "$ref": "#/components/schemas/QuestIn"
+            },
+            "type": "array",
+            "title": "Quests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "quests"
+        ],
+        "title": "QuestInterestView"
+      },
+      "QuestLog": {
+        "properties": {
+          "interest": {
+            "type": "string",
+            "enum": [
+              "football",
+              "drawing",
+              "music",
+              "building",
+              "cooking",
+              "space",
+              "animals",
+              "reading",
+              "games"
+            ],
+            "title": "Interest"
+          },
+          "quest": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Quest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "interest",
+          "quest"
+        ],
+        "title": "QuestLog"
+      },
+      "Started": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "Started"
+      },
+      "Transform": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "areas": {
+            "items": {
+              "$ref": "#/components/schemas/AreaView"
+            },
+            "type": "array",
+            "title": "Areas"
+          },
+          "ask": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "track_steps": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Steps"
+          },
+          "applied": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Applied"
+          },
+          "act_inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Act Inputs"
+          },
+          "act_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Act Counts"
+          },
+          "track_done": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Track Done"
+          },
+          "track_inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Track Inputs"
+          },
+          "track_sittings": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Track Sittings"
+          },
+          "feedback": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Feedback"
+          },
+          "event_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Name"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "event_set": {
+            "type": "boolean",
+            "title": "Event Set"
+          },
+          "photos": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/Photo"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Photos"
+          },
+          "generating": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "life_pathway",
+                "plan",
+                "event_tracker"
+              ]
+            },
+            "type": "array",
+            "title": "Generating"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "areas",
+          "ask",
+          "plan",
+          "track_steps",
+          "applied",
+          "act_inputs",
+          "act_counts",
+          "track_done",
+          "track_inputs",
+          "track_sittings",
+          "feedback",
+          "event_name",
+          "event_date",
+          "event_set",
+          "photos",
+          "generating",
+          "completed_at"
+        ],
+        "title": "Transform"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-access_token"
+      },
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Service health"
+    },
+    {
+      "name": "transform",
+      "description": "The Life Pathway and the 90-day plan"
+    }
+  ]
+}

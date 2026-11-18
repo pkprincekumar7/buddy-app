@@ -39,7 +39,7 @@ data "archive_file" "jwt_validator_lambda" {
         regional_alb_fqdns = local.regional_alb_fqdns
         location_to_region = local.location_to_region
         # Must equal infra-live-backend's JWT_ISSUER / JWT_AUDIENCE (ecs.tf):
-        # same expressions, both stacks get app_name from the APP_NAME secret.
+        # same expressions, both stacks get app_name from the APP_NAME variable.
         jwt_issuer   = "${var.app_name}-${var.environment}"
         jwt_audience = "${var.app_name}-api"
       }
@@ -84,6 +84,11 @@ resource "time_sleep" "wait_for_lambda_edge_replica_cleanup" {
 }
 
 resource "aws_lambda_function" "jwt_validator" {
+  #checkov:skip=CKV_AWS_117:Lambda@Edge runs at CloudFront edge locations and can't be attached to a VPC
+  #checkov:skip=CKV_AWS_116:A viewer-request function answers the request in hand; there's no async invocation to send to a DLQ
+  #checkov:skip=CKV_AWS_50:Lambda@Edge doesn't support X-Ray active tracing; its logs go to CloudWatch in each edge region
+  #checkov:skip=CKV_AWS_272:The package is built from this repo's source in the same apply (archive_file); code signing adds a signing profile for no change in who can publish
+  #checkov:skip=CKV_AWS_115:A concurrency cap would reject viewer requests (logins included) under load instead of protecting anything
   filename         = data.archive_file.jwt_validator_lambda.output_path
   function_name    = "${var.app_name}-${var.environment}-jwt-validator"
   role             = aws_iam_role.jwt_validator_lambda.arn

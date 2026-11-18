@@ -20,8 +20,6 @@ terraform {
   }
 }
 
-data "aws_caller_identity" "current" {}
-
 provider "aws" {
   region = var.aws_region
 
@@ -30,6 +28,10 @@ provider "aws" {
       Project     = var.app_name
       Environment = var.environment
       ManagedBy   = "terraform"
+      # Where the code is, and how sensitive this stack's data is: the start/stop dispatcher and its GitHub token
+      # (production-readiness review, L2).
+      Repo               = var.repository
+      DataClassification = "internal"
     }
   }
 }

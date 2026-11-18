@@ -6,9 +6,9 @@
 # GitHub environment secret is the source of truth — every terraform apply
 # syncs the Secrets Manager value to whatever the workflow passed in.
 #
-# Required PAT permissions:
-#   Classic token  : repo + workflow scopes
-#   Fine-grained   : Actions — Read and Write
+# The token: fine-grained, this repository only, Actions: Read and write and
+# nothing else (SEC-03; see terraform-live-scheduler.yml). Not a classic PAT, whose
+# repo + workflow scopes reach every repository the account can.
 #
 # WARNING: The secret value is a plain string (not JSON) — just the raw
 # token. Do NOT wrap it in a JSON object.

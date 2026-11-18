@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, Upload, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AVATAR_LIMITS, AVATAR_TYPES, avatarProblem } from '@/api/children';
 import type { ReactNode } from 'react';
 
 // ── Inline SVG avatar illustrations ──────────────────────────────────────────
@@ -189,11 +190,21 @@ interface Props {
   onContinue: (data: ChildFormData, photoFile?: File) => void | Promise<void>;
   initialData?: Partial<ChildFormData>;
   isLoading?: boolean;
+  /** The submit button's label: "Continue →" in setup, "Save changes" when editing. */
+  submitLabel?: string;
+  /** Opens the finished chat's answers (read-only); shown when editing a finished child. */
+  onViewAnswers?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ChildProfileStep({ onContinue, initialData, isLoading }: Props) {
+export default function ChildProfileStep({
+  onContinue,
+  initialData,
+  isLoading,
+  submitLabel = 'Continue →',
+  onViewAnswers,
+}: Props) {
   const [form, setForm] = useState<ChildFormData>({
     name: initialData?.name ?? '',
     age: initialData?.age ?? '',
@@ -205,6 +216,8 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     GIRL_AVATARS.some((a) => a.id === initialData?.avatarId) ? 'girl' : 'boy',
   );
   const [errors, setErrors] = useState<Partial<Record<keyof ChildFormData, string>>>({});
+  // Each label names its field (screen readers, and tests that find fields by label).
+  const fieldId = useId();
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(initialData?.avatarUrl ?? null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -234,7 +247,13 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = '';
     if (!file) return;
+    // Children refuses anything else when the photo is saved (build plan 7.4).
+    const problem = avatarProblem(file.type, file.size);
+    setErrors((current) => ({ ...current, avatarId: problem ?? undefined }));
+    if (problem) return;
     setPhotoFile(file);
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -243,8 +262,6 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     reader.readAsDataURL(file);
     // Clear emoji avatar selection when a photo is chosen
     setForm((f) => ({ ...f, avatarId: '' }));
-    // Reset input so the same file can be re-selected if needed
-    e.target.value = '';
   };
 
   const avatars = avatarTab === 'boy' ? BOY_AVATARS : GIRL_AVATARS;
@@ -255,7 +272,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     if (!form.name.trim()) e.name = 'Name is required';
     const ageNum = Number(form.age);
     if (!form.age.trim()) e.age = 'Age is required';
-    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 30) e.age = 'Age must be between 8 and 30';
+    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 25) e.age = 'Age must be between 8 and 25';
     if (!form.gender) e.gender = 'Please select a gender';
     if (!form.avatarId && !photoFile && !initialData?.avatarUrl)
       e.avatarId = 'Please upload a photo or pick an avatar';
@@ -318,14 +335,14 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Add Photo
                 </span>
-                <span className="text-[8px] text-muted-foreground/50">or pick an avatar</span>
+                <span className="text-[11px] text-muted-foreground">or pick an avatar</span>
               </div>
             )}
           </button>
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept={AVATAR_TYPES.join(',')}
             className="hidden"
             onChange={handlePhotoChange}
           />
@@ -339,12 +356,13 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             <Upload className="h-3 w-3" />
             Upload photo
           </Button>
+          <p className="text-[11px] text-muted-foreground">{AVATAR_LIMITS}</p>
         </div>
 
         {/* Avatar picker */}
         <div className="border-edge-faint space-y-3 rounded-xl bg-surface-elevated/40 p-4">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               <span className="text-base">🎭</span> Or pick an avatar
             </span>
             <div className="border-edge-md flex overflow-hidden rounded-lg">
@@ -416,7 +434,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         {/* Divider */}
         <div className="flex items-center gap-3">
           <div className="bg-ghost-light h-px flex-1" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             About your child
           </span>
           <div className="bg-ghost-light h-px flex-1" />
@@ -427,10 +445,15 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
           {/* Name + Age */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <label
+                htmlFor={`${fieldId}-name`}
+                className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
                 Child's Name <span className="text-primary">*</span>
               </label>
               <input
+                id={`${fieldId}-name`}
+                aria-invalid={!!errors.name || undefined}
                 value={form.name}
                 onChange={(e) => setField('name', e.target.value)}
                 placeholder="Arjun"
@@ -443,10 +466,15 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <label
+                htmlFor={`${fieldId}-age`}
+                className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
                 Age <span className="text-primary">*</span>
               </label>
               <input
+                id={`${fieldId}-age`}
+                aria-invalid={!!errors.age || undefined}
                 value={form.age}
                 onChange={(e) => setField('age', e.target.value)}
                 placeholder="8"
@@ -464,14 +492,22 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
 
           {/* Gender */}
           <div className="space-y-1.5">
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p
+              id={`${fieldId}-gender`}
+              className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            >
               Gender <span className="text-primary">*</span>
-            </label>
-            <div className="grid grid-cols-3 gap-2">
+            </p>
+            <div
+              role="group"
+              aria-labelledby={`${fieldId}-gender`}
+              className="grid grid-cols-3 gap-2"
+            >
               {(['Male', 'Female', 'Other'] as const).map((g) => (
                 <button
                   key={g}
                   type="button"
+                  aria-pressed={form.gender === g}
                   onClick={() => setField('gender', g)}
                   className={cn(
                     'rounded-xl border py-2.5 text-sm font-medium transition-all',
@@ -489,13 +525,17 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
 
           {/* School */}
           <div className="space-y-1.5">
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <label
+              htmlFor={`${fieldId}-school`}
+              className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            >
               School{' '}
-              <span className="font-normal normal-case tracking-normal text-muted-foreground/40">
+              <span className="font-normal normal-case tracking-normal text-muted-foreground">
                 (optional)
               </span>
             </label>
             <input
+              id={`${fieldId}-school`}
               value={form.school}
               onChange={(e) => setField('school', e.target.value)}
               placeholder="Greenfield International"
@@ -505,23 +545,36 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between pt-1">
-          <p className="text-xs text-muted-foreground/40">* Required</p>
-          <Button
-            type="button"
-            onClick={handleContinue}
-            disabled={isLoading}
-            className="glow-teal-btn h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Saving…
-              </span>
-            ) : (
-              'Continue →'
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <p className="text-xs text-muted-foreground">* Required</p>
+          <div className="flex flex-wrap items-center gap-3">
+            {onViewAnswers && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onViewAnswers}
+                disabled={isLoading}
+                className="h-11 rounded-full px-6 font-semibold"
+              >
+                See chat answers
+              </Button>
             )}
-          </Button>
+            <Button
+              type="button"
+              onClick={handleContinue}
+              disabled={isLoading}
+              className="glow-teal-btn h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Saving…
+                </span>
+              ) : (
+                submitLabel
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </motion.div>

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the service names listed in the `service` input descriptions of
 # deploy / restart / promote-live-backend.yml match the entries of
-# local.services in infra-live-backend/terraform/services.tf, in deploy_order.
+# the runtimes infra-live-backend/terraform/services.tf builds, in deploy_order.
 # The lists are only help text (the workflows validate the input against the
 # ecs_services SSM list), but a stale one sends people looking for a service
 # that doesn't exist. Run: bash scripts/check-service-lists.sh
@@ -11,17 +11,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICES_TF="$ROOT/infra-live-backend/terraform/services.tf"
 WORKFLOWS=(deploy-live-backend.yml restart-live-backend.yml promote-live-backend.yml)
 
-# Each top-level entry of `services = { ... }` and its deploy_order, sorted by
-# deploy_order → "auth, admin, backend, worker".
-expected=$(awk '
-  /^  services = \{/ { inside = 1; next }
-  inside && /^  \}/  { inside = 0 }
-  inside && /^    [a-z][a-z0-9-]* = \{/ { key = $1 }
-  inside && key != "" && /^      deploy_order *=/ { print $3, key; key = "" }
-' "$SERVICES_TF" | sort -n | awk '{print $2}' | paste -sd, - | sed 's/,/, /g')
+# The runtimes in deploy_order, derived the way services.tf derives them: the
+# collector first, then each of local.split_services followed by its worker
+# (every service except those excluded on the worker_services line). The stack
+# test (tests/stack.tftest.hcl) asserts the same order of the real ecs_services
+# list, so this and services.tf can't drift apart unnoticed.
+services=$(sed -n 's/^  split_services *= *\[\(.*\)\]/\1/p' "$SERVICES_TF" | tr -d '" ' | tr ',' ' ')
+no_worker=$(grep -E '^  worker_services *=' "$SERVICES_TF" | grep -oE 's != "[a-z0-9-]+"' | sed -E 's/s != "(.*)"/\1/' | tr '\n' ' ')
+expected="otel-collector"
+for s in $services; do
+  expected="$expected, $s"
+  case " $no_worker " in *" $s "*) ;; *) expected="$expected, $s-worker" ;; esac
+done
+[ -n "$services" ] || expected=""
 
 if [ -z "$expected" ]; then
-  echo "ERROR: found no services (with deploy_order) in $SERVICES_TF" >&2
+  echo "ERROR: found no split_services list in $SERVICES_TF" >&2
   exit 1
 fi
 

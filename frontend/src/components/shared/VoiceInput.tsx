@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/api/client';
+import { speech, SPEECH_ERRORS } from '@/api/speech';
+import { httpErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
 
 const NativeSpeechRecognition: typeof window.webkitSpeechRecognition | null =
@@ -50,18 +51,30 @@ export default function VoiceInput({
   const recognitionRef = useRef<InstanceType<typeof window.webkitSpeechRecognition> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
+  // True while getUserMedia is pending — blocks a double-tap from starting a second recorder.
+  const startingRef = useRef(false);
+  // Latest onTranscript, so a recorder started on an earlier render never calls a stale one.
+  const onTranscriptRef = useRef(onTranscript);
+  onTranscriptRef.current = onTranscript;
   const [isTranscribing, setIsTranscribing] = useState(false);
 
   const useNative = !!NativeSpeechRecognition;
   const isAvailable = useNative || canMediaRecord;
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       recognitionRef.current?.abort();
       recognitionRef.current = null;
-      if (mediaRecorderRef.current?.state !== 'inactive') {
-        mediaRecorderRef.current?.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
+      mediaRecorderRef.current = null;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
   }, []);
 
@@ -75,7 +88,7 @@ export default function VoiceInput({
     instance.onstart = () => setIsRecording(true);
     instance.onresult = (event: Event) => {
       const e = event as SpeechRecognitionEvent;
-      onTranscript(e.results[0]?.[0]?.transcript ?? '');
+      if (mountedRef.current) onTranscriptRef.current(e.results[0]?.[0]?.transcript ?? '');
       setIsRecording(false);
     };
     // iOS 16+ Safari has webkitSpeechRecognition but can throw permission/network errors
@@ -108,8 +121,17 @@ export default function VoiceInput({
       toast.error('Microphone is not available. Please make sure the page is loaded over HTTPS.');
       return;
     }
+    if (startingRef.current || mediaRecorderRef.current?.state === 'recording') return;
+    startingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      startingRef.current = false;
+      // Unmounted while the permission prompt / device open was pending: release the mic.
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      streamRef.current = stream;
       const mimeType = getBestMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       chunksRef.current = [];
@@ -120,6 +142,10 @@ export default function VoiceInput({
 
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (streamRef.current === stream) streamRef.current = null;
+        if (mediaRecorderRef.current === recorder) mediaRecorderRef.current = null;
+        // Field unmounted (e.g. moved to the next question): don't transcribe into it.
+        if (!mountedRef.current) return;
         // iOS Safari often reports recorder.mimeType as '' even when recording mp4.
         // Fall back to the mimeType we requested, then 'audio/mp4' as the iOS default.
         const resolvedMime = recorder.mimeType || mimeType || 'audio/mp4';
@@ -128,16 +154,20 @@ export default function VoiceInput({
         setIsRecording(false);
         setIsTranscribing(true);
         try {
-          const result = (await api.audio.transcribe(blob, `recording.${ext}`)) as {
-            transcript?: string;
-          };
-          if (result?.transcript) onTranscript(result.transcript);
+          // The shared service's speech endpoint (build plan 7.8).
+          const transcript = await speech.transcribe(blob, `recording.${ext}`);
+          if (transcript && mountedRef.current) onTranscriptRef.current(transcript);
         } catch (err) {
           // Fix #2: inform the user when Whisper transcription fails
           console.warn('Transcription failed:', err);
-          toast.error('Transcription failed. Please try again.');
+          toast.error(
+            httpErrorMessage(err as Error, {
+              codeMessages: SPEECH_ERRORS,
+              fallback: 'Transcription failed. Please try again.',
+            }),
+          );
         } finally {
-          setIsTranscribing(false);
+          if (mountedRef.current) setIsTranscribing(false);
         }
       };
 
@@ -146,6 +176,10 @@ export default function VoiceInput({
       recorder.start(100);
       setIsRecording(true);
     } catch (err) {
+      startingRef.current = false;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (!mountedRef.current) return;
       // Fix #1: inform the user when mic access is denied or unavailable
       const isDenied =
         err instanceof Error &&

@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { Link } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { account } from '@/api/account';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { COUNTRIES } from '@/lib/countries';
@@ -33,7 +33,7 @@ export default function Login() {
     setLoadingMessage('Completing sign-in…');
     setGoogleCountryBusy(true);
     try {
-      await api.auth.google(pendingGoogleToken, googleCountry);
+      await account.google(pendingGoogleToken, googleCountry);
       await checkAppState({ withLoading: false });
     } catch (e) {
       setError(httpErrorMessage(e as Error | undefined, { fallback: 'Google sign-in failed.' }));
@@ -56,7 +56,7 @@ export default function Login() {
       setLoadingMessage('Signing in with Google…');
       setBusy(true);
       try {
-        await api.auth.google(idToken);
+        await account.google(idToken);
         await checkAppState({ withLoading: false });
       } catch (e) {
         const apiErr = e as { status?: number; detail?: unknown } | null;
@@ -132,12 +132,17 @@ export default function Login() {
     setLoadingMessage('Signing you in…');
     setBusy(true);
     try {
-      await api.auth.login(email.trim(), password);
+      await account.login(email.trim(), password);
       await checkAppState({ withLoading: false });
     } catch (e) {
       setError(
         httpErrorMessage(e as Error | undefined, {
           fallback: 'Sign-in failed.',
+          codeMessages: {
+            invalid_credentials: 'Invalid email or password.',
+            too_many_attempts:
+              'Too many sign-in attempts for this email. Wait 15 minutes, then try again.',
+          },
           statusMessages: { 401: 'Invalid email or password.' },
         }),
       );

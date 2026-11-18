@@ -138,8 +138,12 @@ export default function ObservationCard({
       {/* The parent's own words, presented as the evidence for the pattern
           above — never model-authored prose. */}
       <View style={{ gap: 7 }}>
-        {obs.notes.map(note => (
-          <View key={note} className="flex-row items-start" style={{ gap: 10 }}>
+        {obs.notes.map((note, i) => (
+          <View
+            key={`${i}-${note}`}
+            className="flex-row items-start"
+            style={{ gap: 10 }}
+          >
             <View style={{ width: 14 }}>
               <View
                 className="rounded-full"

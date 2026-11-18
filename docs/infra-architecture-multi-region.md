@@ -8,6 +8,18 @@ required. When implementing, refer only to this file.
 
 ## Background & Decision Trail
 
+### Decision: prod runs in ap-south-1 only until the Global Cluster (DEC-01, 2026-11-05)
+
+prod's database is one Atlas cluster in ap-south-1 (M10, DB-01). A request served from eu-west-1
+or us-east-1 would make several round trips to it, about 120–250 ms each, and the three regions
+would share M10's connection budget. So **prod is served from ap-south-1 alone**
+(`shared/routing.json` `served_from: {"prod": "ap-south-1"}`): the edge routes every location
+there, ap-south-1's workers handle every location, and Terraform refuses prod's backend in any
+other region (`aws_region`, edge `backend_regions`). Users keep their own `location`, so the data
+stays shard-ready. dev, sbx and stg keep the three-region routing, which keeps the multi-region
+stacks and pipelines exercised. When the Global Cluster arrives (DB-01 Stage 2), remove prod from
+`served_from`, apply its other regions, and the routing map takes over.
+
 ### Why not API Gateway with a Lambda Authorizer?
 
 #### Architecture difference
@@ -238,8 +250,10 @@ implementation (see Change 1 and the corrected "Fallback behaviour" note above) 
 
 The backend side of this diagram is live: all three regions (ap-south-1, eu-west-1,
 us-east-1) run behind the shared CloudFront distribution. The **database** side is still the
-target state — today every region uses one Atlas M0 cluster in ap-south-1, reached via each
-region's NAT gateways, with no PrivateLink. The MongoDB Atlas Global Cluster box (and Change
+target state. Today each environment has its own single-region Atlas cluster in ap-south-1:
+stg and prod an M10 each, served from ap-south-1 only and reached through PrivateLink
+(`infra-live-backend/terraform/atlas.tf`, DEC-01, DEC-02); dev and sbx an M0 each, reached
+from all three regions through their NAT gateways. The MongoDB Atlas Global Cluster box (and Change
 10d) is the remaining work — see the Deployment Order and Required Changes sections below for
 what's missing and in what order it needs to be built.
 
@@ -300,8 +314,9 @@ their ALB FQDNs to SSM.
 
 ```
 Phase 0  — Atlas tier upgrade + terraform-atlas bootstrap   ← not started
-           Today's cluster is Atlas M0 (free tier), managed manually, single region
-           (ap-south-1) — there is no Atlas Terraform module in this repo at all yet.
+           Today each environment has its own single-region cluster in ap-south-1, created
+           by hand (dev, sbx: M0; stg, prod: M10). Terraform manages only stg's and prod's
+           PrivateLink endpoint (infra-live-backend/terraform/atlas.tf, DEC-02).
            M0 does not support Global Clusters, custom zone sharding, or PrivateLink;
            all three require upgrading to a paid, dedicated tier first. This is a real
            cost decision to make explicitly, not a config toggle — see Change 10d.
@@ -343,9 +358,9 @@ Phase 6  — restart-live-backend (per region, service = all: auth, admin, backe
 > **ap-south-1 prerequisite:** phase 0 (Atlas tier upgrade + Terraform bootstrap) and
 > phases 1a, 2a, 5a, and 6 for ap-south-1 must all be completed before expanding to new
 > regions — none of these have started. Confirmed by checking the actual repo state:
-> there is no `infra-live-atlas` directory, no `terraform-atlas.yml` workflow, and no
-> `aws_vpc_endpoint`/PrivateLink resources anywhere in `infra-live-backend`. The existing
-> MongoDB setup is a manually-managed Atlas **M0 (free tier)** cluster, single region —
+> there is no `infra-live-atlas` directory and no `terraform-atlas.yml` workflow. Since
+> 2026-11-05, `infra-live-backend/terraform/atlas.tf` makes stg's and prod's PrivateLink
+> endpoint to their M10 clusters (DEC-02); dev and sbx use a manually-managed Atlas **M0 (free tier)** cluster each, single region —
 > not yet sharded or multi-region at the database layer, and M0 cannot support Global
 > Clusters, sharding, or PrivateLink until upgraded (see Change 10d). A broader
 > zone-sharding scheme exists elsewhere spanning up to 8 zones across roughly 10 AWS
@@ -500,10 +515,11 @@ to any subset of the three regions, not just "all three."
 ### 7. `.github/workflows/terraform-live-all.yml` — implemented, with flexible region selection
 
 `backend_region` is gone here too, replaced by the same `backend_regions` JSON-array input,
-`fromJson()`'d where a matrix over regions is needed (backend apply/destroy jobs). The
-`aws_region`/region-choice dropdown offers single regions and multi-region combinations
-(e.g. `'["ap-south-1"]'`, `'["ap-south-1","eu-west-1"]'`) rather than a fixed 3-option list —
-more flexible than this section's original "add the two new regions" proposal. The
+`fromJson()`'d where a matrix over regions is needed (backend apply/destroy jobs). Every
+region input is free text, a comma-separated list such as `ap-south-1,eu-west-1` (callers may
+pass a JSON array), checked against `shared/routing.json`'s regions and turned into a JSON
+array by the workflow's first job (production-readiness review, TF-01). There's no list of
+region combinations to keep. The
 sequencing note (can't bootstrap all regions in one `terraform-live-all` run before each
 backend region's SSM parameter exists) still holds and is unchanged.
 
@@ -519,21 +535,18 @@ not any tfvars file.
 
 ### 9. Backend — no changes required
 
-The JWT `location` claim is already present in every access token. From
-`backend/app/auth_utils.py`:
+The JWT `location` claim is already present in every access and refresh token. From
+`TokenIssuer.issue()` in `backend/auth/app/tokens.py`:
 
 ```python
-payload = {
-    "sub": sub,
-    "iat": now,
-    "exp": expire,
-    "type": "access",
-    "location": location,   # ← already set at token creation
-}
+base = {"sub": user_id, "location": location, "iat": now, "iat_ms": now_ms}
+access = self._encode(
+    {**base, "type": "access", "role": role, "exp": now + self.access_minutes * 60}
+)
 ```
 
-The `location` value is set from the user's `location` field in the users collection,
-which is written at registration time via `backend/app/routing.py:resolve_region()`.
+The `location` value is the account's `location` field in auth's `auth` collection, which is
+written at registration time from `resolve_region()` in `backend/auth/countries.py`.
 No backend changes are needed.
 
 ---
@@ -719,9 +732,10 @@ Then apply:
 > **Corrected premise (previously wrong in this doc):** an earlier version of this
 > section assumed a Terraform-managed `mongodbatlas_advanced_cluster.main` resource
 > already existed as a single-region `REPLICASET`, needing an Option A/B decision to
-> get to `GEOSHARDED`. Checked against the actual repo: **no Atlas Terraform resource
-> exists at all** — the current cluster is **Atlas M0 (free tier)**, created and managed
-> manually through the Atlas console, single region, ap-south-1, for cost reasons. There
+> get to `GEOSHARDED`. Checked against the actual repo: the clusters themselves aren't in
+> Terraform (only stg's and prod's PrivateLink endpoint is, `atlas.tf`, since 2026-11-05).
+> Each environment's cluster is created by hand in its own Atlas project, single region,
+> ap-south-1: an **M0 (free tier)** for dev and sbx, an M10 for stg and prod. There
 > is no REPLICASET-to-GEOSHARDED migration to perform on an existing
 > Terraform resource, because there is no existing Terraform resource — this is a
 > **from-scratch bootstrap**, not a conversion.
@@ -1037,7 +1051,6 @@ When adding a fourth region in future:
 - [ ] The new region's SSM check happens automatically — `terraform-live-edge.yml`'s
       "Verify SSM parameters exist and are readable" step already loops over whatever
       `backend_regions` JSON array is passed in; no hardcoded per-region check to add
-- [ ] Add the new region, and any new multi-region combination including it, to
-      `terraform-live-all.yml`'s `backend_regions` workflow_dispatch options (a JSON-array
-      choice list, not a single `aws_region` — see Change 7)
+- [ ] Nothing to add to the workflows: their region inputs are free text checked against
+      `shared/routing.json`, and Terraform's region validations read the same file (TF-01)
 - [ ] Apply `infra-live-edge`
