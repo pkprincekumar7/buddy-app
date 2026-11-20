@@ -70,6 +70,35 @@ the `prepare` script in `package.json`) — no separate command needed.
 ./check.sh
 ```
 
+**Groups.** The checks are in groups, so you can run only the ones you need, or several at once:
+
+```bash
+./check.sh --list                                   # the groups and what each runs
+./check.sh terraform scripts                        # only those groups, one after another
+./check.sh --parallel                               # every group at once
+./check.sh --parallel backend-lint backend-test frontend
+./check.sh e2e                                      # the end-to-end journeys (or RUN_E2E=1 ./check.sh)
+```
+
+| Group | Runs |
+|---|---|
+| `backend-lint` | ruff, ruff format, mypy (tools, common, each service), the service tree check, import-linter, common's installs |
+| `frontend` | API clients in sync, eslint, prettier, typecheck, build, bundle size, vitest |
+| `app` | frontend-app's eslint, prettier, typecheck and jest |
+| `backend-test` | pytest with the coverage gates for common, tools and each service (the compose `mongo` and `valkey`) |
+| `playwright` | the web app's browser tests and their coverage floor |
+| `scripts` | the edge functions' tests, every `scripts/*.test.sh`, the scheduler dispatcher, the service lists, shellcheck, actionlint, the routing and gateway sync checks |
+| `security` | bandit, pip-audit, npm and yarn audit, retire.js, gitleaks, semgrep, hadolint, checkov, zizmor, trivy fs/config and the frontends' SBOMs |
+| `images` | each service image built, then trivy, its SBOM and dockle (Docker) |
+| `api` | each service's OpenAPI spec up to date, spectral |
+| `terraform` | fmt, validate, terraform test (and per environment), tflint |
+| `e2e` | the end-to-end journeys (only when named, or with `RUN_E2E=1`) |
+
+- **The bootstrap runs once, first, and only for the groups chosen:** the backend venv always (it's quick and lists the services); the semgrep venv, the retire.js database and the yarn install only for `security` (and `app` for yarn); `npm ci` only for `frontend`, `playwright`, `security` or `api`. So `./check.sh terraform scripts` never reinstalls `node_modules`.
+- **`--parallel`** starts every chosen group at once, each in its own process, with its output in `.check-logs/<group>.log` (gitignored, replaced each run). It reports each group as it finishes (✓ with its count, or ✗ with the checks that failed and its log), then the usual summary of every check; it exits non-zero if any check failed. Ctrl-C stops every group.
+- **What the groups share:** nothing they write (Playwright alone writes `frontend/coverage`, `images` alone builds images; in parallel `images` uses its own Trivy cache, `~/.cache/trivy-check-images` or `$TRIVY_IMAGES_CACHE_DIR`, since two Trivy processes on one cache wait on its lock). They do share the CPU, memory and Docker: `playwright`, `images` and `terraform` are the heavy ones, so run those together only on a machine with room.
+- `npm ci` replaces `frontend/node_modules`, so don't run `frontend`, `playwright`, `security` or `api` while a dev server from `frontend/` is running.
+
 No manual setup required for backend, frontend, or frontend-app checks. On every run the script automatically:
 - Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements-dev.txt` (the union of every service's runtime pins), `requirements-lint.txt` (ruff, mypy, import-linter), `requirements-security.txt` (bandit, pip-audit, checkov, zizmor) and `requirements-test.txt` (pytest, pytest-cov, Moto, OpenTelemetry). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
 - Creates `backend/.venv-semgrep` for semgrep alone, at the version in `requirements-security.txt`. semgrep pins OpenTelemetry `~=1.37`, while the services and tests pin 1.45.1 (a security fix), so the two can't share a venv. CI already installs the security tools in a job of their own.

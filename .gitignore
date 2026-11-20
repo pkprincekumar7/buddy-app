@@ -40,3 +40,6 @@ infra-live-scheduler/lambda/*.zip
 # Shared Terraform modules (TF-01) are init'ed only to run their tests; the
 # provider lock file belongs to the root stacks that call them.
 modules/*/.terraform.lock.hcl
+
+# check.sh --parallel: one log per group.
+.check-logs/

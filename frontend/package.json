@@ -14,6 +14,8 @@
     "test:e2e": "playwright test",
     "test:e2e:coverage": "COVERAGE=1 playwright test",
     "test:e2e:ci": "SLOWMO=0 COVERAGE=1 playwright test && node e2e/coverage-floor.mjs",
+    "test:e2e:shard": "SLOWMO=0 COVERAGE=1 COVERAGE_RAW=1 playwright test",
+    "test:e2e:merge": "node e2e/coverage-merge.mjs",
     "preview": "vite preview",
     "prepare": "cd .. && ([ -d .git ] && husky frontend/.husky || true)"
   },

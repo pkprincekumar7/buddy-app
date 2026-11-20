@@ -51,7 +51,7 @@ A change to a workflow keeps to these (production-readiness review SEC-06, SEC-0
 
 **Region inputs.** Every workflow that takes regions (`aws_regions`, `backend_regions`, `target_aws_regions`) takes them as free text: one region or a comma-separated list, such as `ap-south-1,eu-west-1`. A calling workflow may pass a JSON array instead. The first job checks each region against `shared/routing.json`'s regions and turns the list into the JSON array the later jobs read (`regions_json`, `scripts/workflow-inputs.sh`); `bootstrap_region` is free text too (`auto` or one of those regions). Terraform's region validations read the same file, so allowing a new region is one entry in `shared/routing.json` (TF-01); each environment still needs that region's own values (`vpc_cidrs`, its ACM certificate and buckets).
 
-[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has nineteen jobs. `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, `terraform-lint` and `terraform-test` start in parallel immediately; each area's tests start once its lint passes: `backend-test` after `backend-lint`, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `frontend-test` (Vitest) and `frontend-e2e` (Playwright) after `frontend-lint`; `frontend-app-test` (Jest) after `frontend-app-lint`; `backend-services` waits for the matrix; `e2e` waits for `backend-test` and `backend-services`; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
+[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has twenty-one jobs, arranged so the longest ones start first (a run takes about as long as its slowest job). `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, `terraform-lint`, `terraform-test`, the four `frontend-e2e-shard` jobs (Playwright) and `e2e` start in parallel immediately; the other tests start once their lint passes: `backend-test` after `backend-lint`, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `frontend-test` (Vitest) after `frontend-lint`; `frontend-app-test` (Jest) after `frontend-app-lint`; `backend-services` waits for the matrix and `frontend-e2e` for the shards; `image-scan` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 ### `backend-lint` (Python 3.13)
 
@@ -83,11 +83,16 @@ The install step runs `pip install -r requirements-dev.txt -r requirements-lint.
 |---|---|---|
 | Component tests | Vitest (via `npm test`) | Components and logic in jsdom, no server or API (`src/**/*.test.{ts,tsx}`) |
 
-### `frontend-e2e` (needs: frontend-lint)
+### `frontend-e2e-shard` (4 shards) and `frontend-e2e`
 
-| Step | Tool | What it checks |
+The browser tests took about 13 minutes on one runner, the workflow's longest path, so they run in 4 shards side by side (`--shard=N/4`, no lint gate), and `frontend-e2e` (the check a ruleset names, "Frontend Browser Tests (Playwright)") passes only when every shard did and their merged coverage is over the floor.
+
+| Job | Tool | What it checks |
 |---|---|---|
-| Browser tests and coverage floor | Playwright (via `npm run test:e2e:ci`) | The app in Playwright's Chromium against a stubbed API (`e2e/`), at phone, tablet and desktop widths; fails if browser-test coverage falls under 90% of lines. Chromium is cached by Playwright's version; screenshots and traces are uploaded on a failure |
+| `frontend-e2e-shard` | Playwright (`npm run test:e2e:shard -- --shard=N/4`) | A quarter of the tests: the app in Playwright's Chromium against a stubbed API (`e2e/`), at phone, tablet and desktop widths. Each keeps its raw coverage (`COVERAGE_RAW=1`, `coverage/raw`) as an artifact; screenshots and traces are uploaded on a failure. Chromium is cached by Playwright's version |
+| `frontend-e2e` | `e2e/coverage-merge.mjs`, then `e2e/coverage-floor.mjs` | Every shard passed; their raw coverage merged with the settings a single run uses (`e2e/coverage-options.mjs`, shared with `playwright.config.ts`), and the merged lines over the 90% floor. The merged report is uploaded |
+
+Locally, `npm run test:e2e:ci` (and `check.sh`) still runs the suite in one go, with the same coverage settings and floor.
 
 ### `frontend-app-lint` (Node.js 22)
 
@@ -171,17 +176,17 @@ Runs dynamic application security testing against the local stack (`docker-compo
 | Spectral (service OpenAPI specs) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Lints the committed `backend/openapi/*.json` against `.spectral.yaml` — every operation must declare a security scheme and have a unique `operationId` (errors); tags, descriptions and `info.contact` are warnings. The `backend-service` jobs check each spec matches its code |
 | Nuclei (DAST) | nuclei v3.3.9 | Probes the gateway at `http://localhost:8088` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
 
-### `e2e` (needs: backend-test + backend-services)
+### `e2e`
 
 Runs the end-to-end journeys in `scripts/e2e` (build plan 6.1, 6.2) against the local stack, as `RUN_E2E=1 ./check.sh` does: `full-journey.py` (every endpoint through the gateway and every kind of generation), `account-deletion.py` (nothing of a deleted account is left in Mongo, Valkey or Moto) and `convergence.py` (killed workers, late events and finishing jobs converge). The job writes a `.env` with a fresh `JWT_PRIVATE_KEY`, a random `EMAIL_HMAC_PEPPER` and the `ci` environment's `OPENAI_API_KEY`, then starts the stack in test mode (`docker compose --env-file .env --env-file .env.test up -d --build`: every service on the `mongo` container and Moto), which `scripts/e2e/stack.py` requires. It waits for the stack with `scripts/ci-wait-stack.sh`. The three scripts are separate steps; the second and third run even if an earlier one failed, and on a failure the job prints the containers' state and their last 200 log lines.
 
-The generations are real provider calls, about 20 a run (cents with `gpt-5.4-mini`), so the job runs only after the backend's tests pass, and it's skipped where GitHub gives no secrets (fork and Dependabot pull requests). It fails at once, naming the setting, if the `ci` environment has no `OPENAI_API_KEY`.
+The generations are real provider calls, about 20 a run (cents with `gpt-5.4-mini`). At about 8 minutes it's one of the longest jobs, so it starts at once rather than after the backend's tests (a broken backend spends a few cents). It's skipped where GitHub gives no secrets (fork and Dependabot pull requests). It fails at once, naming the setting, if the `ci` environment has no `OPENAI_API_KEY`.
 
 **Setup, once:** Settings → Environments → **New environment** `ci`, then add the secret `OPENAI_API_KEY`. Use a key of its own (an OpenAI project for CI) with a low monthly budget limit, not a deployed environment's key: it reaches pull requests from this repository's branches, and a separate key can be revoked or capped without touching dev, stg or prod. No deployment protection rules on `ci`: a required reviewer would hold every PR's checks.
 
 ### `security-scan`
 
-All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The final group builds one image per service (`backend/Dockerfile` with `--build-arg SERVICE=<service>`, services found by `backend/tools/services.py`) to scan OS-level CVEs inside the Debian base layer. Steps are grouped by the runtime they require.
+All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The service images are scanned in a job of their own, `image-scan` (below), so the two run side by side. Steps are grouped by the runtime they require.
 
 | Step | Tool | What it checks |
 |---|---|---|
@@ -204,9 +209,13 @@ All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so g
 | Trivy config (modules) | trivy (CLI) | `modules/` — same |
 | Trivy config (SARIF report) | trivy (CLI) | The whole repo, HIGH/CRITICAL, as SARIF for code scanning; reporting only (the five steps above gate) |
 | Build the service images | docker | Builds `superpower-<service>:scan` for every service (`--build-arg SERVICE=<service>`); shared by the three image-level checks below |
-| Trivy (service image scans) | trivy (CLI) | Each service image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (fixed ones only, `--ignore-unfixed`); the error names the failing services |
-| Dockle | dockle (installed from release tarball) | Each service image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
+| Trivy (service image scans) (`image-scan` job) | trivy (CLI) | Each service image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (fixed ones only, `--ignore-unfixed`); the error names the failing services |
+| Dockle (`image-scan` job) | dockle (installed from release tarball) | Each service image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
 | SBOMs (service images) | trivy (CLI) | One `sbom-backend-<service>.cyclonedx.json` per service image, uploaded together as the `sbom-backend` 90-day workflow artifact |
+
+### `image-scan` (needs: backend-lint)
+
+Builds one image per service (`backend/Dockerfile` with `--build-arg SERVICE=<service>`, services found by `backend/tools/services.py`), then scans each: Trivy for OS-level HIGH/CRITICAL CVEs in the Debian base layer (fixed ones only), Dockle for the CIS Docker Benchmark, and a CycloneDX SBOM per image (the `sbom-backend` artifact). Trivy is the version `security-scan`'s steps use (`aquasecurity/setup-trivy`). Like `security-scan`, both scans run to the end and a final step fails the job naming the ones that failed. It was the last part of `security-scan` (the builds were about 3 of its 9 minutes).
 
 ### `codeql`
 

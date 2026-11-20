@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
+# SC2329: the checks' helper functions are called through run (run "name" fn).
+# SC2030/SC2031: in --parallel, each group's PASSED/FAILED are its subshell's own, written
+# to files and read back for the summary.
+# shellcheck disable=SC2329,SC2030,SC2031
+#
 # Runs every check that CI runs, locally.
-# Usage: ./check.sh
-# Each check is independent — all run even if earlier ones fail.
-# Exits non-zero if any check failed.
+#
+# Usage: ./check.sh [--parallel] [GROUP...]
+#   ./check.sh                        every group, one after another
+#   ./check.sh terraform scripts      only those groups
+#   ./check.sh --parallel             every group at once, each into .check-logs/<group>.log
+#   ./check.sh --parallel backend-lint backend-test frontend
+#   ./check.sh --list                 the groups and what each runs
+#
+# Each check is independent — all run even if earlier ones fail. Exits non-zero if any
+# check failed. The groups share nothing they write, so they can run side by side; they do
+# share the CPU, memory and Docker (playwright, images and terraform are the heavy ones).
+# The bootstrap (venvs, npm ci, yarn install) always runs first, once, and only for what the
+# chosen groups need.
 
 set -uo pipefail
 
@@ -43,6 +58,61 @@ require_tool() {
   return 0
 }
 
+# ── groups ────────────────────────────────────────────────────────────────────
+# In the order a sequential run takes them (lint before tests, as check.yml). e2e runs only
+# when named, or with RUN_E2E=1 (it needs the stack in test mode and makes LLM calls).
+ALL_GROUPS=(backend-lint frontend app backend-test playwright scripts security images api terraform e2e)
+group_info() {
+  case "$1" in
+    backend-lint) echo "ruff, mypy (tools, common, each service), service tree, import-linter, common installs" ;;
+    frontend)     echo "API clients in sync, eslint, prettier, typecheck, build, bundle size, vitest" ;;
+    app)          echo "frontend-app: eslint, prettier, typecheck, jest" ;;
+    backend-test) echo "pytest + coverage for common, tools and each service (compose mongo and valkey)" ;;
+    playwright)   echo "the web app's browser tests and their coverage floor" ;;
+    scripts)      echo "edge functions, deploy/drift/smoke script tests, scheduler, shellcheck, actionlint, sync checks" ;;
+    security)     echo "bandit, pip-audit, npm/yarn audit, retire.js, gitleaks, semgrep, hadolint, checkov, zizmor, trivy fs/config" ;;
+    images)       echo "each service image built, then trivy, SBOM and dockle (Docker)" ;;
+    api)          echo "each service's OpenAPI spec up to date, spectral" ;;
+    terraform)    echo "fmt, validate, terraform test (and per environment), tflint" ;;
+    e2e)          echo "the end-to-end journeys against the local stack in test mode (LLM calls)" ;;
+  esac
+}
+usage() { sed -n '7,20p' "$ROOT/check.sh" | sed 's/^# \{0,1\}//'; }
+
+PARALLEL=0
+SELECTED=()
+# selected GROUP… → true when any of them was chosen.
+selected() {
+  local want g
+  for want in "$@"; do
+    for g in ${SELECTED[@]+"${SELECTED[@]}"}; do [ "$g" = "$want" ] && return 0; done
+  done
+  return 1
+}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--parallel) PARALLEL=1 ;;
+    -l|--list)
+      for g in "${ALL_GROUPS[@]}"; do printf '  %-13s %s\n' "$g" "$(group_info "$g")"; done
+      exit 0 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo -e "${RED}Unknown option: $1${RESET}"; usage; exit 2 ;;
+    *)
+      if [ -z "$(group_info "$1")" ]; then
+        echo -e "${RED}Unknown group: $1${RESET} (./check.sh --list shows them)"; exit 2
+      fi
+      # Named twice: once is enough (two copies in --parallel would share one log).
+      selected "$1" || SELECTED+=("$1") ;;
+  esac
+  shift
+done
+if [ ${#SELECTED[@]} -eq 0 ]; then
+  for g in "${ALL_GROUPS[@]}"; do
+    [ "$g" = e2e ] && [ "${RUN_E2E:-}" != "1" ] && continue
+    SELECTED+=("$g")
+  done
+fi
+
 # ── bootstrap ─────────────────────────────────────────────────────────────────
 # Bootstrap failures exit immediately — these are hard prerequisites, not checks.
 
@@ -81,6 +151,8 @@ echo -e "${CYAN}Syncing backend/.venv...${RESET}"
   -r "$BACKEND/requirements-test.txt" \
   || { echo -e "${RED}pip install failed — check your network or the requirements files${RESET}"; exit 1; }
 
+# semgrep only runs in the security group.
+if selected security; then
 if [ ! -d "$SEMGREP_VENV" ]; then
   echo -e "${CYAN}Creating backend/.venv-semgrep (Python $PYTHON_VERSION)...${RESET}"
   "python$PYTHON_VERSION" -m venv "$SEMGREP_VENV" \
@@ -89,7 +161,11 @@ fi
 echo -e "${CYAN}Syncing backend/.venv-semgrep...${RESET}"
 "$SEMGREP_VENV/bin/pip" install -q -r "$SEMGREP_REQS" \
   || { echo -e "${RED}pip install of semgrep failed — check your network${RESET}"; exit 1; }
+fi
 rm -f "$SECURITY_REQS" "$SEMGREP_REQS"
+
+# node_modules only for the groups that use them.
+if selected frontend playwright security api; then
 
 # Frontend: npm ci, as CI does — installs exactly what package-lock.json says and
 # never rewrites it (npm install can, so local checks could run against different
@@ -98,11 +174,16 @@ rm -f "$SECURITY_REQS" "$SEMGREP_REQS"
 echo -e "${CYAN}Installing frontend/node_modules (npm ci)...${RESET}"
 (cd "$FRONTEND" && npm ci --quiet) \
   || { echo -e "${RED}npm ci failed — check your network, or run npm install if package-lock.json is out of sync with package.json${RESET}"; exit 1; }
+fi
+
+if selected app security; then
 
 echo -e "${CYAN}Syncing frontend-app/node_modules...${RESET}"
 (cd "$FRONTEND_APP" && yarn install --frozen-lockfile --quiet) \
   || { echo -e "${RED}yarn install failed — check your network or package.json${RESET}"; exit 1; }
+fi
 
+if selected security; then
 # retire.js vulnerability database — download if absent or older than 7 days.
 # Gitignored so it stays current without committing a static snapshot.
 RETIRE_DB="$FRONTEND/retire-jsrepo.json"
@@ -118,6 +199,7 @@ if [ ! -f "$RETIRE_DB" ] || find "$RETIRE_DB" -mtime +7 | grep -q .; then
       exit 1
     fi
   fi
+fi
 fi
 
 # ── tool discovery ────────────────────────────────────────────────────────────
@@ -139,6 +221,15 @@ CHECKOV="$(_tool checkov)"
 ZIZMOR="$(_tool zizmor)"
 PYTEST="$(_tool pytest)"
 
+# The services in the tree (backend/tools/services.py): several groups go over each one.
+SERVICES=()
+read -ra SERVICES <<< "$("$VENV_BIN/python" "$BACKEND/tools/services.py" 2>/dev/null | tr '\n' ' ')"
+# For the scanners: "auth/ users/ …" relative to backend/, and the same under $BACKEND.
+SERVICE_DIRS="${SERVICES[*]+${SERVICES[*]/%//}}"
+SERVICE_PATHS="${SERVICES[*]+${SERVICES[*]/#/$BACKEND/}}"
+
+# Bodies aren't indented: some embed Python in strings, where indentation is code.
+group_backend_lint() {
 # ── backend lint ──────────────────────────────────────────────────────────────
 # Lint first, every area, then the tests (as check.yml: each test job waits for its lint job).
 echo -e "\n${BOLD}════ BACKEND LINT ════${RESET}"
@@ -156,11 +247,6 @@ run "mypy" \
 # each is type-checked, tested and spec-checked on its own below.
 run "service tree valid (tools/services.py --check)" \
     bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/services.py --check"
-SERVICES=()
-read -ra SERVICES <<< "$("$VENV_BIN/python" "$BACKEND/tools/services.py" 2>/dev/null | tr '\n' ' ')"
-# For the scanners: "auth/ users/ …" relative to backend/, and the same under $BACKEND.
-SERVICE_DIRS="${SERVICES[*]+${SERVICES[*]/%//}}"
-SERVICE_PATHS="${SERVICES[*]+${SERVICES[*]/#/$BACKEND/}}"
 
 for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
   run "mypy ($svc)" \
@@ -182,7 +268,9 @@ run "common installs (core and extras)" \
       && pip() { \"\$tmp/venv/bin/pip\" --disable-pip-version-check \"\$@\"; } \
       && pip install -q \"\$tmp/src\" && pip check \
       && pip install -q \"\$tmp/src[generation,uploads]\" && pip check"
+}
 
+group_frontend() {
 # ── frontend lint ─────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND LINT ════${RESET}"
 
@@ -216,6 +304,16 @@ bundle_size_check() {
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
 
+# ── frontend tests ────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND TESTS ════${RESET}"
+
+# Component tests (jsdom) and browser tests (the app against a stubbed API), as check.yml's
+# frontend-test and frontend-e2e jobs; docs/web-ui-test-plan.md.
+run "vitest (frontend)" \
+    bash -c "cd '$FRONTEND' && npm test"
+}
+
+group_app() {
 # ── frontend-app lint ─────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND-APP LINT ════${RESET}"
 
@@ -228,6 +326,14 @@ run "prettier (check) (frontend-app)" \
 run "typecheck (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && node_modules/.bin/tsc --noEmit"
 
+# ── frontend-app tests ────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND-APP TESTS ════${RESET}"
+
+run "jest (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && CI=true yarn test --ci"
+}
+
+group_backend_test() {
 # ── backend tests ─────────────────────────────────────────────────────────────
 # common's and the tools' tests, then each service's. Same commands and coverage gates as CI.
 # The real Mongo/Redis integration tests skip unless pointed at throwaway servers — never a
@@ -267,15 +373,10 @@ for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
   run "pytest + coverage ($svc)" \
       bash -c "cd '$BACKEND' && '$PYTEST' '$svc/tests' --cov='$svc' --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
 done
+}
 
-# ── frontend tests ────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}════ FRONTEND TESTS ════${RESET}"
-
-# Component tests (jsdom) and browser tests (the app against a stubbed API), as check.yml's
-# frontend-test and frontend-e2e jobs; docs/web-ui-test-plan.md.
-run "vitest (frontend)" \
-    bash -c "cd '$FRONTEND' && npm test"
-
+group_playwright() {
+echo -e "\n${BOLD}════ PLAYWRIGHT ════${RESET}"
 # Playwright's own Chromium when installed (cd frontend && npx playwright install chromium),
 # else the installed Google Chrome (playwright.config.ts); skipped with neither.
 browser_tests() {
@@ -288,13 +389,9 @@ browser_tests() {
   (cd "$FRONTEND" && npm run test:e2e:ci)
 }
 run "playwright (frontend)" browser_tests
+}
 
-# ── frontend-app tests ────────────────────────────────────────────────────────
-echo -e "\n${BOLD}════ FRONTEND-APP TESTS ════${RESET}"
-
-run "jest (frontend-app)" \
-    bash -c "cd '$FRONTEND_APP' && CI=true yarn test --ci"
-
+group_scripts() {
 # ── scripts, edge and scheduler ───────────────────────────────────────────────
 # check.yml's lambda-edge-test job: the edge functions, the deploy scripts against fake
 # CLIs, the scheduler, and the checks that generated or listed copies are in sync.
@@ -366,7 +463,9 @@ run "routing data in sync (shared/routing.json)" \
 
 run "gateway config in sync (shared/service-routes.json)" \
     node "$ROOT/scripts/sync-gateway.mjs" --check
+}
 
+group_security() {
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
@@ -514,36 +613,47 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
   run "trivy config (modules)" \
       bash -c "'$TRIVY' config '$ROOT/modules' --exit-code 1 --severity HIGH,CRITICAL"
 
-  if require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
-    DOCKLE=""
-    require_tool dockle DOCKLE "brew install goodwithtech/r/dockle" || true
-
-    # Each service's image, as it ships: built once and shared by the trivy image scan, its
-    # SBOM (sbom-backend-<service>.cyclonedx.json) and dockle, then removed. GIT_SHA is only
-    # the image's metadata. The base image is pinned by digest (CI-03), so the
-    # scan sees exactly what a deploy builds; new Debian fixes come as a Dependabot digest bump.
-    scan_service_image() {
-      local svc="$1" image="superpower-$1:check-scan"
-      echo "Building the $svc image for scan..."
-      "$DOCKER" build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan" \
-        -t "$image" -f "$BACKEND/Dockerfile" "$ROOT" || return 1
-      local status=0
-      "$TRIVY" image --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --ignore-unfixed "$image" \
-        || status=1
-      "$TRIVY" image --format cyclonedx --output "$ROOT/sbom-backend-$svc.cyclonedx.json" "$image" \
-        && echo "$svc SBOM → sbom-backend-$svc.cyclonedx.json" || status=1
-      if [ -n "$DOCKLE" ]; then
-        "$DOCKLE" -af settings.py --ignore DKL-DI-0005 "$image" || status=1
-      fi
-      "$DOCKER" rmi "$image" >/dev/null 2>&1 || true
-      return "$status"
-    }
-    for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
-      run "image scan ($svc: trivy, SBOM, dockle)" scan_service_image "$svc"
-    done
-  fi
 fi
+}
 
+group_images() {
+echo -e "\n${BOLD}════ IMAGES ════${RESET}"
+# Its own Trivy cache when run beside the security group: two Trivy processes on one cache
+# wait on its lock and time out. The first run fills it (the vulnerability database).
+[ "$PARALLEL" = 1 ] && export TRIVY_CACHE_DIR="${TRIVY_IMAGES_CACHE_DIR:-$HOME/.cache/trivy-check-images}"
+TRIVY=""; DOCKER=""
+if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy" \
+  && require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
+  DOCKLE=""
+  require_tool dockle DOCKLE "brew install goodwithtech/r/dockle" || true
+
+  # Each service's image, as it ships: built once and shared by the trivy image scan, its
+  # SBOM (sbom-backend-<service>.cyclonedx.json) and dockle, then removed. GIT_SHA is only
+  # the image's metadata. The base image is pinned by digest (CI-03), so the
+  # scan sees exactly what a deploy builds; new Debian fixes come as a Dependabot digest bump.
+  scan_service_image() {
+    local svc="$1" image="superpower-$1:check-scan"
+    echo "Building the $svc image for scan..."
+    "$DOCKER" build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan" \
+      -t "$image" -f "$BACKEND/Dockerfile" "$ROOT" || return 1
+    local status=0
+    "$TRIVY" image --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --ignore-unfixed "$image" \
+      || status=1
+    "$TRIVY" image --format cyclonedx --output "$ROOT/sbom-backend-$svc.cyclonedx.json" "$image" \
+      && echo "$svc SBOM → sbom-backend-$svc.cyclonedx.json" || status=1
+    if [ -n "$DOCKLE" ]; then
+      "$DOCKLE" -af settings.py --ignore DKL-DI-0005 "$image" || status=1
+    fi
+    "$DOCKER" rmi "$image" >/dev/null 2>&1 || true
+    return "$status"
+  }
+  for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+    run "image scan ($svc: trivy, SBOM, dockle)" scan_service_image "$svc"
+  done
+fi
+}
+
+group_api() {
 # ── dast & api spec ───────────────────────────────────────────────────────────
 # spectral: each service's spec, exported from its app without a running server.
 # nuclei:   only in CI (below); it would need the compose stack's gateway on :8088.
@@ -595,7 +705,9 @@ done
 #   }
 #   run "nuclei (DAST)" nuclei_dast
 # fi
+}
 
+group_terraform() {
 # ── terraform ─────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ TERRAFORM ════${RESET}"
 
@@ -649,7 +761,9 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
     run "tflint (${name%/})" bash -c "'$TFLINT' --chdir='$m' --config='$TFLINT_CONFIG'"
   done
 fi
+}
 
+group_e2e() {
 # ── end to end on the local stack (build plan 6.1, 6.2) ───────────────────────
 # Off by default: they need the compose stack in test mode and Moto up
 # (`docker compose --env-file .env --env-file .env.test up -d`; scripts/e2e refuses a stack on
@@ -659,16 +773,85 @@ fi
 # into test mode and back.
 # check.yml's e2e job runs them in CI. Gate 6 runs them:
 #   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
-if [ "${RUN_E2E:-}" = "1" ]; then
-  echo -e "\n${BOLD}════ END TO END (local stack) ════${RESET}"
-  run "e2e: every endpoint (scripts/e2e)" \
-      "$VENV_BIN/python" "$ROOT/scripts/e2e/full-journey.py"
-  run "e2e: account deletion (scripts/e2e)" \
-      "$VENV_BIN/python" "$ROOT/scripts/e2e/account-deletion.py"
-  run "e2e: failure and convergence (scripts/e2e)" \
-      "$VENV_BIN/python" "$ROOT/scripts/e2e/convergence.py"
+echo -e "\n${BOLD}════ END TO END (local stack) ════${RESET}"
+run "e2e: every endpoint (scripts/e2e)" \
+    "$VENV_BIN/python" "$ROOT/scripts/e2e/full-journey.py"
+run "e2e: account deletion (scripts/e2e)" \
+    "$VENV_BIN/python" "$ROOT/scripts/e2e/account-deletion.py"
+run "e2e: failure and convergence (scripts/e2e)" \
+    "$VENV_BIN/python" "$ROOT/scripts/e2e/convergence.py"
+}
+
+# ── run the groups ────────────────────────────────────────────────────────────
+run_group() { "group_${1//-/_}"; }
+
+if ! selected e2e; then
+  echo -e "\n${CYAN}End-to-end runs skipped: ./check.sh e2e (or RUN_E2E=1) runs them against the local stack.${RESET}"
+fi
+
+if [ "$PARALLEL" = 1 ] && [ ${#SELECTED[@]} -gt 1 ]; then
+  # Each group in a subshell of its own, its output in .check-logs/<group>.log and its
+  # results in <group>.passed / .failed, read back for the summary below.
+  LOGDIR="$ROOT/.check-logs"
+  rm -rf "$LOGDIR" && mkdir -p "$LOGDIR"
+  echo -e "\n${BOLD}════ ${#SELECTED[@]} GROUPS IN PARALLEL ════${RESET} (logs: .check-logs/<group>.log)"
+  PIDS=(); STARTED=$SECONDS
+  for g in "${SELECTED[@]}"; do
+    (
+      PASSED=(); FAILED=()
+      run_group "$g"
+      printf '%s\n' "${PASSED[@]+"${PASSED[@]}"}" > "$LOGDIR/$g.passed"
+      printf '%s\n' "${FAILED[@]+"${FAILED[@]}"}" > "$LOGDIR/$g.failed"
+    ) > "$LOGDIR/$g.log" 2>&1 &
+    PIDS+=($!)
+    echo -e "  ${CYAN}started${RESET} $g"
+  done
+  # Ctrl-C stops every group and everything it started, however deep (npm → node →
+  # Playwright → Chromium): children first, so none is left running on its own.
+  stop_tree() {
+    local child
+    for child in $(pgrep -P "$1" 2>/dev/null); do stop_tree "$child"; done
+    kill -TERM "$1" 2>/dev/null
+  }
+  stop_groups() {
+    local pid
+    for pid in "${PIDS[@]}"; do stop_tree "$pid"; done
+    echo -e "\n${RED}Stopped.${RESET}"
+    exit 130
+  }
+  trap stop_groups INT TERM
+
+  # Report each group as it finishes (bash 3.2 has no `wait -n`, so poll).
+  FINISHED=()
+  for _ in "${SELECTED[@]}"; do FINISHED+=(0); done
+  left=${#SELECTED[@]}
+  while [ "$left" -gt 0 ]; do
+    for i in "${!SELECTED[@]}"; do
+      [ "${FINISHED[$i]}" = 1 ] && continue
+      kill -0 "${PIDS[$i]}" 2>/dev/null && continue
+      wait "${PIDS[$i]}" 2>/dev/null
+      FINISHED[i]=1; left=$((left - 1))
+      g="${SELECTED[$i]}"
+      took="$(( (SECONDS - STARTED) / 60 ))m$(printf '%02d' $(( (SECONDS - STARTED) % 60 )))s"
+      if [ ! -f "$LOGDIR/$g.failed" ]; then
+        echo -e "  ${RED}✗ $g stopped before it finished${RESET} (+$took) — .check-logs/$g.log"
+        FAILED+=("$g (stopped: see .check-logs/$g.log)")
+        continue
+      fi
+      npass=0; nfail=0; fails=()
+      while IFS= read -r line; do [ -n "$line" ] && { PASSED+=("$line"); npass=$((npass + 1)); }; done < "$LOGDIR/$g.passed"
+      while IFS= read -r line; do [ -n "$line" ] && { FAILED+=("$line"); fails+=("$line"); nfail=$((nfail + 1)); }; done < "$LOGDIR/$g.failed"
+      if [ "$nfail" -eq 0 ]; then
+        echo -e "  ${GREEN}✓ $g${RESET} — $npass passed (+$took)"
+      else
+        echo -e "  ${RED}✗ $g${RESET} — $nfail failed: ${fails[*]} (+$took) — .check-logs/$g.log"
+      fi
+    done
+    [ "$left" -gt 0 ] && sleep 2
+  done
+  trap - INT TERM
 else
-  echo -e "\n${CYAN}End-to-end runs skipped: RUN_E2E=1 runs them against the local stack.${RESET}"
+  for g in "${SELECTED[@]}"; do run_group "$g"; done
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
