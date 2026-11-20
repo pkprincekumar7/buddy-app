@@ -31,7 +31,7 @@ export interface paths {
         };
         /**
          * Api Health
-         * @description The running build (git SHA, branch, commit time, tag), for smoke tests and support; `unknown` without build metadata. This service's build only.
+         * @description The running build (git SHA, branch, commit time, tag) and the region that answered, for smoke tests and support; `unknown` without build metadata. This service's build only.
          */
         get: operations["api_health_api_health_get"];
         put?: never;
@@ -112,6 +112,8 @@ export interface components {
             committed_at: string | null;
             /** Tag */
             tag: string | null;
+            /** Region */
+            region: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

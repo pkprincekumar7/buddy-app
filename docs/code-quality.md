@@ -70,8 +70,37 @@ the `prepare` script in `package.json`) — no separate command needed.
 ./check.sh
 ```
 
+**Groups.** The checks are in groups, so you can run only the ones you need, or several at once:
+
+```bash
+./check.sh --list                                   # the groups and what each runs
+./check.sh terraform scripts                        # only those groups, one after another
+./check.sh --parallel                               # every group at once
+./check.sh --parallel backend-lint backend-test frontend
+./check.sh e2e                                      # the end-to-end journeys (or RUN_E2E=1 ./check.sh)
+```
+
+| Group | Runs |
+|---|---|
+| `backend-lint` | ruff, ruff format, mypy (tools, common, each service), the service tree check, import-linter, common's installs |
+| `frontend` | API clients in sync, eslint, prettier, typecheck, build, bundle size, vitest |
+| `app` | frontend-app's eslint, prettier, typecheck and jest |
+| `backend-test` | pytest with the coverage gates for common, tools and each service (the compose `mongo` and `valkey`) |
+| `playwright` | the web app's browser tests and their coverage floor |
+| `scripts` | the edge functions' tests, every `scripts/*.test.sh`, the scheduler dispatcher, the service lists, shellcheck, actionlint, the routing and gateway sync checks |
+| `security` | bandit, pip-audit, npm and yarn audit, retire.js, gitleaks, semgrep, hadolint, checkov, zizmor, trivy fs/config and the frontends' SBOMs |
+| `images` | each service image built, then trivy, its SBOM and dockle (Docker) |
+| `api` | each service's OpenAPI spec up to date, spectral |
+| `terraform` | fmt, validate, terraform test (and per environment), tflint |
+| `e2e` | the end-to-end journeys (only when named, or with `RUN_E2E=1`) |
+
+- **The bootstrap runs once, first, and only for the groups chosen:** the backend venv always (it's quick and lists the services); the semgrep venv, the retire.js database and the yarn install only for `security` (and `app` for yarn); `npm ci` only for `frontend`, `playwright`, `security` or `api`. So `./check.sh terraform scripts` never reinstalls `node_modules`.
+- **`--parallel`** starts every chosen group at once, each in its own process, with its output in `.check-logs/<group>.log` (gitignored, replaced each run). It reports each group as it finishes (✓ with its count, or ✗ with the checks that failed and its log), then the usual summary of every check; it exits non-zero if any check failed. Ctrl-C stops every group.
+- **What the groups share:** nothing they write (Playwright alone writes `frontend/coverage`, `images` alone builds images; in parallel `images` uses its own Trivy cache, `~/.cache/trivy-check-images` or `$TRIVY_IMAGES_CACHE_DIR`, since two Trivy processes on one cache wait on its lock). They do share the CPU, memory and Docker: `playwright`, `images` and `terraform` are the heavy ones, so run those together only on a machine with room.
+- `npm ci` replaces `frontend/node_modules`, so don't run `frontend`, `playwright`, `security` or `api` while a dev server from `frontend/` is running.
+
 No manual setup required for backend, frontend, or frontend-app checks. On every run the script automatically:
-- Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements-dev.txt` (the union of every service's runtime pins), `requirements-lint.txt` (ruff, mypy, import-linter), `requirements-security.txt` (bandit, pip-audit, checkov) and `requirements-test.txt` (pytest, pytest-cov, Moto, OpenTelemetry). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
+- Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements-dev.txt` (the union of every service's runtime pins), `requirements-lint.txt` (ruff, mypy, import-linter), `requirements-security.txt` (bandit, pip-audit, checkov, zizmor) and `requirements-test.txt` (pytest, pytest-cov, Moto, OpenTelemetry). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
 - Creates `backend/.venv-semgrep` for semgrep alone, at the version in `requirements-security.txt`. semgrep pins OpenTelemetry `~=1.37`, while the services and tests pin 1.45.1 (a security fix), so the two can't share a venv. CI already installs the security tools in a job of their own.
 - Runs `npm ci` in `frontend/`, as CI does: it installs exactly what `package-lock.json` says and never rewrites it (slower, since it reinstalls `node_modules` every run).
 - Runs `yarn install --frozen-lockfile` in `frontend-app/`. Fast on subsequent runs when `node_modules` already exists.
@@ -87,7 +116,7 @@ MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=re
 
 The end-to-end scripts (`scripts/e2e/full-journey.py`, `account-deletion.py`, `convergence.py`) are off by default; `RUN_E2E=1` runs them against the running local stack (they make real LLM calls with the keys in `.env`).
 
-**Required host tools:** `check.sh` fails if any of these are absent — install all of them before running the script. `semgrep` (into `backend/.venv-semgrep`) and `checkov` (into `backend/.venv`) are installed automatically from `requirements-security.txt` and do not need a separate step. `terraform` is also used by the jwt-validator-lambda test — that one specific check self-skips with a message instead of failing if `terraform` is missing, but every other check listed below is a hard failure. `shellcheck` is optional: the ShellCheck step is skipped when it isn't installed, and `dockle` is optional inside the image scan.
+**Required host tools:** `check.sh` fails if any of these are absent — install all of them before running the script. `semgrep` (into `backend/.venv-semgrep`), and `checkov` and `zizmor` (into `backend/.venv`), are installed automatically from `requirements-security.txt` and do not need a separate step. `terraform` is also used by the jwt-validator-lambda test — that one specific check self-skips with a message instead of failing if `terraform` is missing, but every other check listed below is a hard failure. `shellcheck` is optional: the ShellCheck step is skipped when it isn't installed, and `dockle` is optional inside the image scan.
 
 ```bash
 brew install gitleaks
@@ -97,6 +126,7 @@ brew install goodwithtech/r/dockle
 brew install terraform
 brew install terraform-linters/tap/tflint
 brew install shellcheck   # optional
+brew install actionlint
 # The image scans also require Docker to be installed AND running:
 # https://docs.docker.com/get-docker/
 # nuclei is NOT listed here — the DAST check is disabled locally (commented out in
@@ -134,6 +164,7 @@ brew install shellcheck   # optional
 | `ecs-services.sh` / `fill-service-secrets.sh` tests | bash, fake `aws` CLI | The deploy / restart / promote helpers and terraform-live-backend's first-apply secret fill |
 | service lists match services.tf | `scripts/check-service-lists.sh` | The workflows' `service` input help text matches `services.tf` |
 | shellcheck (optional) | shellcheck | Every tracked shell script (`git ls-files '*.sh'`), `check.sh` included |
+| actionlint | actionlint | Every workflow under `.github/workflows/`, each `run:` script through shellcheck |
 | routing data in sync | `scripts/sync-routing.mjs --check` | The generated copies of `shared/routing.json` (`backend/common/regions_data.py`, `backend/auth/countries_data.py`, the frontends' `countries.ts` / `locationHint.ts`) |
 | gateway config in sync | `scripts/sync-gateway.mjs --check` | `local/gateway/nginx.conf` matches `shared/service-routes.json` |
 | `bandit` | bandit 1.9.4 | `backend/tools/`, `backend/common/` and each service — Python SAST: hard-coded secrets, injection, insecure calls (medium+ severity) |
@@ -146,6 +177,7 @@ brew install shellcheck   # optional
 | semgrep (SAST) | semgrep 1.179.0 | `backend/tools/`, `backend/common/`, each backend service, `frontend/src/`, `frontend-app/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset); installed in its own venv, `backend/.venv-semgrep` |
 | hadolint (backend Dockerfile) ² | hadolint | `backend/Dockerfile` — Dockerfile best practices and security misconfigurations |
 | hadolint (frontend Dockerfile) ² | hadolint | `frontend/Dockerfile` — same |
+| zizmor (GitHub Actions security) | zizmor 1.32.0 | `.github/` (workflows and `dependabot.yml`), offline — injection, token permissions, persisted credentials, unpinned actions, Dependabot cooldown; venv-installed |
 | checkov (Terraform IaC) | checkov 3.2.529 | `infra-live-*/terraform/` (backend, edge, frontend, scheduler) and `modules/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM); venv-installed |
 | trivy (backend / frontend CVE scan) ³ | trivy | `backend/`, `frontend/` — HIGH/CRITICAL CVEs in Python and npm packages (complements pip-audit / npm audit with a second CVE database) |
 | trivy (backend / frontend license scan) ³ | trivy | `backend/`, `frontend/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) |

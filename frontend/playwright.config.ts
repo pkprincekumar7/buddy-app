@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
 import { chromium, defineConfig, devices, type ReporterDescription } from '@playwright/test';
+import { coverageOptions, E2E_PORT } from './e2e/coverage-options.mjs';
 
 // Browser tests (`npm run test:e2e`): the real web app in Chrome against a stubbed API
 // (e2e/fixtures.ts), so no backend, database, LLM or account is needed and nothing real is
 // written. The app is served by its own Vite dev server on PORT. docs/web-ui-test-plan.md.
-const PORT = 5288;
+const PORT = E2E_PORT;
 const CI = !!process.env['CI'];
 const COVERAGE = !!process.env['COVERAGE'];
 // Playwright's own headless Chromium when it's installed (`npx playwright install chromium`
@@ -40,44 +41,16 @@ if (!Number.isFinite(SLOW_MO) || SLOW_MO < 0) throw new Error('SLOWMO must be a 
 const reporters: ReporterDescription[] = [[CI ? 'github' : 'list']];
 if (COVERAGE) {
   // V8 coverage from Chromium (collected in e2e/fixtures.ts), mapped back to src/ through
-  // Vite's source maps: `npm run test:e2e:coverage`, then open coverage/index.html.
+  // Vite's source maps: `npm run test:e2e:coverage`, then open coverage/index.html. The
+  // settings are in e2e/coverage-options.mjs, which the shard merge uses too. COVERAGE_RAW
+  // also keeps the raw data (coverage/raw): check.yml's shards, merged by
+  // e2e/coverage-merge.mjs.
   reporters.push([
     'monocart-reporter',
     {
       name: 'Web UI tests',
       outputFile: './test-results/report.html',
-      coverage: {
-        outputDir: './coverage',
-        // One self-contained HTML file: otherwise its scripts land in ./assets, outside it.
-        inline: true,
-        entryFilter: (entry: { url: string }) =>
-          entry.url.includes(`127.0.0.1:${PORT}/src/`) && !entry.url.includes('/node_modules/'),
-        // Vite's dev source maps name a source by its file name alone ("account.ts"), so
-        // put it back in its module's folder, then keep the app's own code.
-        sourcePath: (file: string, info: { distFile?: string }) => {
-          const dir = (info.distFile ?? '').replace(/^.*?\/src\//, 'src/').replace(/[^/]*$/, '');
-          return file.includes('/') ? file : `${dir}${file}`;
-        },
-        sourceFilter: (path: string) => !path.includes('node_modules'),
-        outputFilter: (file: { sourcePath: string }) =>
-          file.sourcePath.startsWith('src/') &&
-          !/^src\/(api\/generated|components\/ui|test)\//.test(file.sourcePath),
-        // Count the files no test loads too (as 0%), so the number isn't flattered. They're
-        // TypeScript, so Vite's own transform makes them parseable.
-        all: {
-          dir: ['./src'],
-          filter: (path: string) =>
-            /\.(ts|tsx)$/.test(path) &&
-            !/(\.test\.|\.d\.ts$|\/test\/|\/api\/generated\/|\/components\/ui\/)/.test(path),
-          transformer: async (entry: { url: string; source: string; sourceMap?: unknown }) => {
-            const { transformWithOxc } = await import('vite');
-            const out = await transformWithOxc(entry.source, entry.url, { sourcemap: true });
-            entry.source = out.code;
-            entry.sourceMap = out.map;
-          },
-        },
-        reports: ['v8', 'console-summary', 'json-summary'],
-      },
+      coverage: coverageOptions({ raw: !!process.env['COVERAGE_RAW'] }),
     },
   ]);
 }

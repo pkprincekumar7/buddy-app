@@ -331,4 +331,4 @@ No database and no worker.
 |---|---|---|---|---|
 | POST | `/speech/transcriptions` | 10/min | `multipart/form-data` field `audio` (at most 10 MB; webm, mp3, wav, m4a, ogg or mp4) → `{transcript}`. Parents only. Nothing is stored or logged. | `413 audio_too_large`, `415 unsupported_audio_type`, `502 transcription_unavailable`, `503 transcription_not_configured` |
 | GET | `/downloads/apk` | 10/min | `{url, filename, expires_in: 300}` for the newest APK. Parents only. | `404 apk_not_available`, `503 downloads_not_configured`, `503 downloads_unavailable` |
-| GET | `/api/health` (no `/api/v1` prefix) | 30/min per IP | Public. `{status, commit, branch, committed_at, tag}` for shared's build. | |
+| GET | `/api/health` (no `/api/v1` prefix) | 30/min per IP | Public. `{status, commit, branch, committed_at, tag, region}`: shared's build and the region that answered (the deploys' smoke test reads both). | |

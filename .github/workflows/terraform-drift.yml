@@ -1,0 +1,68 @@
+name: Terraform Drift
+run-name: "Terraform Drift (${{ inputs.environments || 'dev,sbx,stg,prod' }})"
+
+# Daily: does AWS still match what Terraform last applied, in every environment? Each
+# deployed stack runs a read-only `terraform plan -refresh-only` (terraform-drift-env.yml,
+# scripts/drift.sh) and fails, naming each resource, when one was changed or deleted
+# outside Terraform. Code merged but not applied isn't drift and isn't reported. Nothing is
+# applied, locked or saved. See docs/infra-operations.md, "Drift detection".
+
+on:
+  schedule:
+    # 11:17 UTC = 16:47 IST: inside the scheduler's 15:00–22:00 IST window, when dev, sbx
+    # and stg are up (infra-live-scheduler tfvars). prod is always up.
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+    inputs:
+      environments:
+        description: "Environments to check, comma-separated: dev, sbx, stg, prod"
+        required: true
+        type: string
+        default: "dev,sbx,stg,prod"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-drift
+  cancel-in-progress: false
+
+jobs:
+  environments:
+    name: Environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      environments: ${{ steps.list.outputs.environments }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check the environments
+        id: list
+        env:
+          ENVIRONMENTS: ${{ inputs.environments || 'dev,sbx,stg,prod' }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          list=$(jq -cn --arg v "$ENVIRONMENTS" '$v | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | unique')
+          [ "$list" != "[]" ] || { echo "::error::No environment given."; exit 1; }
+          while IFS= read -r environment; do check_environment "$environment"; done < <(jq -r '.[]' <<<"$list")
+          echo "environments=$list" >> "$GITHUB_OUTPUT"
+
+  drift:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    name: Drift (${{ matrix.environment }})
+    needs: environments
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.environments.outputs.environments) }}
+    uses: ./.github/workflows/terraform-drift-env.yml
+    with:
+      environment: ${{ matrix.environment }}

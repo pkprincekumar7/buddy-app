@@ -51,10 +51,11 @@ check_optional_sha() {
   return 1
 }
 
-# check_action VALUE → error unless plan, apply, plan-destroy or destroy.
+# check_action VALUE → error unless plan, apply, plan-destroy, destroy or drift (the
+# read-only refresh-only check terraform-drift-env.yml runs, scripts/drift.sh).
 check_action() {
-  [[ "$1" =~ ^(plan|apply|plan-destroy|destroy)$ ]] && return 0
-  echo "::error::action must be plan, apply, plan-destroy or destroy, not '$1'."
+  [[ "$1" =~ ^(plan|apply|plan-destroy|destroy|drift)$ ]] && return 0
+  echo "::error::action must be plan, apply, plan-destroy, destroy or drift, not '$1'."
   return 1
 }
 

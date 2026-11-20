@@ -39,6 +39,32 @@ account services included (production-readiness review, DR-02):
   events, kept by AWS with no trail) still records what happens, the destroy and the next
   apply included.
 
+## Drift detection
+
+`terraform-drift.yml` runs daily at 11:17 UTC (16:47 IST, inside the scheduler's 15:00–22:00 IST window, when dev, sbx and stg are up; prod is always up) and on demand. It answers one question: **does AWS still match what Terraform last applied?** A console change, a CLI hotfix never written back to code, or AWS rewriting a value itself (as Valkey did with `resetchannels`) shows here, instead of as a surprise in the next apply.
+
+**How it checks.** For each environment, `terraform-drift-env.yml` finds the regions with a deployed backend (those with the `/<app>/<env>/backend/<region>/alb_internal_fqdn` SSM parameter), then runs each stack's own workflow (`terraform-live-backend` per region, `-edge`, `-frontend`, and `-scheduler` outside prod) with `action: drift`. That runs `terraform plan -refresh-only -detailed-exitcode` with the same variables and secrets as a normal plan (`scripts/drift.sh`):
+
+- **Read-only.** A refresh-only plan never proposes the code's changes, so a commit merged but not applied (or `main` being ahead of what dev runs) isn't reported. `-lock=false`: it never holds the state lock, so it never makes an apply fail on a lock. The plan file (it holds every variable unredacted) is deleted at once; nothing is uploaded.
+- **Its own concurrency groups** (`…-drift`): sharing the stacks' groups would let a drift run cancel an apply waiting in the queue.
+- **A stack that isn't deployed is skipped** with a notice: no state resources (destroyed overnight, or never applied), or, for the backend and edge, no deployed region.
+- **Outputs only** (an unapplied code change to an output) isn't drift.
+
+**When it finds drift**, that stack's job fails: one error annotation per resource ("changed outside Terraform", with the names of the attributes that changed, or "deleted outside Terraform"; up to 50), and the job summary lists them. **Addresses only, never the values:** the repository is public, so every run's log and summary are too, and the plan text would show the drifted values (security-group rules, ARNs, account IDs; Terraform hides only what's marked sensitive). GitHub emails the run's failure to whoever last changed the workflow's schedule. To see what changed, run `terraform-live-<stack>` with `plan` for that environment (its summary shows the plan, so the same caution applies), or `terraform plan` locally. Then either:
+
+1. **Keep AWS's value:** change the code to match, open a PR, and apply. An apply refreshes the state too, so the next check is clean.
+2. **Undo the change:** apply the stack (`terraform-live-<stack>`, `apply`): Terraform puts AWS back to the code.
+
+A resource **deleted** outside Terraform is recreated by the next apply.
+
+**Changes the workflows make on purpose aren't drift.** A deploy rolls out a new task definition, autoscaling sets the task count, `scripts/fill-service-secrets.sh` fills in the secrets, the kill switch is turned off by hand, and the Valkey zone retry sets the preferred zones. [`scripts/drift-ignore.json`](../scripts/drift-ignore.json) lists each, by resource (`type.name`, e.g. `aws_ecs_service.this`) and attribute, with its reason. A change is skipped only when every attribute that changed is on that resource's list; another attribute on the same resource, or deleting the resource, is still drift. `ignore_changes` alone can't do this: it only stops Terraform planning a change, and a refresh-only plan still reports the attribute. The list matches what the code's `ignore_changes` cover; add an entry (with its reason) only for a change made on purpose, never to quiet a real one.
+
+**Before relying on it:** the first runs in each environment may report an attribute AWS changes on its own. Every apply stores AWS's current values in the state, so a value AWS changed once is clean after the next apply. One that keeps changing goes in the ignore list with its reason; one that's a real change goes into the code (as with the Valkey access strings). Then a red run always means a real change.
+
+**Testing it:** run it on dev (`environments: dev`) while it's up; it should be green. Add a tag to one of dev's security groups in the console, run it again: the backend job fails, naming that security group. Remove the tag, run once more: green. Don't make a change in prod to test it.
+
+**Limits:** it uses the same deploy role as every workflow (AdministratorAccess, the deferred SEC-04); a read-only role would be the right one for a check that never writes. Atlas resources are checked only where Terraform manages them (the PrivateLink endpoint in stg and prod).
+
 ## SSM Parameter Store — cross-module hand-off
 
 The modules and workflows never read each other's Terraform state. They exchange values through

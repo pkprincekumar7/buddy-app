@@ -36,6 +36,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -105,6 +107,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Start MongoDB 8.0 (single-node replica set)
         run: bash ../scripts/ci-start-mongo.sh
@@ -152,6 +156,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -191,6 +197,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Start MongoDB 8.0 (single-node replica set)
         run: bash ../scripts/ci-start-mongo.sh
@@ -274,6 +282,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -325,6 +335,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -340,11 +352,17 @@ jobs:
       - name: Component tests (Vitest)
         run: npm test
 
-  frontend-e2e:
-    name: Frontend Browser Tests (Playwright)
-    needs: [frontend-lint]
+  # The browser tests, in 4 shards side by side: one runner took about 13 minutes, the
+  # whole workflow's longest path. No lint gate either, so they start at once. Each shard
+  # keeps its raw coverage (COVERAGE_RAW), which the job below merges to check the floor.
+  frontend-e2e-shard:
+    name: Frontend Browser Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 35 # an estimated ~10 min on a 4-core runner, with room to spare
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: frontend
@@ -352,6 +370,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -385,18 +405,91 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      # With coverage, and a floor it mustn't fall below (e2e/coverage-floor.mjs).
-      - name: Browser tests (Playwright) and coverage floor
-        run: npm run test:e2e:ci
+      - name: Browser tests (Playwright), shard ${{ matrix.shard }}/4
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: npm run test:e2e:shard -- --shard="$SHARD/4"
+
+      - name: Upload the shard's raw coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-coverage-raw-${{ matrix.shard }}
+          # A re-run of this job replaces the artifact an earlier attempt uploaded.
+          overwrite: true
+          path: frontend/coverage/raw/
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Upload Playwright screenshots and traces
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-results
-          path: |
-            frontend/test-results/
-            frontend/coverage/
+          name: playwright-results-${{ matrix.shard }}
+          # A re-run of this job replaces the artifact an earlier attempt uploaded.
+          overwrite: true
+          path: frontend/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The check rulesets name: every shard passed, and their merged coverage
+  # (e2e/coverage-merge.mjs, the settings a single run uses) is over the floor
+  # (e2e/coverage-floor.mjs).
+  frontend-e2e:
+    name: Frontend Browser Tests (Playwright)
+    needs: frontend-e2e-shard
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # After the checkout: every run step here starts in frontend/, which it creates.
+      - name: All shards passed
+        env:
+          RESULT: ${{ needs.frontend-e2e-shard.result }}
+        run: |
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::A browser-test shard didn't pass ($RESULT): see its job."
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # monocart's merge, and Vite's transform for the files no test loads.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download the shards' raw coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: e2e-coverage-raw-*
+          path: coverage-raw/
+
+      - name: Merge the coverage and check the floor
+        run: |
+          npm run test:e2e:merge -- ../coverage-raw/e2e-coverage-raw-*
+          node e2e/coverage-floor.mjs
+
+      - name: Upload the merged coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-coverage
+          # A re-run of this job replaces the artifact an earlier attempt uploaded.
+          overwrite: true
+          path: frontend/coverage/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -411,6 +504,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -444,6 +539,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -466,6 +563,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -518,6 +617,14 @@ jobs:
       - name: Run valkey-capacity.sh tests
         run: bash scripts/valkey-capacity.test.sh
 
+      # The post-deploy smoke tests' checks, against a fake curl.
+      - name: Run smoke.sh tests
+        run: bash scripts/smoke.test.sh
+
+      # The daily drift check's helpers (terraform-drift.yml), against a fake terraform and aws.
+      - name: Run drift.sh tests
+        run: bash scripts/drift.test.sh
+
       # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07),
       # against a fake aws CLI.
       - name: Run frontend-publish.sh tests
@@ -545,6 +652,20 @@ jobs:
       - name: ShellCheck (every shell script)
         run: git ls-files -z '*.sh' | xargs -0 shellcheck -x
 
+      # Every workflow: expressions, job and step references, inputs, and each run: script
+      # through ShellCheck (installed on the runner). Checked against the SHA-256 GitHub
+      # records for the release asset, as gitleaks is (CI-04). Bump both together.
+      - name: Install actionlint
+        run: |
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            -o /tmp/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint_1.7.12_linux_amd64.tar.gz" \
+            | sha256sum --check --strict
+          tar -xz -C /usr/local/bin actionlint < /tmp/actionlint_1.7.12_linux_amd64.tar.gz
+
+      - name: actionlint (every workflow)
+        run: actionlint -color
+
   # Lint and test are two jobs that run side by side, so the tests don't wait for validate
   # and tflint (validate inits every stack and module, CI-15; the tests init them again).
   terraform-lint:
@@ -555,6 +676,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -634,6 +757,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -692,6 +817,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           fetch-depth: 0  # gitleaks needs full git history to scan past commits
 
       # ── secret & infra scanning ──────────────────────────────────────────────
@@ -772,6 +898,14 @@ jobs:
           checkov -d . --framework terraform --quiet --compact --skip-download \
             --skip-path node_modules --skip-path '\.terraform' --skip-path '\.venv' \
             -o cli -o sarif --output-file-path console,sarif/checkov.sarif
+
+      # The workflows and dependabot.yml: script injection from ${{ }} in run:, broad
+      # token permissions, persisted checkout credentials, unpinned actions, Dependabot
+      # cooldown. --offline: no GitHub API calls, so the same findings locally and here.
+      - name: zizmor (GitHub Actions security)
+        id: zizmor
+        continue-on-error: true
+        run: zizmor --offline --no-progress .github/
 
       # ── Node.js security tools ───────────────────────────────────────────────
       - name: Set up Node
@@ -1023,6 +1157,122 @@ jobs:
       # One image per service (backend/Dockerfile, --build-arg SERVICE), found from the tree
       # (backend/tools/services.py). The base image is pinned by digest (CI-03), so this scans
       # the same base a deploy builds on; Debian fixes arrive as Dependabot digest bumps.
+      - name: Generate SBOM (frontend filesystem)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend/
+          format: cyclonedx
+          output: sbom-frontend.cyclonedx.json
+
+      - name: Upload SBOM artifact (frontend)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-frontend
+          path: sbom-frontend.cyclonedx.json
+          retention-days: 90
+
+      - name: Generate SBOM (frontend-app filesystem)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend-app/
+          format: cyclonedx
+          output: sbom-frontend-app.cyclonedx.json
+
+      - name: Upload SBOM artifact (frontend-app)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-frontend-app
+          path: sbom-frontend-app.cyclonedx.json
+          retention-days: 90
+
+      # ── fail gate: surface all check results before failing the job ──────────
+      - name: Fail if any security check failed
+        if: always()
+        env:
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          HADOLINT_BACKEND_OUTCOME: ${{ steps.hadolint_backend.outcome }}
+          HADOLINT_FRONTEND_OUTCOME: ${{ steps.hadolint_frontend.outcome }}
+          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
+          SEMGREP_OUTCOME: ${{ steps.semgrep.outcome }}
+          PIP_AUDIT_OUTCOME: ${{ steps.pip_audit.outcome }}
+          CHECKOV_OUTCOME: ${{ steps.checkov.outcome }}
+          ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
+          NPM_AUDIT_OUTCOME: ${{ steps.npm_audit.outcome }}
+          YARN_AUDIT_FRONTEND_APP_OUTCOME: ${{ steps.yarn_audit_frontend_app.outcome }}
+          RETIRE_OUTCOME: ${{ steps.retire.outcome }}
+          RETIRE_FRONTEND_APP_OUTCOME: ${{ steps.retire_frontend_app.outcome }}
+          TRIVY_BACKEND_VULN_OUTCOME: ${{ steps.trivy_backend_vuln.outcome }}
+          TRIVY_FRONTEND_VULN_OUTCOME: ${{ steps.trivy_frontend_vuln.outcome }}
+          TRIVY_FRONTEND_APP_VULN_OUTCOME: ${{ steps.trivy_frontend_app_vuln.outcome }}
+          TRIVY_BACKEND_LICENSE_OUTCOME: ${{ steps.trivy_backend_license.outcome }}
+          TRIVY_FRONTEND_LICENSE_OUTCOME: ${{ steps.trivy_frontend_license.outcome }}
+          TRIVY_FRONTEND_APP_LICENSE_OUTCOME: ${{ steps.trivy_frontend_app_license.outcome }}
+          TRIVY_CONFIG_BACKEND_OUTCOME: ${{ steps.trivy_config_backend.outcome }}
+          TRIVY_CONFIG_EDGE_OUTCOME: ${{ steps.trivy_config_edge.outcome }}
+          TRIVY_CONFIG_FRONTEND_OUTCOME: ${{ steps.trivy_config_frontend.outcome }}
+          TRIVY_CONFIG_SCHEDULER_OUTCOME: ${{ steps.trivy_config_scheduler.outcome }}
+          TRIVY_CONFIG_MODULES_OUTCOME: ${{ steps.trivy_config_modules.outcome }}
+        run: |
+          FAILED_CHECKS=()
+          [[ "${GITLEAKS_OUTCOME}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
+          [[ "${HADOLINT_BACKEND_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
+          [[ "${HADOLINT_FRONTEND_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
+          [[ "${BANDIT_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
+          [[ "${SEMGREP_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
+          [[ "${PIP_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
+          [[ "${CHECKOV_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
+          [[ "${ZIZMOR_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(zizmor)
+          [[ "${NPM_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
+          [[ "${YARN_AUDIT_FRONTEND_APP_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
+          [[ "${RETIRE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
+          [[ "${RETIRE_FRONTEND_APP_OUTCOME}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
+          [[ "${TRIVY_BACKEND_VULN_OUTCOME}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
+          [[ "${TRIVY_FRONTEND_VULN_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
+          [[ "${TRIVY_FRONTEND_APP_VULN_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
+          [[ "${TRIVY_BACKEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
+          [[ "${TRIVY_FRONTEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
+          [[ "${TRIVY_FRONTEND_APP_LICENSE_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
+          [[ "${TRIVY_CONFIG_BACKEND_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
+          [[ "${TRIVY_CONFIG_EDGE_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
+          [[ "${TRIVY_CONFIG_FRONTEND_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
+          [[ "${TRIVY_CONFIG_SCHEDULER_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
+          [[ "${TRIVY_CONFIG_MODULES_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
+          if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
+            echo "Failed security checks: ${FAILED_CHECKS[*]}"
+            exit 1
+          fi
+          echo "All security checks passed."
+
+  # The service images, apart from security-scan so the two run side by side (the builds
+  # were about 3 of its 9 minutes): each service's image built as backend/Dockerfile builds
+  # it, scanned for OS-level CVEs (Trivy) and image configuration (Dockle), with its SBOM.
+  image-scan:
+    name: Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [backend-lint]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # backend/tools/services.py lists the services (standard library only).
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+
+      # The Trivy version security-scan's trivy-action steps install.
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.70.0
+          cache: true
+
       - name: Build the service images
         run: |
           # Listed first: a failed list would stop the step here, where a `for` over $(…) ran
@@ -1096,95 +1346,20 @@ jobs:
           path: sbom-backend-*.cyclonedx.json
           retention-days: 90
 
-      - name: Generate SBOM (frontend filesystem)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: frontend/
-          format: cyclonedx
-          output: sbom-frontend.cyclonedx.json
-
-      - name: Upload SBOM artifact (frontend)
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sbom-frontend
-          path: sbom-frontend.cyclonedx.json
-          retention-days: 90
-
-      - name: Generate SBOM (frontend-app filesystem)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: frontend-app/
-          format: cyclonedx
-          output: sbom-frontend-app.cyclonedx.json
-
-      - name: Upload SBOM artifact (frontend-app)
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sbom-frontend-app
-          path: sbom-frontend-app.cyclonedx.json
-          retention-days: 90
-
-      # ── fail gate: surface all check results before failing the job ──────────
-      - name: Fail if any security check failed
+      - name: Fail if any image check failed
         if: always()
         env:
-          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
-          HADOLINT_BACKEND_OUTCOME: ${{ steps.hadolint_backend.outcome }}
-          HADOLINT_FRONTEND_OUTCOME: ${{ steps.hadolint_frontend.outcome }}
-          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
-          SEMGREP_OUTCOME: ${{ steps.semgrep.outcome }}
-          PIP_AUDIT_OUTCOME: ${{ steps.pip_audit.outcome }}
-          CHECKOV_OUTCOME: ${{ steps.checkov.outcome }}
-          NPM_AUDIT_OUTCOME: ${{ steps.npm_audit.outcome }}
-          YARN_AUDIT_FRONTEND_APP_OUTCOME: ${{ steps.yarn_audit_frontend_app.outcome }}
-          RETIRE_OUTCOME: ${{ steps.retire.outcome }}
-          RETIRE_FRONTEND_APP_OUTCOME: ${{ steps.retire_frontend_app.outcome }}
-          TRIVY_BACKEND_VULN_OUTCOME: ${{ steps.trivy_backend_vuln.outcome }}
-          TRIVY_FRONTEND_VULN_OUTCOME: ${{ steps.trivy_frontend_vuln.outcome }}
-          TRIVY_FRONTEND_APP_VULN_OUTCOME: ${{ steps.trivy_frontend_app_vuln.outcome }}
-          TRIVY_BACKEND_LICENSE_OUTCOME: ${{ steps.trivy_backend_license.outcome }}
-          TRIVY_FRONTEND_LICENSE_OUTCOME: ${{ steps.trivy_frontend_license.outcome }}
-          TRIVY_FRONTEND_APP_LICENSE_OUTCOME: ${{ steps.trivy_frontend_app_license.outcome }}
-          TRIVY_CONFIG_BACKEND_OUTCOME: ${{ steps.trivy_config_backend.outcome }}
-          TRIVY_CONFIG_EDGE_OUTCOME: ${{ steps.trivy_config_edge.outcome }}
-          TRIVY_CONFIG_FRONTEND_OUTCOME: ${{ steps.trivy_config_frontend.outcome }}
-          TRIVY_CONFIG_SCHEDULER_OUTCOME: ${{ steps.trivy_config_scheduler.outcome }}
-          TRIVY_CONFIG_MODULES_OUTCOME: ${{ steps.trivy_config_modules.outcome }}
           TRIVY_IMAGE_OUTCOME: ${{ steps.trivy_image.outcome }}
           DOCKLE_OUTCOME: ${{ steps.dockle.outcome }}
         run: |
           FAILED_CHECKS=()
-          [[ "${GITLEAKS_OUTCOME}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
-          [[ "${HADOLINT_BACKEND_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
-          [[ "${HADOLINT_FRONTEND_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
-          [[ "${BANDIT_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
-          [[ "${SEMGREP_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
-          [[ "${PIP_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
-          [[ "${CHECKOV_OUTCOME}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
-          [[ "${NPM_AUDIT_OUTCOME}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
-          [[ "${YARN_AUDIT_FRONTEND_APP_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
-          [[ "${RETIRE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
-          [[ "${RETIRE_FRONTEND_APP_OUTCOME}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
-          [[ "${TRIVY_BACKEND_VULN_OUTCOME}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
-          [[ "${TRIVY_FRONTEND_VULN_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
-          [[ "${TRIVY_FRONTEND_APP_VULN_OUTCOME}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
-          [[ "${TRIVY_BACKEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
-          [[ "${TRIVY_FRONTEND_LICENSE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
-          [[ "${TRIVY_FRONTEND_APP_LICENSE_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
-          [[ "${TRIVY_CONFIG_BACKEND_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
-          [[ "${TRIVY_CONFIG_EDGE_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
-          [[ "${TRIVY_CONFIG_FRONTEND_OUTCOME}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
-          [[ "${TRIVY_CONFIG_SCHEDULER_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
-          [[ "${TRIVY_CONFIG_MODULES_OUTCOME}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
-          [[ "${TRIVY_IMAGE_OUTCOME}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
-          [[ "${DOCKLE_OUTCOME}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
+          [[ "${TRIVY_IMAGE_OUTCOME}" == "failure" ]] && FAILED_CHECKS+=(trivy-image)
+          [[ "${DOCKLE_OUTCOME}"      == "failure" ]] && FAILED_CHECKS+=(dockle)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
-            echo "Failed security checks: ${FAILED_CHECKS[*]}"
+            echo "Failed image checks: ${FAILED_CHECKS[*]}"
             exit 1
           fi
-          echo "All security checks passed."
+          echo "All image checks passed."
 
   dast:
     name: DAST & API Spec
@@ -1198,6 +1373,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -1222,31 +1399,9 @@ jobs:
       - name: Start the stack
         run: docker compose up -d --build
 
-      # The gateway publishes only shared's /api/health, so each service's /health is read
-      # inside its container.
+      # The gateway's health, then each service's /health inside its container.
       - name: Wait for the gateway and the services
-        run: |
-          # Listed once, first: a failed list stops the step here, where a `for` over $(…)
-          # ran no iterations and passed, waiting for no service.
-          svcs=$(python backend/tools/services.py)
-          [ -n "$svcs" ] || { echo "::error::backend/tools/services.py listed no services."; exit 1; }
-          up() {
-            curl -sf http://localhost:8088/gateway/health > /dev/null || return 1
-            for svc in $svcs; do
-              docker compose exec -T "$svc" python -c \
-                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" \
-                > /dev/null 2>&1 || return 1
-            done
-          }
-          for i in {1..60}; do
-            if up; then echo "The stack is up"; exit 0; fi
-            echo "Waiting... ($i/60)"
-            sleep 3
-          done
-          docker compose ps
-          docker compose logs --tail 50
-          echo "The stack failed to start within 3 minutes"
-          exit 1
+        run: bash scripts/ci-wait-stack.sh
 
       # ── OpenAPI spec linting (Spectral) ──────────────────────────────────────
       # spectral-cli is a devDependency in frontend/package.json — no global install needed.
@@ -1309,6 +1464,86 @@ jobs:
           fi
           echo "All DAST checks passed."
 
+  # The end-to-end journeys (scripts/e2e: build plan 6.1, 6.2) on the local stack in test
+  # mode, the way `RUN_E2E=1 ./check.sh` runs them: every endpoint through the gateway, every
+  # kind of generation, account deletion, and the failure and convergence scenarios (they
+  # kill and restart workers). The generations are real: OPENAI_API_KEY from the `ci`
+  # environment, a key of its own with a low monthly cap, about 20 calls a run. No gate: at
+  # about 8 minutes it's one of the longest jobs, so it starts at once (a broken backend
+  # spends a few cents of calls). Skipped where GitHub gives no secrets (fork and Dependabot
+  # PRs).
+  e2e:
+    name: End-to-End Journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    environment: ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements-dev.txt
+            backend/requirements-test.txt
+
+      # The scripts read Mongo, Valkey and Moto directly (pymongo, redis, boto3) and import
+      # common's events: the backend venv's packages, as check.sh runs them.
+      - name: Install the e2e scripts' packages
+        run: pip install -r backend/requirements-dev.txt -r backend/requirements-test.txt
+
+      # Throwaway keys for this run, plus the CI LLM key; nothing is printed. .env.test (committed)
+      # then puts every service on the mongo container and Moto.
+      - name: Write the stack's .env
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::The ci environment has no OPENAI_API_KEY secret: Settings → Environments → ci (docs/ci-cd.md)."
+            exit 1
+          fi
+          key=$(openssl genrsa 2048 2>/dev/null | awk 'NF {sub(/\r/,""); printf "%s\\n",$0}')
+          {
+            echo "JWT_PRIVATE_KEY=$key"
+            echo "EMAIL_HMAC_PEPPER=$(openssl rand -hex 32)"
+            echo "OPENAI_API_KEY=$OPENAI_API_KEY"
+          } > .env
+
+      - name: Start the stack (test mode)
+        run: docker compose --env-file .env --env-file .env.test up -d --build
+
+      - name: Wait for the gateway and the services
+        id: stack
+        run: bash scripts/ci-wait-stack.sh --env-file .env --env-file .env.test
+
+      # Each runs even when an earlier one failed (they make their own accounts), but not
+      # without a stack.
+      - name: "e2e: every endpoint"
+        run: python scripts/e2e/full-journey.py
+
+      - name: "e2e: account deletion"
+        if: ${{ !cancelled() && steps.stack.outcome == 'success' }}
+        run: python scripts/e2e/account-deletion.py
+
+      - name: "e2e: failure and convergence"
+        if: ${{ !cancelled() && steps.stack.outcome == 'success' }}
+        run: python scripts/e2e/convergence.py
+
+      - name: The stack's logs (on a failure)
+        if: failure()
+        run: |
+          docker compose --env-file .env --env-file .env.test ps
+          docker compose --env-file .env --env-file .env.test logs --tail 200
+
   codeql:
     name: CodeQL
     runs-on: ubuntu-latest
@@ -1326,6 +1561,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
@@ -1365,6 +1602,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # No artifact when the scan job stopped before any scanner ran: nothing to upload,
       # and that job's own failure is the one to read. The steps below skip without a file.
@@ -1406,6 +1645,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

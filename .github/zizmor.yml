@@ -1,0 +1,9 @@
+# zizmor (GitHub Actions security audit) settings: check.yml and check.sh run
+# `zizmor --offline .github/`. Each exception says why.
+rules:
+  # The "$self/" form for this repository's own reusable workflows (GitHub, July 2026).
+  # actionlint 1.7.12 rejects it, and every such call (in terraform-live-all.yml) is to
+  # this repository at the same commit, so "./.github/workflows/…" loads nothing else.
+  # Revisit once actionlint supports the new form.
+  self-repository:
+    disable: true
