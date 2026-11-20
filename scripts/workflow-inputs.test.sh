@@ -40,7 +40,7 @@ refuses "a short SHA" check_optional_sha abc123
 # shellcheck disable=SC2016 # the literal text is the point
 refuses "shell in a SHA" check_optional_sha '$(id)'
 
-for action in plan apply plan-destroy destroy; do accepts "action $action" check_action "$action"; done
+for action in plan apply plan-destroy destroy drift; do accepts "action $action" check_action "$action"; done
 refuses "an unknown action" check_action import
 refuses "shell in the action" check_action 'plan; id'
 

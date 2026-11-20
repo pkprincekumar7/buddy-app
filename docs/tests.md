@@ -71,7 +71,9 @@ all three.
 `scripts/e2e/full-journey.py`, `account-deletion.py` and `convergence.py` run against the
 running compose stack through the gateway (`journey.py` is the journey they share, and runs
 on its own too). They make real LLM calls with the keys in `.env`. `RUN_E2E=1 ./check.sh`
-runs the three after the other checks; see [getting-started.md](getting-started.md).
+runs the three after the other checks; see [getting-started.md](getting-started.md). CI runs them too, in
+check.yml's `e2e` job, with an LLM key of its own from the `ci` environment
+([ci-cd.md](ci-cd.md)).
 
 ---
 

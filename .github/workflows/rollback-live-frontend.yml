@@ -32,7 +32,6 @@ on:
         type: string
 
 permissions:
-  id-token: write
   contents: read
 
 # The deploy and promote workflows' group: a rollback never overlaps them.
@@ -52,6 +51,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check inputs
         env:
@@ -64,6 +65,9 @@ jobs:
           check_optional_sha "$GIT_SHA"
 
   rollback:
+    permissions:
+      contents: read
+      id-token: write
     name: Rollback Live Frontend
     needs: validate
     runs-on: ubuntu-latest
@@ -73,6 +77,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate required secrets and variables
         env:
@@ -172,3 +178,21 @@ jobs:
             --overwrite
           echo "Recorded deployed git SHA: ${GIT_SHA}"
           echo "### Rolled ${ENVIRONMENT} back to ${GIT_SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+      # The restored site (scripts/smoke.sh): the page, its security headers, its
+      # main script and a client route, and the commit it says it is.
+      - name: Smoke test the site
+        env:
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          GIT_SHA:     ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          source scripts/smoke.sh
+          FQDN=$(smoke_fqdn "$ENVIRONMENT" "$SUBDOMAIN" "$DOMAIN_NAME")
+          # A release saved before version.json existed has none: then the page is
+          # checked, not the commit.
+          expected=""
+          [ ! -f restored/version.json ] || expected="$GIT_SHA"
+          smoke_web "$FQDN" "$expected"

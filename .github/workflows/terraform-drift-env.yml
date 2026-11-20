@@ -1,0 +1,143 @@
+name: Terraform Drift (environment)
+
+# One environment's drift check, for terraform-drift.yml: every stack that's deployed there
+# runs its own workflow with action: drift, a read-only `terraform plan -refresh-only`
+# (scripts/drift.sh). A stack that's down (destroyed overnight, or never applied) is
+# skipped with a notice; a stack whose AWS resources no longer match its state fails,
+# naming them. Nothing is applied, locked or saved.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The input first, before any environment's secrets are loaded (SEC-07).
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          check_environment "$ENVIRONMENT"
+
+  # Which regions run a backend here: shared/routing.json's regions that have the SSM
+  # parameter the backend stack writes (and the edge reads). The backend checks run once
+  # per region, and the edge's check needs the same list its apply had.
+  discover:
+    permissions:
+      contents: read
+      id-token: write
+    name: Deployed regions
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    outputs:
+      regions: ${{ steps.regions.outputs.regions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        with:
+          role-to-assume: ${{ vars.ROLE_ARN }}
+          role-session-name: terraform-drift-${{ inputs.environment }}
+          aws-region: us-east-1
+
+      - name: Find the deployed backend regions
+        id: regions
+        env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          source scripts/workflow-inputs.sh
+          source scripts/drift.sh
+          read -ra ALL <<<"$(allowed_regions | tr '\n' ' ')"
+          regions=$(drift_backend_regions "$APP_NAME" "$ENVIRONMENT" "${ALL[@]}")
+          echo "regions=$regions" >> "$GITHUB_OUTPUT"
+          if [ "$regions" = "[]" ]; then
+            echo "::notice title=Not deployed::No backend is deployed in ${ENVIRONMENT}: the backend and edge checks are skipped."
+          else
+            echo "Backend deployed in: $regions"
+          fi
+
+  backend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    name: Backend (${{ matrix.aws_region }})
+    needs: discover
+    if: needs.discover.outputs.regions != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        aws_region: ${{ fromJson(needs.discover.outputs.regions) }}
+    uses: ./.github/workflows/terraform-live-backend.yml
+    with:
+      action: drift
+      environment: ${{ inputs.environment }}
+      aws_region: ${{ matrix.aws_region }}
+
+  edge:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    name: Edge
+    needs: discover
+    if: needs.discover.outputs.regions != '[]'
+    uses: ./.github/workflows/terraform-live-edge.yml
+    with:
+      action: drift
+      environment: ${{ inputs.environment }}
+      backend_regions: ${{ needs.discover.outputs.regions }}
+      bootstrap_region: auto
+
+  frontend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    name: Frontend
+    needs: validate
+    uses: ./.github/workflows/terraform-live-frontend.yml
+    with:
+      action: drift
+      environment: ${{ inputs.environment }}
+
+  # There's no prod scheduler. A refresh-only plan compares AWS with the state, so the
+  # schedule inputs (needed to evaluate the configuration) don't change what's reported.
+  scheduler:
+    permissions:
+      contents: read
+      id-token: write
+    name: Scheduler
+    needs: discover
+    if: inputs.environment != 'prod'
+    uses: ./.github/workflows/terraform-live-scheduler.yml
+    with:
+      action: drift
+      environment: ${{ inputs.environment }}
+      schedule_enabled: true
+      target_aws_regions: ${{ needs.discover.outputs.regions != '[]' && needs.discover.outputs.regions || 'ap-south-1' }}

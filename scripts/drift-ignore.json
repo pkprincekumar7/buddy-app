@@ -1,0 +1,22 @@
+{
+  "aws_ecs_service.this": {
+    "attributes": ["task_definition", "desired_count"],
+    "why": "modules/ecs-service: the deploy, promote and restart workflows roll out new task definitions, and autoscaling sets the task count (ignore_changes there)."
+  },
+  "aws_service_discovery_service.this": {
+    "attributes": ["health_check_custom_config"],
+    "why": "modules/ecs-service: AWS fills it in after create (ignore_changes there)."
+  },
+  "aws_secretsmanager_secret_version.placeholder": {
+    "attributes": ["secret_string", "version_stages"],
+    "why": "infra-live-backend secrets.tf: Terraform writes a placeholder once; scripts/fill-service-secrets.sh puts the real values in as a new version (ignore_changes there)."
+  },
+  "aws_ssm_parameter.generation_switch": {
+    "attributes": ["value", "version", "insecure_value"],
+    "why": "infra-live-backend generation_switch.tf: the LLM kill switch, turned off and on by hand (docs/infra-operations.md, ignore_changes there)."
+  },
+  "aws_elasticache_replication_group.this": {
+    "attributes": ["preferred_cache_cluster_azs"],
+    "why": "modules/redis: set only by the zone retry (scripts/valkey-capacity.sh) and read only at create (ignore_changes there)."
+  }
+}

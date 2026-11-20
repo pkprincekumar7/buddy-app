@@ -86,6 +86,7 @@ def test_the_health_checks_answer_even_unconfigured():
         "branch",
         "committed_at",
         "tag",
+        "region",
     }
     assert _public("GET", APK, headers=auth_header()).status_code == 503
 
@@ -93,11 +94,14 @@ def test_the_health_checks_answer_even_unconfigured():
 def test_build_info_as_today():
     assert main.build_info({}) == {
         "commit": "unknown", "branch": "unknown", "committed_at": "unknown", "tag": None,
+        "region": None,
     }  # fmt: skip
     built = main.build_info(
-        {"GIT_SHA": "a1b2c3d", "GIT_BRANCH": "main", "GIT_COMMITTED_AT": "t", "GIT_TAG": ""}
-    )
+        {"GIT_SHA": "a1b2c3d", "GIT_BRANCH": "main", "GIT_COMMITTED_AT": "t", "GIT_TAG": "",
+         "AWS_REGION": "eu-west-1"}
+    )  # fmt: skip
     assert built["commit"] == "a1b2c3d" and built["tag"] is None
+    assert built["region"] == "eu-west-1"
 
 
 def test_health_is_limited_to_30_a_minute_per_address():

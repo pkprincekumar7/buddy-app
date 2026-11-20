@@ -48,7 +48,7 @@
           "health"
         ],
         "summary": "Api Health",
-        "description": "The running build (git SHA, branch, commit time, tag), for smoke tests and support; `unknown` without build metadata. This service's build only.",
+        "description": "The running build (git SHA, branch, commit time, tag) and the region that answered, for smoke tests and support; `unknown` without build metadata. This service's build only.",
         "operationId": "api_health_api_health_get",
         "responses": {
           "200": {
@@ -233,6 +233,17 @@
               }
             ],
             "title": "Tag"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
           }
         },
         "type": "object",
@@ -241,7 +252,8 @@
           "commit",
           "branch",
           "committed_at",
-          "tag"
+          "tag",
+          "region"
         ],
         "title": "Build"
       },

@@ -34,7 +34,6 @@ on:
 # promote-live-backend.yml reads the live image from the source ECS service.
 
 permissions:
-  id-token: write
   contents: read  # required for the checkout step
 
 # Use the same concurrency group as deploy-live-frontend for the target environment
@@ -93,6 +92,9 @@ jobs:
   # legitimate error: do not promote what has never been deployed.
   # -------------------------------------------------------------------------
   source_ref:
+    permissions:
+      contents: read
+      id-token: write
     name: Resolve Source Git Ref
     needs: validate
     runs-on: ubuntu-latest
@@ -155,6 +157,9 @@ jobs:
   # All secrets below are read from the target environment.
   # -------------------------------------------------------------------------
   promote:
+    permissions:
+      contents: read
+      id-token: write
     name: Promote Live Frontend
     needs: source_ref
     runs-on: ubuntu-latest
@@ -209,6 +214,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ needs.source_ref.outputs.git_sha }}
           fetch-depth: 0  # full history, for the ancestry check below
 
@@ -217,6 +223,7 @@ jobs:
       - name: Checkout the publish helpers
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
           path: publish-tools
           sparse-checkout: scripts/frontend-publish.sh
@@ -258,6 +265,13 @@ jobs:
           VITE_API_URL:          ${{ env.VITE_API_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
+
+      # The commit this build is, for the smoke test and support. Unhashed, so it's
+      # published, invalidated and kept with the release (for rollback) like index.html.
+      - name: Write version.json
+        env:
+          GIT_SHA: ${{ needs.source_ref.outputs.git_sha }}
+        run: printf '{"commit":"%s"}\n' "$GIT_SHA" > frontend/dist/version.json
 
       # -------------------------------------------------------------------------
       # AWS credentials only from here on (CI-13): npm ci and the build run
@@ -356,6 +370,21 @@ jobs:
             --type String \
             --overwrite
           echo "Recorded deployed git SHA for ${TARGET_ENV}: $GIT_SHA"
+
+      # The live site (scripts/smoke.sh): the commit it says it is, the page, its
+      # security headers, its main script and a client route. Before the prune, so
+      # a failure leaves the old assets for rollback-live-frontend.
+      - name: Smoke test the site
+        env:
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.target_env }}
+          GIT_SHA:     ${{ needs.source_ref.outputs.git_sha }}
+        run: |
+          set -euo pipefail
+          source scripts/smoke.sh
+          FQDN=$(smoke_fqdn "$ENVIRONMENT" "$SUBDOMAIN" "$DOMAIN_NAME")
+          smoke_web "$FQDN" "$GIT_SHA"
 
       # Last, once the new build is live: chunks it doesn't use and that are over 30 days
       # old. A page open from before that is the only thing that could still want one.

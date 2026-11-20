@@ -47,6 +47,7 @@ on:
           - apply
           - plan-destroy
           - destroy
+          - drift
       schedule_enabled:
         description: "Enable or disable the EventBridge schedules for this environment"
         required: true
@@ -63,13 +64,30 @@ on:
         required: true
         type: string
         default: "ap-south-1"
+  # terraform-drift-env.yml's drift check (action: drift). Free text, so the validate job
+  # checks it, as for a dispatch.
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      action:
+        type: string
+        required: true
+      # A boolean here (the dispatch's is a "true"/"false" choice): either way the
+      # expression below gives Terraform true or false.
+      schedule_enabled:
+        type: boolean
+        required: true
+      target_aws_regions:
+        type: string
+        required: true
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
-  group: terraform-live-scheduler-${{ inputs.environment }}-superpower
+  group: terraform-live-scheduler-${{ inputs.environment }}-superpower${{ inputs.action == 'drift' && '-drift' || '' }}
   cancel-in-progress: false
 
 env:
@@ -89,6 +107,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check inputs
         id: check
@@ -104,6 +124,9 @@ jobs:
           echo "regions=$(regions_json "$REGIONS")" >> "$GITHUB_OUTPUT"
 
   terraform:
+    permissions:
+      contents: read
+      id-token: write
     name: "Terraform Scheduler — ${{ inputs.environment }} / ${{ inputs.action }}"
     needs: validate
     runs-on: ubuntu-latest
@@ -134,6 +157,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate required secrets and variables
         env:
@@ -190,11 +215,34 @@ jobs:
             -backend-config="bucket=${STATE_BUCKET}" \
             -backend-config="key=terraform-state-files/${APP_NAME}/${ENVIRONMENT}/scheduler/us-east-1/terraform.tfstate"
 
+      # drift only (terraform-drift-env.yml): a stack with nothing in its state (never
+      # applied, or destroyed overnight by the scheduler) has nothing to compare.
+      - name: Check the stack is deployed (drift)
+        id: up
+        if: inputs.action == 'drift'
+        run: |
+          set -euo pipefail
+          source ../../scripts/drift.sh
+          drift_up_output
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
       - name: Terraform Validate
         run: terraform validate
+
+      # drift: AWS against the state, never the code's changes (scripts/drift.sh). Read-only:
+      # no state lock, no saved plan. The same variables and secrets as the plan.
+      - name: Terraform drift check (refresh-only)
+        id: drift
+        if: inputs.action == 'drift' && steps.up.outputs.up == 'true'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_github_pat: ${{ secrets.GIT_ACTIONS_PAT }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/drift.sh
+          drift_plan "scheduler / ${ENVIRONMENT}" -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Terraform Plan
         if: inputs.action == 'plan'

@@ -136,6 +136,7 @@ PIP_AUDIT="$(_tool pip-audit)"
 # Its own venv (see the sync above); PATH in CI.
 if [ -x "$SEMGREP_VENV/bin/semgrep" ]; then SEMGREP="$SEMGREP_VENV/bin/semgrep"; else SEMGREP="semgrep"; fi
 CHECKOV="$(_tool checkov)"
+ZIZMOR="$(_tool zizmor)"
 PYTEST="$(_tool pytest)"
 
 # ── backend lint ──────────────────────────────────────────────────────────────
@@ -325,6 +326,10 @@ run "service-token-keys.sh tests (scripts)" \
 # terraform-live-backend's retry when Valkey's zone was full, against a fake aws and terraform.
 run "valkey-capacity.sh tests (scripts)" \
     bash "$ROOT/scripts/valkey-capacity.test.sh"
+run "smoke.sh tests (scripts)" \
+    bash "$ROOT/scripts/smoke.test.sh"
+run "drift.sh tests (scripts)" \
+    bash "$ROOT/scripts/drift.test.sh"
 # The frontend deploy's S3 sync, invalidation and asset pruning (CI-07), against a fake aws CLI.
 run "frontend-publish.sh tests (scripts)" \
     bash "$ROOT/scripts/frontend-publish.test.sh"
@@ -346,6 +351,12 @@ SHELLCHECK=""
 if require_tool shellcheck SHELLCHECK "brew install shellcheck"; then
   run "shellcheck (every shell script)" \
       bash -c "cd '$ROOT' && git ls-files -z '*.sh' | xargs -0 '$SHELLCHECK' -x"
+fi
+# Every workflow, as CI checks them (each run: script goes through shellcheck too).
+ACTIONLINT=""
+if require_tool actionlint ACTIONLINT "brew install actionlint"; then
+  run "actionlint (every workflow)" \
+      bash -c "cd '$ROOT' && '$ACTIONLINT'"
 fi
 
 # shared/routing.json → generated backend/common/regions_data.py, backend/auth/countries_data.py
@@ -459,6 +470,9 @@ run "checkov (Terraform IaC)" \
     bash -c "cd '$ROOT' && '$CHECKOV' -d . \
       --skip-path node_modules --skip-path '\.terraform' --skip-path '\.venv' \
       --framework terraform --quiet --compact --skip-download"
+
+run "zizmor (GitHub Actions security)" \
+    bash -c "cd '$ROOT' && '$ZIZMOR' --offline --no-progress .github/"
 
 if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
   run "trivy (backend CVE scan)" \
@@ -643,7 +657,7 @@ fi
 # (about 20 a run), and stop and start the stack's workers. They add about 3-5 minutes to the
 # other checks' 9-10 (13-15 in all, warm caches), plus 1-2 minutes each way to switch the stack
 # into test mode and back.
-# Gate 6 runs them:
+# check.yml's e2e job runs them in CI. Gate 6 runs them:
 #   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 if [ "${RUN_E2E:-}" = "1" ]; then
   echo -e "\n${BOLD}════ END TO END (local stack) ════${RESET}"

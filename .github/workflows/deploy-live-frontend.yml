@@ -23,7 +23,6 @@ on:
         required: true
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
@@ -47,6 +46,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check inputs
         env:
@@ -57,6 +58,9 @@ jobs:
           check_deploy_environment "$ENVIRONMENT"
 
   deploy:
+    permissions:
+      contents: read
+      id-token: write
     name: Deploy Live Frontend
     needs: validate
     runs-on: ubuntu-latest
@@ -66,6 +70,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate required secrets and variables
         env:
@@ -125,6 +131,13 @@ jobs:
           VITE_API_URL: ${{ env.VITE_API_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
+
+      # The commit this build is, for the smoke test and support. Unhashed, so it's
+      # published, invalidated and kept with the release (for rollback) like index.html.
+      - name: Write version.json
+        env:
+          GIT_SHA: ${{ github.sha }}
+        run: printf '{"commit":"%s"}\n' "$GIT_SHA" > frontend/dist/version.json
 
       # -------------------------------------------------------------------------
       # AWS credentials only from here on (CI-13): npm ci and the build run
@@ -221,6 +234,21 @@ jobs:
             --type String \
             --overwrite
           echo "Recorded deployed git SHA: ${GITHUB_SHA}"
+
+      # The live site (scripts/smoke.sh): the commit it says it is, the page, its
+      # security headers, its main script and a client route. Before the prune, so
+      # a failure leaves the old assets for rollback-live-frontend.
+      - name: Smoke test the site
+        env:
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          GIT_SHA:     ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          source scripts/smoke.sh
+          FQDN=$(smoke_fqdn "$ENVIRONMENT" "$SUBDOMAIN" "$DOMAIN_NAME")
+          smoke_web "$FQDN" "$GIT_SHA"
 
       # Last, once the new build is live: chunks it doesn't use and that are over 30 days
       # old. A page open from before that is the only thing that could still want one.

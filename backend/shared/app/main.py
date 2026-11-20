@@ -64,12 +64,14 @@ _fallback_limits = RateLimits(None, prefix=SERVICE)
 
 
 def build_info(environ: Any = os.environ) -> dict[str, str | None]:
-    """Baked into the image at build time (backend/Dockerfile's GIT_* args), as today."""
+    """Baked into the image at build time (backend/Dockerfile's GIT_* args), as today, and
+    the task's region (ECS sets AWS_REGION), so a smoke test knows which region answered."""
     return {
         "commit": environ.get("GIT_SHA", "unknown"),
         "branch": environ.get("GIT_BRANCH", "unknown"),
         "committed_at": environ.get("GIT_COMMITTED_AT", "unknown"),
         "tag": environ.get("GIT_TAG") or None,
+        "region": environ.get("AWS_REGION") or None,
     }
 
 
@@ -204,6 +206,7 @@ class Build(BaseModel):
     branch: str | None
     committed_at: str | None
     tag: str | None
+    region: str | None
 
 
 # ── routes ─────────────────────────────────────────────────────────────────────
@@ -226,8 +229,9 @@ def health() -> dict[str, str]:
     "/api/health",
     tags=["health"],
     dependencies=[Depends(public()), Depends(per_ip("30/minute"))],
-    description="The running build (git SHA, branch, commit time, tag), for smoke tests and "
-    "support; `unknown` without build metadata. This service's build only.",
+    description="The running build (git SHA, branch, commit time, tag) and the region that "
+    "answered, for smoke tests and support; `unknown` without build metadata. This service's "
+    "build only.",
 )
 def api_health() -> Build:
     return Build(status="ok", **_BUILD)

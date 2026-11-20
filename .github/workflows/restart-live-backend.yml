@@ -30,7 +30,6 @@ on:
         default: "ap-south-1"
 
 permissions:
-  id-token: write
   contents: read
 
 # Locked per environment (not per service or region): one run at a time per
@@ -56,6 +55,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check inputs
         id: check
@@ -75,17 +76,39 @@ jobs:
   # first selected region; each restart instance re-checks its own region.
   # -------------------------------------------------------------------------
   resolve:
+    permissions:
+      contents: read
+      id-token: write
     name: Resolve services
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: ${{ inputs.environment }}
     outputs:
+      fqdn: ${{ steps.fqdn.outputs.fqdn }}
       services: ${{ steps.list.outputs.services }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # The public host for the smoke job, which runs in no environment (so no second
+      # approval where the environment requires one) and reads it from here.
+      - name: Public host (for the smoke test)
+        id: fqdn
+        env:
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          source scripts/smoke.sh
+          if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN_NAME" ]; then
+            echo "::error::Set SUBDOMAIN and DOMAIN_NAME (variables) in the ${ENVIRONMENT} environment: the smoke test checks https://<subdomain>…/api/health."
+            exit 1
+          fi
+          echo "fqdn=$(smoke_fqdn "$ENVIRONMENT" "$SUBDOMAIN" "$DOMAIN_NAME")" >> "$GITHUB_OUTPUT"
 
       - name: Validate required secrets and variables
         env:
@@ -123,6 +146,9 @@ jobs:
           echo "Restarting: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
 
   restart:
+    permissions:
+      contents: read
+      id-token: write
     name: Restart Live Backend (${{ matrix.service }}, ${{ matrix.aws_region }})
     needs: [validate, resolve]
     runs-on: ubuntu-latest
@@ -140,6 +166,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
@@ -172,3 +200,30 @@ jobs:
 
           # No task definition: --force-new-deployment, then wait for that deployment.
           roll_out "$CLUSTER" "$SERVICE"
+
+  # ---------------------------------------------------------------------------
+  # Smoke test (scripts/smoke.sh), once every restart has rolled out: the public
+  # path to the API works. /api/health through CloudFront, the edge function and
+  # the ALB, and a 401 for a request with no token. No AWS credentials and no
+  # environment: only anonymous HTTPS requests to the public host.
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: Smoke Test
+    needs: [validate, resolve, restart]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Smoke test the API
+        env:
+          FQDN:    ${{ needs.resolve.outputs.fqdn }}
+          REGIONS: ${{ needs.validate.outputs.regions }}
+        run: |
+          set -euo pipefail
+          source scripts/smoke.sh
+          smoke_api "$FQDN"
