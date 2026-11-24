@@ -3,18 +3,18 @@
 # Exactly the union of every backend/<service>/requirements.txt (without buddy-common, which runs
 # from source here via pytest's pythonpath); tools/tests/test_dev_requirements.py fails when a
 # service's pins change and this file doesn't. Each service's own file is the source of truth.
-anthropic==0.49.0
-bcrypt==4.2.1
-boto3==1.35.49
-cryptography==50.0.0
-email-validator==2.2.0
-fastapi==0.136.1
-google-auth[requests]==2.62.0
-google-genai==2.32.0
+anthropic==2.9.0
+bcrypt==5.0.0
+boto3==1.44.4
+cryptography==50.0.2
+email-validator==2.4.0
+fastapi==0.163.1
+google-auth[requests]==2.62.2
+google-genai==3.4.0
 httpx==0.28.1
-jsonschema==4.25.1
+jsonschema==4.26.0
 limits==5.8.0
-openai==1.68.2
+openai==3.52.0
 opentelemetry-api==1.45.2
 opentelemetry-exporter-otlp-proto-http==1.45.2
 opentelemetry-instrumentation-botocore==0.66b2
@@ -23,16 +23,16 @@ opentelemetry-instrumentation-httpx==0.66b2
 opentelemetry-instrumentation-pymongo==0.66b2
 opentelemetry-instrumentation-redis==0.66b2
 opentelemetry-sdk==1.45.2
-pydantic-settings==2.7.1
+pydantic-settings==2.16.3
 PyJWT==2.15.1
-pymongo==4.18.3
-python-dotenv>=1.2.2
-python-multipart==0.0.31
-redis==5.2.1
-requests>=2.33.0
-starlette>=1.3.1
+pymongo==4.20.0
+python-dotenv>=1.2.4
+python-multipart==0.0.34
+redis==8.1.0
+requests>=2.34.2
+starlette>=1.10.0
 urllib3>=2.8.0
-uvicorn[standard]==0.34.0
+uvicorn[standard]==0.54.0
 
 # ---- why the CVE floors (every service carries them) ----------------------------
 # starlette: GHSA-7f5h-v6xp-fcq8 (Range header DoS) + GHSA-2c2j-9gv5-cj73 (upload event-loop
