@@ -15,7 +15,7 @@
 
 # ---- select: pick out what the chosen service needs ----------------------------------------
 # Throwaway stage: the whole backend/ tree is copied here, but only /out reaches the image.
-FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad AS select
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS select
 
 ARG SERVICE
 WORKDIR /src
@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip wheel --no-deps --wheel-dir /out/build ./common
 
 # ---- the image -----------------------------------------------------------------------------
-FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
 
 # zlib1g from trixie-security (DSA-6613-1: CVE-2026-85091, CVE-2026-76844), which no
 # python:3.13-slim-trixie digest had yet. Pinned, so builds stay the same; once a base digest
