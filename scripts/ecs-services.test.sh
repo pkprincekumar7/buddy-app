@@ -153,11 +153,13 @@ ref="${*: -1}"; repo="${ref%@*}"; repo="${repo#*/}"; hex="${ref##*@sha256:}"
 dir="$FAKE/ecr/$(tr '/' '_' <<<"$repo")"
 signer="${FAKE_SIGNER:-https://github.com/acme/buddy-app/.github/workflows/deploy-live-backend.yml@refs/heads/main}"
 # FAKE_COSIGN_DB=1: like the real trust-root database (~/.sigstore), one call at a time;
-# a second call while one runs fails with the real error.
+# a second call while one runs fails with the real error. Claimed by creating a file with
+# noclobber (bash opens it O_CREAT|O_EXCL, so exactly one caller wins), not mkdir: Ubuntu
+# 26.04's mkdir (uutils) lets two simultaneous calls on one directory both succeed.
 if [ -n "${FAKE_COSIGN_DB:-}" ]; then
-  mkdir "$FAKE/sigstore-db" 2>/dev/null \
+  ( set -o noclobber; : > "$FAKE/sigstore-db" ) 2>/dev/null \
     || { echo "Error: getting Rekor public keys: creating cached local store: resource temporarily unavailable"; exit 1; }
-  trap 'rmdir "$FAKE/sigstore-db"' EXIT
+  trap 'rm -f "$FAKE/sigstore-db"' EXIT
   sleep 0.3
 fi
 check() {  # check FILE: present, signed by an identity the regexp allows, by GitHub's issuer
@@ -175,16 +177,22 @@ esac
 EOF
 chmod +x "$FAKE/bin/cosign"
 
-# -- fake flock: `flock FILE CMD...` runs CMD once it holds FILE (macOS has no flock).
+# -- fake flock: `flock FILE CMD...` runs CMD once it holds FILE (macOS has no flock). The
+# lock is a file created with noclobber (O_CREAT|O_EXCL: one winner), as in the fake cosign
+# above; a mkdir lock isn't exclusive on Ubuntu 26.04, whose uutils mkdir lets two
+# simultaneous calls both succeed (CI's parallel signature test failed there).
 cat > "$FAKE/bin/flock" <<'FLOCK'
 #!/usr/bin/env bash
-lock="$1.d"; shift
-until mkdir "$lock" 2>/dev/null; do sleep 0.05; done
-trap 'rmdir "$lock"' EXIT
+lock="$1.held"; shift
+until ( set -o noclobber; : > "$lock" ) 2>/dev/null; do sleep 0.05; done
+trap 'rm -f "$lock"' EXIT
 "$@"
 FLOCK
 chmod +x "$FAKE/bin/flock"
 export GITHUB_REPOSITORY="acme/buddy-app"
+# cosign_serial locks in $RUNNER_TEMP: this run's own folder (deleted on exit), so a run that
+# was killed while holding the lock can't leave it behind for the next one.
+export RUNNER_TEMP="$WORK"
 export PATH="$FAKE/bin:$PATH"
 
 # shellcheck source=scripts/ecs-services.sh

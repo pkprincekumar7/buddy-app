@@ -10,7 +10,7 @@
 > current combined JWT-validation + geo-routing Lambda@Edge design. This file predates all of
 > that and describes an earlier single-region (ap-south-1-only) target: several specifics below
 > are stale and should not be relied on, including the proposed Terraform version (`1.9.0` — the
-> real version across every module is `~> 1.16.0`), the AWS provider constraint (`~> 5.0` here vs.
+> stacks and modules allow any 1.x from 1.16, and CI runs exactly `TF_VERSION`, 1.16.4), the AWS provider constraint (`~> 5.0` here vs.
 > the real `~> 6.28`), and the entire MongoDB Atlas PrivateLink plan (single-region only). Kept as
 > a historical record of the original design. For current, maintained figures see
 > [aws-resources.md](aws-resources.md) (resource inventory) and
