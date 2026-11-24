@@ -97,15 +97,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY --from=select /out/app/ ./
 
-RUN adduser --disabled-password --no-create-home appuser \
+# Fixed IDs, 1000:1000 (what adduser picked before), and USER by number: a user name may
+# not resolve on the host that runs the container (hadolint DL3066).
+RUN addgroup --gid 1000 appuser \
+    && adduser --uid 1000 --ingroup appuser --disabled-password --no-create-home appuser \
     && chown -R appuser:appuser /app
 
-USER appuser
+USER 1000:1000
 
 # 8000: the public app; 8001: the internal one (common.serve).
 EXPOSE 8000 8001
 
+# Exec form (hadolint DL3025): no shell. A failed request raises, so python exits 1, which is
+# what `|| exit 1` did.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
 
 CMD ["/bin/sh", "-c", "exec python -m common.serve \"$SERVICE\""]

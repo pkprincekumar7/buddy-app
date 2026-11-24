@@ -3,13 +3,7 @@ import { previousDay } from '@/lib/kidsDay';
 
 /** A colour of the kids palette: index.css --kids-<name>-rgb and its -shade. */
 export type KidsColor =
-  | 'discover'
-  | 'grow'
-  | 'transform'
-  | 'connect'
-  | 'release'
-  | 'teal'
-  | 'orange';
+  'discover' | 'grow' | 'transform' | 'connect' | 'release' | 'teal' | 'orange';
 
 /** Release's five moods (docs/child-view-build-plan.md, 2.3): face colour and mouth. */
 export const MOODS: readonly {
