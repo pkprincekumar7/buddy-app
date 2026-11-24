@@ -174,7 +174,7 @@ Runs dynamic application security testing against the local stack (`docker-compo
 | Step | Tool | What it checks |
 |---|---|---|
 | Spectral (service OpenAPI specs) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Lints the committed `backend/openapi/*.json` against `.spectral.yaml` — every operation must declare a security scheme and have a unique `operationId` (errors); tags, descriptions and `info.contact` are warnings. The `backend-service` jobs check each spec matches its code |
-| Nuclei (DAST) | nuclei v3.3.9 | Probes the gateway at `http://localhost:8088` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
+| Nuclei (DAST) | nuclei v3.3.9, with nuclei-templates v10.1.3 (pinned archive, SHA-256 checked; `-duc`: no download or update check at run time) | Probes the gateway at `http://localhost:8088` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
 
 ### `e2e`
 

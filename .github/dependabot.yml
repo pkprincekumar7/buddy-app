@@ -1,7 +1,16 @@
-# Dependency updates (production-readiness review, CI-04): weekly, grouped so each
-# ecosystem opens one pull request rather than one per package. Every PR runs check.yml.
+# Dependency updates (production-readiness review, CI-04): weekly. Every PR runs check.yml.
 # Each waits 7 days after a release (cooldown), so a compromised or broken version is
 # usually pulled before it's proposed. Security updates don't wait.
+#
+# Minor and patch updates come as one PR per ecosystem (merge it once check.yml passes);
+# each major update comes as a PR of its own, to read its changelog, test and schedule. One
+# group for everything made a single breaking major block every safe patch beside it (the
+# web group with ESLint 10 couldn't even install, 2026-11). Majors are ignored where a
+# version is pinned on purpose (the Python and Node runtimes, the local Mongo and Valkey
+# that mirror production): those change in a planned upgrade, not a Dependabot PR.
+#
+# A 0.x package's minor (ruff 0.11 → 0.17) counts as minor here and lands in the minor/patch
+# PR, so that PR can still need a fix; read its check.yml result before merging.
 version: 2
 updates:
   # Actions are pinned to commit SHAs with the version in a comment; Dependabot updates both.
@@ -14,10 +23,12 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
-  # One PR for every backend requirements file: each service pins its own versions, the
+  # Every backend requirements file moves together: each service pins its own versions, the
   # shared ones the same everywhere, and requirements-dev.txt must stay exactly their union
-  # (tools/tests/test_dev_requirements.py), so they have to move together.
+  # (tools/tests/test_dev_requirements.py). So the minor/patch PR covers all ten folders, and
+  # a major is one PR per package across all ten (group-by), never one per folder.
   - package-ecosystem: pip
     directories:
       - /backend
@@ -37,6 +48,11 @@ updates:
     groups:
       python:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      python-major:
+        patterns: ["*"]
+        update-types: ["major"]
+        group-by: dependency-name
     ignore:
       # Built from backend/common in this repo, never from PyPI. A lookup there could
       # resolve an unrelated public package of the same name.
@@ -51,8 +67,14 @@ updates:
     groups:
       web:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
-  # yarn.lock; the npm ecosystem covers yarn.
+  # yarn.lock; the npm ecosystem covers yarn. React Native and Expo move as one platform:
+  # their versions are tied to each other (an Expo SDK supports one React Native, which needs
+  # its own React and native modules), and React Native is 0.x, so 0.85 → 0.88 is a "minor"
+  # that breaks like a major. Their patches come together; anything bigger is one platform
+  # PR, to upgrade with native builds and a device test. The rest: minor/patch together,
+  # each major on its own. A dependency goes into the first group that matches it.
   - package-ecosystem: npm
     directory: /frontend-app
     schedule:
@@ -60,12 +82,44 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      mobile-platform-patches:
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "babel-preset-expo"
+          - "react"
+          - "react-test-renderer"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native/*"
+          - "@react-native-community/*"
+          - "@react-native-async-storage/*"
+          - "@react-native-google-signin/*"
+        update-types: ["patch"]
+      mobile-platform:
+        patterns:  # the same list as mobile-platform-patches
+          - "expo"
+          - "expo-*"
+          - "babel-preset-expo"
+          - "react"
+          - "react-test-renderer"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native/*"
+          - "@react-native-community/*"
+          - "@react-native-async-storage/*"
+          - "@react-native-google-signin/*"
+        update-types: ["minor", "major"]
       mobile:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Base images in backend/Dockerfile and frontend/Dockerfile. The backend's is pinned as
   # tag@digest (CI-03): Dependabot bumps both, including a new digest of the same tag when
-  # Debian ships security fixes, so that's how the deployed image gets them.
+  # Debian ships security fixes, so that's how the deployed image gets them. The runtimes
+  # stay on their line: Python 3.13 (CI, check.sh and the venvs use it too) takes patches and
+  # digests only, Node 22 everything but a major. Moving to a new Python or Node is a
+  # planned upgrade of every place that names the version.
   - package-ecosystem: docker
     directories:
       - /backend
@@ -77,11 +131,19 @@ updates:
     groups:
       images:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
 
   # docker-compose.yml's local images (mongo, valkey, moto, the nginx gateway), pinned as
   # tag@digest (CI-04): bumped together. CI's copies of mongo (scripts/ci-start-mongo.sh)
   # and valkey (check.yml services) and the collector image (otel_collector_image) aren't
-  # covered by any ecosystem: move them with this PR.
+  # covered by any ecosystem: move them with this PR. Mongo and Valkey mirror production
+  # (Atlas, and ElastiCache's engine_version 8.0 in modules/redis), so they take patches and
+  # digests only; a new line comes with the production upgrade.
   - package-ecosystem: docker-compose
     directory: /
     schedule:
@@ -91,8 +153,16 @@ updates:
     groups:
       compose:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: mongo
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: valkey/valkey
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
-  # Terraform providers (the committed .terraform.lock.hcl files): monthly.
+  # Terraform providers (the committed .terraform.lock.hcl files): monthly. A major (AWS
+  # provider 6 → 7) is one PR per provider across every stack and module (group-by), so the
+  # stacks never run different majors.
   - package-ecosystem: terraform
     directories:
       - /infra-live-backend/terraform
@@ -107,3 +177,8 @@ updates:
     groups:
       terraform:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+      terraform-major:
+        patterns: ["*"]
+        update-types: ["major"]
+        group-by: dependency-name
