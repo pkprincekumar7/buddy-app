@@ -48,7 +48,9 @@ def route_policies(route: APIRoute) -> list[str]:
 
 
 def _describe(route: APIRoute) -> str:
-    return f"{' '.join(sorted(route.methods))} {route.path}"
+    # Newer FastAPI types methods as optional (set[str] | None); a route always has them
+    # (GET by default), so `or ()` is only for the type checker.
+    return f"{' '.join(sorted(route.methods or ()))} {route.path}"
 
 
 class PolicyRouter(APIRouter):

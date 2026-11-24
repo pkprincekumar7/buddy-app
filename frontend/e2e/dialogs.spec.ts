@@ -67,14 +67,12 @@ const CASES: DialogCase[] = [
     opener: (p) => p.getByRole('button', { name: /Asha's 90 days/ }),
     dialog: (p) => p.getByRole('dialog'),
   },
-  ...(['WhatsApp', 'Instagram', 'Twitter'] as const).map(
-    (channel): DialogCase => ({
-      name: `Connect's ${channel} share`,
-      path: `/Connect/${C}`,
-      opener: (p) => p.getByRole('button', { name: channel, exact: true }),
-      dialog: (p) => p.getByRole('dialog'),
-    }),
-  ),
+  ...(['WhatsApp', 'Instagram', 'Twitter'] as const).map((channel): DialogCase => ({
+    name: `Connect's ${channel} share`,
+    path: `/Connect/${C}`,
+    opener: (p) => p.getByRole('button', { name: channel, exact: true }),
+    dialog: (p) => p.getByRole('dialog'),
+  })),
   {
     name: 'Sign out of all devices',
     path: '/AccountSettings',

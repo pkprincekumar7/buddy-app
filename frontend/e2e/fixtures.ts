@@ -18,8 +18,7 @@ export type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500 | 
 
 /** A success reply typed by its route, or an error reply with any body. */
 export type Reply<K extends RouteKey> =
-  | { status?: 200 | 201 | 202 | 204; body: BodyOf<K> }
-  | { status: ErrorStatus; body?: unknown };
+  { status?: 200 | 201 | 202 | 204; body: BodyOf<K> } | { status: ErrorStatus; body?: unknown };
 
 /** What a handler sees of the request. `count` is this route's 1-based call number. */
 export interface Call {
