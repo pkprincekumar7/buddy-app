@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Terraform action: plan, apply, plan-destroy, destroy"
+        description: "Terraform action: plan, apply, plan-destroy, destroy, drift (a read-only check that AWS matches the state)"
         required: true
         default: "plan"
         type: choice
@@ -14,6 +14,7 @@ on:
           - apply
           - plan-destroy
           - destroy
+          - drift
       environment:
         description: "Deployment environment"
         required: true
@@ -58,7 +59,6 @@ on:
         default: "auto"
 
 permissions:
-  id-token: write
   contents: read
   actions: read # the validate job lists this commit's runs: prod applies only what stg applied
 
@@ -69,7 +69,7 @@ permissions:
 # concurrently — they'd both mutate the same state file. Same reasoning as
 # terraform-live-all.yml's concurrency group.
 concurrency:
-  group: terraform-live-edge-superpower-${{ inputs.environment }}-us-east-1
+  group: terraform-live-edge-superpower-${{ inputs.environment }}-us-east-1${{ inputs.action == 'drift' && '-drift' || '' }}
   cancel-in-progress: false
 
 env:
@@ -96,6 +96,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check inputs
         id: check
@@ -128,6 +130,9 @@ jobs:
           check_stg_first edge "$ACTION" "$ENVIRONMENT" "$SHA"
 
   terraform:
+    permissions:
+      contents: read
+      id-token: write
     name: Terraform Live Edge ${{ inputs.action }}
     needs: validate
     runs-on: ubuntu-latest
@@ -169,6 +174,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate required secrets and variables
         env:
@@ -344,11 +351,37 @@ jobs:
             -backend-config="bucket=${STATE_BUCKET}" \
             -backend-config="key=terraform-state-files/${APP_NAME}/${ENVIRONMENT}/edge/us-east-1/terraform.tfstate"
 
+      # drift only (terraform-drift-env.yml): a stack with nothing in its state (never
+      # applied, or destroyed overnight by the scheduler) has nothing to compare.
+      - name: Check the stack is deployed (drift)
+        id: up
+        if: inputs.action == 'drift'
+        run: |
+          set -euo pipefail
+          source ../../scripts/drift.sh
+          drift_up_output
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
       - name: Terraform Validate
         run: terraform validate
+
+      # drift: AWS against the state, never the code's changes (scripts/drift.sh). Read-only:
+      # no state lock, no saved plan. The same variables and secrets as the plan.
+      - name: Terraform drift check (refresh-only)
+        id: drift
+        if: inputs.action == 'drift' && steps.up.outputs.up == 'true'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+          # Optional — set only during an origin-verify rotation; CloudFront then
+          # sends it instead. See docs/infra-operations.md.
+          TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/drift.sh
+          drift_plan "edge / ${ENVIRONMENT}" -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Terraform Plan
         if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'

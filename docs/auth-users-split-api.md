@@ -2244,9 +2244,9 @@ Returns the running build, for smoke tests and support.
 ### Response
 
 ```json
-{ "status": "ok", "commit": "a1b2c3d", "branch": "main", "committed_at": "2026-10-23T18:00:00Z", "tag": "v1.4.0" }
+{ "status": "ok", "commit": "a1b2c3d", "branch": "main", "committed_at": "2026-10-23T18:00:00Z", "tag": "v1.4.0", "region": "ap-south-1" }
 ```
 
-Values are `"unknown"` when the image has no build metadata, as today; `tag` is `null` when the build has none.
+Values are `"unknown"` when the image has no build metadata, as today; `tag` is `null` when the build has none. `region` is the task's `AWS_REGION` (`null` when unset, as locally): the deploys' smoke test (`scripts/smoke.sh`) checks the commit only when the region that answered was just rolled out.
 
 It reports **shared's** build only. Each service's own health is its target group's `GET /health` on port 8000, which isn't routed through the ALB.

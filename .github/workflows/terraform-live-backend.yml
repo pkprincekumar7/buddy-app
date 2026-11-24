@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Terraform action: plan, apply, plan-destroy, destroy"
+        description: "Terraform action: plan, apply, plan-destroy, destroy, drift (a read-only check that AWS matches the state)"
         required: true
         default: "plan"
         type: choice
@@ -14,6 +14,7 @@ on:
           - apply
           - plan-destroy
           - destroy
+          - drift
       environment:
         description: "Deployment environment"
         required: true
@@ -45,7 +46,6 @@ on:
         required: true
 
 permissions:
-  id-token: write
   contents: read
   actions: read # the validate job lists this commit's runs: prod applies only what stg applied
 
@@ -71,6 +71,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check inputs
         id: check
@@ -100,6 +102,9 @@ jobs:
           check_stg_first backend "$ACTION" "$ENVIRONMENT" "$SHA"
 
   terraform:
+    permissions:
+      contents: read
+      id-token: write
     name: Terraform Live Backend ${{ inputs.action }} (${{ matrix.aws_region }})
     needs: validate
     runs-on: ubuntu-latest
@@ -114,7 +119,7 @@ jobs:
     # Job-level (not workflow-level) so the lock stays per-region now that
     # one run can target several regions.
     concurrency:
-      group: terraform-live-backend-superpower-${{ inputs.environment }}-${{ matrix.aws_region }}
+      group: terraform-live-backend-superpower-${{ inputs.environment }}-${{ matrix.aws_region }}${{ inputs.action == 'drift' && '-drift' || '' }}
       cancel-in-progress: false
     environment: ${{ inputs.environment }}
     defaults:
@@ -151,6 +156,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # -------------------------------------------------------------------------
       # Validate required secrets first — pure bash, no AWS calls needed —
@@ -404,6 +411,16 @@ jobs:
             -backend-config="bucket=${STATE_BUCKET}" \
             -backend-config="key=terraform-state-files/${APP_NAME}/${ENVIRONMENT}/backend/${REGION}/terraform.tfstate"
 
+      # drift only (terraform-drift-env.yml): a stack with nothing in its state (never
+      # applied, or destroyed overnight by the scheduler) has nothing to compare.
+      - name: Check the stack is deployed (drift)
+        id: up
+        if: inputs.action == 'drift'
+        run: |
+          set -euo pipefail
+          source ../../scripts/drift.sh
+          drift_up_output
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
@@ -413,7 +430,10 @@ jobs:
       # The service-token key pairs, made here rather than by Terraform so no private key
       # is in state or a plan (SEC-01). Before every plan, destroy plans included: the plan
       # reads the public keys. Creates only what's missing; never prints a key.
+      # On a drift check only where the stack is deployed: its keys exist, so this only
+      # reads them (and never makes keys for a destroyed environment).
       - name: Ensure service-token keys
+        if: inputs.action != 'drift' || steps.up.outputs.up == 'true'
         env:
           APP_NAME: ${{ vars.APP_NAME }}
           ENVIRONMENT: ${{ inputs.environment }}
@@ -423,6 +443,26 @@ jobs:
           source ../../scripts/service-token-keys.sh
           read -ra SERVICES <<< "$(python3 ../../backend/tools/services.py | tr '\n' ' ')"
           ensure_service_token_keys "$APP_NAME" "$ENVIRONMENT" "$REGION" service-token-versions.json "${SERVICES[@]}"
+
+      # drift: AWS against the state, never the code's changes (scripts/drift.sh). Read-only:
+      # no state lock, no saved plan. The same variables and secrets as the plan.
+      - name: Terraform drift check (refresh-only)
+        id: drift
+        if: inputs.action == 'drift' && steps.up.outputs.up == 'true'
+        env:
+          REGION: ${{ matrix.aws_region }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+          # Optional — set only during an origin-verify rotation (the ALB then
+          # accepts both values). See docs/infra-operations.md.
+          TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
+          # The Atlas API key, for the PrivateLink endpoint (atlas.tf); unset in dev and sbx.
+          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
+          MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          source ../../scripts/drift.sh
+          drift_plan "backend / ${ENVIRONMENT} / ${REGION}" -var-file="tfvars/${ENVIRONMENT}.tfvars"
 
       - name: Terraform Plan
         if: inputs.action == 'plan' || inputs.action == 'apply'

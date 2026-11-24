@@ -91,10 +91,12 @@ on:
         type: boolean
         default: true
 
-# OIDC token + repo read required by every called workflow; actions: read for their
-# prod check that stg applied the commit first.
+# Repo read for every job; actions: read for the called workflows' prod check that stg
+# applied the commit first. The OIDC token (id-token: write) is granted only on the jobs
+# that call a workflow using AWS, not to the whole run.
+# No secrets are passed to the called workflows (no `secrets: inherit`): every secret is an
+# environment secret, which each called job reads from its own `environment:`.
 permissions:
-  id-token: write
   contents: read
   actions: read
 
@@ -120,6 +122,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check regions
         id: check
@@ -140,6 +144,10 @@ jobs:
   # still-running instance gets cancelled early, not the job's final verdict.
   # ---------------------------------------------------------------------------
   tf-backend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "1 · Terraform Backend (${{ matrix.region }})"
     needs: regions
     if: inputs.action == 'plan' || inputs.action == 'apply'
@@ -152,7 +160,6 @@ jobs:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
       aws_region:  ${{ matrix.region }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 2 — Edge (CloudFront + WAF + public DNS) — always us-east-1
@@ -162,6 +169,10 @@ jobs:
   # terraform-live-edge's own SSM reads fail with a clear error.
   # ---------------------------------------------------------------------------
   tf-edge:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "2 · Terraform Edge"
     needs: [regions, tf-backend]
     if: inputs.action == 'plan' || inputs.action == 'apply'
@@ -171,7 +182,6 @@ jobs:
       environment:      ${{ inputs.environment }}
       backend_regions:  ${{ needs.regions.outputs.regions }}
       bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 3 — Frontend bucket policy (always us-east-1)
@@ -179,6 +189,10 @@ jobs:
   # resources (S3 bucket policy, SSM reads) and the state key.
   # ---------------------------------------------------------------------------
   tf-frontend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "3 · Terraform Frontend"
     needs: tf-edge
     if: inputs.action == 'plan' || inputs.action == 'apply'
@@ -186,7 +200,6 @@ jobs:
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 4 — Deploy backend (Docker build + ECS rolling update). A single call
@@ -197,6 +210,10 @@ jobs:
   # terraform-live-all is infrastructure-only there (see prod-deploy-skipped).
   # ---------------------------------------------------------------------------
   deploy-backend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "4 · Deploy Backend"
     needs: [regions, tf-frontend]
     if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
@@ -204,20 +221,22 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       aws_regions: ${{ needs.regions.outputs.regions }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 5 — Deploy frontend (React build + S3 sync + CloudFront invalidation)
   # Skipped when action=plan or deploy=false, and for prod (as step 4).
   # ---------------------------------------------------------------------------
   deploy-frontend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "5 · Deploy Frontend"
     needs: deploy-backend
     if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-frontend.yml
     with:
       environment: ${{ inputs.environment }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # For prod with deploy=true (e.g. a scheduled start): say in the run why
@@ -243,6 +262,10 @@ jobs:
   # stop the run before anything is destroyed, not after the frontend is gone.
   # ---------------------------------------------------------------------------
   destroy-tf-frontend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "D1 · Terraform Frontend (destroy)"
     needs: regions
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
@@ -250,13 +273,16 @@ jobs:
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Destroy step 2 — Edge (CloudFront / WAF) — same full-list pass-through as
   # the apply-side tf-edge job.
   # ---------------------------------------------------------------------------
   destroy-tf-edge:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "D2 · Terraform Edge (destroy)"
     needs: [regions, destroy-tf-frontend]
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
@@ -266,13 +292,16 @@ jobs:
       environment:      ${{ inputs.environment }}
       backend_regions:  ${{ needs.regions.outputs.regions }}
       bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
-    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Destroy step 3 — Backend (VPC / ECS / ALB / Redis / ECR), one instance
   # per region — same fail-fast reasoning as tf-backend/deploy-backend.
   # ---------------------------------------------------------------------------
   destroy-tf-backend:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     name: "D3 · Terraform Backend (destroy) (${{ matrix.region }})"
     needs: [regions, destroy-tf-edge]
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
@@ -285,4 +314,3 @@ jobs:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
       aws_region:  ${{ matrix.region }}
-    secrets: inherit

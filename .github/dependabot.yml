@@ -1,5 +1,7 @@
 # Dependency updates (production-readiness review, CI-04): weekly, grouped so each
 # ecosystem opens one pull request rather than one per package. Every PR runs check.yml.
+# Each waits 7 days after a release (cooldown), so a compromised or broken version is
+# usually pulled before it's proposed. Security updates don't wait.
 version: 2
 updates:
   # Actions are pinned to commit SHAs with the version in a comment; Dependabot updates both.
@@ -7,6 +9,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
@@ -28,6 +32,8 @@ updates:
       - /backend/users
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       python:
         patterns: ["*"]
@@ -40,6 +46,8 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       web:
         patterns: ["*"]
@@ -49,6 +57,8 @@ updates:
     directory: /frontend-app
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       mobile:
         patterns: ["*"]
@@ -62,6 +72,8 @@ updates:
       - /frontend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       images:
         patterns: ["*"]
@@ -74,6 +86,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       compose:
         patterns: ["*"]
@@ -88,6 +102,8 @@ updates:
       - /modules/*
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       terraform:
         patterns: ["*"]

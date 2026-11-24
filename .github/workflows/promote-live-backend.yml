@@ -40,7 +40,6 @@ on:
         default: "ap-south-1"
 
 permissions:
-  id-token: write
   contents: read
 
 # Locked per environment (not per service or region): one run at a time per
@@ -69,6 +68,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Check regions
         id: regions
@@ -116,6 +117,9 @@ jobs:
   # pull on scale-out.
   # -------------------------------------------------------------------------
   export:
+    permissions:
+      contents: read
+      id-token: write
     name: Export Source Image (${{ matrix.aws_region }})
     needs: validate
     runs-on: ubuntu-latest
@@ -129,6 +133,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate required secrets and variables
         env:
@@ -232,6 +238,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       # Each artifact lands in its own directory, images/promote-images-<region>/.
       - name: Download the image lists
@@ -255,6 +263,9 @@ jobs:
   # the target ECS services onto them.
   # -------------------------------------------------------------------------
   promote:
+    permissions:
+      contents: read
+      id-token: write
     name: Promote Live Backend (${{ matrix.aws_region }})
     needs: [validate, export, same_release]
     runs-on: ubuntu-latest
@@ -268,9 +279,29 @@ jobs:
         aws_region: ${{ fromJson(needs.validate.outputs.regions) }}
     environment: ${{ inputs.target_env }}
 
+    outputs:
+      fqdn: ${{ steps.fqdn.outputs.fqdn }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # The public host for the smoke job, which runs in no environment (so no second
+      # approval where the environment requires one) and reads it from here.
+      - name: Public host (for the smoke test)
+        id: fqdn
+        env:
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          ENVIRONMENT: ${{ inputs.target_env }}
+        run: |
+          source scripts/smoke.sh
+          if [ -z "$SUBDOMAIN" ] || [ -z "$DOMAIN_NAME" ]; then
+            echo "::error::Set SUBDOMAIN and DOMAIN_NAME (variables) in the ${ENVIRONMENT} environment: the smoke test checks https://<subdomain>…/api/health."
+            exit 1
+          fi
+          echo "fqdn=$(smoke_fqdn "$ENVIRONMENT" "$SUBDOMAIN" "$DOMAIN_NAME")" >> "$GITHUB_OUTPUT"
 
       - name: Validate required secrets and variables
         env:
@@ -375,3 +406,30 @@ jobs:
             echo "$repo@$digest"
           }
           deploy_image "$CLUSTER" "$SERVICES" target_image
+
+  # ---------------------------------------------------------------------------
+  # Smoke test (scripts/smoke.sh), once every region has rolled out: the public
+  # path to the promoted release works. /api/health through CloudFront, the edge
+  # function and the ALB, and a 401 for a request with no token. No AWS
+  # credentials and no environment: only anonymous HTTPS requests to the public host.
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: Smoke Test
+    needs: [validate, promote]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Smoke test the API
+        env:
+          FQDN:    ${{ needs.promote.outputs.fqdn }}
+          REGIONS: ${{ needs.validate.outputs.regions }}
+        run: |
+          set -euo pipefail
+          source scripts/smoke.sh
+          smoke_api "$FQDN"
