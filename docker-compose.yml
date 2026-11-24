@@ -70,7 +70,7 @@ services:
   # The member is registered as localhost:27017, so every client connects with
   # directConnection=true, from the host and from other containers alike.
   mongo:
-    image: mongo:8.0.34@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
+    image: mongo:9.0.8@sha256:b0c835c26e5997413e985000f1013c275377cd9607761c1784d486f6dd620b7f
     command: ["--replSet", "rs0", "--bind_ip_all"]
     # MongoDB 8 refuses to start on Linux kernels 6.19 to 7.0.13 (SERVER-121912: tcmalloc's
     # per-CPU caches and the kernel's rseq), which GitHub's runners now have; 8.0.30+ starts
@@ -109,7 +109,7 @@ services:
   # blocks valkey/valkey, set VALKEY_IMAGE=redis:7-alpine in .env: same protocol for what the
   # services use (GET/SET with expiry, Lua, SET NX, ACL users).
   valkey:
-    image: ${VALKEY_IMAGE:-valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b}
+    image: ${VALKEY_IMAGE:-valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b}
     restart: unless-stopped
     networks:
       - superpower_net
@@ -166,7 +166,7 @@ services:
   # service, and answers any other path with the ALB's 404. Generated from
   # shared/service-routes.json by scripts/sync-gateway.mjs.
   gateway:
-    image: nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
+    image: nginx:1.31.8-alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
     restart: unless-stopped
     networks:
       - superpower_net
