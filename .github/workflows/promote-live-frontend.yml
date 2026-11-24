@@ -120,7 +120,7 @@ jobs:
           fi
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: promote-frontend-source-${{ inputs.source_env }}
@@ -212,7 +212,7 @@ jobs:
       # Check out the exact git ref deployed in the source environment.
       # -------------------------------------------------------------------------
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.source_ref.outputs.git_sha }}
@@ -221,7 +221,7 @@ jobs:
       # The publish helpers come from this workflow's own commit: the commit being promoted
       # (checked out above) can predate them.
       - name: Checkout the publish helpers
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
@@ -247,7 +247,7 @@ jobs:
           echo "$GIT_SHA is on $DEFAULT_BRANCH."
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: "npm"
@@ -280,7 +280,7 @@ jobs:
       # minute later) rather than before it.
       # -------------------------------------------------------------------------
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: promote-frontend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
