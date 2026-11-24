@@ -37,7 +37,10 @@ RUN chmod +x /nginx-start.sh \
     && touch /var/run/nginx.pid \
     && chown nginx:nginx /var/run/nginx.pid \
     && chown nginx:nginx /nginx-start.sh
-USER nginx
+# The image's nginx user, by number (hadolint DL3066): 101:101 in the official nginx images.
+USER 101:101
 EXPOSE 8080
-HEALTHCHECK --interval=10s --timeout=3s CMD wget -qO- http://localhost:8080/manifest.json || exit 1
+# Exec form (hadolint DL3025): no shell. wget exits non-zero on any failure, which Docker
+# counts as unhealthy, as `|| exit 1` did.
+HEALTHCHECK --interval=10s --timeout=3s CMD ["wget", "-q", "-O", "/dev/null", "http://localhost:8080/manifest.json"]
 CMD ["/nginx-start.sh"]

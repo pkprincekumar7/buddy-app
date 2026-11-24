@@ -81,7 +81,7 @@ export async function winDiscover(page: Page, game: DiscoverGame): Promise<void>
       await page.keyboard.up(' ');
       break;
     case 'energy':
-      for (let popped = 0; popped < 10; ) {
+      for (let popped = 0; popped < 10;) {
         const bubbles = await dialog.getByRole('button', { name: 'A bubble' }).all();
         for (const b of bubbles.slice(0, 10 - popped)) {
           await tap(b).catch(() => undefined); // gone already
