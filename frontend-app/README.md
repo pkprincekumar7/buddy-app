@@ -43,7 +43,7 @@ The app is a phone-width port of the web app in `frontend/` — same pages, flow
   - [Shared Secrets](#shared-secrets-both-android-and-ios)
   - [Android-Specific Secrets](#android-specific-secrets)
   - [Apple Developer Account](#apple-developer-account)
-  - [iOS-Specific Secrets](#ios-specific-secrets)
+  - [iOS-Specific Settings](#ios-specific-settings)
   - [Running a Build](#running-a-build)
   - [Retrieving Build Artifacts](#retrieving-build-artifacts)
   - [AWS OIDC Setup](#aws-oidc-setup-one-time-per-aws-account)
@@ -89,15 +89,16 @@ yarn install
 Create the `.env` file at `frontend-app/.env`:
 
 ```
-API_URL=http://localhost:8000
-CDN_BASE_URL=http://localhost:8000
+API_URL=http://localhost:8088
 GOOGLE_CLIENT_ID=
 IOS_CLIENT_ID=
+# CDN_BASE_URL: leave unset in dev (it falls back to the web Vite dev server on port 5173)
 ```
 
-> **Android emulator:** `localhost` works after running `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` once per emulator boot (see Daily Workflow below).
-> **iOS simulator:** `localhost:8000` works directly — no tunnel needed; the simulator shares the Mac's network stack.
-> **Physical device (Android or iOS):** Replace `localhost` with your Mac's LAN IP e.g. `http://192.168.1.10:8000` and rebuild.
+> `8088` is the local gateway (`docker compose up -d --build` from the repo root, or `docker compose --env-file .env --env-file .env.test up -d --build` for the local stand-ins: see [Manual and test modes](../docs/getting-started.md#manual-and-test-modes)), which routes each `/api/*` path to its service.
+> **Android emulator:** `localhost` works after running `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8088 tcp:8088` once per emulator boot (see Daily Workflow below).
+> **iOS simulator:** `localhost:8088` works directly — no tunnel needed; the simulator shares the Mac's network stack.
+> **Physical device (Android or iOS):** Replace `localhost` with your Mac's LAN IP e.g. `http://192.168.1.10:8088` and rebuild.
 
 ---
 
@@ -154,7 +155,7 @@ yarn start
 
 # ADB tunnels + build (Terminal 2 — emulator must be running)
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 yarn android
 ```
 
@@ -239,7 +240,7 @@ Start the emulator in Android Studio first, then open **two terminals**:
 # Terminal 1 — ADB tunnels + Metro
 cd frontend-app
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 yarn start
 
 # Terminal 2 — build, install, and launch the app
@@ -258,7 +259,13 @@ Every time you come back to work, follow these steps in order:
 **Step 1 — Start the backend**
 
 ```bash
-docker compose up
+docker compose up -d --build   # from the repo root: manual mode (Atlas, real S3); see docs/getting-started.md
+```
+
+For the local stand-ins (the `mongo` container and Moto) instead:
+
+```bash
+docker compose --env-file .env --env-file .env.test up -d --build
 ```
 
 **Step 2 — Start the Android emulator**
@@ -269,10 +276,10 @@ Open Android Studio → Device Manager → click the play button on your virtual
 
 ```bash
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 ```
 
-This makes `localhost:8081` (Metro) and `localhost:8000` (backend) inside the emulator point to your Mac. **Run both once every time the emulator starts** — without `8081` the app shows a blank screen; without `8000` API calls fail with "Network request failed".
+This makes `localhost:8081` (Metro) and `localhost:8088` (the API gateway) inside the emulator point to your Mac. **Run both once every time the emulator starts** — without `8081` the app shows a blank screen; without `8088` API calls fail with "Network request failed".
 
 **Step 4 — Start Metro**
 
@@ -380,7 +387,7 @@ adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 adb install -r app/build/outputs/apk/debug/app-x86_64-debug.apk
 ```
 
-> **Using a physical device?** Update `.env` to use your Mac's LAN IP (`http://192.168.x.x:8000`) instead of `localhost`, then rebuild the APK. No `adb reverse` is needed for physical devices.
+> **Using a physical device?** Update `.env` to use your Mac's LAN IP (`http://192.168.x.x:8088`) instead of `localhost`, then rebuild the APK. No `adb reverse` is needed for physical devices.
 
 ---
 
@@ -566,7 +573,13 @@ xcrun simctl list devices available
 **Step 1 — Start the backend**
 
 ```bash
-docker compose up
+docker compose up -d --build   # from the repo root: manual mode (Atlas, real S3); see docs/getting-started.md
+```
+
+For the local stand-ins (the `mongo` container and Moto) instead:
+
+```bash
+docker compose --env-file .env --env-file .env.test up -d --build
 ```
 
 **Step 2 — Start Metro (Terminal 1)**
@@ -689,9 +702,9 @@ Two workflow files build and publish the mobile app to S3:
 | Workflow          | File                                      | Runner          | Output |
 | ----------------- | ----------------------------------------- | --------------- | ------ |
 | Build Android APK | `.github/workflows/build-android-apk.yml` | `ubuntu-latest` | `.apk` |
-| Build iOS IPA     | `.github/workflows/build-ios-ipa.yml`     | `macos-latest`  | `.ipa` |
+| Build iOS IPA     | `.github/workflows/build-ios-ipa.yml`     | `macos-15`      | `.ipa` |
 
-Both are triggered manually from **GitHub → Actions → select workflow → Run workflow**, and require choosing an environment (`dev`, `stg`, or `prod`). The built artifact is uploaded both as a **GitHub Actions artifact** (retained 14 days) and pushed to the **S3 backend bucket**.
+Both are triggered manually from **GitHub → Actions → select workflow → Run workflow**, and require choosing an environment (`dev`, `stg`, or `prod`). The built artifact is uploaded both as a **GitHub Actions artifact** (retained 14 days) and pushed to the **S3 backend bucket**. A `prod` run is refused unless it's started from the default branch (`main`), since the Android one replaces the APK parents download; CI status isn't checked. The release APK is arm64-v8a only (Play requires 64-bit).
 
 ---
 
@@ -770,7 +783,7 @@ The `build-ios-ipa.yml` workflow creates an Ad Hoc `.ipa` and requires both a **
 4. Pay the $99 / year fee
 5. Wait for approval (usually instant for Individual; 2–5 days for Organization)
 
-> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the value you add as `IOS_APPLE_TEAM_ID` in GitHub.
+> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the team the provisioning profile belongs to; the build reads it from the profile (`IOS_APPLE_TEAM_ID` in GitHub is an optional check).
 
 #### Testing on a real device without the paid program
 
@@ -787,23 +800,23 @@ This is fine for development testing on your own device. CI builds and distribut
 
 ---
 
-### iOS-Specific Secrets
+### iOS-Specific Settings
 
-iOS builds require four extra secrets on top of the shared set. The steps below show how to generate each one.
+iOS builds need one extra **variable** and three extra **secrets** in each GitHub environment, on top of the shared set. The client ID isn't a credential (it ships inside the app), so it's a variable, like `GOOGLE_CLIENT_ID`. The signing Team ID is read from the provisioning profile, so `IOS_APPLE_TEAM_ID` is optional: set it only if you want the build to check the profile belongs to that team. The steps below show how to get each one.
 
-| Secret                            | Description                                                              |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `IOS_CLIENT_ID`                   | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
-| `IOS_CERTIFICATE_P12_BASE64`      | Base64-encoded Apple Distribution certificate (`.p12`)                   |
-| `IOS_CERTIFICATE_PASSWORD`        | Password chosen when exporting the `.p12`                                |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`)          |
-| `IOS_APPLE_TEAM_ID`               | 10-character Apple Developer Team ID                                     |
+| Name                              | Kind     | Description                                                              |
+| --------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `IOS_CLIENT_ID`                   | variable | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
+| `IOS_APPLE_TEAM_ID` (optional)    | variable | 10-character Apple Developer Team ID; checked against the profile's      |
+| `IOS_CERTIFICATE_P12_BASE64`      | secret   | Base64-encoded Apple Distribution certificate (`.p12`)                   |
+| `IOS_CERTIFICATE_PASSWORD`        | secret   | Password chosen when exporting the `.p12`                                |
+| `IOS_PROVISIONING_PROFILE_BASE64` | secret   | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`)          |
 
 #### Step 1 — Find your Apple Team ID
 
 1. Go to [developer.apple.com](https://developer.apple.com) → **Account**
 2. Under **Membership Details**, copy the **Team ID** (10 characters, e.g. `ABCD1234EF`)
-3. Add as `IOS_APPLE_TEAM_ID` in GitHub
+3. Optional: add it as the `IOS_APPLE_TEAM_ID` **variable** in each GitHub environment. The build reads the Team ID from the provisioning profile (Step 4); with this set, it also checks the profile is this team's
 
 #### Step 2 — Create and export a Distribution certificate
 
@@ -954,9 +967,9 @@ The role needs at minimum:
 }
 ```
 
-**4 — Add the Role ARN as a secret**
+**4 — Add the Role ARN as a variable**
 
-Copy the Role ARN (format: `arn:aws:iam::123456789012:role/role-name`) and add it as `ROLE_ARN` in each GitHub environment.
+Copy the Role ARN (format: `arn:aws:iam::123456789012:role/role-name`) and add it as the `ROLE_ARN` **variable** in each GitHub environment (the workflows read `vars.ROLE_ARN`).
 
 ---
 
@@ -966,8 +979,8 @@ Managed by `react-native-config`. File location: `frontend-app/.env`
 
 | Variable           | Description                               | Local dev value           |
 | ------------------ | ----------------------------------------- | ------------------------- |
-| `API_URL`          | Backend base URL                          | `http://localhost:8000`   |
-| `CDN_BASE_URL`     | CDN base URL for static assets            | `http://localhost:8000`   |
+| `API_URL`          | API base URL (the local gateway)          | `http://localhost:8088`   |
+| `CDN_BASE_URL`     | CDN base URL for static assets            | unset (Vite dev server, port 5173) |
 | `GOOGLE_CLIENT_ID` | Google Web OAuth 2.0 Client ID            | from Google Cloud Console |
 | `IOS_CLIENT_ID`    | Google iOS OAuth 2.0 Client ID (iOS only) | from Google Cloud Console |
 
@@ -975,8 +988,8 @@ Managed by `react-native-config`. File location: `frontend-app/.env`
 
 - Changing `.env` always requires a **native rebuild** (`yarn android` for Android, `yarn ios` for iOS)
 - `yarn start --reset-cache` alone is **not** enough after a `.env` change
-- For Android emulator, always run `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` after starting the emulator — `8081` is Metro (blank screen without it), `8000` is the backend API
-- For a real physical device (Android or iOS), replace `localhost` with your Mac's LAN IP: `http://192.168.x.x:8000`
+- For Android emulator, always run `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8088 tcp:8088` after starting the emulator — `8081` is Metro (blank screen without it), `8088` is the API gateway
+- For a real physical device (Android or iOS), replace `localhost` with your Mac's LAN IP: `http://192.168.x.x:8088`
 
 ---
 
@@ -988,7 +1001,7 @@ Google Sign-In works on both Android and iOS via `@react-native-google-signin/go
 
 - The app is configured with a **Web OAuth Client ID** (`GOOGLE_CLIENT_ID` in `.env`), used by both platforms so the backend can verify the `idToken` server-side.
 - **Android** additionally requires an **Android OAuth Client ID** registered for each signing certificate's SHA-1 fingerprint. Google uses this to authorise the APK at runtime — you do not reference it in code.
-- **iOS** additionally requires an **iOS OAuth Client ID** (`IOS_CLIENT_ID` in `.env`) registered for the app's Bundle ID. This is passed as `iosClientId` in `GoogleSignin.configure()` at app startup — without it the app crashes immediately.
+- **iOS** additionally requires an **iOS OAuth Client ID** (`IOS_CLIENT_ID` in `.env`) registered for the app's Bundle ID. This is passed as `iosClientId` in `GoogleSignin.configure()` at app startup. There's no built-in fallback ID: without `IOS_CLIENT_ID`, `App.tsx` skips `configure()` on iOS (the Sign-In button is hidden there), so set it to use Google Sign-In on iOS.
 - On sign-in, the native sheet returns an `idToken` which is sent to the backend's `/auth/google` endpoint for verification.
 
 ---
@@ -1102,7 +1115,7 @@ The Google sign-in sheet makes a network call back through the app. Make sure th
 
 ```bash
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 ```
 
 ---
@@ -1130,14 +1143,15 @@ adb reverse tcp:8000 tcp:8000
 **Most likely cause:** The ADB reverse tunnel is not set up, or the backend is not running.
 
 ```bash
-# 1. Confirm backend is running
-curl http://localhost:8000/api/health
+# 1. Confirm the stack is running (the gateway, then shared's health through it)
+curl http://localhost:8088/gateway/health
+curl http://localhost:8088/api/health
 
 # 2. Set up the ADB reverse tunnels (run once every time the emulator starts)
 #    8081 → Metro bundler (without this the app shows a blank screen)
-#    8000 → backend API (without this ALL network calls — including login — will fail)
+#    8088 → the API gateway (without this ALL network calls — including login — will fail)
 adb reverse tcp:8081 tcp:8081
-adb reverse tcp:8000 tcp:8000
+adb reverse tcp:8088 tcp:8088
 
 # 3. If .env was recently changed, rebuild the app
 cd frontend-app

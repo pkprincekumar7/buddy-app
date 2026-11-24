@@ -168,7 +168,7 @@ export default function ObservationsSection({
             <ObservationSkeleton key={i} />
           ))}
         </View>
-      ) : generationFailed ? (
+      ) : generationFailed && observations.length === 0 ? (
         <MessageCard
           title="We could not group your answers just now"
           body={errorMessage}
@@ -185,17 +185,30 @@ export default function ObservationsSection({
           paddingVertical={34}
         />
       ) : (
-        <View style={{ gap: 14, marginTop: 16 }}>
-          {observations.map(obs => (
-            <ObservationCard
-              key={obs.id}
-              obs={obs}
-              on={tracked.includes(obs.id)}
-              childName={childName}
-              onToggle={() => onToggle(obs.id)}
+        <>
+          {/* A failed regenerate keeps the last grouping on screen: the
+              error (and its retry) sits above it instead of replacing it. */}
+          {generationFailed && (
+            <MessageCard
+              title="We could not group your answers just now"
+              body={errorMessage}
+              action="Try again"
+              onAction={onRetry}
+              paddingVertical={18}
             />
-          ))}
-        </View>
+          )}
+          <View style={{ gap: 14, marginTop: 16 }}>
+            {observations.map(obs => (
+              <ObservationCard
+                key={obs.id}
+                obs={obs}
+                on={tracked.includes(obs.id)}
+                childName={childName}
+                onToggle={() => onToggle(obs.id)}
+              />
+            ))}
+          </View>
+        </>
       )}
     </Animated.View>
   );

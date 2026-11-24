@@ -1,0 +1,370 @@
+[
+  {
+    "kind": "parent_questions",
+    "area_id": "life_ambition",
+    "answer": {
+      "questions": [
+        {
+          "question": "  What does Aarav do when question 1 happens?  ",
+          "hint": "Think of a recent day 1."
+        },
+        {
+          "question": "  What does Aarav do when question 2 happens?  ",
+          "hint": "Think of a recent day 2."
+        },
+        {
+          "question": "  What does Aarav do when question 3 happens?  ",
+          "hint": "Think of a recent day 3."
+        },
+        {
+          "question": "  What does Aarav do when question 4 happens?  ",
+          "hint": "Think of a recent day 4."
+        },
+        {
+          "question": "  What does Aarav do when question 5 happens?  ",
+          "hint": "Think of a recent day 5."
+        }
+      ]
+    }
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": [
+      {
+        "question": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?",
+        "hint": "h h h h h h h h h h h h h h h h h h h h"
+      },
+      {
+        "question": "  What does Aarav do when question 2 happens?  ",
+        "hint": "Think of a recent day 2."
+      },
+      {
+        "question": "  What does Aarav do when question 3 happens?  ",
+        "hint": "Think of a recent day 3."
+      },
+      {
+        "question": "  What does Aarav do when question 4 happens?  ",
+        "hint": "Think of a recent day 4."
+      },
+      {
+        "question": "  What does Aarav do when question 5 happens?  ",
+        "hint": "Think of a recent day 5."
+      },
+      {
+        "question": "  What does Aarav do when question 1 happens?  ",
+        "hint": "Think of a recent day 1."
+      }
+    ]
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": {
+      "questions": [
+        {
+          "question": "Q?"
+        },
+        {
+          "question": "  What does Aarav do when question 2 happens?  ",
+          "hint": "Think of a recent day 2."
+        },
+        {
+          "question": "  What does Aarav do when question 3 happens?  ",
+          "hint": "Think of a recent day 3."
+        },
+        {
+          "question": "  What does Aarav do when question 4 happens?  ",
+          "hint": "Think of a recent day 4."
+        },
+        {
+          "question": "  What does Aarav do when question 5 happens?  ",
+          "hint": "Think of a recent day 5."
+        }
+      ]
+    }
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": {
+      "questions": [
+        {
+          "question": "  What does Aarav do when question 1 happens?  ",
+          "hint": "Think of a recent day 1."
+        },
+        {
+          "question": "  What does Aarav do when question 2 happens?  ",
+          "hint": "Think of a recent day 2."
+        },
+        {
+          "question": "  What does Aarav do when question 3 happens?  ",
+          "hint": "Think of a recent day 3."
+        },
+        {
+          "question": "  What does Aarav do when question 4 happens?  ",
+          "hint": "Think of a recent day 4."
+        }
+      ]
+    }
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": {
+      "questions": [
+        {
+          "question": "  What does Aarav do when question 1 happens?  ",
+          "hint": "Think of a recent day 1."
+        },
+        "oops",
+        {
+          "question": "  What does Aarav do when question 3 happens?  ",
+          "hint": "Think of a recent day 3."
+        },
+        {
+          "question": "  What does Aarav do when question 4 happens?  ",
+          "hint": "Think of a recent day 4."
+        },
+        {
+          "question": "  What does Aarav do when question 5 happens?  ",
+          "hint": "Think of a recent day 5."
+        }
+      ]
+    }
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": {
+      "questions": [
+        {
+          "question": "  What does Aarav do when question 1 happens?  ",
+          "hint": "Think of a recent day 1."
+        },
+        {
+          "question": "  ",
+          "hint": "x"
+        },
+        {
+          "question": "  What does Aarav do when question 3 happens?  ",
+          "hint": "Think of a recent day 3."
+        },
+        {
+          "question": "  What does Aarav do when question 4 happens?  ",
+          "hint": "Think of a recent day 4."
+        },
+        {
+          "question": "  What does Aarav do when question 5 happens?  ",
+          "hint": "Think of a recent day 5."
+        }
+      ]
+    }
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": "not json object"
+  },
+  {
+    "kind": "parent_questions",
+    "area_id": "self_care",
+    "answer": {
+      "other": []
+    }
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": {
+      "recommendations": [
+        {
+          "title": "  Start a bedtime routine  ",
+          "detail": "Every night at eight, read together for ten minutes."
+        },
+        {
+          "title": "t t t t t t t t t t t t t t",
+          "detail": "d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d"
+        },
+        {
+          "t": "Shorthand title",
+          "b": "Shorthand body"
+        },
+        "  A legacy string recommendation that is long but never capped at all by the normaliser rules  ",
+        {
+          "title": "",
+          "detail": ""
+        },
+        "",
+        null,
+        5,
+        {
+          "title": "Only a title"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": [
+      {
+        "title": "Bare array",
+        "detail": "d"
+      }
+    ]
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": {
+      "no": "list",
+      "recommendations": [
+        {
+          "title": "Name the bedtime worry",
+          "detail": "Each night, ask what felt hard today.",
+          "source": "both"
+        },
+        {
+          "title": "Praise the slow, careful game",
+          "detail": "After each run, name one careful move.",
+          "source": "kid"
+        },
+        {
+          "title": "Keep the reading habit",
+          "detail": "Read together for ten minutes after dinner.",
+          "source": "you"
+        },
+        {
+          "title": "Plan a calm-down corner together",
+          "detail": "Set it up this month and use it twice a week.",
+          "source": "both"
+        },
+        {
+          "title": "Play again next week",
+          "detail": "Check back in a week to see the change.",
+          "source": "step"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": [
+      {
+        "title": "  Start a bedtime routine  ",
+        "detail": "Every night at eight, read together for ten minutes."
+      },
+      {
+        "title": "t t t t t t t t t t t t t t",
+        "detail": "d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d"
+      },
+      {
+        "t": "Shorthand title",
+        "b": "Shorthand body"
+      },
+      "  A legacy string recommendation that is long but never capped at all by the normaliser rules  ",
+      {
+        "title": "",
+        "detail": ""
+      },
+      "",
+      null,
+      5,
+      {
+        "title": "Only a title"
+      }
+    ]
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": {
+      "recommendations": [
+        {
+          "title": "Name the bedtime worry",
+          "detail": "Each night, ask what felt hard today.",
+          "source": "both"
+        },
+        {
+          "title": "Praise the slow, careful game",
+          "detail": "After each run, name one careful move.",
+          "source": "kid"
+        },
+        {
+          "title": "Keep the reading habit",
+          "detail": "Read together for ten minutes after dinner.",
+          "source": "you"
+        },
+        {
+          "title": "Play again next week",
+          "detail": "Check back in a week to see the change.",
+          "source": "step"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "recommendations",
+    "area_id": "self_care",
+    "answer": [
+      {
+        "title": "Valid both",
+        "detail": "d",
+        "source": "both"
+      },
+      {
+        "title": "Valid kid",
+        "detail": "d",
+        "source": "kid"
+      },
+      {
+        "title": "Valid you",
+        "detail": "d",
+        "source": "you"
+      },
+      {
+        "title": "Valid step",
+        "detail": "d",
+        "source": "step"
+      },
+      {
+        "title": "Unknown source",
+        "detail": "d",
+        "source": "parent"
+      },
+      {
+        "title": "Wrong case",
+        "detail": "d",
+        "source": "KID"
+      },
+      {
+        "title": "Padded source",
+        "detail": "d",
+        "source": " kid "
+      },
+      {
+        "title": "Not a string",
+        "detail": "d",
+        "source": 5
+      },
+      {
+        "title": "Null source",
+        "detail": "d",
+        "source": null
+      },
+      {
+        "t": "Shorthand with a source",
+        "b": "b",
+        "source": "you"
+      },
+      {
+        "title": "",
+        "detail": "",
+        "source": "step"
+      },
+      "  A plain string stays a title  "
+    ]
+  }
+]

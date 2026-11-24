@@ -9,17 +9,25 @@
 #
 # The public /24s sit inside the first /20 (10.x.0.0/20), which no private
 # subnet uses, so the two ranges can't overlap. ~4,091 usable IPs per private
-# subnet (~12,270 total) leaves well over 3× the prod peak of ~585 (every
-# service's max tasks — API 200, worker 50, auth 30, admin 3 — doubled during a
-# deploy, plus endpoint ENIs and Redis nodes) — room for TF-03's smaller tasks. 10.x.64.0–10.x.255.255 is left free.
+# subnet (~12,270 total) leaves far more than prod's peak, about 130 tasks at every
+# runtime's max_capacity (TF-03's Atlas connection budget caps it) plus a deploy's
+# surge, endpoint ENIs and Redis nodes. 10.x.64.0–10.x.255.255 is left free.
 #
 # Subnets, route tables and routes are keyed "1", "2", "3" (the AZ number,
 # also used in their names), so module.network.aws_subnet.private["2"] is
 # AZ 2's private subnet.
 # ---------------------------------------------------------------------------
 
+# Standard AZs only: opting the account into a Local or Wavelength Zone adds names that
+# would sort into this list, shift every subnet onto other AZs and replace the VPC's
+# subnets (production-readiness review, L20).
 data "aws_availability_zones" "available" {
   state = "available"
+
+  filter {
+    name   = "opt-in-status"
+    values = ["opt-in-not-required"]
+  }
 }
 
 locals {

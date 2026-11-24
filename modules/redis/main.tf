@@ -1,8 +1,10 @@
 # ---------------------------------------------------------------------------
 # redis — ElastiCache running the Valkey engine (open-source, Redis-protocol
 # compatible: the app's Redis clients and Lua scripts work unchanged),
-# encrypted at rest and in transit with an AUTH token, reachable only from
-# the given client security groups (TF-01). Resource names still say "redis"
+# encrypted at rest and in transit, reachable only from the given client
+# security groups (TF-01). Clients sign in either with one shared AUTH token
+# or as one RBAC user per service with IAM authentication (what the backend stack uses:
+# rbac_services, docs/auth-users-split.md 9.3 and 15.1). Resource names still say "redis"
 # so existing replication groups and security groups aren't replaced.
 #
 # Node count and multi-AZ come from the caller per environment. Destroying
@@ -48,6 +50,15 @@ resource "aws_elasticache_parameter_group" "this" {
   name   = "${var.app_name}-backend-${local.parameter_group_family}-${var.environment}"
   family = local.parameter_group_family
 
+  # Every key has a TTL, so the default volatile-lru would evict rate-limit counters and
+  # locks when memory fills. With noeviction a full Valkey refuses writes instead: the
+  # services count per task, and the Valkey memory and valkey-degraded alarms fire
+  # (production-readiness review, TF-04). Changing it is applied in place.
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+
   tags = {
     Name = "${var.app_name}-backend-${local.parameter_group_family}-${var.environment}"
   }
@@ -70,9 +81,11 @@ resource "aws_elasticache_replication_group" "this" {
 
   node_type = var.node_type
 
-  num_cache_clusters         = var.replica_count + 1
-  automatic_failover_enabled = var.multi_az
-  multi_az_enabled           = var.multi_az
+  num_cache_clusters = var.replica_count + 1
+  # The first zone per node, primary first; AWS reads them only when it creates the group.
+  preferred_cache_cluster_azs = length(var.preferred_azs) > 0 ? slice(var.preferred_azs, 0, var.replica_count + 1) : null
+  automatic_failover_enabled  = var.multi_az
+  multi_az_enabled            = var.multi_az
 
   engine               = "valkey"
   engine_version       = var.engine_version
@@ -85,16 +98,103 @@ resource "aws_elasticache_replication_group" "this" {
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
   transit_encryption_mode    = "required"
-  auth_token                 = var.auth_token
+
+  # One or the other (a replication group can't take both).
+  auth_token     = local.rbac ? null : var.auth_token
+  user_group_ids = local.rbac ? [aws_elasticache_user_group.this[0].user_group_id] : null
 
   lifecycle {
+    # Where the nodes were placed: AWS doesn't report it back or change it later, so a
+    # later apply with other zones (or none: the usual case) has nothing to do.
+    ignore_changes = [preferred_cache_cluster_azs]
+
     precondition {
       condition     = !(var.multi_az && var.replica_count == 0)
       error_message = "elasticache_multi_az = true requires elasticache_replica_count >= 1."
+    }
+    precondition {
+      condition     = length(var.preferred_azs) == 0 || length(var.preferred_azs) >= var.replica_count + 1
+      error_message = "preferred_azs needs at least one zone per node (replica_count + 1), primary first."
+    }
+    precondition {
+      condition     = local.rbac != (var.auth_token != null)
+      error_message = "Set exactly one of auth_token (one shared token) or rbac_services (one IAM user per service)."
     }
   }
 
   tags = {
     Name = "${var.app_name}-backend-redis-${var.environment}"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# RBAC: one IAM-authenticated user per service (9.3, 15.1)
+#
+# IAM authentication needs the user ID and user name to be the same, so both are
+# "<app>-<env>-<service>". A task connects as that user with a short-lived token
+# from its task role (elasticache:Connect on the replication group and the user).
+#
+# Key permissions: "%R~" is read-only (Redis 7 / Valkey ACL syntax), "~" read and
+# write. Commands: reads, writes and scripts (the limiters and the authz CAS are
+# Lua), but nothing in @dangerous.
+# ---------------------------------------------------------------------------
+locals {
+  rbac = length(var.rbac_services) > 0
+
+  rbac_user_id = { for k, _ in var.rbac_services : k => "${var.app_name}-${var.environment}-${k}" }
+
+  access_string = {
+    for k, s in var.rbac_services : k => join(" ", concat(
+      ["on"],
+      [
+        "~LIMITS:LIMITER/${k}/*",
+        "~leader:${k}:*",
+        s.writes_authz ? "~authz:*" : "%R~authz:*",
+      ],
+      s.llm_limit ? ["~llm:hourly:*"] : [],
+      # No pub/sub channels. Valkey adds this itself, at this spot, when it's left out, and
+      # the plan then showed every user changing on every run.
+      ["resetchannels"],
+      ["-@all", "+@read", "+@write", "+@scripting", "+@connection", "-@dangerous"],
+    ))
+  }
+}
+
+resource "aws_elasticache_user" "service" {
+  for_each = var.rbac_services
+
+  engine        = "valkey"
+  user_id       = local.rbac_user_id[each.key]
+  user_name     = local.rbac_user_id[each.key]
+  access_string = local.access_string[each.key]
+
+  authentication_mode {
+    type = "iam"
+  }
+
+  tags = {
+    Name    = local.rbac_user_id[each.key]
+    Service = each.key
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.rbac_user_id[each.key]) <= 40
+      error_message = "ElastiCache user ID ${local.rbac_user_id[each.key]} is over 40 characters."
+    }
+  }
+}
+
+# Only the services' users: unlike Redis OSS, a Valkey user group needs no "default" user
+# (and Valkey refuses the password-less one Redis OSS used for it).
+resource "aws_elasticache_user_group" "this" {
+  count = local.rbac ? 1 : 0
+
+  engine        = "valkey"
+  user_group_id = "${var.app_name}-backend-valkey-users-${var.environment}"
+  user_ids      = [for u in aws_elasticache_user.service : u.user_id]
+
+  tags = {
+    Name = "${var.app_name}-backend-valkey-users-${var.environment}"
   }
 }

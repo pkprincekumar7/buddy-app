@@ -11,6 +11,7 @@ import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
 import { X } from 'lucide-react-native';
 import { cn } from '@/lib/utils';
+import { modalFade, useModalExit } from '@/lib/useModalExit';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import { color } from '@/theme';
 
@@ -47,24 +48,6 @@ export function Dialog({
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function DialogTrigger({
-  children,
-}: {
-  children: React.ReactElement<{ onPress?: () => void }>;
-}) {
-  const { setOpen } = React.useContext(Ctx);
-  return React.cloneElement(children, { onPress: () => setOpen(true) });
-}
-
-export function DialogClose({
-  children,
-}: {
-  children: React.ReactElement<{ onPress?: () => void }>;
-}) {
-  const { setOpen } = React.useContext(Ctx);
-  return React.cloneElement(children, { onPress: () => setOpen(false) });
-}
-
 interface DialogContentProps extends ViewProps {
   className?: string;
   /** Hide the top-right X (web always renders it). */
@@ -84,17 +67,20 @@ export function DialogContent({
   ...props
 }: DialogContentProps) {
   const { open, setOpen } = React.useContext(Ctx);
+  // The Modal stays up while the content fades out (lib/useModalExit).
+  const modalShown = useModalExit(open);
   return (
     <Modal
-      visible={open}
+      visible={modalShown}
       transparent
       animationType="none"
       statusBarTranslucent
       onRequestClose={() => setOpen(false)}
     >
-      {open ? (
+      {modalShown ? (
         <Animated.View
-          {...MODAL_BACKDROP}
+          entering={MODAL_BACKDROP.entering}
+          style={modalFade(open)}
           className={cn(
             'flex-1 items-center justify-center bg-overlay p-4',
             overlayClassName,
@@ -106,7 +92,7 @@ export function DialogContent({
             onPress={() => dismissible && setOpen(false)}
           />
           <Animated.View
-            {...MODAL_SCALE}
+            entering={MODAL_SCALE.entering}
             accessibilityViewIsModal
             className={cn(
               'max-h-[90%] w-full max-w-lg rounded-lg border border-border bg-background p-6',

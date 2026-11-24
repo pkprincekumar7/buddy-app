@@ -27,7 +27,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
+known-first-party = ["common"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -42,9 +42,13 @@ warn_unused_ignores = true
 warn_return_any = false
 disallow_untyped_defs = false
 check_untyped_defs = true
+# The tools are scripts that import each other as top-level modules; their tests import them
+# as tools.*, which mypy would see as the same files under two names.
+exclude = ["^tools/tests/"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Each service's own tests run per service, in its own install (tools/services.py).
+testpaths = ["common/tests", "tools/tests"]
 pythonpath = ["."]
 markers = [
     "live_service: needs a real MongoDB/Redis; skipped locally without one, but a skip fails the run when REQUIRE_LIVE_SERVICES=1 (CI)",
@@ -53,23 +57,15 @@ markers = [
 # package that triggers it — so a deprecation from our own code still shows up.
 # Drop an entry once that package's upgrade fixes it.
 filterwarnings = [
-    # slowapi 0.1.9 calls asyncio.iscoroutinefunction (deprecated in Python 3.14).
-    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:slowapi",
     # botocore 1.35 calls datetime.utcnow() (deprecated in Python 3.12) when signing.
     "ignore:datetime.datetime.utcnow\\(\\) is deprecated:DeprecationWarning:botocore",
     # Starlette 1.x's TestClient (used via fastapi.testclient) on httpx.
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",
 ]
 
-# Mutation testing — MANUAL ONLY: never in CI, never from Claude Code (tests/conftest.py
-# stops a mutmut run when CLAUDECODE is set). Steps: docs/mutation-testing.md.
-# Covers every module under app/ except the generated country data (guarded by
-# test_routing.py's parity test and CI's sync-routing --check). mutmut can't mutate
-# decorated functions — route handlers, main.py's lifespan/handlers/middleware — so
-# tools/mutate_handlers.py covers those with hand-built mutants.
-[tool.mutmut]
-source_paths = ["app"]
-do_not_mutate = ["app/routing_data.py"]
-also_copy = ["tools", "worker.py"]
-pytest_add_cli_args_test_selection = ["tests"]
-pytest_add_cli_args = ["-p", "no:warnings", "-q"]
+[tool.coverage.run]
+# Measure the code, not its tests (each package keeps its tests inside it).
+omit = ["*/tests/*"]
+
+# Import boundaries (docs/auth-users-split.md, section 2) are generated from the services
+# in the tree, so there's no list to keep here: `python tools/import_contracts.py`.

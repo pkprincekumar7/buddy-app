@@ -9,10 +9,14 @@
 # Endpoints and never reaches NAT. In dev/sbx (no Interface Endpoints),
 # all outbound traffic including AWS service calls traverses NAT.
 #
-# Task definitions use :latest as the initial image. The deploy workflow
+# Task definitions use the service's repository at :latest as the initial image
+# (the collector: var.otel_collector_image). The deploy workflow
 # (deploy-live-backend.yml) manages image updates; Terraform is not involved
 # after the initial apply (ignore_changes = [task_definition, desired_count]
 # in the module).
+#
+# A runtime with an internal port registers in Cloud Map (service_discovery.tf),
+# and every service runtime joins the internal-callers group (13.2).
 # ---------------------------------------------------------------------------
 
 # Container Insights is per environment (var.enable_container_insights): on in
@@ -32,11 +36,21 @@ resource "aws_ecs_cluster" "backend" {
   tags = {
     Name = "${var.app_name}-backend-cluster-${var.environment}"
   }
+
+  lifecycle {
+    # A scale-out or deploy must not run Atlas out of connections (TF-03, DB-02).
+    precondition {
+      condition     = local.mongo_peak_connections <= var.mongodb_connection_budget
+      error_message = "At peak, this region's tasks could open ${local.mongo_peak_connections} MongoDB connections (peak tasks x (mongodb_max_pool_size + ${local.mongo_monitoring_connections_per_task})), over mongodb_connection_budget = ${var.mongodb_connection_budget}. Lower runtime_sizes' max_capacity or mongodb_max_pool_size, or raise the budget with a larger Atlas tier."
+    }
+  }
 }
 
+# FARGATE_SPOT for the workers' extra tasks (var.worker_spot, TF-03); everything else
+# runs on FARGATE, the default.
 resource "aws_ecs_cluster_capacity_providers" "backend" {
   cluster_name       = aws_ecs_cluster.backend.name
-  capacity_providers = ["FARGATE"]
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
 
   default_capacity_provider_strategy {
     capacity_provider = "FARGATE"
@@ -57,30 +71,42 @@ module "service" {
 
   cpu                = each.value.cpu
   memory             = each.value.memory
-  execution_role_arn = aws_iam_role.ecs_execution_role.arn
+  execution_role_arn = aws_iam_role.execution[each.key].arn
   task_role_arn      = aws_iam_role.task[each.key].arn
 
   container = {
     name        = each.key
-    image       = "${aws_ecr_repository.backend.repository_url}:latest"
+    image       = each.value.image != null ? each.value.image : "${aws_ecr_repository.service[each.value.service].repository_url}:latest"
     command     = each.value.command
     port        = try(each.value.http.port, null)
     environment = each.value.environment
     # "<secret ARN>:<JSON key>::" — the ECS agent injects each key of the
-    # backend-secrets JSON as an env var.
-    secrets           = [for k in each.value.secret_keys : { name = k, valueFrom = "${aws_secretsmanager_secret.app.arn}:${k}::" }]
+    # service's secret JSON as an env var, plus the service-token signing key.
+    secrets = concat(
+      [for k in each.value.secret_keys : { name = k, valueFrom = "${aws_secretsmanager_secret.service[each.value.service].arn}:${k}::" }],
+      each.value.service != null ? [{ name = "INTERNAL_SIGNING_KEY", valueFrom = local.signing_key_arn[each.value.service] }] : [],
+    )
     log_group_name    = aws_cloudwatch_log_group.service[each.key].name
     log_stream_prefix = each.key
     health_check      = each.value.health_check
+    stop_timeout      = each.value.stop_timeout
   }
-  enable_adot_sidecar = var.enable_adot_sidecar
 
-  cluster_id             = aws_ecs_cluster.backend.id
-  cluster_name           = aws_ecs_cluster.backend.name
-  desired_count          = each.value.desired_count
-  enable_execute_command = var.enable_execute_command
-  subnet_ids             = module.network.private_subnet_ids
-  security_group_ids     = [aws_security_group.service[each.key].id]
+  cluster_id    = aws_ecs_cluster.backend.id
+  cluster_name  = aws_ecs_cluster.backend.name
+  desired_count = each.value.desired_count
+  # 150% where the minimum leaves room for an extra task, else 200% (TF-03).
+  deployment_maximum_percent = each.value.deployment_maximum_percent
+  capacity_provider_strategy = each.value.capacity_provider_strategy
+  enable_execute_command     = var.enable_execute_command
+  subnet_ids                 = module.network.private_subnet_ids
+  security_group_ids = concat(
+    [aws_security_group.service[each.key].id],
+    each.value.service != null ? [aws_security_group.internal_callers.id] : [],
+  )
+
+  internal_port     = each.value.internal_port
+  service_discovery = each.value.internal_port != null ? { namespace_id = aws_service_discovery_private_dns_namespace.internal.id, name = each.value.service != null ? each.value.service : each.key } : null
 
   load_balancer                     = each.value.http != null ? { target_group_arn = module.alb.target_group_arns[each.key], container_port = each.value.http.port } : null
   health_check_grace_period_seconds = try(each.value.http.health_check_grace_period_seconds, null)
@@ -103,6 +129,7 @@ module "service" {
   alarm_topic_arn         = aws_sns_topic.alerts.arn
 
   # An HTTP service registers with the target group, which must already be
-  # attached to the HTTPS listener.
-  depends_on = [module.alb]
+  # attached to the HTTPS listener; a worker's Spot tasks need the cluster to offer
+  # FARGATE_SPOT.
+  depends_on = [module.alb, aws_ecs_cluster_capacity_providers.backend]
 }

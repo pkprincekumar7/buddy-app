@@ -1,0 +1,750 @@
+{
+  "bands": [
+    {
+      "min": 80,
+      "label": "Super strong",
+      "color": "gold"
+    },
+    {
+      "min": 55,
+      "label": "Growing well",
+      "color": "cyan"
+    },
+    {
+      "min": 0,
+      "label": "Keep practising",
+      "color": "violet"
+    }
+  ],
+  "worlds": [
+    {
+      "name": "Life Ambition",
+      "icon": "M12 2c3 2 5 6 5 10l-2 4H9l-2-4c0-4 2-8 5-10zM12 8.5v2M9 16l-2 5 3-1.5M15 16l2 5-3-1.5",
+      "mission": "Draw what you want to be when you grow up.",
+      "hint": "Show it to someone at home.",
+      "games": [
+        {
+          "type": "dash",
+          "title": "Dream Catcher",
+          "skill": "Big dreams",
+          "how": "Dream jobs fly past. Tap every one you would love to do.",
+          "tip": "Next time, try tapping a few more dreams.",
+          "cfg": {
+            "items": [
+              {
+                "text": "Astronaut",
+                "kind": "Explore"
+              },
+              {
+                "text": "Pilot",
+                "kind": "Explore"
+              },
+              {
+                "text": "Scientist",
+                "kind": "Explore"
+              },
+              {
+                "text": "Explorer",
+                "kind": "Explore"
+              },
+              {
+                "text": "Doctor",
+                "kind": "Help"
+              },
+              {
+                "text": "Teacher",
+                "kind": "Help"
+              },
+              {
+                "text": "Vet",
+                "kind": "Help"
+              },
+              {
+                "text": "Firefighter",
+                "kind": "Help"
+              },
+              {
+                "text": "Artist",
+                "kind": "Create"
+              },
+              {
+                "text": "Musician",
+                "kind": "Create"
+              },
+              {
+                "text": "Chef",
+                "kind": "Create"
+              },
+              {
+                "text": "Film maker",
+                "kind": "Create"
+              },
+              {
+                "text": "Coder",
+                "kind": "Build"
+              },
+              {
+                "text": "Engineer",
+                "kind": "Build"
+              },
+              {
+                "text": "Robot maker",
+                "kind": "Build"
+              },
+              {
+                "text": "Architect",
+                "kind": "Build"
+              }
+            ]
+          },
+          "build_on": {
+            "title": "Explore {his} top dream area",
+            "body": "Ask which dream jobs {he} tapped and why. Find one short video, book or visit about one of them this week."
+          },
+          "support": {
+            "title": "Widen the dream list",
+            "body": "{He} picked only a few dream jobs. Share stories about different jobs at dinner and ask which sounds fun."
+          }
+        },
+        {
+          "type": "sort",
+          "title": "Rocket Fuel",
+          "skill": "Smart choices",
+          "how": "Does it help your dream fly, or slow it down?",
+          "tip": "Think: will this get me closer to my dream?",
+          "cfg": {
+            "left": "Slows it",
+            "right": "Helps it",
+            "items": [
+              {
+                "text": "Practise every day",
+                "right": true
+              },
+              {
+                "text": "Give up when it’s hard",
+                "right": false
+              },
+              {
+                "text": "Ask for help",
+                "right": true
+              },
+              {
+                "text": "Skip homework",
+                "right": false
+              },
+              {
+                "text": "Learn from mistakes",
+                "right": true
+              },
+              {
+                "text": "Say “I can’t”",
+                "right": false
+              },
+              {
+                "text": "Read about it",
+                "right": true
+              },
+              {
+                "text": "Stay up too late",
+                "right": false
+              },
+              {
+                "text": "Try again",
+                "right": true
+              },
+              {
+                "text": "Copy a friend’s answer",
+                "right": false
+              }
+            ]
+          },
+          "build_on": {
+            "title": "Let {him} set a mini goal",
+            "body": "{He} can tell what helps a goal and what slows it. Ask {him} to pick one small weekly goal and track it."
+          },
+          "support": {
+            "title": "Talk about helpful habits",
+            "body": "Point out moments when practice or asking for help paid off for {him}."
+          }
+        },
+        {
+          "type": "timing",
+          "title": "Goal Ladder",
+          "skill": "Steady effort",
+          "how": "Tap when the blue ring meets the gold one. Each hit is one rung up.",
+          "tip": "Slow down and wait for the rings to meet.",
+          "cfg": {
+            "label": "Climb",
+            "n": 10,
+            "per": 1300
+          },
+          "build_on": {
+            "title": "Try a 7-day streak",
+            "body": "{His} timing and patience are strong. A simple daily streak chart will suit {him}."
+          },
+          "support": {
+            "title": "Practise patience in short bursts",
+            "body": "Games that need waiting, like Jenga or Simon Says, build steady effort."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Self Care",
+      "icon": "M5 19c0-8 6-14 14-14 0 8-6 14-14 14zM5 19l8-8",
+      "mission": "Make your bed every morning for 3 days.",
+      "hint": "Tick it off each morning.",
+      "games": [
+        {
+          "type": "catch",
+          "title": "Healthy Catch",
+          "skill": "Healthy habits",
+          "how": "Move the basket. Catch good habits. Dodge the junk.",
+          "tip": "Read each word before you catch it.",
+          "cfg": {
+            "good": [
+              "Water",
+              "Sleep",
+              "Fruit",
+              "Veggies",
+              "Brush teeth",
+              "Bath",
+              "Walk",
+              "Milk"
+            ],
+            "bad": [
+              "Junk food",
+              "Fizzy drink",
+              "Late screen",
+              "Skip breakfast",
+              "Candy pile"
+            ]
+          },
+          "build_on": {
+            "title": "Let {him} plan a healthy snack",
+            "body": "{He} spot{s} good habits quickly. Let {him} choose and make one snack this week."
+          },
+          "support": {
+            "title": "Name healthy choices out loud",
+            "body": "At meals, ask which food gives energy and why."
+          }
+        },
+        {
+          "type": "sort",
+          "title": "Habit Check",
+          "skill": "Know what’s good",
+          "how": "Good habit or not so great? Pick a side.",
+          "tip": "Ask: does this help my body feel good?",
+          "cfg": {
+            "left": "Not great",
+            "right": "Good habit",
+            "items": [
+              {
+                "text": "Wash hands before eating",
+                "right": true
+              },
+              {
+                "text": "Phone in bed",
+                "right": false
+              },
+              {
+                "text": "Drink water",
+                "right": true
+              },
+              {
+                "text": "Skip sleep",
+                "right": false
+              },
+              {
+                "text": "Pack your bag",
+                "right": true
+              },
+              {
+                "text": "Clothes on the floor",
+                "right": false
+              },
+              {
+                "text": "Eat breakfast",
+                "right": true
+              },
+              {
+                "text": "Shout when angry",
+                "right": false
+              },
+              {
+                "text": "Take deep breaths",
+                "right": true
+              },
+              {
+                "text": "Sweets for dinner",
+                "right": false
+              }
+            ]
+          },
+          "build_on": {
+            "title": "Hand over one routine",
+            "body": "Give {him} ownership of one routine, like packing {his} school bag."
+          },
+          "support": {
+            "title": "Make a picture habit chart",
+            "body": "A visual morning and bedtime chart helps {him} see good habits."
+          }
+        },
+        {
+          "type": "timing",
+          "title": "Calm Breaths",
+          "skill": "Calm body",
+          "how": "Breathe in as the ring shrinks. Tap when it meets the gold circle.",
+          "tip": "Breathe slowly and wait for the ring.",
+          "cfg": {
+            "label": "Breathe",
+            "n": 8,
+            "per": 1800
+          },
+          "build_on": {
+            "title": "Use breathing before hard moments",
+            "body": "{He} follow{s} a calm rhythm well. Try three slow breaths before homework or tests."
+          },
+          "support": {
+            "title": "Practise belly breathing at bedtime",
+            "body": "Two minutes of slow breathing together each night."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Critical Thinking",
+      "icon": "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5L21 21",
+      "mission": "Ask \"why?\" five times about one thing today.",
+      "hint": "Write down the last answer.",
+      "games": [
+        {
+          "type": "memory",
+          "title": "Planet Pattern",
+          "skill": "Memory",
+          "how": "Watch the planets light up. Tap them in the same order.",
+          "tip": "Say the names out loud as they light up.",
+          "cfg": {
+            "pads": [
+              "Mars",
+              "Moon",
+              "Earth",
+              "Star"
+            ]
+          },
+          "build_on": {
+            "title": "Try strategy games",
+            "body": "Strong memory. Chess, Memory or Simon-style games will stretch {him}."
+          },
+          "support": {
+            "title": "Play memory games together",
+            "body": "Short card-matching games, a few minutes a day."
+          }
+        },
+        {
+          "type": "sort",
+          "title": "Fact or Opinion",
+          "skill": "Clear thinking",
+          "how": "Is it true for everyone, or just what someone thinks?",
+          "tip": "A fact can be checked. An opinion is a feeling.",
+          "cfg": {
+            "left": "Opinion",
+            "right": "Fact",
+            "items": [
+              {
+                "text": "Dogs have four legs",
+                "right": true
+              },
+              {
+                "text": "Pizza is the best food",
+                "right": false
+              },
+              {
+                "text": "Ice is frozen water",
+                "right": true
+              },
+              {
+                "text": "Maths is boring",
+                "right": false
+              },
+              {
+                "text": "The sun is a star",
+                "right": true
+              },
+              {
+                "text": "Blue is the nicest colour",
+                "right": false
+              },
+              {
+                "text": "Cats can climb trees",
+                "right": true
+              },
+              {
+                "text": "Summer beats winter",
+                "right": false
+              },
+              {
+                "text": "A week has 7 days",
+                "right": true
+              },
+              {
+                "text": "Cartoons are the best",
+                "right": false
+              }
+            ]
+          },
+          "build_on": {
+            "title": "Discuss kids’ news",
+            "body": "{He} separate{s} fact from opinion. Ask “how do we know?” about a news story for kids."
+          },
+          "support": {
+            "title": "Play “fact or feeling” in the car",
+            "body": "Say a statement and let {him} decide which it is."
+          }
+        },
+        {
+          "type": "catch",
+          "title": "Even Catch",
+          "skill": "Following rules",
+          "how": "Catch only the even numbers. Let odd ones fall.",
+          "tip": "Even numbers end in 0, 2, 4, 6 or 8.",
+          "cfg": {
+            "rule": "even",
+            "max": 30
+          },
+          "build_on": {
+            "title": "Add number puzzles",
+            "body": "{He} follow{s} rules fast. Try kids’ sudoku or number riddles."
+          },
+          "support": {
+            "title": "Slow down, then speed up",
+            "body": "Practise rule games like Simon Says slowly first."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Creativity",
+      "icon": "M12 3a9 9 0 1 0 0 18c1.2 0 1.5-1 1-2s0-2 1.5-2H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10zM7.5 11.5h.01M10 7.5h.01M15 7.5h.01",
+      "mission": "Make something from the recycling bin.",
+      "hint": "Give it a name when you finish.",
+      "games": [
+        {
+          "type": "spark",
+          "title": "Light Painting",
+          "skill": "Free ideas",
+          "how": "Paint the sky with your finger. Light up as much as you can.",
+          "tip": "Use big swoops and lots of colours.",
+          "cfg": {
+            "time": 15
+          },
+          "build_on": {
+            "title": "Give {him} a big canvas",
+            "body": "{He} fill{s} space boldly. Try chalk outside or a large paper roll."
+          },
+          "support": {
+            "title": "Make drawing low-pressure",
+            "body": "Doodle together for five minutes with no goal."
+          }
+        },
+        {
+          "type": "dash",
+          "title": "Box Ideas",
+          "skill": "Many ideas",
+          "how": "What could a big box become? Tap every idea you like.",
+          "tip": "Try ideas of every kind: play, build, go and pretend.",
+          "cfg": {
+            "items": [
+              {
+                "text": "Rocket",
+                "kind": "Go"
+              },
+              {
+                "text": "Car",
+                "kind": "Go"
+              },
+              {
+                "text": "Boat",
+                "kind": "Go"
+              },
+              {
+                "text": "Train",
+                "kind": "Go"
+              },
+              {
+                "text": "Castle",
+                "kind": "Build"
+              },
+              {
+                "text": "House",
+                "kind": "Build"
+              },
+              {
+                "text": "Robot",
+                "kind": "Build"
+              },
+              {
+                "text": "Tunnel",
+                "kind": "Build"
+              },
+              {
+                "text": "Drum",
+                "kind": "Play"
+              },
+              {
+                "text": "Puppet show",
+                "kind": "Play"
+              },
+              {
+                "text": "Hat",
+                "kind": "Play"
+              },
+              {
+                "text": "Stage",
+                "kind": "Play"
+              },
+              {
+                "text": "Fort",
+                "kind": "Pretend"
+              },
+              {
+                "text": "Spaceship",
+                "kind": "Pretend"
+              },
+              {
+                "text": "Dragon",
+                "kind": "Pretend"
+              },
+              {
+                "text": "Time machine",
+                "kind": "Pretend"
+              }
+            ]
+          },
+          "build_on": {
+            "title": "Run a cardboard challenge",
+            "body": "{He} {has} lots of ideas. Give {him} a box and tape and see what {he} build{s}."
+          },
+          "support": {
+            "title": "Play “what else could it be?”",
+            "body": "Pick an object and take turns naming new uses for it."
+          }
+        },
+        {
+          "type": "memory",
+          "title": "Colour Song",
+          "skill": "Patterns",
+          "how": "Listen and watch the notes. Play the tune back.",
+          "tip": "Hum the tune as you watch.",
+          "cfg": {
+            "pads": [
+              "Do",
+              "Re",
+              "Mi",
+              "Fa"
+            ]
+          },
+          "build_on": {
+            "title": "Explore making music",
+            "body": "{He} pick{s} up patterns. A simple keyboard or rhythm app could suit {him}."
+          },
+          "support": {
+            "title": "Clap rhythms together",
+            "body": "Clap a short beat and let {him} copy it."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Physical Wellness",
+      "icon": "M13 2L4 14h7l-1 8 9-12h-7z",
+      "mission": "Move for 20 minutes without stopping.",
+      "hint": "Any way you like. Dancing counts.",
+      "games": [
+        {
+          "type": "react",
+          "title": "Lightning Reflex",
+          "skill": "Fast reactions",
+          "how": "Wait for the light. Tap it as fast as you can.",
+          "tip": "Keep your finger ready, but wait for the light.",
+          "cfg": {
+            "label": "Tap!",
+            "n": 5
+          },
+          "build_on": {
+            "title": "Try a fast sport",
+            "body": "Quick reactions suit table tennis, badminton or goalkeeping."
+          },
+          "support": {
+            "title": "Play catch daily",
+            "body": "Ten minutes of catch builds reaction time."
+          }
+        },
+        {
+          "type": "timing",
+          "title": "Jump Rope",
+          "skill": "Rhythm",
+          "how": "Jump on the beat. Tap when the rings meet.",
+          "tip": "Nod your head to feel the beat.",
+          "cfg": {
+            "label": "Jump",
+            "n": 12,
+            "per": 1000
+          },
+          "build_on": {
+            "title": "Try skipping or dance",
+            "body": "Strong rhythm. A skipping rope or dance class could be fun."
+          },
+          "support": {
+            "title": "Move to music",
+            "body": "Dance or march to songs with a clear beat."
+          }
+        },
+        {
+          "type": "catch",
+          "title": "Energy Catch",
+          "skill": "Body fuel",
+          "how": "Catch food that gives you energy. Dodge the rest.",
+          "tip": "Fruit, water and real food fuel your body.",
+          "cfg": {
+            "good": [
+              "Banana",
+              "Water",
+              "Eggs",
+              "Rice",
+              "Apple",
+              "Nuts",
+              "Oats",
+              "Yogurt"
+            ],
+            "bad": [
+              "Chips",
+              "Soda",
+              "Candy",
+              "Couch all day"
+            ]
+          },
+          "build_on": {
+            "title": "Let {him} pack {his} sports snack",
+            "body": "{He} know{s} energy foods. Let {him} choose snacks for activity days."
+          },
+          "support": {
+            "title": "Talk about food as fuel",
+            "body": "Before play, ask which food will give {him} energy."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Social Skills",
+      "icon": "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 11a2.5 2.5 0 1 0 0-5M17 14c2.5.4 4 2.8 4 6",
+      "mission": "Say hello to someone new this week.",
+      "hint": "Ask them one question.",
+      "games": [
+        {
+          "type": "sort",
+          "title": "Kind Reply",
+          "skill": "Kindness",
+          "how": "A friend says something. Is this reply kind or unkind?",
+          "tip": "Think: how would this make my friend feel?",
+          "cfg": {
+            "left": "Unkind",
+            "right": "Kind",
+            "items": [
+              {
+                "text": "“Are you okay?”",
+                "right": true
+              },
+              {
+                "text": "“Ha, you fell!”",
+                "right": false
+              },
+              {
+                "text": "“Want to play with us?”",
+                "right": true
+              },
+              {
+                "text": "“Go away”",
+                "right": false
+              },
+              {
+                "text": "“Nice try!”",
+                "right": true
+              },
+              {
+                "text": "“You’re so slow”",
+                "right": false
+              },
+              {
+                "text": "“Thank you!”",
+                "right": true
+              },
+              {
+                "text": "“That’s mine, not yours”",
+                "right": false
+              },
+              {
+                "text": "“Can I help?”",
+                "right": true
+              },
+              {
+                "text": "“Whatever”",
+                "right": false
+              }
+            ]
+          },
+          "build_on": {
+            "title": "Give {him} a helper role",
+            "body": "{He} know{s} kind words. A buddy or helper role at school or club suits {him}."
+          },
+          "support": {
+            "title": "Role-play tricky moments",
+            "body": "Act out short scenes and practise kind replies."
+          }
+        },
+        {
+          "type": "memory",
+          "title": "Name Game",
+          "skill": "Listening",
+          "how": "Four new friends say hi. Remember who spoke, in order.",
+          "tip": "Picture each friend’s face as they speak.",
+          "cfg": {
+            "pads": [
+              "Ava",
+              "Leo",
+              "Mia",
+              "Sam"
+            ]
+          },
+          "build_on": {
+            "title": "Let {him} host a playdate",
+            "body": "Good listener. Let {him} introduce friends and lead a game."
+          },
+          "support": {
+            "title": "Practise listening games",
+            "body": "Play “tell me back” after a short story."
+          }
+        },
+        {
+          "type": "react",
+          "title": "Wave Back",
+          "skill": "Quick to respond",
+          "how": "A friend waves at you. Wave back as fast as you can.",
+          "tip": "Look up and be ready to say hi.",
+          "cfg": {
+            "label": "Wave",
+            "n": 5
+          },
+          "build_on": {
+            "title": "Encourage saying hello first",
+            "body": "{He} respond{s} quickly. Challenge {him} to greet one new person this week."
+          },
+          "support": {
+            "title": "Practise greetings at home",
+            "body": "Rehearse a simple hello and one question."
+          }
+        }
+      ]
+    }
+  ]
+}

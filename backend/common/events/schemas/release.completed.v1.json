@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/release.completed.v1.json",
+  "title": "release.completed v1",
+  "description": "Release is complete. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": true,
+  "examples": [
+    {}
+  ]
+}

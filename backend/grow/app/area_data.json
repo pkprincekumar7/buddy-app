@@ -1,0 +1,100 @@
+{
+  "areas": [
+    {
+      "id": "life_ambition",
+      "name": "Life Ambition",
+      "description": "Discovering purpose and future goals"
+    },
+    {
+      "id": "self_care",
+      "name": "Self Care",
+      "description": "Building healthy habits and emotional wellness"
+    },
+    {
+      "id": "critical_thinking",
+      "name": "Critical Thinking",
+      "description": "Problem solving and analytical skills"
+    },
+    {
+      "id": "creativity",
+      "name": "Creativity",
+      "description": "Imagination and creative expression"
+    },
+    {
+      "id": "physical_wellness",
+      "name": "Physical Wellness",
+      "description": "Body awareness and physical health"
+    },
+    {
+      "id": "social_skills",
+      "name": "Social Skills",
+      "description": "Communication and relationship building"
+    }
+  ],
+  "parent_questions_per_area": 5,
+  "copy_tokens": {
+    "male": {
+      "he": "he",
+      "He": "He",
+      "his": "his",
+      "His": "His",
+      "him": "him",
+      "Him": "Him",
+      "himself": "himself",
+      "Himself": "Himself",
+      "is": "is",
+      "Is": "Is",
+      "does": "does",
+      "Does": "Does",
+      "has": "has",
+      "Has": "Has",
+      "was": "was",
+      "Was": "Was",
+      "s": "s",
+      "es": "es",
+      "ies": "ies"
+    },
+    "female": {
+      "he": "she",
+      "He": "She",
+      "his": "her",
+      "His": "Her",
+      "him": "her",
+      "Him": "Her",
+      "himself": "herself",
+      "Himself": "Herself",
+      "is": "is",
+      "Is": "Is",
+      "does": "does",
+      "Does": "Does",
+      "has": "has",
+      "Has": "Has",
+      "was": "was",
+      "Was": "Was",
+      "s": "s",
+      "es": "es",
+      "ies": "ies"
+    },
+    "other": {
+      "he": "they",
+      "He": "They",
+      "his": "their",
+      "His": "Their",
+      "him": "them",
+      "Him": "Them",
+      "himself": "themselves",
+      "Himself": "Themselves",
+      "is": "are",
+      "Is": "Are",
+      "does": "do",
+      "Does": "Do",
+      "has": "have",
+      "Has": "Have",
+      "was": "were",
+      "Was": "Were",
+      "s": "",
+      "es": "",
+      "ies": "y"
+    }
+  }
+}

@@ -35,6 +35,24 @@ describe('theme tokens (generated from frontend/src/index.css)', () => {
     expect(rgb('starfield', 0.5)).toBe('rgba(190,235,255,0.5)');
   });
 
+  it("has the kids page's palette, each colour with its shade", () => {
+    for (const name of [
+      'discover',
+      'grow',
+      'transform',
+      'connect',
+      'release',
+      'teal',
+      'orange',
+      'off',
+    ]) {
+      expect(rgb(`kids-${name}`)).toMatch(/^rgb\(/);
+      expect(rgb(`kids-${name}-shade`)).toMatch(/^rgb\(/);
+    }
+    expect(rgb('kids-transform')).toBe('rgb(255,201,75)');
+    expect(rgb('profile-parent-deep')).toBe('rgb(138,106,58)');
+  });
+
   it('maps web font family + weight to a per-weight family', () => {
     expect(font('orbitron', 900)).toEqual({ fontFamily: 'Orbitron-Black' });
     expect(font('orbitron', 700)).toEqual({ fontFamily: 'Orbitron-Bold' });

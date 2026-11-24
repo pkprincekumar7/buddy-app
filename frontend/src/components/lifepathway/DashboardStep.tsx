@@ -11,6 +11,7 @@ import {
 import type { NinetyDayPlan } from '@/hooks/useNinetyDayPlan';
 import { GOLD, GOLD_PALE, CYAN, INK, FROST, FIELD_LABEL_STYLE } from './theme';
 import { TextField, TextAreaField } from './fields';
+import { AVATAR_TYPES } from '@/api/children';
 
 interface DashboardStepProps {
   childName: string;
@@ -1124,6 +1125,7 @@ function ActivityField({
             <button
               type="button"
               onClick={() => progress.removePhoto(key, i)}
+              aria-label="Remove photo"
               className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full"
               style={{
                 cursor: 'pointer',
@@ -1145,7 +1147,7 @@ function ActivityField({
           </div>
         ))}
         <label
-          className="flex h-[58px] w-[58px] items-center justify-center rounded-[10px]"
+          className="relative flex h-[58px] w-[58px] items-center justify-center rounded-[10px] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
           style={{
             cursor: 'pointer',
             border: '1.5px dashed rgb(var(--constellation-cyan-rgb) / .24)',
@@ -1164,11 +1166,17 @@ function ActivityField({
           </svg>
           <input
             type="file"
-            accept="image/*"
+            // The API's types only: Safari on an iPhone then converts HEIC photos to JPEG
+            // instead of sending a file the upload would refuse.
+            accept={AVATAR_TYPES.join(',')}
             multiple
-            className="hidden"
+            className="sr-only"
             aria-label={label}
-            onChange={(e) => progress.addPhotos(key, e.target.files)}
+            onChange={(e) => {
+              progress.addPhotos(key, e.target.files);
+              // Reset so re-picking the same (e.g. just-removed) photo fires onChange again.
+              e.target.value = '';
+            }}
           />
         </label>
       </div>

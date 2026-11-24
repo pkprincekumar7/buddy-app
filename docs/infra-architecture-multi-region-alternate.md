@@ -50,7 +50,7 @@ reduced edge-side security filtering.
 | Lambda@Edge holds key material | Yes (public key) | **No** |
 | Lambda@Edge's job | Full auth + geo-routing | Structural pre-filter (existence + expiry, unverified) + geo-routing (unchanged mechanism — see below) |
 | Where a forged-but-well-formed token is caught | At the edge (signature fails) | At the regional API Gateway (signature fails) |
-| ECS re-validates token | **Yes** — `backend/app/deps.py`'s `get_current_user` independently re-verifies the RS256 signature (`jwt.decode(...)` against the public key) as defense-in-depth; it does not trust Lambda@Edge's check at all | **No, by design** — Section 5 explicitly removes this re-validation, trusting API Gateway's injected headers instead |
+| ECS re-validates token | **Yes** — every service's `Authorizer.verify()` (`backend/common/authz.py`) independently re-verifies the RS256 signature (`jwt.decode(...)` against `JWT_PUBLIC_KEYS` by `kid`) as defense-in-depth; it does not trust Lambda@Edge's check at all | **No, by design** — Section 5 explicitly removes this re-validation, trusting API Gateway's injected headers instead |
 | MongoDB | Confirmed: Global Cluster, GEOSHARDED, exactly 3 zones (per that doc's Change 10d) | Same confirmed design — unaffected by the auth-layer choice either way |
 
 ---
@@ -376,15 +376,17 @@ hop executed in. Without a shared ID, tracing one failed request is guesswork.
   authorizer is now authoritative.
 - ECS reads identity from the trusted headers injected by API Gateway (`X-User-Id`,
   `X-User-Roles`, `X-Token-Iat`, etc.) rather than re-parsing the raw token.
-- **This is not optional**: `backend/app/deps.py` (lines ~56–65) already implements a
-  live, DB-backed session-revocation check — comparing the token's `iat` claim against
-  the user's `tokens_revoked_at` field — used by admin account-lock
-  (`backend/app/routers/admin.py`) and self-service "log out everywhere"/account
-  deletion (`backend/app/routers/auth.py`). If ECS no longer decodes the raw JWT, it
-  loses `iat` unless the authorizer explicitly propagates it (Section 4). Skipping this
+- **This is not optional**: `Authorizer.authenticate()` in `backend/common/authz.py`
+  already implements a live session-revocation check on every request — comparing the
+  token's `iat_ms` claim against the account's `revoked_at_ms` in the per-region authz
+  cache (filled from auth's `tokens_revoked_at`), plus its `locked` and `deleting` flags —
+  used by admin account-lock and role change (`backend/auth/app/admin.py`) and
+  self-service "log out everywhere"/account deletion (`backend/auth/app/main.py`,
+  `backend/auth/app/deletion.py`). If ECS no longer decodes the raw JWT, it loses
+  `iat_ms` unless the authorizer explicitly propagates it (Section 4). Skipping this
   silently disables a real, shipped security feature — a locked account or a "log out
   everywhere" action would stop actually revoking anything. Replicate the same
-  `token_issued_at <= revoked_at` comparison in ECS using the propagated `X-Token-Iat`
+  `revoked_at_ms >= iat_ms` comparison in ECS using the propagated `X-Token-Iat`
   header instead of a decoded token.
 - Keep (or add) **business-level authorization** in ECS — resource ownership, per-tenant
   access rules — this is a different concern from "is this token valid" and still

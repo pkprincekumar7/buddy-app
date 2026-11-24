@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/onboarding.answers_updated.v1.json",
+  "title": "onboarding.answers_updated v1",
+  "description": "The parent changed the conversation's answers. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The child's parent (optional, added 2026-10-26): lets a consumer start work before it has a child_access copy."
+    },
+    "strengths": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "hobbies": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "thinking_pattern": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "communication_style": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "energy_level": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "social_behaviour": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "emotional_behaviour": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "strengths",
+    "hobbies",
+    "thinking_pattern",
+    "communication_style",
+    "energy_level",
+    "social_behaviour",
+    "emotional_behaviour"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "user_id": "3f6c2a1e-8b7d-4c5e-9f10-2a3b4c5d6e7f",
+      "strengths": [
+        "curious"
+      ],
+      "hobbies": [
+        "drawing"
+      ],
+      "thinking_pattern": "visual",
+      "communication_style": "expressive",
+      "energy_level": "high",
+      "social_behaviour": "outgoing",
+      "emotional_behaviour": "steady"
+    }
+  ]
+}

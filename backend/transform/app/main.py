@@ -1,0 +1,958 @@
+"""The transform service's two apps, run by `python -m common.serve transform`.
+
+`app` is public (port 8000, ALB rule 40: `/api/v1/children/*/transform*`); `internal_app` is
+internal (port 8001, Cloud Map only). Each endpoint is in docs/auth-users-split-api.md:
+
+- `GET /api/v1/children/{id}/transform`: the Life Pathway (milestones per completed growth
+  area) and the 90-day plan with its tracker, in one read plus the copy;
+- `PATCH …/transform`: the parent's work on the plan, including the Day-90 event and photos;
+- `POST …/transform/generation` (`kind`: `life_pathway`, `plan`, `event_tracker`) and
+  `GET …/generation/{job_id}`; `POST …/transform/photos/presign`;
+- `GET …/transform/quests`, `PUT …/quests/current` and `POST …/quests/log`: the child's
+  quests in child view (transform.app.quests);
+- `GET /internal/transform/children/{id}/status`: release's confirm-before-deny.
+
+**Access** follows the circle rules (transform.app.access): the child's parent, or an admin
+with `children:read:any` reading with the owner's `?location=` (audited); unlocked once a
+growth area is completed. **Completion:** once the plan exists and the Day-90 event is set,
+whichever comes last, `completed_at` is set and `transform.completed` published in the same
+transaction. The HTTP runtime also publishes the job metrics from one leader per region.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
+from datetime import UTC, date, datetime
+from typing import Annotated, Any, Final, Literal
+
+import bson
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
+from limits import parse
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pymongo import ASCENDING, ReturnDocument
+from pymongo.asynchronous.client_session import AsyncClientSession
+from pymongo.errors import DuplicateKeyError, PyMongoError
+
+from common import upload_tracking
+from common.audit import route_template
+from common.authz import Caller, current_caller, signed_in
+from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key, write_guards
+from common.generation.jobs import JobRefused
+from common.internal_client import allow_callers
+from common.metrics import MetricsPublisher
+from common.models import CHILD_ID_PATTERN, GROWTH_INPUTS, JOBS, growth_inputs_id, stage_done
+from common.routers import PolicyRouter, public
+from common.telemetry import current_traceparent
+from common.uploads import UploadError
+from transform.app import generation, quests
+from transform.app.access import (
+    areas_for,
+    child_for,
+    error,
+    not_found,
+    personality_for,
+    require_unlocked,
+)
+from transform.app.runtime import SERVICE, Runtime
+from transform.app.store import (
+    ASK_MAX,
+    EVENT_NAME_MAX,
+    KINDS,
+    MAP_KEY_PATTERN,
+    MAX_BYTES,
+    PLANS,
+    Kind,
+    lock_name,
+    new_plan,
+)
+
+LOCATION_PATTERN = r"^[a-z0-9_-]{1,16}$"
+READ_ANY = "children:read:any"
+STATUS_CALLERS = ("release",)  # confirm-before-deny (12.4)
+PHOTO_KIND: Final = "ninety-day-plan"
+PLAN_KINDS: tuple[Kind, ...] = ("plan", "event_tracker")
+
+_logger = logging.getLogger(__name__)
+_runtime: Runtime | None = None
+_users = 0
+_reporting: tuple[asyncio.Event, asyncio.Task[None]] | None = None
+
+
+def configure(runtime: Runtime | None) -> None:
+    """Attach (or detach) the runtime's resources to both apps."""
+    global _runtime
+    _runtime = runtime
+    app.state.runtime = runtime
+    internal_app.state.runtime = runtime
+    if runtime is not None:
+        app.state.authorizer = runtime.authorizer
+        internal_app.state.service_tokens = runtime.verifier
+
+
+def _start_reporting(runtime: Runtime) -> None:
+    global _reporting
+    if runtime.cloudwatch is None:
+        return
+    metrics = MetricsPublisher(
+        runtime.cloudwatch, service=SERVICE, environment=runtime.settings.app_env
+    )
+    stop = asyncio.Event()
+    _reporting = (stop, asyncio.create_task(generation.report_jobs(runtime, metrics, stop)))
+
+
+async def _stop_reporting() -> None:
+    global _reporting
+    if _reporting is not None:
+        stop, task = _reporting
+        stop.set()
+        await task
+        _reporting = None
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Both apps share one Runtime per process; the last one to stop closes it."""
+    global _users
+    import os
+
+    if _runtime is None and os.environ.get("MONGODB_URI"):
+        runtime = Runtime.from_env()
+        await runtime.prepare()
+        configure(runtime)
+        _start_reporting(runtime)
+    _users += 1
+    try:
+        yield
+    finally:
+        _users -= 1
+        if _users == 0 and _runtime is not None:
+            await _stop_reporting()
+            await _runtime.aclose()
+            configure(None)
+
+
+# The contact and servers every service's published spec carries.
+app = FastAPI(
+    title=SERVICE,
+    description="Transform: each child's Life Pathway and 90-day plan with its tracker.",
+    contact={"name": "Superpower Engineering", "email": "prince.kumar@pearson.com"},
+    servers=[{"url": "/", "description": "Current environment"}],
+    openapi_tags=[
+        {"name": "health", "description": "Service health"},
+        {"name": "transform", "description": "The Life Pathway and the 90-day plan"},
+    ],
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    lifespan=lifespan,
+)
+internal_app = FastAPI(
+    title=f"{SERVICE} (internal)",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    lifespan=lifespan,
+)
+configure(None)
+
+
+# ── shared dependencies ────────────────────────────────────────────────────────
+
+
+def runtime_ready(request: Request) -> Runtime:
+    """The runtime's resources, or 503 when the service runs without configuration."""
+    runtime: Runtime | None = getattr(request.app.state, "runtime", None)
+    if runtime is None:
+        raise HTTPException(status_code=503, detail="transform isn't configured")
+    return runtime
+
+
+Ready = Annotated[Runtime, Depends(runtime_ready)]
+SignedIn = Annotated[Caller, Depends(signed_in())]
+
+
+def per_user(limit: str) -> Callable[..., Awaitable[None]]:
+    item = parse(limit)
+
+    async def dependency(
+        request: Request, runtime: Ready, caller: Annotated[Caller, Depends(current_caller)]
+    ) -> None:
+        if not await runtime.limits.allow(
+            item, route_template(request), request.method, f"user:{caller.user_id}"
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests",
+                headers={"Retry-After": str(item.get_expiry())},
+            )
+
+    return dependency
+
+
+ChildId = Annotated[str, Path(pattern=CHILD_ID_PATTERN, description="The child's id")]
+LocationQuery = Annotated[
+    str | None,
+    Query(pattern=LOCATION_PATTERN, description="The owner's location (admins only)"),
+]
+
+
+async def _parents_child(runtime: Runtime, caller: Caller, child_id: str) -> dict[str, Any]:
+    """The caller's own child, unlocked (the circle rules for a write)."""
+    child = await child_for(runtime, child_id, location=caller.location, owner=caller.user_id)
+    await require_unlocked(runtime, child)
+    return child
+
+
+async def _child_view_child(runtime: Runtime, caller: Caller, child_id: str) -> dict[str, Any]:
+    """The caller's own child for child view's routes, which open in child view's own order
+    (docs/child-view-build-plan.md): here only once the parent's chat is done; the children
+    service decides the rest."""
+    child = await child_for(runtime, child_id, location=caller.location, owner=caller.user_id)
+    if not stage_done(child, "conversation"):
+        raise error(403, "circle_locked", "Finish the chat about your child first.")
+    return child
+
+
+def _selector(child: Mapping[str, Any]) -> dict[str, Any]:
+    return {"_id": child["_id"], "location": child["location"], "user_id": child["user_id"]}
+
+
+def _now() -> datetime:
+    """To the millisecond, as MongoDB keeps it: a response shows what a later GET will."""
+    moment = datetime.now(UTC)
+    return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+
+
+# ── models ─────────────────────────────────────────────────────────────────────
+
+MapKey = Annotated[str, StringConstraints(pattern=MAP_KEY_PATTERN)]
+_Strict = ConfigDict(extra="forbid", strict=True)
+
+
+class PlanPatch(BaseModel):
+    """The parent's part of the plan, made on the `version` the app last read; each field
+    sent replaces the stored one. `plan`, `track_steps` and the Life Pathway are
+    transform's jobs' only (422)."""
+
+    model_config = _Strict
+
+    version: Annotated[
+        int,
+        Field(
+            ge=0,
+            description="The plan's `version` this change was made on (`0` before the "
+            "first save). Another save since is `409 plan_changed`: reload and apply again.",
+        ),
+    ]
+    ask: Annotated[str, StringConstraints(max_length=ASK_MAX)] | None = None
+    applied: dict[MapKey, bool] | None = None
+    act_inputs: dict[MapKey, str] | None = None
+    act_counts: dict[MapKey, int] | None = None
+    track_done: dict[MapKey, bool] | None = None
+    track_inputs: dict[MapKey, str] | None = None
+    track_sittings: dict[MapKey, bool] | None = None
+    feedback: dict[MapKey, dict[str, Any]] | None = None
+    event_name: Annotated[str, StringConstraints(max_length=EVENT_NAME_MAX)] | None = None
+    event_date: Annotated[date | None, Field(strict=False)] = None
+    event_set: bool | None = None
+    photos: dict[MapKey, list[str]] | None = None
+    clear_track_steps: bool = False
+
+    @model_validator(mode="after")
+    def _small(self) -> PlanPatch:
+        if len(self.model_dump_json(exclude_unset=True)) > MAX_BYTES:
+            raise ValueError("the body is over 64 KB")
+        return self
+
+
+class Photo(BaseModel):
+    key: str
+    url: str | None
+
+
+class AreaView(BaseModel):
+    area_id: str
+    area_name: str
+    # The area's recommendations, from the copy, for the Life Pathway's 90-day moves.
+    recommendations: list[str] | None
+    ai_three_month_recommendations: list[dict[str, str]] | None
+    life_pathway_milestones: dict[str, Any] | None
+    life_pathway_generating: bool
+
+
+class Transform(BaseModel):
+    # What PATCH must send back: `0` until the plan's first save or job.
+    version: int
+    areas: list[AreaView]
+    ask: str | None
+    plan: dict[str, Any] | None
+    track_steps: dict[str, Any] | None
+    applied: dict[str, bool]
+    act_inputs: dict[str, str]
+    act_counts: dict[str, int]
+    track_done: dict[str, bool]
+    track_inputs: dict[str, str]
+    track_sittings: dict[str, bool]
+    feedback: dict[str, Any]
+    event_name: str | None
+    event_date: date | None
+    event_set: bool
+    photos: dict[str, list[Photo]]
+    generating: list[Kind]
+    completed_at: datetime | None
+
+
+class GenerationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Kind
+    area_id: Annotated[str, StringConstraints(pattern=r"^[a-z0-9_-]{1,50}$")] | None = None
+
+
+class Started(BaseModel):
+    job_id: str
+    status: str
+
+
+class Job(BaseModel):
+    job_id: str
+    kind: Kind
+    status: Literal["pending", "processing", "completed", "failed"]
+    error: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class PresignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_key: MapKey
+    content_type: Annotated[str, StringConstraints(max_length=100)]
+
+
+class PresignOut(BaseModel):
+    # A form upload (APP-07): POST `upload_fields`, then the file as `file`, to `upload_url`.
+    upload_url: str
+    upload_fields: dict[str, str]
+    photo_key: str
+    photo_url: str
+
+
+class Completed(BaseModel):
+    completed: bool
+
+
+async def _view(
+    runtime: Runtime, child: Mapping[str, Any], doc: Mapping[str, Any] | None
+) -> Transform:
+    doc = doc or {}
+    areas = (
+        await runtime.db[GROWTH_INPUTS]
+        .find(
+            {"location": child["location"], "child_id": child["_id"], "user_id": child["user_id"]}
+        )
+        .sort("updated_at", ASCENDING)
+        .to_list(None)
+    )
+    running = doc.get("active_jobs") or {}
+    pathway = doc.get("life_pathway") or {}
+    photos: dict[str, list[Photo]] = {}
+    for field_key, keys in (doc.get("photos") or {}).items():
+        photos[field_key] = [
+            Photo(key=key, url=await runtime.uploads.presign_get(key) if runtime.uploads else None)
+            for key in keys
+        ]
+    event_date = doc.get("event_date")
+    return Transform(
+        version=int(doc.get("version", 0)),
+        areas=[
+            AreaView(
+                area_id=area["area_id"],
+                area_name=area["area_name"],
+                recommendations=area.get("recommendations"),
+                ai_three_month_recommendations=area.get("ai_three_month_recommendations"),
+                life_pathway_milestones=pathway.get(area["area_id"]),
+                life_pathway_generating=bool(
+                    running.get(lock_name("life_pathway", area["area_id"]))
+                ),
+            )
+            for area in areas
+        ],
+        ask=doc.get("ask"),
+        plan=doc.get("plan"),
+        track_steps=doc.get("track_steps"),
+        applied=doc.get("applied") or {},
+        act_inputs=doc.get("act_inputs") or {},
+        act_counts=doc.get("act_counts") or {},
+        track_done=doc.get("track_done") or {},
+        track_inputs=doc.get("track_inputs") or {},
+        track_sittings=doc.get("track_sittings") or {},
+        feedback=doc.get("feedback") or {},
+        event_name=doc.get("event_name"),
+        event_date=event_date.date() if isinstance(event_date, datetime) else None,
+        event_set=bool(doc.get("event_set")),
+        photos=photos,
+        generating=[kind for kind in PLAN_KINDS if running.get(lock_name(kind))],
+        completed_at=doc.get("completed_at"),
+    )
+
+
+class _Stale(Exception):
+    """The plan changed after it was read."""
+
+
+def _plan_changed() -> HTTPException:
+    return error(409, "plan_changed", "The plan changed on another device; reload it.")
+
+
+def _superseded(existing: Mapping[str, Any], changes: Mapping[str, Any], clear: bool) -> list[Kind]:
+    """The generations a save makes stale: the plan is built from `ask`, the tracker from
+    `ask` and the Day-90 event (generation.process)."""
+    changed = {
+        f
+        for f in ("ask", "event_name", "event_date")
+        if f in changes and changes[f] != existing.get(f)
+    }
+    kinds: list[Kind] = []
+    if "ask" in changed:
+        kinds.append("plan")
+    if changed or clear:
+        kinds.append("event_tracker")
+    return kinds
+
+
+# ── public routes ──────────────────────────────────────────────────────────────
+
+health_router = PolicyRouter()
+router = PolicyRouter(prefix="/api/v1/children/{id}/transform", tags=["transform"])
+
+
+@health_router.get(
+    "/health",
+    tags=["health"],
+    dependencies=[Depends(public())],
+    description="Liveness check for the load balancer.",
+)
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": SERVICE}
+
+
+async def _admin_child(
+    request: Request, runtime: Runtime, caller: Caller, child_id: str, location: str | None
+) -> dict[str, Any]:
+    """An admin's read (`children:read:any`): audited whether it's allowed or refused."""
+    try:
+        if location is None:
+            raise error(422, "location_required", "Pass ?location= (the owner's location)")
+        child = await child_for(runtime, child_id, location=location, owner=None)
+    except HTTPException as exc:
+        runtime.authorizer.record(
+            request, caller, READ_ANY, None, privileged=True, status=exc.status_code
+        )
+        raise
+    runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+    return child
+
+
+@router.get(
+    "",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="The Life Pathway (each completed growth area with its milestones) and the "
+    "90-day plan with its tracker; photos with their keys and short-lived URLs. An admin "
+    "with `children:read:any` passes the owner's `?location=` (audited).",
+)
+async def get_transform(
+    request: Request, id: ChildId, runtime: Ready, caller: SignedIn, location: LocationQuery = None
+) -> Transform:
+    if caller.has(READ_ANY):
+        child = await _admin_child(request, runtime, caller, id, location)
+    else:
+        child = await _parents_child(runtime, caller, id)
+    return await _view(runtime, child, await runtime.db[PLANS].find_one(_selector(child)))
+
+
+async def _accept_photos(
+    runtime: Runtime, child: Mapping[str, Any], photos: Mapping[str, list[str]]
+) -> None:
+    keys = [key for field_keys in photos.values() for key in field_keys]
+    if not keys:
+        return
+    if runtime.uploads is None:
+        raise error(503, "uploads_not_configured", "Photo uploads aren't configured.")
+    for key in keys:
+        try:
+            await runtime.uploads.accept(key, child["location"], child["_id"], PHOTO_KIND)
+        except UploadError as exc:
+            code = {"not_uploaded": "photo_not_uploaded", "too_large": "photo_too_large"}.get(
+                exc.code, exc.code
+            )
+            raise error(422, code, str(exc)) from exc
+
+
+@router.patch(
+    "",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="Save the parent's work on the 90-day plan, made on the plan's `version` "
+    "(from the last GET or PATCH): if the plan was saved since (another device), nothing "
+    "changes and it's `409 plan_changed`; reload and apply the change again. Each field "
+    "sent replaces the stored one (`photos`: each field key sent replaces that field's "
+    "keys; a photo no longer in any field is deleted). A change to `ask` or the Day-90 "
+    "event, or `clear_track_steps`, ends a plan or tracker generation still building from "
+    "the old one. Setting the Day-90 event once the plan exists completes Transform "
+    "(`transform.completed`).",
+)
+async def patch_transform(
+    id: ChildId, body: PlanPatch, runtime: Ready, caller: SignedIn
+) -> Transform:
+    child = await _parents_child(runtime, caller, id)
+    changes: dict[str, Any] = body.model_dump(
+        exclude_unset=True, exclude={"clear_track_steps", "version"}
+    )
+    if "event_date" in changes and changes["event_date"] is not None:
+        day = changes["event_date"]
+        changes["event_date"] = datetime(day.year, day.month, day.day, tzinfo=UTC)
+    photos = changes.pop("photos", None) or {}
+    await _accept_photos(runtime, child, photos)
+    selector = _selector(child)
+    plans = runtime.db[PLANS]
+    # The plan as the app last read it, or 409: every field sent replaces the stored one,
+    # so a save made on an older version would undo another device's.
+    existing = await plans.find_one(selector)
+    if int((existing or {}).get("version", 0)) != body.version:
+        raise _plan_changed()
+    result: dict[str, Any] = {}
+
+    async def write(session: AsyncClientSession) -> None:
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", id)]
+        # Conflicts with a deletion in flight, so a first save can't bring a plan back.
+        await write_guards(runtime.db, stones, location=child["location"], session=session)
+        if await is_tombstoned(runtime.db, stones, session, location=child["location"]):
+            raise not_found()  # deleted meanwhile: nothing may come back
+        now = _now()
+        stored_photos = dict((existing or {}).get("photos") or {})
+        update: dict[str, Any] = {**changes, "updated_at": now}
+        if photos:
+            update["photos"] = {**stored_photos, **photos}
+            await upload_tracking.attached(
+                runtime.db,
+                [key for keys in photos.values() for key in keys],
+                location=child["location"],
+                session=session,
+            )
+        merged = {
+            **(existing or new_plan(id, child["user_id"], child["location"], now)),
+            **update,
+        }
+        if body.clear_track_steps:
+            merged.pop("track_steps", None)
+        if len(bson.encode(merged)) > MAX_BYTES:
+            raise error(422, "plan_too_large", "The plan is over 64 KB.")
+        if existing is None:
+            await plans.insert_one(merged, session=session)  # a first save at once: 409
+        else:
+            operation: dict[str, Any] = {"$set": update, "$inc": {"version": 1}}
+            if body.clear_track_steps:
+                operation["$unset"] = {"track_steps": ""}
+            if (
+                await plans.find_one_and_update(
+                    {**selector, "version": body.version}, operation, session=session
+                )
+                is None
+            ):
+                raise _Stale()
+            # A plan or tracker still building from the old `ask` or event mustn't land.
+            kinds = _superseded(existing, changes, body.clear_track_steps)
+            await generation.supersede(runtime, id, child["location"], session, kinds=tuple(kinds))
+        await generation.complete_if_ready(runtime, id, child["location"], session)
+        # The version check makes `existing` exactly what this change was made on, so only
+        # the photos this change removed go. A key still in any field after the merge stays:
+        # a photo moved from one field to another, or kept in two, isn't deleted (review).
+        kept = {key for keys in merged.get("photos", {}).values() for key in keys}
+        removed = sorted({key for keys in stored_photos.values() for key in keys} - kept)
+        for key in removed:
+            # Tracked in this commit, so the sweep deletes it if the delete after the
+            # commit fails or never runs.
+            await upload_tracking.replaced(
+                runtime.db, key, location=child["location"], child_id=id, session=session
+            )
+        result["removed"] = removed
+        # The plan as this transaction left it (completion included): the response's
+        # `version` is this save's own, not a later save's whose edits the app lacks.
+        result["doc"] = await plans.find_one(selector, session=session)
+
+    try:
+        async with runtime.client.start_session() as session:
+            await session.with_transaction(write)
+    except (_Stale, DuplicateKeyError):
+        raise _plan_changed() from None  # another save got there first
+    if runtime.uploads is not None:
+        for key in result["removed"]:
+            # The replaced photos, after the change committed (tracked by `replaced`).
+            await upload_tracking.delete_now(
+                runtime.db, runtime.uploads, key, location=child["location"]
+            )
+    return await _view(runtime, child, result["doc"])
+
+
+@router.post(
+    "/generation",
+    status_code=202,
+    dependencies=[Depends(per_user("10/minute"))],
+    responses={200: {"model": Started, "description": "The job already running"}},
+    description="Generate one of Transform's AI parts (`kind`): an area's Life Pathway "
+    "milestones (`area_id`, a completed growth area), the 90-day `plan` (needs the parent's "
+    "`ask`), or the `event_tracker` (needs the plan and the Day-90 event). The running job "
+    "is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).",
+)
+async def start_generation(
+    id: ChildId, body: GenerationIn, response: Response, runtime: Ready, caller: SignedIn
+) -> Started:
+    child = await _parents_child(runtime, caller, id)
+    doc = await runtime.db[PLANS].find_one(_selector(child))
+    kind, area_id = body.kind, body.area_id
+    input_version = int((doc or {}).get("version", 1))
+    if kind == "life_pathway":
+        if area_id is None:
+            raise error(422, "area_id_required", "Name the growth area.")
+        area_key = {"_id": growth_inputs_id(id, area_id), "location": child["location"]}
+        area = await runtime.db[GROWTH_INPUTS].find_one(area_key)
+        if area is None:
+            await areas_for(runtime, child)  # the copy may be behind: ask grow once
+            area = await runtime.db[GROWTH_INPUTS].find_one(area_key)
+        if area is None or area["user_id"] != child["user_id"]:
+            raise error(409, "needs_completed_area", "Complete that growth area first.")
+        input_version = int(area["version"])
+    else:
+        area_id = None
+        if kind == "plan" and not (doc or {}).get("ask"):
+            raise error(409, "needs_ask", "Save what the child is into (`ask`) first.")
+        if kind == "event_tracker":
+            if not (doc or {}).get("plan"):
+                raise error(409, "needs_plan", "Generate the plan first.")
+            if not (doc or {}).get("event_set") or not (doc or {}).get("event_date"):
+                raise error(409, "needs_event", "Set the Day-90 event first.")
+    running = await generation.running_job(runtime, doc, kind, area_id)
+    if running is None:
+        if kind != "event_tracker":
+            await personality_for(runtime, child)
+        # The kill switch (common.generation.switch): no new LLM spend while it's off.
+        if not await runtime.switch.enabled():
+            raise error(
+                503, "generation_paused", "Generation is paused for now. Please try again later."
+            )
+        if not await runtime.llm_limit.take(caller.user_id):
+            raise HTTPException(
+                status_code=429,
+                detail={"code": "llm_limit", "msg": "Too many generations this hour."},
+                headers={"Retry-After": str(runtime.llm_limit.window)},
+            )
+        try:
+            running, created = await generation.start(
+                runtime, kind=kind, child=child, area_id=area_id, input_version=input_version
+            )
+        except JobRefused:
+            raise not_found() from None
+        except PyMongoError as exc:
+            _logger.exception("transform: the job couldn't be stored")
+            raise error(503, "generation_unavailable", "Try again in a moment.") from exc
+        if created:
+            return Started(job_id=running, status="pending")
+        await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call
+    job = await runtime.db[JOBS].find_one({"_id": running}, {"status": 1})
+    response.status_code = 200
+    return Started(job_id=running, status=job["status"] if job else "pending")
+
+
+@router.get(
+    "/generation/{job_id}",
+    # Polled every few seconds while the job runs, so looser than the other routes: several
+    # jobs at once, or an older app polling every 2 s, mustn't hit 429 (review, JOB-05).
+    dependencies=[Depends(per_user("300/minute"))],
+    description="A transform job's status. When `completed`, reload the transform.",
+)
+async def get_job(id: ChildId, job_id: str, runtime: Ready, caller: SignedIn) -> Job:
+    child = await _parents_child(runtime, caller, id)
+    job = await runtime.db[JOBS].find_one(
+        {"_id": job_id, "location": child["location"], "child_id": id, "user_id": child["user_id"]}
+    )
+    if job is None:
+        raise error(404, "job_not_found", "No such job.")
+    return Job(
+        job_id=job["_id"],
+        kind=KINDS[job["type"]],
+        status=job["status"],
+        error=job.get("error"),
+        created_at=job["created_at"],
+        completed_at=job.get("completed_at"),
+    )
+
+
+@router.post(
+    "/photos/presign",
+    dependencies=[Depends(per_user("20/minute"))],
+    description="A 5-minute form upload of a plan photo straight to S3: POST `upload_fields`, "
+    "then the file as `file`, to `upload_url`; S3 refuses another key or type, or over 5 MB. "
+    "Then add `photo_key` to `photos[field_key]` with PATCH (which checks the photo again).",
+)
+async def presign_photo(
+    id: ChildId, body: PresignIn, runtime: Ready, caller: SignedIn
+) -> PresignOut:
+    child = await _parents_child(runtime, caller, id)
+    if runtime.uploads is None:
+        raise error(503, "uploads_not_configured", "Photo uploads aren't configured.")
+    try:
+        key = runtime.uploads.new_key(child["location"], id, PHOTO_KIND, body.content_type)
+    except UploadError as exc:
+        raise error(415, exc.code, str(exc)) from exc
+    try:
+        upload_url, upload_fields = await runtime.uploads.presign_post(key, body.content_type)
+        photo_url = await runtime.uploads.presign_get(key)
+        await upload_tracking.record_presigned(
+            runtime.db, key, location=child["location"], child_id=id
+        )
+    except Exception as exc:
+        _logger.exception("transform: presigning failed")
+        raise error(502, "upload_url_failed", "Couldn't create an upload URL.") from exc
+    return PresignOut(
+        upload_url=upload_url, upload_fields=upload_fields, photo_key=key, photo_url=photo_url
+    )
+
+
+# ── the child's quests (child view) ────────────────────────────────────────────
+
+QuestInterest = quests.QuestInterest
+ChildDay = Annotated[
+    str,
+    Query(alias="date", pattern=r"^\d{4}-\d{2}-\d{2}$", description="The child's day, YYYY-MM-DD"),
+]
+
+
+class QuestIn(BaseModel):
+    target: int
+    title: str
+    how: str
+
+
+class QuestInterestView(BaseModel):
+    key: QuestInterest
+    label: str
+    quests: list[QuestIn]
+
+
+class KidQuests(BaseModel):
+    """The child's quests: the parent's plan's interest (`default_interest`, null when the
+    `ask` names none), the ones the child added, the one on screen, and the counts."""
+
+    default_interest: QuestInterest | None
+    interests: list[QuestInterest]
+    current: QuestInterest | None
+    logs: dict[str, int]
+    # Each quest's last log, as the child's day: the parent's LifePathway shows when.
+    last_logged: dict[str, str]
+    logged_today: list[str]
+    catalog: list[QuestInterestView]
+
+
+class CurrentIn(BaseModel):
+    model_config = _Strict
+    interest: QuestInterest
+
+
+class QuestLog(BaseModel):
+    model_config = _Strict
+    interest: QuestInterest
+    quest: Annotated[int, Field(ge=0, le=quests.QUESTS_PER_INTEREST - 1)]
+
+
+def _quest_day(day: str, now: datetime) -> str:
+    try:
+        return quests.check_day(day, now).isoformat()
+    except ValueError as exc:
+        raise error(422, "bad_date", "That isn't today's date.") from exc
+
+
+async def _quest_view(runtime: Runtime, child: Mapping[str, Any], day: str) -> KidQuests:
+    selector = _selector(child)
+    doc = await runtime.db[quests.KID_QUESTS].find_one(selector) or {}
+    plan = await runtime.db[PLANS].find_one(selector, {"ask": 1}) or {}
+    return KidQuests(
+        default_interest=quests.default_interest(plan.get("ask")),
+        interests=doc.get("interests", []),
+        current=doc.get("current"),
+        logs=doc.get("logs", {}),
+        last_logged=doc.get("log_days", {}),
+        logged_today=quests.logged_on(doc.get("log_days", {}), day),
+        catalog=[QuestInterestView(**i) for i in quests.catalog()],
+    )
+
+
+async def _quest_write(
+    runtime: Runtime,
+    child: Mapping[str, Any],
+    change: Callable[[AsyncClientSession, datetime], Awaitable[None]],
+) -> None:
+    """`change` inside a transaction, after the child's and the account's tombstones (behind
+    their guards, so a deletion in flight and this write conflict) and with the doc made."""
+    db = runtime.db
+    now = _now()
+
+    async def write(session: AsyncClientSession) -> None:
+        stones = [tombstone_key("user", child["user_id"]), tombstone_key("child", child["_id"])]
+        await write_guards(db, stones, location=child["location"], session=session)
+        if await is_tombstoned(db, stones, session, location=child["location"]):
+            raise not_found()
+        await db[quests.KID_QUESTS].update_one(
+            _selector(child),
+            {"$setOnInsert": quests.empty(child["_id"], child["user_id"], child["location"], now)},
+            upsert=True,
+            session=session,
+        )
+        await change(session, now)
+
+    async with runtime.client.start_session() as session:
+        await session.with_transaction(write)
+
+
+@router.get(
+    "/quests",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="The child's quests in child view: the interests, the quests and their "
+    "counts, and which were logged on the child's `date`. Parents only.",
+)
+async def get_quests(id: ChildId, day: ChildDay, runtime: Ready, caller: SignedIn) -> KidQuests:
+    child = await _child_view_child(runtime, caller, id)
+    return await _quest_view(runtime, child, _quest_day(day, _now()))
+
+
+@router.put(
+    "/quests/current",
+    dependencies=[Depends(per_user("60/minute"))],
+    description="Show an interest's quests: the plan's own, or one the child adds (kept in "
+    "`interests`). Parents only.",
+)
+async def put_current_interest(
+    id: ChildId, day: ChildDay, body: CurrentIn, runtime: Ready, caller: SignedIn
+) -> KidQuests:
+    child = await _child_view_child(runtime, caller, id)
+    today = _quest_day(day, _now())
+    plan = await runtime.db[PLANS].find_one(_selector(child), {"ask": 1}) or {}
+    added = body.interest != quests.default_interest(plan.get("ask"))
+
+    async def change(session: AsyncClientSession, now: datetime) -> None:
+        update: dict[str, Any] = {
+            "$set": {"current": body.interest, "updated_at": now},
+            "$inc": {"version": 1},
+        }
+        if added:
+            update["$addToSet"] = {"interests": body.interest}
+        await runtime.db[quests.KID_QUESTS].update_one(_selector(child), update, session=session)
+
+    await _quest_write(runtime, child, change)
+    return await _quest_view(runtime, child, today)
+
+
+@router.post(
+    "/quests/log",
+    dependencies=[Depends(per_user("120/minute"))],
+    description="The child did a quest today: `+1` to its count, once a day (a day after the "
+    "last one logged) and up to its target (anything more changes nothing). A counted log "
+    "publishes `transform.quest_logged` in the same transaction (children gives the star and "
+    "marks Transform done in child view from it). The interest must be the plan's or one the "
+    "child added (`409 interest_not_picked`). Parents only.",
+)
+async def log_quest(
+    id: ChildId, day: ChildDay, body: QuestLog, runtime: Ready, caller: SignedIn
+) -> KidQuests:
+    child = await _child_view_child(runtime, caller, id)
+    today = _quest_day(day, _now())
+    selector = _selector(child)
+    plan = await runtime.db[PLANS].find_one(selector, {"ask": 1}) or {}
+    doc = await runtime.db[quests.KID_QUESTS].find_one(selector, {"interests": 1}) or {}
+    picked = {quests.default_interest(plan.get("ask")), *doc.get("interests", [])}
+    if body.interest not in picked:
+        raise error(409, "interest_not_picked", "Pick this interest first.")
+    key = quests.log_key(body.interest, body.quest)
+    goal = quests.target(body.interest, body.quest)
+
+    async def change(session: AsyncClientSession, now: datetime) -> None:
+        # The filter carries both limits, so two logs at once count once. A day counts only
+        # when it's after the last one logged (ISO dates compare as strings): the server
+        # takes any day within one of its own, so alternating two dates, or a clock moved
+        # back, would otherwise log one real day twice.
+        logged = await runtime.db[quests.KID_QUESTS].find_one_and_update(
+            {
+                **selector,
+                f"log_days.{key}": {"$not": {"$gte": today}},
+                "$or": [{f"logs.{key}": {"$exists": False}}, {f"logs.{key}": {"$lt": goal}}],
+            },
+            {
+                "$inc": {f"logs.{key}": 1, "version": 1},
+                "$set": {f"log_days.{key}": today, "updated_at": now},
+            },
+            return_document=ReturnDocument.AFTER,
+            session=session,
+        )
+        if logged is None:
+            return  # already logged that day, or the target reached: nothing to tell
+        # In the same transaction: children gives the quest's star and marks Transform done
+        # in child view from it, so the log and the child's progress can't disagree.
+        await add_to_outbox(
+            runtime.db,
+            Event.new(
+                "transform.quest_logged",
+                producer=SERVICE,
+                aggregate_id=child["_id"],
+                location=child["location"],
+                version=logged["version"],
+                region=runtime.settings.aws_region,
+                payload={"interest": body.interest, "quest": body.quest},
+                traceparent=current_traceparent(),
+            ),
+            session,
+        )
+
+    await _quest_write(runtime, child, change)
+    return await _quest_view(runtime, child, today)
+
+
+app.include_router(health_router)
+app.include_router(router)
+
+
+# ── internal routes (port 8001) ────────────────────────────────────────────────
+
+internal_router = PolicyRouter(prefix="/internal")
+
+
+@internal_router.get(
+    "/ping",
+    tags=["internal"],
+    dependencies=[Depends(public())],
+    description="Reachability check for internal callers (port 8001, inside the VPC only).",
+)
+def ping() -> dict[str, str]:
+    return {"status": "ok", "service": SERVICE}
+
+
+@internal_router.get(
+    "/transform/children/{id}/status",
+    tags=["internal"],
+    description="Whether Transform is done (plan generated and Day-90 event set): release's "
+    "confirm-before-deny (12.4).",
+)
+async def internal_status(
+    id: str,
+    location: Annotated[str, Query(pattern=LOCATION_PATTERN)],
+    runtime: Ready,
+    _caller: Annotated[str, Depends(allow_callers(*STATUS_CALLERS))],
+) -> Completed:
+    found = await runtime.db[PLANS].find_one(
+        {"_id": id, "location": location, "completed_at": {"$exists": True}}, {"_id": 1}
+    )
+    return Completed(completed=found is not None)
+
+
+internal_app.include_router(internal_router)

@@ -11,6 +11,7 @@ const GrowthAreas = lazy(() => import('./pages/GrowthAreas'));
 const PersonalityProfile = lazy(() => import('./pages/PersonalityProfile'));
 const Observations = lazy(() => import('./pages/Observations'));
 const Connect = lazy(() => import('./pages/Connect'));
+const AccountSettings = lazy(() => import('./pages/AccountSettings'));
 
 export const PAGES = {
   Home,
@@ -22,6 +23,7 @@ export const PAGES = {
   GrowthAreas,
   Observations,
   Connect,
+  AccountSettings,
 };
 
 export const pagesConfig = {

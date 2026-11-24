@@ -2,9 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { children } from '@/api/children';
+import { ApiError } from '@/api/errors';
 import { useMediaQuery } from '@/hooks/use-mobile';
-import Spinner from '@/components/shared/Spinner';
+import PageLoader from '@/components/shared/PageLoader';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { useKidQuests } from '@/hooks/useKidQuests';
+import { useKidWorlds } from '@/hooks/useKidWorlds';
+import { winsFrom } from '@/lib/kidsWins';
+import { daysAgo } from '@/api/kidWorlds';
+import { Button } from '@/components/ui/button';
 
 import {
   cfs,
@@ -14,7 +21,8 @@ import {
   ShieldIcon,
   PencilIcon,
   ToastBanner,
-  BASE_ITEMS,
+  connectItems,
+  type AccomplishmentItem,
   WA_CONTACTS,
   IG_DESTS,
   IG_BGS,
@@ -31,6 +39,16 @@ import WhatsAppModal from '@/components/connect/WhatsAppModal';
 import InstagramModal from '@/components/connect/InstagramModal';
 import TwitterModal from '@/components/connect/TwitterModal';
 
+/** The card's stand-in while there are no wins (the page shows its empty state then). */
+const NO_WIN: AccomplishmentItem = {
+  id: 'none',
+  kind: '',
+  when: '',
+  title: '',
+  caption: '',
+  icon: '',
+};
+
 type ItemEdits = Partial<Record<'title' | 'caption', string>>;
 
 export default function Connect() {
@@ -40,6 +58,10 @@ export default function Connect() {
   const [isLoading, setIsLoading] = useState(true);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
+  // Anything but a lock or a missing child: the visit wasn't recorded, so the page
+  // offers a retry rather than rendering as if it had been.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -54,18 +76,21 @@ export default function Connect() {
     let cancelled = false;
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        // Opening Connect records the visit (build plan 7.7): the last circle, done.
+        // Refused while Release isn't done, so it also gates the page.
+        const [child] = await Promise.all([children.get(childId), children.visitConnect(childId)]);
         if (cancelled) return;
-        if (!child) {
+        setChildName(child.name);
+        setChildAge(child.age === null ? '' : String(child.age));
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'circle_locked') {
+          void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+        } else if (err instanceof ApiError && err.code === 'child_not_found') {
           void navigate('/Home', { replace: true });
-          return;
-        }
-        setChildName(child.name ?? '');
-        setChildAge(child.age != null ? String(child.age) : '');
-        // Mark Connect as visited — this advances which circle the
-        // DimensionCircles hub points to next (there is none left after this).
-        if (!child.connect_visited) {
-          api.entities.Child.markProgress(childId, 'connect_visited').catch(console.error);
+        } else {
+          console.warn('[Connect] Load failed:', err);
+          setLoadFailed(true);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -74,38 +99,53 @@ export default function Connect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
   const isNarrow = useMediaQuery('(max-width: 859px)');
+  // The wins the child chose in child view ("Show my grown-up", P.2), newest first, ahead of
+  // the page's own: the parent shares them from here.
+  // Then everything else the child has done there: quests, worlds, the badge, streaks.
+  const { activity: kidActivity, day } = useKidActivity(childId);
+  const { quests } = useKidQuests(childId);
+  const { worlds } = useKidWorlds(childId);
 
   const items = useMemo(
     () =>
-      BASE_ITEMS.map((it) =>
-        it.title.includes('{name}')
-          ? { ...it, title: it.title.replace('{name}', childName || 'Your child') }
-          : it,
+      connectItems(
+        kidActivity?.shown ?? {},
+        kidActivity ? winsFrom({ activity: kidActivity, quests, worlds, day }) : [],
+        childName,
+        daysAgo,
       ),
-    [childName],
+    [childName, kidActivity, quests, worlds, day],
   );
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  // The picked card and the parent's edits are kept by the item's id, not its place: the shown
+  // wins load after the page and go first, which moves every other item down.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [edits, setEdits] = useState<Record<number, ItemEdits>>({});
+  const [edits, setEdits] = useState<Record<string, ItemEdits>>({});
 
-  const currentItem = items[activeIndex] ?? items[0]!;
-  const currentEdit = edits[activeIndex] ?? {};
+  // With no wins yet the page shows how they get here instead of a card (below).
+  const currentItem = items.find((it) => it.id === activeId) ?? items[0] ?? NO_WIN;
+  const currentEdit = edits[currentItem.id] ?? {};
   const title = currentEdit.title ?? currentItem.title;
   const caption = currentEdit.caption ?? currentItem.caption;
   const touched = currentEdit.title !== undefined || currentEdit.caption !== undefined;
 
   const editField = (field: 'title' | 'caption', value: string) => {
-    setEdits((prev) => ({ ...prev, [activeIndex]: { ...prev[activeIndex], [field]: value } }));
+    // Editing keeps this card picked, so wins arriving after it don't take its place.
+    setActiveId(currentItem.id);
+    setEdits((prev) => ({
+      ...prev,
+      [currentItem.id]: { ...prev[currentItem.id], [field]: value },
+    }));
   };
   const resetCard = () => {
     if (!touched) return;
     setEdits((prev) => {
       const next = { ...prev };
-      delete next[activeIndex];
+      delete next[currentItem.id];
       return next;
     });
   };
@@ -216,16 +256,45 @@ export default function Connect() {
 
   if (isLoading) {
     return (
+      <PageLoader
+        style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
+        spinnerStyle={{
+          borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+          borderTopColor: 'transparent',
+        }}
+      />
+    );
+  }
+
+  if (loadFailed) {
+    return (
       <div
-        className="flex min-h-screen items-center justify-center"
+        className="flex min-h-screen flex-col items-center justify-center gap-4 px-4"
         style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
       >
-        <Spinner
-          style={{
-            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
-            borderTopColor: 'transparent',
+        <p className="text-muted-foreground">We could not load this page. Please try again.</p>
+        <Button
+          onClick={() => {
+            setLoadFailed(false);
+            setIsLoading(true);
+            setReloadKey((k) => k + 1);
           }}
-        />
+          className="btn-primary rounded-2xl px-8"
+        >
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-6 text-center">
+        <h1 className="font-orbitron text-2xl font-bold text-foreground">No wins to share yet</h1>
+        <p className="max-w-md text-muted-foreground">
+          When {childName || 'your child'} finishes a quest, plays a Grow world or opens all seven
+          superpowers in child view, it shows up here, ready to share.
+        </p>
       </div>
     );
   }
@@ -463,7 +532,11 @@ export default function Connect() {
                 tabIndex={0}
                 onClick={shareWa}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') shareWa();
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // Else the key's own action lands on the modal's first button (its ×), which
+                  // the modal focuses as it opens: it closed again at once.
+                  e.preventDefault();
+                  shareWa();
                 }}
                 style={{
                   cursor: 'pointer',
@@ -497,7 +570,11 @@ export default function Connect() {
                 tabIndex={0}
                 onClick={shareIg}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') shareIg();
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // Else the key's own action lands on the modal's first button (its ×), which
+                  // the modal focuses as it opens: it closed again at once.
+                  e.preventDefault();
+                  shareIg();
                 }}
                 style={{
                   cursor: 'pointer',
@@ -531,7 +608,11 @@ export default function Connect() {
                 tabIndex={0}
                 onClick={shareX}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') shareX();
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // Else the key's own action lands on the modal's first button (its ×), which
+                  // the modal focuses as it opens: it closed again at once.
+                  e.preventDefault();
+                  shareX();
                 }}
                 style={{
                   cursor: 'pointer',
@@ -599,12 +680,12 @@ export default function Connect() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-              {items.map((item, index) => (
+              {items.map((item) => (
                 <AccomplishmentRow
-                  key={item.title}
+                  key={item.id}
                   item={item}
-                  active={activeIndex === index}
-                  onPick={() => setActiveIndex(index)}
+                  active={currentItem.id === item.id}
+                  onPick={() => setActiveId(item.id)}
                 />
               ))}
             </div>

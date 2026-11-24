@@ -14,8 +14,11 @@ locals {
   # Used by the Lambda@Edge to route API calls by the token's location claim.
   # Locations not in the file (legacy cn/ru accounts) have no entry: the
   # Lambda answers 503.
+  # An environment in served_from (prod until the Atlas Global Cluster, DEC-01 A) routes
+  # every location to its one region instead.
+  served_from = lookup(lookup(local.routing, "served_from", {}), var.environment, null)
   location_to_region = merge([
-    for region, cfg in local.routing.regions : { for loc in cfg.locations : loc => region }
+    for region, cfg in local.routing.regions : { for loc in cfg.locations : loc => coalesce(local.served_from, region) }
   ]...)
 
   # Countries never served — the IP-geolocation half of the block. The backend

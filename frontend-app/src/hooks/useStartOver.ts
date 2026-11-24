@@ -1,35 +1,18 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from '@/lib/router';
-import { toast } from '@/lib/toast';
-import { useQueryClient } from '@tanstack/react-query';
-import { api } from '@/api/client';
-import { ApiError } from '@/api/errors';
+import { useDeleteChild } from '@/hooks/useDeleteChild';
 
+/** Start Over: deletes this child, then goes Home. */
 export function useStartOver(childId: string | undefined) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [isStartingOver, setIsStartingOver] = useState(false);
+  const { deleteChild, deletingId } = useDeleteChild();
 
   const doStartOver = useCallback(async () => {
-    if (isStartingOver || !childId) return;
-    setIsStartingOver(true);
-    try {
-      await api.entities.Child.delete(childId);
-      await api.preferences
-        .patch({ last_visited_path: '/Home' })
-        .catch(() => {});
-      void queryClient.invalidateQueries({ queryKey: ['children'] });
-    } catch (err) {
-      if (!(err instanceof ApiError) || err.status !== 404) {
-        console.warn('[useStartOver] Failed:', err);
-        toast.error('Could not start over. Please try again.');
-        setIsStartingOver(false);
-        return;
-      }
+    if (!childId) return;
+    if (await deleteChild(childId, 'Could not start over. Please try again.')) {
+      void navigate('/Home', { replace: true });
     }
-    setIsStartingOver(false);
-    void navigate('/Home', { replace: true });
-  }, [isStartingOver, childId, navigate, queryClient]);
+  }, [childId, deleteChild, navigate]);
 
-  return { doStartOver, isStartingOver };
+  return { doStartOver, isStartingOver: deletingId !== null };
 }

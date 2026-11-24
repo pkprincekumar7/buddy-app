@@ -11,9 +11,16 @@ import {
   Trash2,
   Users,
 } from 'lucide-react-native';
-import { api } from '@/api/client';
-import { ApiError } from '@/api/errors';
-import type { AdminUserRecord } from '@/types/api';
+import {
+  admin,
+  ADMIN_ERRORS,
+  nameOf,
+  type Account,
+  type AllowedEmail,
+  type ProfileName,
+  type Role,
+} from '@/api/admin';
+import { httpErrorMessage } from '@/lib/apiError';
 import { color } from '@/theme';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -44,12 +51,12 @@ const PAGE_SIZE = 20;
 
 type AdminTab = 'allowed-emails' | 'registered-users';
 
+// The services' refusals, matched on detail.code (build plan 7.3).
 function errorDetail(err: unknown, fallback: string): string {
-  return err instanceof ApiError
-    ? typeof err.detail === 'string'
-      ? err.detail
-      : JSON.stringify(err.detail)
-    : fallback;
+  return httpErrorMessage(err as Error | undefined, {
+    fallback,
+    codeMessages: ADMIN_ERRORS,
+  });
 }
 
 /** Ghost icon button: remove (trash) or lock/unlock. */
@@ -85,17 +92,65 @@ function RowIconButton({
   );
 }
 
-function UserSummary({ user }: { user: AdminUserRecord }) {
+function UserSummary({
+  user,
+  name,
+}: {
+  user: Account;
+  name: ProfileName | undefined;
+}) {
   return (
     <View className="min-w-0 flex-1 gap-0.5">
       <Text numberOfLines={1} className="text-sm font-medium text-foreground">
-        {user.full_name ?? '—'}
+        {nameOf(name) ?? '—'}
       </Text>
       <Text numberOfLines={1} className="text-xs text-muted-foreground">
-        {user.email ?? '—'}
+        {user.email}
+        {user.role === 'admin' ? ' · Admin' : ''}
       </Text>
     </View>
   );
+}
+
+/** The role control (build plan 7.3): makes a parent an admin, or an admin a parent. */
+function RoleButton({
+  user,
+  disabled,
+  onPress,
+}: {
+  user: Account;
+  disabled: boolean;
+  onPress: (role: Role) => void;
+}) {
+  const next: Role = user.role === 'admin' ? 'parent' : 'admin';
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 border-edge px-2"
+      accessibilityLabel={`Make ${user.email} ${
+        next === 'admin' ? 'an admin' : 'a parent'
+      }`}
+      disabled={disabled}
+      onPress={() => onPress(next)}
+    >
+      {next === 'admin' ? 'Make admin' : 'Make parent'}
+    </Button>
+  );
+}
+
+/** A confirmation's target, kept while the dialog closes so its text doesn't flash empty. */
+function useDialogTarget<T>() {
+  const [state, setState] = useState<{ target: T | null; open: boolean }>({
+    target: null,
+    open: false,
+  });
+  return {
+    target: state.target,
+    open: state.open,
+    show: (target: T) => setState({ target, open: true }),
+    close: () => setState(current => ({ ...current, open: false })),
+  };
 }
 
 export default function Admin() {
@@ -105,20 +160,21 @@ export default function Admin() {
   const [page, setPage] = useState(0);
   const [searchEmail, setSearchEmail] = useState('');
   const [searchResult, setSearchResult] = useState<
-    { email: string; added_at: string | null } | null | 'not_found'
+    AllowedEmail | null | 'not_found'
   >(null);
   const [searching, setSearching] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState('');
 
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const deleteDialog = useDialogTarget<AllowedEmail>();
 
   const [usersPage, setUsersPage] = useState(0);
-  const [lockTarget, setLockTarget] = useState<AdminUserRecord | null>(null);
+  const lockDialog = useDialogTarget<Account>();
+  const roleDialog = useDialogTarget<{ account: Account; role: Role }>();
   const [userSearchEmail, setUserSearchEmail] = useState('');
   const [userSearchResult, setUserSearchResult] = useState<
-    AdminUserRecord | null | 'not_found'
+    Account | null | 'not_found'
   >(null);
   const [userSearching, setUserSearching] = useState(false);
 
@@ -127,13 +183,13 @@ export default function Admin() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'allowed-emails', page],
-    queryFn: () => api.admin.listAllowedEmails(skip, PAGE_SIZE),
+    queryFn: () => admin.allowedEmails.list(skip, PAGE_SIZE),
   });
 
   const addMutation = useMutation({
-    mutationFn: (email: string) => api.admin.addAllowedEmail(email),
+    mutationFn: (email: string) => admin.allowedEmails.add(email),
     onSuccess: record => {
-      toast.success(`${record.email} added to allowlist`);
+      toast.success(`${record.email_hint} added to allowlist`);
       setAddOpen(false);
       setAddEmail('');
       void qc.invalidateQueries({ queryKey: ['admin', 'allowed-emails'] });
@@ -144,11 +200,14 @@ export default function Admin() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (email: string) => api.admin.removeAllowedEmail(email),
-    onSuccess: () => {
+    mutationFn: (entry: AllowedEmail) => admin.allowedEmails.remove(entry.key),
+    onSuccess: (_, entry) => {
       toast.success('Email removed from allowlist');
-      setDeleteTarget(null);
+      deleteDialog.close();
       setPage(0);
+      setSearchResult(prev =>
+        prev && prev !== 'not_found' && prev.key === entry.key ? null : prev,
+      );
       void qc.invalidateQueries({ queryKey: ['admin', 'allowed-emails'] });
     },
     onError: err => {
@@ -158,28 +217,60 @@ export default function Admin() {
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['admin', 'users', usersPage],
-    queryFn: () => api.admin.listUsers(usersSkip, PAGE_SIZE),
+    queryFn: () => admin.accounts.list(usersSkip, PAGE_SIZE),
   });
 
+  // The names of the page's accounts, and of a found one, in one call each.
+  const pageIds = usersData?.items.map(account => account.id) ?? [];
+  const foundId =
+    userSearchResult && userSearchResult !== 'not_found'
+      ? userSearchResult.id
+      : null;
+  const ids =
+    foundId && !pageIds.includes(foundId) ? [...pageIds, foundId] : pageIds;
+  const { data: names } = useQuery({
+    queryKey: ['admin', 'names', ids],
+    queryFn: () => admin.names(ids),
+    enabled: ids.length > 0,
+  });
+
+  const updateAccount = (id: string, change: Partial<Account>) => {
+    void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+    setUserSearchResult(prev =>
+      prev && prev !== 'not_found' && prev.id === id
+        ? { ...prev, ...change }
+        : prev,
+    );
+  };
+
   const lockMutation = useMutation({
-    mutationFn: (user: AdminUserRecord) =>
-      user.locked
-        ? api.admin.unlockUser(user.id, user.location ?? '')
-        : api.admin.lockUser(user.id, user.location ?? ''),
+    mutationFn: (user: Account) =>
+      user.locked ? admin.accounts.unlock(user) : admin.accounts.lock(user),
     onSuccess: result => {
       toast.success(result.locked ? 'User locked' : 'User unlocked');
-      setLockTarget(null);
-      void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
-      setUserSearchResult(prev =>
-        prev && prev !== 'not_found' && prev.id === result.id
-          ? { ...prev, locked: result.locked }
-          : prev,
-      );
+      lockDialog.close();
+      updateAccount(result.id, { locked: result.locked });
     },
     onError: err => {
+      lockDialog.close();
       toast.error(errorDetail(err, 'Action failed'));
     },
   });
+
+  const roleMutation = useMutation({
+    mutationFn: ({ account, role }: { account: Account; role: Role }) =>
+      admin.accounts.setRole(account, role),
+    onSuccess: result => {
+      toast.success(result.role === 'admin' ? 'Now an admin' : 'Now a parent');
+      roleDialog.close();
+      updateAccount(result.id, { role: result.role });
+    },
+    onError: err => {
+      roleDialog.close();
+      toast.error(errorDetail(err, 'Could not change the role'));
+    },
+  });
+  const accountBusy = lockMutation.isPending || roleMutation.isPending;
 
   const handleSearch = async () => {
     const trimmed = searchEmail.trim();
@@ -187,14 +278,11 @@ export default function Admin() {
     setSearching(true);
     setSearchResult(null);
     try {
-      const result = await api.admin.getAllowedEmail(trimmed);
-      setSearchResult(result);
+      setSearchResult(
+        (await admin.allowedEmails.search(trimmed)) ?? 'not_found',
+      );
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setSearchResult('not_found');
-      } else {
-        toast.error(errorDetail(err, 'Search failed'));
-      }
+      toast.error(errorDetail(err, 'Search failed'));
     } finally {
       setSearching(false);
     }
@@ -206,14 +294,11 @@ export default function Admin() {
     setUserSearching(true);
     setUserSearchResult(null);
     try {
-      const result = await api.admin.getUserByEmail(trimmed);
-      setUserSearchResult(result);
+      setUserSearchResult(
+        (await admin.accounts.search(trimmed)) ?? 'not_found',
+      );
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setUserSearchResult('not_found');
-      } else {
-        toast.error(errorDetail(err, 'Search failed'));
-      }
+      toast.error(errorDetail(err, 'Search failed'));
     } finally {
       setUserSearching(false);
     }
@@ -280,7 +365,8 @@ export default function Admin() {
             <View className="mt-4 gap-4">
               <View className="flex-row items-center justify-between gap-3">
                 <Text className="flex-1 text-sm text-muted-foreground">
-                  Only these emails can register for the application.
+                  Only these emails can register for the application. Emails are
+                  stored as a key, so the list shows a masked hint.
                 </Text>
                 <Button
                   variant="action"
@@ -323,17 +409,17 @@ export default function Admin() {
                       <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
                         <Mail size={16} color={color.primary} />
                         <Text className="shrink text-sm text-foreground">
-                          {searchResult.email}
+                          {searchResult.email_hint}
                         </Text>
                         <Text className="text-xs text-muted-foreground">
-                          Added {formatDate(searchResult.added_at)}
+                          Added {formatDate(searchResult.created_at)}
                         </Text>
                       </View>
                       <RowIconButton
                         kind="delete"
-                        label={`Remove ${searchResult.email}`}
+                        label={`Remove ${searchResult.email_hint}`}
                         disabled={deleteMutation.isPending}
-                        onPress={() => setDeleteTarget(searchResult.email)}
+                        onPress={() => deleteDialog.show(searchResult)}
                       />
                     </View>
                   )}
@@ -363,7 +449,7 @@ export default function Admin() {
                     <View accessibilityRole="list">
                       {data.items.map((item, i) => (
                         <View
-                          key={item.email}
+                          key={item.key}
                           className={cn(
                             'flex-row items-center justify-between px-5 py-3',
                             i > 0 && 'border-t border-border',
@@ -375,15 +461,15 @@ export default function Admin() {
                               numberOfLines={1}
                               className="shrink text-sm text-foreground"
                             >
-                              {item.email}
+                              {item.email_hint}
                             </Text>
                           </View>
                           <View className="ml-4 shrink-0 flex-row items-center gap-3">
                             <RowIconButton
                               kind="delete"
-                              label={`Remove ${item.email}`}
+                              label={`Remove ${item.email_hint}`}
                               disabled={deleteMutation.isPending}
-                              onPress={() => setDeleteTarget(item.email)}
+                              onPress={() => deleteDialog.show(item)}
                             />
                           </View>
                         </View>
@@ -433,9 +519,19 @@ export default function Admin() {
                   )}
                   {userSearchResult && userSearchResult !== 'not_found' && (
                     <View className="mt-3 flex-row items-center justify-between rounded-lg border border-edge bg-ghost px-3 py-2">
-                      <UserSummary user={userSearchResult} />
+                      <UserSummary
+                        user={userSearchResult}
+                        name={names?.get(userSearchResult.id)}
+                      />
                       <View className="ml-4 shrink-0 flex-row items-center gap-3">
                         {userSearchResult.locked && <LockedBadge />}
+                        <RoleButton
+                          user={userSearchResult}
+                          disabled={accountBusy}
+                          onPress={role =>
+                            roleDialog.show({ account: userSearchResult, role })
+                          }
+                        />
                         <RowIconButton
                           kind={userSearchResult.locked ? 'unlock' : 'lock'}
                           label={
@@ -443,8 +539,8 @@ export default function Admin() {
                               ? 'Unlock user'
                               : 'Lock user'
                           }
-                          disabled={lockMutation.isPending}
-                          onPress={() => setLockTarget(userSearchResult)}
+                          disabled={accountBusy}
+                          onPress={() => lockDialog.show(userSearchResult)}
                         />
                       </View>
                     </View>
@@ -481,14 +577,21 @@ export default function Admin() {
                             i > 0 && 'border-t border-border',
                           )}
                         >
-                          <UserSummary user={user} />
+                          <UserSummary user={user} name={names?.get(user.id)} />
                           <View className="ml-4 shrink-0 flex-row items-center gap-3">
                             {user.locked && <LockedBadge />}
+                            <RoleButton
+                              user={user}
+                              disabled={accountBusy}
+                              onPress={role =>
+                                roleDialog.show({ account: user, role })
+                              }
+                            />
                             <RowIconButton
                               kind={user.locked ? 'unlock' : 'lock'}
                               label={user.locked ? 'Unlock user' : 'Lock user'}
-                              disabled={lockMutation.isPending}
-                              onPress={() => setLockTarget(user)}
+                              disabled={accountBusy}
+                              onPress={() => lockDialog.show(user)}
                             />
                           </View>
                         </View>
@@ -554,12 +657,14 @@ export default function Admin() {
 
       {/* Delete confirm */}
       <AlertDialog
-        open={!!deleteTarget}
-        onCancel={() => setDeleteTarget(null)}
+        open={deleteDialog.open}
+        onCancel={() => deleteDialog.close()}
         title="Remove from allowlist?"
         description={
           <>
-            <Text className="font-medium text-foreground">{deleteTarget}</Text>{' '}
+            <Text className="font-medium text-foreground">
+              {deleteDialog.target?.email_hint}
+            </Text>{' '}
             will no longer be able to register. Existing account is unaffected.
           </>
         }
@@ -567,39 +672,68 @@ export default function Admin() {
         actionClassName="bg-error/90 text-white"
         actionDisabled={deleteMutation.isPending}
         onAction={() => {
-          if (deleteTarget) deleteMutation.mutate(deleteTarget);
+          if (deleteDialog.target) deleteMutation.mutate(deleteDialog.target);
         }}
       />
 
       {/* Lock / unlock confirm */}
       <AlertDialog
-        open={!!lockTarget}
-        onCancel={() => setLockTarget(null)}
-        title={lockTarget?.locked ? 'Unlock user?' : 'Lock user?'}
+        open={lockDialog.open}
+        onCancel={() => lockDialog.close()}
+        title={lockDialog.target?.locked ? 'Unlock user?' : 'Lock user?'}
         description={
-          lockTarget?.locked ? (
+          lockDialog.target?.locked ? (
             <>
               <Text className="font-medium text-foreground">
-                {lockTarget.email}
+                {lockDialog.target.email}
               </Text>{' '}
               will be able to log in again.
             </>
           ) : (
             <>
               <Text className="font-medium text-foreground">
-                {lockTarget?.email}
+                {lockDialog.target?.email}
               </Text>{' '}
               will be immediately signed out and blocked from logging in.
             </>
           )
         }
-        actionLabel={lockTarget?.locked ? 'Unlock' : 'Lock'}
+        actionLabel={lockDialog.target?.locked ? 'Unlock' : 'Lock'}
         actionClassName={
-          lockTarget?.locked ? 'bg-primary' : 'bg-error/90 text-white'
+          lockDialog.target?.locked ? 'bg-primary' : 'bg-error/90 text-white'
         }
         actionDisabled={lockMutation.isPending}
         onAction={() => {
-          if (lockTarget) lockMutation.mutate(lockTarget);
+          if (lockDialog.target) lockMutation.mutate(lockDialog.target);
+        }}
+      />
+
+      {/* Role change confirm */}
+      <AlertDialog
+        open={roleDialog.open}
+        onCancel={() => roleDialog.close()}
+        title={
+          roleDialog.target?.role === 'admin' ? 'Make admin?' : 'Make parent?'
+        }
+        description={
+          <>
+            <Text className="font-medium text-foreground">
+              {roleDialog.target?.account.email}
+            </Text>{' '}
+            {roleDialog.target?.role === 'admin'
+              ? 'will be able to manage the allowlist and every account.'
+              : 'will no longer have admin access.'}{' '}
+            They're signed out, and the new role applies when they sign in
+            again.
+          </>
+        }
+        actionLabel={
+          roleDialog.target?.role === 'admin' ? 'Make admin' : 'Make parent'
+        }
+        actionClassName="bg-primary"
+        actionDisabled={roleMutation.isPending}
+        onAction={() => {
+          if (roleDialog.target) roleMutation.mutate(roleDialog.target);
         }}
       />
     </PageScroll>

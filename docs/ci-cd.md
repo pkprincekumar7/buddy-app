@@ -2,48 +2,97 @@
 
 ## GitHub Actions workflows
 
-Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Deployment and infrastructure workflows authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
+Sixteen workflows live under [`.github/workflows/`](../.github/workflows/). Deployment and infrastructure workflows authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `check.yml` | Push / PR to `main`; Manual (`workflow_dispatch`) | Code quality gate — lint, format, types, build, bundle size, tests + coverage, Terraform lint, secret detection, Dockerfile lint, SAST, IaC security, CVE scan, license compliance, Docker image scan, SBOM, OpenAPI lint, DAST, dependency review (PRs), CodeQL |
-| `terraform-live-all.yml` | Manual / called | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
-| `terraform-live-scheduler.yml` | Manual | Provisions per-environment AWS EventBridge Scheduler resources; `environment` input selects dev/sbx/stg/prod; `schedule_enabled` input enables or disables the schedules; `target_aws_regions` input selects the full region set the daily schedules apply/destroy. EventBridge invokes a Lambda function (the "GitHub dispatcher"), which reads a GitHub PAT from Secrets Manager and calls `terraform-live-all.yml`'s `workflow_dispatch` REST endpoint directly — EventBridge itself never talks to the GitHub API. PAT sourced from `GIT_ACTIONS_PAT` environment secret |
-| `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager — applied once per region (`aws_region` input: `ap-south-1` / `eu-west-1` / `us-east-1`) |
+| `check.yml` | Push to `main`; PR to `main` or `develop`; weekly; Manual (`workflow_dispatch`) | Code quality gate — lint, format, types, build, bundle size, tests + coverage, Terraform lint, secret detection, Dockerfile lint, SAST, IaC security, CVE scan, license compliance, Docker image scan, SBOM, OpenAPI lint, DAST, dependency review (PRs), CodeQL |
+| `terraform-live-all.yml` | Manual / called | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys (never for prod: there it applies infrastructure only and says so in the run) |
+| `terraform-live-scheduler.yml` | Manual | Provisions per-environment AWS EventBridge Scheduler resources; `environment` input selects dev/sbx/stg (there is no prod scheduler); `schedule_enabled` input enables or disables the schedules; `target_aws_regions` input selects the full region set the daily schedules apply/destroy. EventBridge invokes a Lambda function (the "GitHub dispatcher"), which reads a GitHub PAT from Secrets Manager and calls `terraform-live-all.yml`'s `workflow_dispatch` REST endpoint directly — EventBridge itself never talks to the GitHub API. PAT sourced from `GIT_ACTIONS_PAT` environment secret |
+| `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Valkey, ECR, Cloud Map, SNS/SQS, Secrets Manager — applied once per region (`aws_region` input: `ap-south-1` / `eu-west-1` / `us-east-1`). On an apply it fills each service's secret the first time (`scripts/fill-service-secrets.sh`). When Valkey's new group fails because its zone had no capacity, the apply deletes the failed group and plans again with the other zones first (`scripts/valkey-capacity.sh`, tested by `scripts/valkey-capacity.test.sh`) |
+| `terraform-drift.yml` | Daily (11:17 UTC); Manual | Drift detection for dev, sbx, stg and prod (or the `environments` given): for each, `terraform-drift-env.yml` runs every deployed stack's workflow with `action: drift`, a read-only `terraform plan -refresh-only` (`scripts/drift.sh`, tested by `scripts/drift.test.sh`). Fails, naming each resource, when one was changed or deleted outside Terraform. See [infra-operations.md](infra-operations.md#drift-detection) |
+| `terraform-drift-env.yml` | Called | One environment's drift check: finds the regions with a deployed backend, then checks the backend (per region), edge, frontend and, outside prod, scheduler stacks. A stack that isn't deployed is skipped with a notice |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket policy for frontend assets (always `us-east-1`) |
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution, WAF, Lambda@Edge JWT validator, DNS (always `us-east-1`); `backend_regions` input selects which regions' uploads buckets get CloudFront origins and which regions the JWT validator can route to; `bootstrap_region` input (default `auto` = first of `backend_regions`) picks the region that serves login, Google sign-in and health — consumes a pre-existing ACM cert ARN, does not create one |
-| `deploy-live-backend.yml` | Manual / called | Builds the Docker image once, pushes it to every selected region's ECR, and rolls out the selected services (`service`: `all` or a comma-separated list of `auth`, `admin`, `backend`, `worker`) in parallel; a failed service doesn't stop the others, and the run fails naming it. A service added in `infra-live-backend/terraform/services.tf` needs no workflow logic change, only its name added to the help text of the `service` input (CI checks it matches). |
-| `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
-| `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), all in parallel. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment, then the promote job (target's `ROLE_ARN`) pushes it into the target's own ECR under the same tag and updates each target ECS service. Works across AWS accounts (e.g. stg and prod in different accounts) |
-| `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev→stg` or `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
-| `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `stg`, `prod`) |
-| `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment |
-| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes). `service`: `all` or a comma-separated list, resolved from the `ecs_services` SSM list; services restart in parallel. |
+| `deploy-live-backend.yml` | Manual / called | dev, sbx and stg only (prod gets `promote-live-backend`). Builds one image per selected service (`--build-arg SERVICE=<service>`; a worker runs its service's), in parallel, scans each with Trivy (HIGH/CRITICAL fails before any push), pushes each to that service's ECR repository in every selected region, signs it with cosign (keyless) and attaches its SBOM as a signed attestation (CI-03), checks the signature and registers the task definitions by digest, and rolls out the selected runtimes (`service`: `all` or a comma-separated list such as `users,users-worker`) in parallel; a failed one doesn't stop the others, and the run fails naming it. The collector runs a pinned public image, so `all` skips it. A service added in `infra-live-backend/terraform/services.tf` needs no workflow logic change, only its runtimes added to the help text of the `service` input (CI checks it matches). Then a `smoke` job checks the public path, and that the new `shared` image answers `/api/health` when it was deployed (`scripts/smoke.sh`, see [Smoke tests after a deploy](#smoke-tests-after-a-deploy)). |
+| `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront, then smoke-tests the live site (`scripts/smoke.sh`). dev, sbx and stg only: prod gets `promote-live-frontend` |
+| `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), all in parallel. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment; a service still rolling out or rolling back there stops the run (only one `COMPLETED` deployment counts), and so do source regions running different tags (the `same_release` job). Then the promote job (target's `ROLE_ARN`) copies each by digest with `crane` (a checksum-pinned release), registry to registry, into its service's repository in the target under the same tag, with its signature and SBOM attestation, checks the target digest equals the source's, checks the signature, and updates each target ECS service by digest. No image tarballs: the artifacts hold only the image list. The collector isn't promoted. Works across AWS accounts (e.g. stg and prod in different accounts) once the source environment's `ecr_pull_account_ids` grants the target account pull (`docs/infra-operations.md`). Then a `smoke` job checks the public path: `/api/health` through CloudFront, the edge function and the ALB, and a 401 for `/api/v1/users/me` with no token (`scripts/smoke.sh`, see [Smoke tests after a deploy](#smoke-tests-after-a-deploy)). |
+| `rollback-live-frontend.yml` | Manual | Puts an earlier frontend release back live in an environment (prod included), with no rebuild: one of the last 10 builds each deploy and promote keeps under `releases/<sha>/` in the bucket (CI-07). Empty `git_sha` means the release before the one live now; see [infra-operations.md](infra-operations.md#rolling-the-frontend-back-rollback-live-frontendyml). Ends with a smoke test of the restored site |
+| `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required), then smoke-tests the live site (`scripts/smoke.sh`) |
+| `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK (arm64-v8a only) for the selected environment (`dev`, `sbx`, `stg`, `prod`) and points `latest.json` (what `/api/v1/downloads/apk` serves) at it. A first `validate` job, with no environment, refuses `prod` unless the run is on the default branch (`main`); it doesn't check that CI passed on the commit, so merge only green commits |
+| `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment, on a fixed `macos-15` image (its default Xcode). The same `validate` job: `prod` only from the default branch |
+| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks on their current task definition, without a new build: picks up rotated Secrets Manager values. A changed env var or size from Terraform isn't picked up: `terraform-live-backend` apply registers it, `deploy-live-backend` rolls it out. `service`: `all` or a comma-separated list, resolved from the `ecs_services` SSM list; services restart in parallel. Then a `smoke` job checks the public path: `/api/health` through CloudFront, the edge function and the ALB, and a 401 for `/api/v1/users/me` with no token (`scripts/smoke.sh`, see [Smoke tests after a deploy](#smoke-tests-after-a-deploy)). |
+
+### Smoke tests after a deploy
+
+The rollouts already wait for each task's own `/health` and roll back containers that won't start (the ECS circuit breaker). The smoke tests check what those can't: the path a user's request takes. They're anonymous HTTPS requests to the environment's public host (`SUBDOMAIN`/`DOMAIN_NAME`, as the edge names it), retried for up to 2 minutes while CloudFront and the ALB catch up, in [`scripts/smoke.sh`](../scripts/smoke.sh) (tested by `scripts/smoke.test.sh`, which `check.sh` and `check.yml` run).
+
+| After | Checks |
+|---|---|
+| `deploy-live-backend`, `promote-live-backend`, `restart-live-backend` (a `smoke` job, once every region has rolled out) | `GET /api/health` answers 200 with `status: ok`. On a deploy that included `shared`, the region that answered must serve this commit when it's one of the regions just deployed. `GET /api/v1/users/me` with no token answers **401**: the edge function still refuses a request without a valid JWT |
+| `deploy-live-frontend`, `promote-live-frontend`, `rollback-live-frontend` (a step after the invalidation, before the deploys prune old assets) | `GET /version.json` names the commit just published (written into the build after `npm run build`; a rollback to a release saved before it existed skips this). `GET /` is HTML with HSTS, CSP, `X-Content-Type-Options` and `X-Frame-Options`; the page's main script loads as JavaScript; a client route gets the page (the SPA rewrite) |
+
+A failure fails the run with an `::error::` naming the check and what it got; nothing is rolled back automatically. Roll back with `rollback-live-frontend`, or redeploy or promote the previous backend release. The backend `smoke` job runs in no GitHub environment, so a target with required reviewers isn't asked twice; it reads the host from the job that ran there.
+
+**What they don't reach:** `/api/health` is a bootstrap path, so the edge function always sends it to the bootstrap region (`terraform-live-edge`'s `bootstrap_region`). A deploy that skips that region checks only the 200 and the 401. Other regions are reached only with a signed-in user located there, which these anonymous checks don't have.
+
+### Rules every workflow follows
+
+A change to a workflow keeps to these (production-readiness review SEC-06, SEC-07, CI-13):
+
+- **No `${{ }}` inside a `run:` script.** Map the value in the step's `env:` and use it quoted (`"$ENVIRONMENT"`), so an input, variable or step output can't inject shell. `run-name:`, `with:`, `if:` and `env:` may use expressions.
+- **Secrets only on the steps that need them.** Never in a job- or workflow-level `env:` (every step would see them, third-party actions included), and never written to `$GITHUB_ENV`. The Terraform secrets (`ORIGIN_VERIFY_SECRET`, `ORIGIN_VERIFY_SECRET_NEXT`, `GIT_ACTIONS_PAT`) are set on the `terraform plan` steps, plus the scheduler's `apply` and `destroy`, which don't use a saved plan; `apply tfplan.bin` reads them from the plan. `hashicorp/setup-terraform` runs with `terraform_wrapper: false`, so no Node wrapper sees them either.
+- **`id-token: write` only on the jobs that use AWS.** The workflow-level `permissions:` never grants it; each job that runs `configure-aws-credentials` (or, in `terraform-live-all`, calls a workflow that does) sets its own `permissions:`, which replaces the workflow's, so list `contents: read` there too. Every `actions/checkout` sets `persist-credentials: false`: no job pushes with git. zizmor checks both.
+- **Reusable workflows check their inputs first.** A `workflow_call` input is free text, so `terraform-live-backend`, `-edge` and `-frontend` and `deploy-live-backend` and `-frontend` start with a `validate` job with no `environment:` (so no secrets): `environment` must be `dev`, `sbx`, `stg` or `prod`, `action` one of `plan`, `apply`, `plan-destroy`, `destroy` and `drift`, and every region must be in `shared/routing.json`'s `regions`. The checks are in [`scripts/workflow-inputs.sh`](../scripts/workflow-inputs.sh), tested by `scripts/workflow-inputs.test.sh` (`check.sh` and `check.yml` run it).
+- **prod only runs what was promoted from stg** (CI-03). `deploy-live-backend` and `deploy-live-frontend` refuse prod (no dropdown choice, and their `validate` job refuses it through `workflow_call`), and `terraform-live-all` skips its deploy steps for prod. **prod infrastructure applies only a commit stg applied first:** a prod `apply` of `terraform-live-backend`, `-edge` or `-frontend` (on its own or through `terraform-live-all`) checks, in its `validate` job, that the same commit has a successful stg apply of that stack, on its own or in a full-stack run, and refuses otherwise (`check_stg_first` in `scripts/workflow-inputs.sh`, read from this repo's run history with `actions: read`). Apply a commit to stg first, then the same commit to prod; a newer commit needs its own stg apply. Every backend image is scanned with Trivy in the deploy before it's pushed and gets a `<tag>-scanned` ECR tag on the same digest; `promote-live-backend` promotes only marked images and marks them in the target.
+- **No AWS credentials while package code runs.** The frontend deploy and promote run `npm ci --ignore-scripts` and the build first, then configure AWS credentials for the S3 sync, invalidation and SSM steps. A missing edge apply therefore fails after the build, not before it. The job still has `id-token: write`, so a build step could in principle request its own OIDC token; only a separate build job without that permission would close it (see the review, CI-13).
 
 ## Code quality workflow (check.yml)
 
-[`check.yml`](../.github/workflows/check.yml) runs on pushes and pull requests targeting `main`, and can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has ten jobs. `backend-lint`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` needs `security-events: write`; `dependency-review` needs `pull-requests: write`).
+**Region inputs.** Every workflow that takes regions (`aws_regions`, `backend_regions`, `target_aws_regions`) takes them as free text: one region or a comma-separated list, such as `ap-south-1,eu-west-1`. A calling workflow may pass a JSON array instead. The first job checks each region against `shared/routing.json`'s regions and turns the list into the JSON array the later jobs read (`regions_json`, `scripts/workflow-inputs.sh`); `bootstrap_region` is free text too (`auto` or one of those regions). Terraform's region validations read the same file, so allowing a new region is one entry in `shared/routing.json` (TF-01); each environment still needs that region's own values (`vpc_cidrs`, its ACM certificate and buckets).
+
+[`check.yml`](../.github/workflows/check.yml) runs on pushes to `main`, on pull requests targeting `main` or `develop`, and weekly (Monday 03:23 UTC, against `main`); it can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has twenty-one jobs, arranged so the longest ones start first (a run takes about as long as its slowest job). `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, `terraform-lint`, `terraform-test`, the four `frontend-e2e-shard` jobs (Playwright) and `e2e` start in parallel immediately; the other tests start once their lint passes: `backend-test` after `backend-lint`, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `frontend-test` (Vitest) after `frontend-lint`; `frontend-app-test` (Jest) after `frontend-app-lint`; `backend-services` waits for the matrix and `frontend-e2e` for the shards; `image-scan` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` and `code-scanning` need `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 ### `backend-lint` (Python 3.13)
 
-The install step runs `pip install -r requirements.txt -r requirements-lint.txt`, picking up `ruff` and `mypy` versions from `backend/requirements-lint.txt` — the single source of truth shared with `check.sh`. All app packages are present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`. The pip cache key covers both files so a change to either invalidates the cache.
+The install step runs `pip install -r requirements-dev.txt -r requirements-lint.txt`, picking up `ruff`, `mypy` and `import-linter` versions from `backend/requirements-lint.txt` — the single source of truth shared with `check.sh`. `requirements-dev.txt` is the union of the services' pins, so every runtime package is present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`. The pip cache key covers both files so a change to either invalidates the cache.
 
 | Step | Tool | What it checks |
 |---|---|---|
 | `ruff check` | ruff 0.11.2 | Linting — unused imports, bugbear, naming, isort, … |
 | `ruff format --check` | ruff 0.11.2 | Formatting (black-compatible, line-length 100) — fails if any file is unformatted |
-| `mypy` | mypy 1.15.0 | Static type checking of `app/` and `tools/` against real package stubs (Python 3.13, `check_untyped_defs`) |
-| Mutant lists valid | `tools/mutate_handlers.py --check` | Every hand-built mutant still matches the current source exactly once and compiles (seconds). Never runs mutation testing itself — that is manual, see [mutation-testing.md](mutation-testing.md) |
+| `mypy` | mypy 1.15.0 | Static type checking of `tools/` and `common/` against real package stubs (Python 3.13, `check_untyped_defs`); each service is type-checked in its own `backend-service` job |
+| Service tree valid | `tools/services.py --check` | Every directory under `backend/` with a `requirements.txt` is a well-formed service, and no spec in `backend/openapi/` is orphaned |
+| import-linter | `tools/import_contracts.py` | Service import boundaries: `common` never imports service code, and services never import each other (contracts generated from the services in the tree) |
+| Install common | `pip install ./common './common[generation,uploads]'` | The shared `buddy-common` package installs on its own and with each extra, the way every service image installs it |
 
 ### `frontend-lint` (Node.js 22)
 
 | Step | Tool | What it checks |
 |---|---|---|
+| API clients in sync | `scripts/sync-api-clients.mjs --check` | Both apps' typed API files (`frontend/src/api/generated`, `frontend-app/src/api/generated`) match `backend/openapi/*.json` |
 | `eslint` | ESLint (via `npm run lint`) | React/hooks rules, unused imports, security (`eslint-plugin-security`) — covers `src/**` excl. `components/ui/` |
 | `prettier --check` | Prettier (devDependency) | JS/JSX/CSS formatting across `src/**` — fails if any file is unformatted or has unsorted Tailwind classes (`prettier-plugin-tailwindcss`) |
 | `typecheck` | tsc (via `npm run typecheck`) | JSDoc type checking (`checkJs`) across `src/**` excl. `components/ui/` |
 | `build` | Vite (via `npm run build`) | Production build — catches import errors and missing assets |
 | bundle size | bash + `wc` | Ensures the main JS bundle stays ≤ 1.4 MB (current: ~1.08 MB) |
+
+### `frontend-test` (needs: frontend-lint)
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Component tests | Vitest (via `npm test`) | Components and logic in jsdom, no server or API (`src/**/*.test.{ts,tsx}`) |
+
+### `frontend-e2e-shard` (4 shards) and `frontend-e2e`
+
+The browser tests took about 13 minutes on one runner, the workflow's longest path, so they run in 4 shards side by side (`--shard=N/4`, no lint gate), and `frontend-e2e` (the check a ruleset names, "Frontend Browser Tests (Playwright)") passes only when every shard did and their merged coverage is over the floor.
+
+| Job | Tool | What it checks |
+|---|---|---|
+| `frontend-e2e-shard` | Playwright (`npm run test:e2e:shard -- --shard=N/4`) | A quarter of the tests: the app in Playwright's Chromium against a stubbed API (`e2e/`), at phone, tablet and desktop widths. Each keeps its raw coverage (`COVERAGE_RAW=1`, `coverage/raw`) as an artifact; screenshots and traces are uploaded on a failure. Chromium is cached by Playwright's version |
+| `frontend-e2e` | `e2e/coverage-merge.mjs`, then `e2e/coverage-floor.mjs` | Every shard passed; their raw coverage merged with the settings a single run uses (`e2e/coverage-options.mjs`, shared with `playwright.config.ts`), and the merged lines over the 90% floor. The merged report is uploaded |
+
+Locally, `npm run test:e2e:ci` (and `check.sh`) still runs the suite in one go, with the same coverage settings and floor.
 
 ### `frontend-app-lint` (Node.js 22)
 
@@ -52,6 +101,11 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 | `eslint` | ESLint (via `yarn lint`) | React Native/hooks rules, unused imports, security — covers `frontend-app/src/**` |
 | `prettier --check` | Prettier (devDependency) | TS/TSX formatting across `src/**/*.{ts,tsx}` — fails if any file is unformatted |
 | `typecheck` | tsc (`--noEmit`) | TypeScript type checking across `frontend-app/src/**` |
+
+### `frontend-app-test` (needs: frontend-app-lint)
+
+| Step | Tool | What it checks |
+|---|---|---|
 | Jest (unit tests) | Jest (via `yarn test --ci`) | The `frontend-app` unit tests (`__tests__/`, `src/__tests__/`) |
 
 ### `terraform-lint`
@@ -59,10 +113,22 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 | Step | Tool | What it checks |
 |---|---|---|
 | `terraform fmt -check -recursive` | Terraform 1.16.4 | Formatting across all four infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`) — fails if any `.tf` file is unformatted |
-| `tflint (infra-live-backend)` | tflint 0.62.1 | Deprecated syntax, unused variables, wrong argument types and best-practice violations in backend infra |
-| `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
-| `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
-| `tflint (infra-live-scheduler)` | tflint 0.62.1 | Same for scheduler infra (EventBridge Scheduler) |
+| `terraform validate` | Terraform 1.16.4 | Every stack and module (`init -backend=false`, no credentials): misspelled arguments or attributes, wrong types, missing references (CI-15) |
+| `tflint --init` | tflint 0.62.1 | Installs the plugins [`.tflint.hcl`](../.tflint.hcl) names: the AWS ruleset (`tflint-ruleset-aws` 0.49.0) |
+| `tflint (infra-live-backend)` | tflint 0.62.1 + AWS ruleset | Deprecated syntax, unused variables, wrong argument types and best-practice violations, plus AWS values Terraform can't check itself (invalid instance and node types, engine versions, enum values) in backend infra |
+| `tflint (infra-live-edge)` | tflint 0.62.1 + AWS ruleset | Same for edge infra (CloudFront / WAF / DNS) |
+| `tflint (infra-live-frontend)` | tflint 0.62.1 + AWS ruleset | Same for frontend infra (S3 bucket policy) |
+| `tflint (infra-live-scheduler)` | tflint 0.62.1 + AWS ruleset | Same for scheduler infra (EventBridge Scheduler) |
+| `tflint (modules)` | tflint 0.62.1 + AWS ruleset | Each shared module under `modules/` on its own |
+
+### `terraform-test`
+
+Runs alongside `terraform-lint`, so the tests don't wait for validate and tflint. Both jobs keep the Terraform providers in an Actions cache between runs, keyed by the lock files.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| `terraform test` (modules + `infra-live-backend`) | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, against mock providers (no credentials, nothing created) |
+| `terraform test` per environment | Terraform 1.16.4 | All four stacks once per environment with its own tfvars (`tests/envs`), against mock providers |
 
 ### `lambda-edge-test` (Node.js 22)
 
@@ -70,55 +136,86 @@ Renders `infra-live-edge/functions/jwt-validator-lambda.js.tpl` through a real `
 
 | Step | Tool | What it checks |
 |---|---|---|
-| `node --test jwt-validator-lambda.test.js` | Node's built-in test runner | JWT validation, location-based routing (cookie/header/Bearer-token priority, mobile vs web), 401/503 fail-closed behavior, `cn`/`ru` exclusion — 14 test cases |
+| Routing data in sync | `scripts/sync-routing.mjs --check` | The generated copies of `shared/routing.json` (backend and both frontends) are up to date |
+| Gateway config in sync | `scripts/sync-gateway.mjs --check` | `local/gateway/nginx.conf` matches `shared/service-routes.json` |
+| `node --test jwt-validator-lambda.test.js` | Node's built-in test runner | JWT validation, location-based routing (cookie/header/Bearer-token priority, mobile vs web), 401/503 fail-closed behavior, `cn`/`ru` exclusion |
+| `node --test spa-rewrite.test.js` | Node's built-in test runner | The SPA-rewrite CloudFront Function |
+| `ecs-services.test.sh`, `fill-service-secrets.test.sh` | bash, against a fake `aws` CLI | The deploy / restart / promote helpers and terraform-live-backend's first-apply secret fill (no AWS access) |
+| Service lists match services.tf | `scripts/check-service-lists.sh` | The runtimes named in the deploy / restart / promote `service` input help text match `services.tf`, in `deploy_order` |
+| ShellCheck | shellcheck | Every tracked shell script (`git ls-files '*.sh'`), `check.sh` included |
+| actionlint | actionlint v1.7.12 (release tarball, SHA-256 checked) | Every workflow: expressions, job and step references, inputs and outputs, and each `run:` script through ShellCheck |
 
 ### `backend-test` (Python 3.13, needs: backend-lint)
 
-Runs after `backend-lint` passes. Spins up MongoDB and Redis as Docker service containers so the FastAPI app can connect to real dependencies — identical to the dev environment. A fresh RSA key pair is generated on the fly with `openssl genrsa 2048` and written to `$GITHUB_ENV` so the job never fails due to a missing secret configuration.
+Runs after `backend-lint` passes, for the shared package and the tools (each service has its own job below). Valkey runs as a service container; MongoDB 8.0 is started as a single-node replica set by `scripts/ci-start-mongo.sh` (a service container can't pass `--replSet`, and change streams and transactions need a replica set), the same way `docker-compose.yml` runs it.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| `pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99` | pytest 8.3.4 + pytest-cov 6.0.0 | All tests under `backend/tests/`, with line + branch coverage gated at 99% (currently ~99.96%). `MONGODB_TEST_URI` and `REDIS_URL` point the real-Mongo/Redis integration tests at the service containers, and `REQUIRE_LIVE_SERVICES=1` makes a skipped one fail the job instead of passing silently |
+| `pytest common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99` | pytest 8.3.4 + pytest-cov 6.0.0 | `backend/common/` and `backend/tools/` tests, with `common`'s line + branch coverage gated at 99%. `MONGODB_TEST_URI` and `REDIS_URL` point the live Mongo/Valkey tests at the instances above, and `REQUIRE_LIVE_SERVICES=1` makes a skipped one fail the job instead of passing silently |
 
 Coverage reports are printed to the job log with `--cov-report=term-missing` so uncovered lines are visible without downloading an artifact.
 
-### `dast` (needs: backend-lint + frontend-lint + frontend-app-lint)
+### `backend-service-list`, `backend-service`, `backend-services` (Python 3.13)
 
-Runs dynamic application security testing against a live backend instance. Like `backend-test`, it spins up MongoDB and Redis service containers and starts FastAPI with `uvicorn` in the background, then polls `GET /health` for up to 60 seconds before running any scan. All scan steps carry `continue-on-error: true`; a final gate step collects outcomes and fails the job after all tools complete.
+`backend-service-list` finds the services from the tree (`tools/services.py --json`), so a new service gets its job without editing the workflow. `backend-service` is a matrix with one job per service (`fail-fast: false`), each with its own Valkey container and replica-set MongoDB. Each installs only its own `requirements.txt` plus the test and lint tools (`scripts/install-backend-service.sh`), the way its image does, which proves the file is complete.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| openapi.json up to date | `backend/tools/export-openapi.py` + `git diff` | Regenerates the spec from the code and fails if the committed `openapi.json` differs — i.e. someone changed an endpoint without regenerating and committing it |
-| Spectral (OpenAPI lint) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Lints the exported `openapi.json` against `.spectral.yaml` — every operation must declare a security scheme, have a unique `operationId`, and be tagged |
-| Nuclei (DAST) | nuclei v3.3.9 | Probes `http://localhost:8000` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
+| `mypy <service>/` | mypy 1.15.0 | The service's own code, with only its own packages installed |
+| `pytest <service>/tests --cov=<service> --cov-branch --cov-fail-under=99` | pytest + pytest-cov | The service's tests, line + branch coverage gated at 99% |
+| OpenAPI spec up to date | `tools/export-openapi.py --service <service>` + `git status` | Regenerates `backend/openapi/<service>.json` from the code and fails if the committed copy is missing or differs, i.e. someone changed an endpoint without regenerating and committing it. A service without an `app/main.py` would be skipped (every service has one today) |
+
+`backend-services` is one stable check name for branch protection: it passes only if the list job succeeded and every matrix job passed.
+
+### `dast` (needs: backend-lint + frontend-lint + frontend-app-lint)
+
+Runs dynamic application security testing against the local stack (`docker-compose.yml`) started in the job, fronted by its nginx gateway the way the ALB fronts the services: every service and worker, Mongo, Valkey and Moto. The job writes a `.env` with throwaway values (a fresh `JWT_PRIVATE_KEY` from `openssl genrsa 2048`, a random `EMAIL_HMAC_PEPPER`) ; everything else is compose's defaults, the test values (the `mongo` container, and the `moto` service for every AWS call, S3 included), so it never reaches Atlas or AWS. It runs `docker compose up -d --build`, which builds Moto and creates its topics, queues and buckets (`moto-setup`) before the services start. It waits up to 3 minutes for `http://localhost:8088/gateway/health` and each service's `/health` (read inside its container) before running any scan (`scripts/ci-wait-stack.sh`, which `e2e` uses too). Both scan steps carry `continue-on-error: true`; a final gate step collects outcomes and fails the job after all tools complete.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Spectral (service OpenAPI specs) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Lints the committed `backend/openapi/*.json` against `.spectral.yaml` — every operation must declare a security scheme and have a unique `operationId` (errors); tags, descriptions and `info.contact` are warnings. The `backend-service` jobs check each spec matches its code |
+| Nuclei (DAST) | nuclei v3.3.9 | Probes the gateway at `http://localhost:8088` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
+
+### `e2e`
+
+Runs the end-to-end journeys in `scripts/e2e` (build plan 6.1, 6.2) against the local stack, as `RUN_E2E=1 ./check.sh` does: `full-journey.py` (every endpoint through the gateway and every kind of generation), `account-deletion.py` (nothing of a deleted account is left in Mongo, Valkey or Moto) and `convergence.py` (killed workers, late events and finishing jobs converge). The job writes a `.env` with a fresh `JWT_PRIVATE_KEY`, a random `EMAIL_HMAC_PEPPER` and the `ci` environment's `OPENAI_API_KEY`, then starts the stack in test mode (`docker compose --env-file .env --env-file .env.test up -d --build`: every service on the `mongo` container and Moto), which `scripts/e2e/stack.py` requires. It waits for the stack with `scripts/ci-wait-stack.sh`. The three scripts are separate steps; the second and third run even if an earlier one failed, and on a failure the job prints the containers' state and their last 200 log lines.
+
+The generations are real provider calls, about 20 a run (cents with `gpt-5.4-mini`). At about 8 minutes it's one of the longest jobs, so it starts at once rather than after the backend's tests (a broken backend spends a few cents). It's skipped where GitHub gives no secrets (fork and Dependabot pull requests). It fails at once, naming the setting, if the `ci` environment has no `OPENAI_API_KEY`.
+
+**Setup, once:** Settings → Environments → **New environment** `ci`, then add the secret `OPENAI_API_KEY`. Use a key of its own (an OpenAI project for CI) with a low monthly budget limit, not a deployed environment's key: it reaches pull requests from this repository's branches, and a separate key can be revoked or capped without touching dev, stg or prod. No deployment protection rules on `ci`: a required reviewer would hold every PR's checks.
 
 ### `security-scan`
 
-All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The final group builds the backend Docker image to scan OS-level CVEs inside the Debian base layer. Steps are grouped by the runtime they require.
+All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The service images are scanned in a job of their own, `image-scan` (below), so the two run side by side. Steps are grouped by the runtime they require.
 
 | Step | Tool | What it checks |
 |---|---|---|
 | Gitleaks | gitleaks v8.30.1 (CLI) | Full git history — accidentally committed secrets, API keys, private keys, tokens |
-| Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
-| Bandit | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
-| Semgrep | semgrep 1.167.0 (`p/security-audit`) | `backend/app/`, `backend/tools/`, `frontend/src/`, `frontend-app/src/` — advanced Python and JavaScript/React SAST patterns |
-| pip-audit | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 and PYSEC-2026-175/177/178/179 suppressed (PyJWT CVEs with no available fix version at time of writing) |
-| Checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM) |
-| npm audit | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
-| Retire.js | retire (devDependency) | `frontend/` — browser library CVEs not always caught by npm audit |
-| Trivy (backend fs) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL CVEs in Python packages using the Trivy advisory DB (complements pip-audit) |
-| Trivy (frontend fs) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL CVEs in npm packages using the Trivy advisory DB (complements npm audit) |
-| Trivy (backend license) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) in Python packages |
-| Trivy (frontend license) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL license violations in npm packages |
-| Trivy (frontend SBOM) | trivy-action 0.36.0 | `frontend/` — generates `sbom-frontend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
+| Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` and `frontend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
+| Bandit | bandit 1.9.4 | `backend/tools/`, `backend/common/` and each service directory — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
+| Semgrep | semgrep 1.179.0 (`p/security-audit`) | `backend/tools/`, `backend/common/`, each service directory, `frontend/src/`, `frontend-app/src/` — advanced Python and JavaScript/React SAST patterns |
+| pip-audit | pip-audit 2.9.0 | Each service's `requirements.txt` (`scripts/audit-backend-services.sh`; the `buddy-common` line is left out) — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 suppressed (disputed, no fix) |
+| zizmor | zizmor 1.32.0 (`requirements-security.txt`) | `.github/` (the workflows and `dependabot.yml`), offline — script injection through `${{ }}`, broad token permissions, persisted checkout credentials, unpinned actions, Dependabot cooldown. Exceptions, each with its reason, are in `.github/zizmor.yml` |
+| Checkov | checkov 3.2.529 | Every Terraform root and module (`infra-live-*/terraform/`, `modules/`), in one scan from the repo root (given several `-d`, this version scans only the first) — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM). Also written as SARIF |
+| npm audit / yarn audit | npm, yarn | `frontend/` and `frontend-app/` — dependency CVE scans (high/critical only, known no-fix dev-tooling advisories ignored) |
+| Retire.js | retire (devDependency) | `frontend/` and `frontend-app/` — browser library CVEs not always caught by npm audit |
+| Trivy (fs) | trivy-action 0.36.0 | `backend/`, `frontend/`, `frontend-app/` — HIGH/CRITICAL CVEs in Python and npm packages using the Trivy advisory DB (complements pip-audit / npm audit) |
+| Trivy (license) | trivy-action 0.36.0 | `backend/`, `frontend/`, `frontend-app/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) |
+| Trivy (frontend SBOMs) | trivy-action 0.36.0 | `frontend/` and `frontend-app/` — generate `sbom-frontend.cyclonedx.json` and `sbom-frontend-app.cyclonedx.json` (CycloneDX), uploaded as 90-day workflow artifacts |
 | Trivy config (infra-live-backend) | trivy (CLI) | `infra-live-backend/terraform/` — IaC security misconfigurations using Trivy's built-in Terraform rule set (tfsec successor); complements Checkov with a second rule database; `trivy config` accepts one directory at a time |
 | Trivy config (infra-live-edge) | trivy (CLI) | `infra-live-edge/terraform/` — same |
 | Trivy config (infra-live-frontend) | trivy (CLI) | `infra-live-frontend/terraform/` — same |
 | Trivy config (infra-live-scheduler) | trivy (CLI) | `infra-live-scheduler/terraform/` — same |
-| Docker build (image scan) | docker | Builds `superpower-backend` image once; shared by the three image-level checks below |
-| Trivy (backend image) | trivy-action 0.36.0 | Built `superpower-backend` Docker image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (unfixed only) |
-| Trivy (backend image SBOM) | trivy-action 0.36.0 | Built `superpower-backend` image — generates `sbom-backend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
-| Dockle | dockle (installed from release tarball) | Built image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
+| Trivy config (modules) | trivy (CLI) | `modules/` — same |
+| Trivy config (SARIF report) | trivy (CLI) | The whole repo, HIGH/CRITICAL, as SARIF for code scanning; reporting only (the five steps above gate) |
+| Build the service images | docker | Builds `superpower-<service>:scan` for every service (`--build-arg SERVICE=<service>`); shared by the three image-level checks below |
+| Trivy (service image scans) (`image-scan` job) | trivy (CLI) | Each service image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (fixed ones only, `--ignore-unfixed`); the error names the failing services |
+| Dockle (`image-scan` job) | dockle (installed from release tarball) | Each service image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
+| SBOMs (service images) | trivy (CLI) | One `sbom-backend-<service>.cyclonedx.json` per service image, uploaded together as the `sbom-backend` 90-day workflow artifact |
+
+### `image-scan` (needs: backend-lint)
+
+Builds one image per service (`backend/Dockerfile` with `--build-arg SERVICE=<service>`, services found by `backend/tools/services.py`), then scans each: Trivy for OS-level HIGH/CRITICAL CVEs in the Debian base layer (fixed ones only), Dockle for the CIS Docker Benchmark, and a CycloneDX SBOM per image (the `sbom-backend` artifact). Trivy is the version `security-scan`'s steps use (`aquasecurity/setup-trivy`). Like `security-scan`, both scans run to the end and a final step fails the job naming the ones that failed. It was the last part of `security-scan` (the builds were about 3 of its 9 minutes).
 
 ### `codeql`
 
@@ -126,18 +223,26 @@ Runs two matrix jobs in parallel after `backend-lint`, `frontend-lint`, and `fro
 
 | Matrix | Language | What it checks |
 |---|---|---|
-| `python` | Python 3.13 | `backend/app/` — dataflow and taint analysis, injection flaws, insecure API usage (`security-extended` query suite) |
-| `javascript-typescript` | JavaScript/JSX | `frontend/src/` — XSS, prototype pollution, unsafe regex, DOM-based vulnerabilities (`security-extended` query suite) |
+| `python` | Python 3.13 | The repository's Python (the backend services, `backend/common/`, `backend/tools/`, `scripts/`) — dataflow and taint analysis, injection flaws, insecure API usage (`security-extended` query suite) |
+| `javascript-typescript` | JavaScript/TypeScript | `frontend/src/` and `frontend-app/src/` — XSS, prototype pollution, unsafe regex, DOM-based vulnerabilities (`security-extended` query suite) |
 
 CodeQL requires `security-events: write` permission (set at the job level) to upload SARIF results. It cannot be run locally — it runs only in GitHub Actions CI.
 
+### `code-scanning`
+
+Uploads the security scan's SARIF reports (semgrep, checkov, trivy config: the `sarif-reports` artifact, kept 7 days) to **Security → Code scanning**, one category per tool, next to CodeQL's, so findings keep a triage history (production-readiness review, CI-08). It's a separate job so `security-events: write` never reaches the job that runs the scanners. It runs even when the scan failed, and is skipped where GitHub gives a read-only token: pull requests from forks and Dependabot.
+
+**Repository settings that would make these results gate merges** (Settings → Rules → Rulesets, on `main`; they live in GitHub, not in this repo). Not set today: with one maintainer, the results are read before merging instead. Add them when more people work on the repo:
+- **Require status checks to pass:** the `Check` workflow's jobs (at least `Security Scan`, `CodeQL`, the backend and frontend jobs).
+- **Require code scanning results:** CodeQL, with security alerts at High or higher (and alerts at Error) blocking. Add semgrep, checkov and trivy-config too once their first results have been triaged.
+
 ### `dependency-review`
 
-Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v4` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. Posts a summary comment on the PR. It runs independently of other jobs and does not block push pipelines.
+Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v5` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. When it fails, it posts a summary comment on the PR (`comment-summary-in-pr: on-failure`, CI-17); otherwise the summary is in the job log. It runs independently of other jobs and does not block push pipelines.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| Dependency Review | dependency-review-action v4 | Newly added or changed dependencies in `package-lock.json` / `requirements.txt` that have HIGH/CRITICAL CVEs — blocks merge if any are found |
+| Dependency Review | dependency-review-action v5 | Newly added or changed dependencies (e.g. `package-lock.json`, `yarn.lock`, the services' `requirements.txt`) that have HIGH/CRITICAL CVEs — blocks merge if any are found |
 
 ## One-time AWS setup: GitHub OIDC identity provider
 
@@ -204,9 +309,9 @@ They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID for this environment's `DOMAIN_NAME`. The zone must be in the **same AWS account** as this environment's `ROLE_ARN` (both the public CloudFront record and the internal ALB records are written into it), so prod's zone lives in the prod account. A subdomain zone needs NS delegation from its parent zone. |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
 | `GLOBAL_LOGGING_BUCKET_NAME` | Pre-existing S3 bucket in `us-east-1` for the edge module's CloudTrail trail and/or WAF Firehose logs (`terraform-live-edge` only; required on prod, and whenever `enable_cloudtrail` or `enable_waf_logging` is true) |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — public keys only, by design. Embedded in the Lambda@Edge JWT validator by `terraform-live-edge`, and passed to auth, admin and the API by `terraform-live-backend` (admin and the API verify with these keys only). **Required**: `terraform-live-backend` fails before apply unless its `JWT_KEY_ID` entry is the public half of `JWT_PRIVATE_KEY`. See [docs/jwt-keys.md](jwt-keys.md). |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — public keys only, by design. Embedded in the Lambda@Edge JWT validator by `terraform-live-edge`, and passed to every backend service by `terraform-live-backend` (every service but auth verifies with these keys only). **Required**: `terraform-live-backend` fails before apply unless its `JWT_KEY_ID` entry is the public half of `JWT_PRIVATE_KEY`. See [docs/jwt-keys.md](jwt-keys.md). |
 | `JWT_KEY_ID` | The `kid` auth signs with. Optional: defaults to `key-v1` when unset. Change it only during a key rotation (see [docs/jwt-keys.md](jwt-keys.md)). |
-| `OPS_EMAIL` | Operator (preferably team/distribution-list) email for the CloudWatch alarm SNS subscription. Required only when `enable_ops_email = true` (prod by default) — Terraform's own validation enforces this, the workflow does not. Shows in logs, so keep it a team address. |
+| `OPS_EMAIL` | Operator (preferably team/distribution-list) email for the CloudWatch alarm SNS subscriptions: the backend's (`enable_ops_email = true`), the edge stack's us-east-1 topic (`enable_alarms = true`) and the scheduler's dispatcher alerts (`enable_alarms = true`, stg only). The first two are on in stg and prod, so set it in both environments; Terraform's own validation enforces this, the workflow does not. Confirm each subscription email SNS sends after the first apply. Shows in logs, so keep it a team address. |
 
 ### Variables — application config (injected into ECS task environment by `terraform-live-backend.yml`)
 
@@ -230,24 +335,30 @@ They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS
 | Secret | Value |
 |---|---|
 | `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) — see [docs/jwt-keys.md](jwt-keys.md) for generation instructions. Reaches only the auth service. |
-| `MONGODB_URI` | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
-| `REDIS_AUTH_TOKEN` | AUTH token for the ElastiCache Redis replication group (required — no default). Must be 16–128 printable ASCII characters, no spaces/quotes/`@`/`/`. |
-| `OPENAI_API_KEY` | OpenAI key — at least one of `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY` is required (the backend refuses to start without one) |
+| `MONGODB_URIS` | JSON object, service → that service's own connection string, on **this environment's own Atlas cluster** (never shared between environments: the database names are the same everywhere). One database user per service, `<APP_NAME>-<env>-<service>` with `readWrite` plus the `collMod` action on its own database only (a custom role: each service keeps its collections' `$jsonSchema` validators current with `collMod`, which `readWrite` lacks), e.g. `{"auth": "mongodb+srv://superpower-sbx-auth:<pass>@<cluster-host>/?retryWrites=true&w=majority&appName=superpower-sbx-auth", "users": "…"}`. Needs every service with a database: `auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release` (not `shared`); `terraform-live-backend` refuses to fill any secret if one is missing. No database name in the path: each service uses `MONGODB_DB_NAME`, its own name. URL-encode special characters in passwords. stg and prod: the cluster's private-endpoint (`-pl-0`) host. |
+| `EMAIL_HMAC_PEPPER` | Auth's pepper for the email lookup hash: a long random string, e.g. `openssl rand -hex 32`. The same in every region of the environment; reaches only the auth service. Back it up: losing it makes every email lookup unmatchable, and changing it needs the versioned rotation in [auth-users-split.md](auth-users-split.md) 6.5. |
+| `OPENAI_API_KEY` | OpenAI key — at least one of `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY` is required (the generating services refuse to start without one); an unset one stays `REPLACE_ME` in their secrets |
 | `ANTHROPIC_API_KEY` | Anthropic key (see `OPENAI_API_KEY`) |
 | `GEMINI_API_KEY` | Google Gemini key (see `OPENAI_API_KEY`) |
 | `ORIGIN_VERIFY_SECRET` | Shared secret CloudFront attaches as the `X-Origin-Verify` header on every request to the backend ALB; the ALB listener rules reject anything without a matching header, so a request that reaches the ALB via CloudFront's shared IP range but bypassed this app's own distribution (and therefore its Lambda@Edge JWT check) gets a fixed 403. **Must be identical** between `terraform-live-backend` and `terraform-live-edge` — both read it from this same secret. |
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Optional — set only during a rotation.** While set, every ALB accepts it as well as `ORIGIN_VERIFY_SECRET`, and CloudFront sends it instead. See [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret). |
-| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
+| `GIT_ACTIONS_PAT` | A **fine-grained** GitHub token for the scheduler's Lambda dispatcher, which lists `terraform-live-all`'s recent runs and starts one. Repository access: only this repository; permission: **Actions: Read and write**, nothing else (Metadata: Read is added automatically). Don't use a classic token: its `repo` + `workflow` scopes reach every repository the account can (SEC-03). It expires (up to a year): renew it, update the secret, and run `terraform-live-scheduler` (apply). Used by `terraform-live-scheduler.yml`. |
 
-### Secrets — mobile build (`build-ios-ipa.yml`)
+### Mobile build (`build-ios-ipa.yml`)
 
-| Secret | Value |
+The IDs are environment **variables**: like `GOOGLE_CLIENT_ID`, neither is a credential (the
+client ID is compiled into the app, and the Team ID appears in every app the team signs). Only
+the signing material is secret. The signing Team ID comes from the provisioning profile itself
+(its `TeamIdentifier`), so the two can't disagree; `IOS_APPLE_TEAM_ID` is optional, and when set
+the build fails unless it's the profile's team.
+
+| Name (kind) | Value |
 |---|---|
-| `IOS_CLIENT_ID` | OAuth 2.0 iOS client ID for Google Sign-In in the Expo app |
-| `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded `.p12` code-signing certificate |
-| `IOS_CERTIFICATE_PASSWORD` | Password for the `.p12` certificate |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded mobile provisioning profile |
-| `IOS_APPLE_TEAM_ID` | Apple Developer Team ID used for code signing |
+| `IOS_CLIENT_ID` (variable) | OAuth 2.0 iOS client ID for Google Sign-In in the Expo app |
+| `IOS_APPLE_TEAM_ID` (variable, optional) | Apple Developer Team ID; only checked against the profile's team |
+| `IOS_CERTIFICATE_P12_BASE64` (secret) | Base64-encoded `.p12` code-signing certificate |
+| `IOS_CERTIFICATE_PASSWORD` (secret) | Password for the `.p12` certificate |
+| `IOS_PROVISIONING_PROFILE_BASE64` (secret) | Base64-encoded mobile provisioning profile |
 
 `build-android-apk.yml` needs no Android-specific values beyond ones already listed above (`SUBDOMAIN`, `DOMAIN_NAME`, `GOOGLE_CLIENT_ID`, `ROLE_ARN`, `ASSETS_BUCKET_NAME` — all variables).
 

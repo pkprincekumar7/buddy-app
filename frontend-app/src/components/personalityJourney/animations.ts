@@ -255,3 +255,23 @@ export function tagBob(liftPx: number): CSSAnimationProperties {
     1.7,
   );
 }
+
+/**
+ * A fading-in view's style before its CSS animation takes hold: transparent. Reanimated applies
+ * an animation's first keyframe a frame after the view is first drawn, so without this the view
+ * flashes in fully drawn, then drops to its `from` and fades in. Visible under reduced motion, in
+ * case the animation doesn't run.
+ */
+export const preEnter = (reduced: boolean) => ({ opacity: reduced ? 1 : 0 });
+
+/** The prototype's landIn (web .journey-screen-in): the orb screen settles in from a little
+ *  closer, .6s. */
+export const LAND_IN: CSSAnimationProperties = {
+  animationName: {
+    from: { opacity: 0, transform: [{ scale: 1.08 }] },
+    to: { opacity: 1, transform: [{ scale: 1 }] },
+  },
+  animationDuration: '0.6s',
+  animationTimingFunction: cubicBezier(0.22, 1, 0.36, 1),
+  animationFillMode: 'both',
+};

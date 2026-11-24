@@ -16,15 +16,18 @@ import {
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { TtsProvider } from '@/lib/TtsContext';
+import { ViewModeProvider, useViewMode } from '@/lib/ViewModeContext';
+import { allowedInChildView, childViewHome } from '@/lib/childView';
 import { AmbientAudioProvider } from '@/lib/AmbientAudioContext';
 import { AppThemeProvider } from '@/lib/theme';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
 
 const AdminAllowedEmails = lazy(() => import('./pages/AdminAllowedEmails'));
+// Not in pagesConfig.Pages: that would also serve a bare /Kids, which has no child.
+const KidsMode = lazy(() => import('./pages/KidsMode'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -32,16 +35,27 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   hasError: boolean;
+  /** A page's code failed to load (offline, or a deploy replaced it): only a reload helps,
+   *  since React.lazy keeps the failed import. */
+  chunkFailed: boolean;
+}
+
+/** Whether `error` is a page's code that failed to load (Chrome, Firefox, Safari wording). */
+function isChunkLoadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk/i.test(
+    message,
+  );
 }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, chunkFailed: false };
   }
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+    return { hasError: true, chunkFailed: isChunkLoadError(error) };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -55,7 +69,15 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <p className="max-w-lg text-center text-foreground">
             Something went wrong. Please refresh the page.
           </p>
-          <Button type="button" variant="action" onClick={() => this.setState({ hasError: false })}>
+          <Button
+            type="button"
+            variant="action"
+            onClick={() =>
+              this.state.chunkFailed
+                ? window.location.reload()
+                : this.setState({ hasError: false, chunkFailed: false })
+            }
+          >
             Try again
           </Button>
         </div>
@@ -141,6 +163,14 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
+      path="/Kids/:childId/:area"
+      element={
+        <LayoutWrapper currentPageName="Kids">
+          <KidsMode />
+        </LayoutWrapper>
+      }
+    />
+    <Route
       path="/PersonalityProfile/:childId"
       element={
         <LayoutWrapper currentPageName="PersonalityProfile">
@@ -217,6 +247,19 @@ function ScrollToTop() {
   return null;
 }
 
+/**
+ * In child view only the child's hub and kids page are open (docs/child-view-build-plan.md,
+ * 1.3); any other route, the browser's Back included, lands back on the child's circles.
+ */
+function ChildViewRoutes() {
+  const { view } = useViewMode();
+  const { pathname } = useLocation();
+  if (view.mode === 'child' && !allowedInChildView(pathname, view.childId)) {
+    return <Navigate to={childViewHome(view.childId)} replace />;
+  }
+  return <ProtectedRoutes />;
+}
+
 const AdminRoutes = () => (
   <Routes>
     <Route
@@ -224,6 +267,14 @@ const AdminRoutes = () => (
       element={
         <LayoutWrapper currentPageName="Admin">
           <AdminAllowedEmails />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/AccountSettings"
+      element={
+        <LayoutWrapper currentPageName="AccountSettings">
+          <Pages.AccountSettings />
         </LayoutWrapper>
       }
     />
@@ -272,10 +323,6 @@ function AppShell() {
     );
   }
 
-  if (authError?.type === 'user_not_registered') {
-    return <UserNotRegisteredError />;
-  }
-
   if (!isAuthenticated) {
     return <Navigate to="/Login" replace state={{ from: location.pathname }} />;
   }
@@ -284,7 +331,7 @@ function AppShell() {
     return <AdminRoutes />;
   }
 
-  return <ProtectedRoutes />;
+  return <ChildViewRoutes />;
 }
 
 function App() {
@@ -294,14 +341,16 @@ function App() {
         <Router>
           <ScrollToTop />
           <AuthProvider>
-            <NavigationTracker />
-            <TtsProvider>
-              <AmbientAudioProvider>
-                <ErrorBoundary>
-                  <AppShell />
-                </ErrorBoundary>
-              </AmbientAudioProvider>
-            </TtsProvider>
+            <ViewModeProvider>
+              <NavigationTracker />
+              <TtsProvider>
+                <AmbientAudioProvider>
+                  <ErrorBoundary>
+                    <AppShell />
+                  </ErrorBoundary>
+                </AmbientAudioProvider>
+              </TtsProvider>
+            </ViewModeProvider>
           </AuthProvider>
           <SonnerToaster position="bottom-center" />
         </Router>

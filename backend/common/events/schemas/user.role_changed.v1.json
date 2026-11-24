@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/user.role_changed.v1.json",
+  "title": "user.role_changed v1",
+  "description": "Reserved, not published: an account's role changed. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "parent",
+        "admin"
+      ]
+    }
+  },
+  "required": [
+    "role"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "role": "admin"
+    }
+  ]
+}

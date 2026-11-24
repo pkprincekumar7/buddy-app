@@ -4,10 +4,17 @@ import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
 import { useNavigate, useParams } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
-import Spinner from '@/components/shared/Spinner';
+import { children } from '@/api/children';
+import { ApiError } from '@/api/errors';
+import PageLoader from '@/components/shared/PageLoader';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { useKidQuests } from '@/hooks/useKidQuests';
+import { useKidWorlds } from '@/hooks/useKidWorlds';
+import { winsFrom } from '@/lib/kidsWins';
+import { daysAgo } from '@/api/kidWorlds';
+import { Button } from '@/components/ui/button';
 import PageScroll from '@/components/layout/PageScroll';
-import { css, rgb } from '@/theme';
+import { css, recipe, rgb } from '@/theme';
 
 import {
   caps,
@@ -21,7 +28,7 @@ import {
   ShieldIcon,
   PencilIcon,
   ToastBanner,
-  BASE_ITEMS,
+  connectItems,
   WA_CONTACTS,
   IG_DESTS,
   IG_BGS,
@@ -47,6 +54,7 @@ import {
 type ItemEdits = Partial<Record<'title' | 'caption', string>>;
 
 const EMPTY_ITEM: AccomplishmentItem = {
+  id: '',
   kind: '',
   when: '',
   title: '',
@@ -85,6 +93,10 @@ export default function Connect() {
   const [isLoading, setIsLoading] = useState(true);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
+  // A load that failed for any reason other than a redirect: shows Try again,
+  // which re-runs the load (and the visit) via reloadKey.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -99,20 +111,24 @@ export default function Connect() {
     let cancelled = false;
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        // Opening Connect records the visit (build plan 7.7): the last circle, done.
+        // Refused while Release isn't done, so it also gates the page.
+        const [child] = await Promise.all([
+          children.get(childId),
+          children.visitConnect(childId),
+        ]);
         if (cancelled) return;
-        if (!child) {
+        setChildName(child.name);
+        setChildAge(child.age === null ? '' : String(child.age));
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'circle_locked') {
+          void navigate(`/PersonalityJourney/${childId}`, { replace: true });
+        } else if (err instanceof ApiError && err.code === 'child_not_found') {
           void navigate('/Home', { replace: true });
-          return;
-        }
-        setChildName(child.name ?? '');
-        setChildAge(child.age != null ? String(child.age) : '');
-        // Mark Connect as visited — this advances which circle the
-        // DimensionCircles hub points to next (there is none left after this).
-        if (!child.connect_visited) {
-          api.entities.Child.markProgress(childId, 'connect_visited').catch(
-            console.error,
-          );
+        } else {
+          console.warn('[Connect] Load failed:', err);
+          setLoadFailed(true);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -121,43 +137,54 @@ export default function Connect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, reloadKey]);
 
+  // The wins the child chose in child view ("Show my grown-up", P.2), newest first, ahead of
+  // the page's own: the parent shares them from here.
+  // Then everything else the child has done there: quests, worlds, the badge, streaks.
+  const { activity: kidActivity, day } = useKidActivity(childId);
+  const { quests } = useKidQuests(childId);
+  const { worlds } = useKidWorlds(childId);
   const items = useMemo(
     () =>
-      BASE_ITEMS.map(it =>
-        it.title.includes('{name}')
-          ? {
-              ...it,
-              title: it.title.replace('{name}', childName || 'Your child'),
-            }
-          : it,
+      connectItems(
+        kidActivity?.shown ?? {},
+        kidActivity
+          ? winsFrom({ activity: kidActivity, quests, worlds, day })
+          : [],
+        childName,
+        daysAgo,
       ),
-    [childName],
+    [childName, kidActivity, quests, worlds, day],
   );
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  // The picked card and the parent's edits are kept by the item's id, not its place: the shown
+  // wins load after the page and go first, which moves every other item down.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [edits, setEdits] = useState<Record<number, ItemEdits>>({});
+  const [edits, setEdits] = useState<Record<string, ItemEdits>>({});
 
-  const currentItem = items[activeIndex] ?? items[0] ?? EMPTY_ITEM;
-  const currentEdit = edits[activeIndex] ?? {};
+  const currentItem =
+    items.find(it => it.id === activeId) ?? items[0] ?? EMPTY_ITEM;
+  const currentEdit = edits[currentItem.id] ?? {};
   const title = currentEdit.title ?? currentItem.title;
   const caption = currentEdit.caption ?? currentItem.caption;
   const touched =
     currentEdit.title !== undefined || currentEdit.caption !== undefined;
 
   const editField = (field: 'title' | 'caption', value: string) => {
+    // Editing keeps this card picked, so wins arriving after it don't take its place.
+    setActiveId(currentItem.id);
     setEdits(prev => ({
       ...prev,
-      [activeIndex]: { ...prev[activeIndex], [field]: value },
+      [currentItem.id]: { ...prev[currentItem.id], [field]: value },
     }));
   };
   const resetCard = () => {
     if (!touched) return;
     setEdits(prev => {
       const next = { ...prev };
-      delete next[activeIndex];
+      delete next[currentItem.id];
       return next;
     });
   };
@@ -286,22 +313,60 @@ export default function Connect() {
 
   if (isLoading) {
     return (
+      <PageLoader
+        style={{ backgroundColor: rgb('constellation-navy-deepest') }}
+        spinnerStyle={{
+          borderColor: rgb('constellation-cyan-bright', 0.6),
+          borderTopColor: 'transparent',
+        }}
+      />
+    );
+  }
+
+  if (loadFailed) {
+    return (
       <View
-        className="flex-1 items-center justify-center"
+        className="flex-1 items-center justify-center gap-4 px-4"
         style={{ backgroundColor: rgb('constellation-navy-deepest') }}
       >
-        <Spinner
-          style={{
-            borderColor: rgb('constellation-cyan-bright', 0.6),
-            borderTopColor: 'transparent',
+        <Text className="text-center text-muted-foreground">
+          We could not load this page. Please try again.
+        </Text>
+        <Button
+          onPress={() => {
+            setLoadFailed(false);
+            setIsLoading(true);
+            setReloadKey(k => k + 1);
           }}
-        />
+          className="rounded-2xl px-8 font-semibold text-primary-foreground"
+          style={recipe.btnPrimary}
+        >
+          Try again
+        </Button>
       </View>
     );
   }
 
   const name = childName || 'Your child';
   const cardData = { kind: currentItem.kind, title, caption, date: cardDate };
+
+  if (items.length === 0) {
+    return (
+      <View
+        className="flex-1 items-center justify-center gap-3 px-6"
+        style={{ backgroundColor: rgb('constellation-navy-deepest') }}
+      >
+        <Text className="text-center text-2xl font-bold text-foreground">
+          No wins to share yet
+        </Text>
+        <Text className="text-center text-muted-foreground">
+          When {childName || 'your child'} finishes a quest, plays a Grow world
+          or opens all seven superpowers in child view, it shows up here, ready
+          to share.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background">
@@ -565,12 +630,12 @@ export default function Connect() {
               </View>
 
               <View style={{ flexDirection: 'column', gap: 10, marginTop: 16 }}>
-                {items.map((item, index) => (
+                {items.map(item => (
                   <AccomplishmentRow
-                    key={item.title}
+                    key={item.id}
                     item={item}
-                    active={activeIndex === index}
-                    onPick={() => setActiveIndex(index)}
+                    active={currentItem.id === item.id}
+                    onPick={() => setActiveId(item.id)}
                   />
                 ))}
               </View>

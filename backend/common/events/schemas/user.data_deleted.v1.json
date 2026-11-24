@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/user.data_deleted.v1.json",
+  "title": "user.data_deleted v1",
+  "description": "A service has deleted a user's data. The confirming service is the topic the event came from, never the payload (7.2). Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": true,
+  "examples": [
+    {}
+  ]
+}

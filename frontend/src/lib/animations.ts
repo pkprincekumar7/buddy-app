@@ -6,20 +6,6 @@ export const SPINNER = {
   transition: { duration: 2, repeat: Infinity, ease: 'linear' },
 };
 
-export const FADE_IN = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  transition: { duration: 0.6, ease: 'easeOut' },
-};
-
-// Horizontal slide used for wizard phase transitions.
-export const PAGE_SLIDE = {
-  initial: { opacity: 0, x: 50 },
-  animate: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: -50 },
-  transition: { duration: 0.45 },
-};
-
 export const MODAL_BACKDROP = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },

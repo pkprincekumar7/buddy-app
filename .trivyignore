@@ -13,3 +13,9 @@ CVE-2026-14257
 # release exists. Transitive dependency of tailwindcss and @stoplight/spectral-cli — build
 # tooling only, never in the production bundle. Remove once braces publishes a fix.
 CVE-2026-93687
+
+# CVE-2026-112366 / GHSA-fc5q-39xc-vjpf: picomatch <=4.0.7 ReDoS through repeated
+# extglobs — no fixed release exists. Only via build tooling (tailwindcss, vite, vitest,
+# spectral-cli, lint-staged): never in the production bundle.
+# Remove once picomatch publishes a fix.
+CVE-2026-112366

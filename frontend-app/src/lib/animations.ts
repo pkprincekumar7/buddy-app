@@ -27,25 +27,6 @@ export const SPINNER = {
   animationTimingFunction: 'linear',
 } as const;
 
-export const FADE_IN = {
-  entering: new Keyframe({
-    0: { opacity: 0 },
-    100: { opacity: 1, easing: easeOut },
-  }).duration(600),
-};
-
-/** Horizontal slide used for wizard phase transitions. */
-export const PAGE_SLIDE = {
-  entering: new Keyframe({
-    0: { opacity: 0, transform: [{ translateX: 50 }] },
-    100: { opacity: 1, transform: [{ translateX: 0 }] },
-  }).duration(450),
-  exiting: new Keyframe({
-    0: { opacity: 1, transform: [{ translateX: 0 }] },
-    100: { opacity: 0, transform: [{ translateX: -50 }] },
-  }).duration(450),
-};
-
 export const MODAL_BACKDROP = {
   entering: new Keyframe({ 0: { opacity: 0 }, 100: { opacity: 1 } }).duration(
     300,

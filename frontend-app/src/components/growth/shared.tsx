@@ -71,7 +71,7 @@ export function PathIcon({
 // ─── Pills (web PILL / CTA) ─────────────────────────────────────────────────
 
 /** web PILL text: 700 · 12.5px · .16em · uppercase. */
-export const PILL_TEXT: TextStyle = {
+const PILL_TEXT: TextStyle = {
   fontWeight: '700',
   fontSize: 12.5,
   letterSpacing: 12.5 * 0.16,

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/child.changed.v1.json",
+  "title": "child.changed v1",
+  "description": "The full child_access snapshot after any write to a child (7.4: one snapshot event per write). aggregate_id is the child id. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "age": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "gender": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "is_deleted": {
+      "type": "boolean"
+    },
+    "progress": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "boolean"
+        },
+        "conversation": {
+          "type": "boolean"
+        },
+        "discover": {
+          "type": "boolean"
+        },
+        "grow": {
+          "type": "boolean"
+        },
+        "transform": {
+          "type": "boolean"
+        },
+        "release": {
+          "type": "boolean"
+        },
+        "connect": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile",
+        "conversation",
+        "discover",
+        "grow",
+        "transform",
+        "release",
+        "connect"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "user_id",
+    "is_deleted",
+    "progress"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "user_id": "3f6c2a1e-8b7d-4c5e-9f10-2a3b4c5d6e7f",
+      "name": "Mira",
+      "age": 7,
+      "gender": "female",
+      "is_deleted": false,
+      "progress": {
+        "profile": true,
+        "conversation": false,
+        "discover": false,
+        "grow": false,
+        "transform": false,
+        "release": false,
+        "connect": false
+      }
+    }
+  ]
+}

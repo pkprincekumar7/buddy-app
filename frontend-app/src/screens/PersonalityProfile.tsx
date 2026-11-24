@@ -9,11 +9,10 @@ import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
 import { useNavigate, useParams } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/client';
+import { children } from '@/api/children';
+import { discover, viewModelOf } from '@/api/discover';
 import { env } from '@/lib/env';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
-import { mergeChildDraft } from '@/lib/onboardingHelpers';
 import { rgb } from '@/theme';
 import RevealPhase from '@/components/personalityProfile/RevealPhase';
 import ProfilePhase from '@/components/personalityProfile/ProfilePhase';
@@ -62,32 +61,23 @@ export default function PersonalityProfile() {
     let cancelled = false;
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        // The child's own fields from children, the personality from discover (build plan 7.5).
+        const [child, personality] = await Promise.all([
+          children.get(childId),
+          discover.personality(childId),
+        ]);
         if (cancelled) return;
-        if (!child) {
-          navigate('/Home', { replace: true });
-          return;
-        }
-        const vm = child.personality?.view_model;
-        if (!vm?.profile?.name) {
+        const vm = viewModelOf(personality);
+        if (!vm?.profile.name) {
           navigate(`/PersonalityJourney/${childId}`, { replace: true });
           return;
         }
-        const merged = mergeChildDraft(
-          normalizeOnboardingChildDataBlob(child) ?? {},
-        );
-        setChildName(merged.name || '');
-        setChildAge(
-          String(
-            ((merged as Record<string, unknown>).age as string | number) ?? '',
-          ),
-        );
+        setChildName(child.name);
+        setChildAge(child.age === null ? '' : String(child.age));
         setVmProfile(vm.profile);
-        setVmScores((vm.scores as Record<string, number>) ?? null);
-        setAvatarId(typeof child.avatar_id === 'string' ? child.avatar_id : '');
-        setAvatarUrl(
-          typeof child.avatar_url === 'string' ? child.avatar_url : '',
-        );
+        setVmScores(vm.scores);
+        setAvatarId(child.avatar_id ?? '');
+        setAvatarUrl(child.avatar_url ?? '');
         setProfile(onboardingProfileFromViewModel(vm));
         setIsInitializing(false);
       } catch (err) {

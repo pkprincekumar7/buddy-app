@@ -1,28 +1,23 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
+import { usePageTop } from '@/hooks/usePageTop';
+import { useHideAppBar } from '@/lib/appBar';
+import PageLoader from '@/components/shared/PageLoader';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import { api } from '@/api/client';
-import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
-import { mergeChildDraft } from '@/lib/onboardingHelpers';
-import Spinner from '@/components/shared/Spinner';
-import {
-  adaptAiPersonalityToViewModel,
-  PERSONALITY_TYPE_KEYS,
-} from '@/components/shared/PersonalityAnalysis';
-import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
-import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
-import { personalityLlmSchema } from '@/lib/llmSchemas';
-import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
-import { useJob } from '@/hooks/useJob';
+import { discover } from '@/api/discover';
+import { useJourney } from '@/hooks/useJourney';
 import { useMediaQuery } from '@/hooks/use-mobile';
 import { useStartOver } from '@/hooks/useStartOver';
 import { cn } from '@/lib/utils';
 import StageSplash from '@/components/shared/StageSplash';
 import { ConfirmModal as StartOverConfirmModal } from '@/components/shared/StartOverButton';
+import { startOverCopy } from '@/lib/startOverCopy';
+import { useViewMode } from '@/lib/ViewModeContext';
+import { useKidActivity } from '@/hooks/useKidActivity';
+import { kidsPath, type KidsArea } from '@/lib/childView';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 
 type Phase = 1 | 2;
@@ -36,6 +31,17 @@ type ActiveDimension = 'discover' | 'grow' | 'transform' | 'release' | 'connect'
 
 // ── Phase 1: Buddy Orb ────────────────────────────────────────────────────
 
+/** The orb screen's heading: the prototype's clamp(28px, 4vw, 42px), and no more than 5.5vh,
+ *  so on a short window it stays two lines that fit above the orb. */
+const HEADING_SIZE = 'clamp(28px, min(4vw, 5.5vh), 42px)';
+/** The heading's gap above the orb, and its least room below the page top: kept small so the
+ *  orb has the most room to grow. */
+const HEADING_GAP = 20;
+const HEADING_MARGIN = 4;
+/** The orb's largest radius, 440px across (past the prototype's 300px): on a laptop it fills
+ *  the room the heading leaves, never more than that room or 36vmin. */
+const ORB_MAX_RADIUS = 220;
+
 function BuddyOrbScreen({
   childName,
   isAnalyzing,
@@ -43,30 +49,61 @@ function BuddyOrbScreen({
 }: {
   childName: string;
   isAnalyzing: boolean;
-  onTap: () => void;
+  /** Gets the orb's centre on screen, which the warp's zoom goes into. */
+  onTap: (center: { x: number; y: number }) => void;
 }) {
+  // The orb's centre is the window's (50vh), where the warp's stars start.
+  const screenRef = useRef<HTMLDivElement>(null);
+  const top = usePageTop(screenRef, 112);
+  // Its radius (36vmin, 72px to ORB_MAX_RADIUS) also leaves the heading room on a short window:
+  // HEADING_GAP above the orb and HEADING_MARGIN inside the page (which starts under the Back
+  // row and clips anything above it). The heading (HEADING_SIZE) shrinks on a short window too.
+  const headingRef = useRef<HTMLDivElement>(null);
+  const [headingH, setHeadingH] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => setHeadingH(headingRef.current?.offsetHeight ?? 0);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [isAnalyzing]);
+  const r = `clamp(72px, min(36vmin, 50vh - ${top + headingH + HEADING_GAP + HEADING_MARGIN}px), ${ORB_MAX_RADIUS}px)`;
   return (
-    <div className="relative" style={{ minHeight: '100vh', width: '100%' }}>
+    <div ref={screenRef} className="relative" style={{ minHeight: '100vh', width: '100%' }}>
       {/* Text above — heading bottom pinned 32px above orb top */}
       <div
-        className="absolute left-0 right-0 px-6 text-center"
+        ref={headingRef}
+        // The window's width, not the page column's (max-w-lg, which wrapped it onto three
+        // lines): the prototype's heading has the screen, up to its own 640px.
+        className="absolute left-1/2 w-screen px-6 text-center"
         style={{
-          top: 'calc(50vh - 64px - clamp(100px, 36vmin, 150px) - 32px)',
-          transform: 'translateY(-100%)',
+          top: `calc(50vh - ${top}px - ${r} - ${HEADING_GAP}px)`,
+          transform: 'translate(-50%, -100%)',
         }}
       >
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: 'easeOut' }}
-        >
+        {/* CSS entrances, not framer's: framer ran these as Web Animations and, as each
+            ended, dropped them a frame before writing the end value, so they blinked out
+            (index.css .journey-*-in). */}
+        <motion.div initial={false} className="journey-heading-in">
+          {/* The prototype's eyebrow over the heading. */}
+          <p
+            className="mb-4 font-rajdhani font-bold uppercase"
+            style={{
+              fontSize: 12,
+              letterSpacing: '0.4em',
+              // The spacing trails the last letter too; as much on the left keeps it centred.
+              paddingLeft: '0.4em',
+              color: 'rgb(var(--constellation-cyan-bright-rgb))',
+            }}
+          >
+            Your child&apos;s next chapter
+          </p>
           {isAnalyzing ? (
             <div className="flex flex-col items-center gap-4">
               <h1
-                className="font-orbitron text-white"
+                className="mx-auto font-orbitron text-white"
                 style={{
                   fontWeight: 700,
-                  fontSize: 'clamp(28px, 4vw, 42px)',
+                  fontSize: HEADING_SIZE,
                   lineHeight: 1.25,
                   maxWidth: 640,
                   textWrap: 'pretty',
@@ -92,10 +129,10 @@ function BuddyOrbScreen({
             </div>
           ) : (
             <h1
-              className="font-orbitron text-white"
+              className="mx-auto font-orbitron text-white"
               style={{
-                fontWeight: 900,
-                fontSize: 'clamp(28px, 4vw, 42px)',
+                fontWeight: 700,
+                fontSize: HEADING_SIZE,
                 lineHeight: 1.25,
                 maxWidth: 640,
                 textWrap: 'pretty',
@@ -108,25 +145,36 @@ function BuddyOrbScreen({
         </motion.div>
       </div>
 
-      {/* Orb centered at device vertical center (50vh) */}
+      {/* Orb centred on the window's centre (50vh) */}
       <div
         className="absolute"
         style={{
           left: '50%',
-          top: 'calc(50vh - 64px - clamp(100px, 36vmin, 150px))',
+          top: `calc(50vh - ${top}px - ${r})`,
           transform: 'translateX(-50%)',
         }}
       >
         <motion.button
-          onClick={isAnalyzing ? undefined : onTap}
+          // The orb is the page's one control; without a name a screen reader says "button".
+          aria-label={isAnalyzing ? 'Analysing your answers' : 'Enter the circles'}
+          aria-disabled={isAnalyzing || undefined}
+          onClick={
+            isAnalyzing
+              ? undefined
+              : (e) => {
+                  const b = e.currentTarget.getBoundingClientRect();
+                  onTap({ x: b.left + b.width / 2, y: b.top + b.height / 2 });
+                }
+          }
           whileTap={isAnalyzing ? undefined : { scale: 0.94 }}
           className={cn(
-            'relative focus:outline-none',
+            'journey-orb-in relative focus:outline-none',
             isAnalyzing ? 'cursor-default' : 'cursor-pointer',
           )}
-          initial={{ opacity: 0, scale: 0.7 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          initial={false}
+          // No button transition (index.css): framer's press scale writes its end value at
+          // the end, which a transition would animate again.
+          style={{ transition: 'none' }}
         >
           <svg
             viewBox="0 0 350 350"
@@ -134,8 +182,8 @@ function BuddyOrbScreen({
             style={{
               display: 'block',
               overflow: 'visible',
-              width: 'clamp(200px, 72vmin, 300px)',
-              height: 'clamp(200px, 72vmin, 300px)',
+              width: `calc(2 * ${r})`,
+              height: `calc(2 * ${r})`,
             }}
           >
             <style>{`
@@ -286,13 +334,12 @@ function BuddyOrbScreen({
       {/* Text below orb — 32px gap below orb bottom */}
       {!isAnalyzing && (
         <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.7, delay: 0.5 }}
+          initial={false}
+          className="journey-hint-in"
           style={{
             position: 'absolute',
             left: '50%',
-            top: 'calc(50vh - 64px + clamp(100px, 36vmin, 150px) + 32px)',
+            top: `calc(50vh - ${top}px + ${r} + 32px)`,
             transform: 'translateX(-50%)',
             whiteSpace: 'nowrap',
             fontFamily: 'sans-serif',
@@ -337,6 +384,15 @@ const ACTIVE_INNER: React.CSSProperties = {
   zIndex: 2,
 };
 
+/** A tapped circle's ring before it opens (the prototype's `sel` shadow). */
+const SELECTED_GLOW =
+  '0 0 0 3px rgb(var(--constellation-cyan-rgb) / .9), 0 0 26px rgb(var(--constellation-cyan-rgb)), 0 0 46px rgb(var(--constellation-cyan-bright-rgb) / .6)';
+/** How long a tapped circle shows its ring before its page opens. */
+const SELECT_MS = 200;
+
+/** A locked circle's icon stroke (the prototype's #1b232b). */
+const LOCKED_ICON = '#1b232b';
+
 const INACTIVE_INNER: React.CSSProperties = {
   width: 54,
   height: 54,
@@ -372,6 +428,7 @@ function DimensionNode({
   onClick,
   locked,
   highlighted,
+  selected = false,
   iconPaths,
   label,
 }: {
@@ -383,6 +440,8 @@ function DimensionNode({
   // gets the faster double-ring pulse + animated glow instead of the
   // standard single-ring look every other unlocked circle uses.
   highlighted: boolean;
+  /** Tapped: ringed for a moment before its page opens. */
+  selected?: boolean;
   iconPaths: React.ReactNode;
   label: string;
 }) {
@@ -445,12 +504,15 @@ function DimensionNode({
         />
       )}
       <div
+        className={locked ? undefined : 'hub-disc'}
         style={
           locked
             ? INACTIVE_INNER
-            : highlighted
-              ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
-              : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
+            : selected
+              ? { ...ACTIVE_INNER, boxShadow: SELECTED_GLOW }
+              : highlighted
+                ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
+                : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
         }
       >
         <svg
@@ -458,7 +520,7 @@ function DimensionNode({
           style={{
             width: 23,
             height: 23,
-            stroke: locked ? '#1b232b' : 'rgb(var(--constellation-navy-rgb))',
+            stroke: locked ? LOCKED_ICON : 'rgb(var(--constellation-navy-rgb))',
             fill: 'none',
             strokeWidth: 2.2,
           }}
@@ -480,6 +542,7 @@ function DimensionNode({
 }
 
 function DimensionCirclesScreen({
+  childName,
   onConnect,
   onDiscover,
   onGoHome,
@@ -487,18 +550,21 @@ function DimensionCirclesScreen({
   onTransform,
   onRelease,
   onStartAgain,
+  childView = false,
   enabled,
   current,
 }: {
   childName: string;
-  mergedData: Record<string, unknown>;
   onConnect: () => void;
   onDiscover: () => void;
   onGoHome: () => void;
   onGrow: () => void;
   onTransform: () => void;
   onRelease: () => void;
-  onStartAgain: () => void;
+  /** Hidden when absent (child view: a child can't delete their own journey). */
+  onStartAgain?: () => void;
+  /** Child view: the "Superpower" eyebrow on top, and Start Again greyed out, "Completed". */
+  childView?: boolean;
   enabled: {
     grow: boolean;
     transform: boolean;
@@ -509,7 +575,35 @@ function DimensionCirclesScreen({
 }) {
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
+  // The hub is centred on the window's centre (50vh), where the warp's stars start: the ring
+  // area's page top is taken off, and the focus-in scales about the same point (the ring area
+  // sits below the eyebrow in child view).
+  const ringPageTop = usePageTop(ringAreaRef, 112);
+  const [ringTop, setRingTop] = useState(0);
+  useLayoutEffect(() => {
+    setRingTop(ringAreaRef.current?.offsetTop ?? 0);
+  }, [childView]);
   const isMobile = useMediaQuery('(max-width: 639px)');
+  // Discover's tooltip, on devices that hover (a phone's tap would only flash it).
+  const canHover = useMediaQuery('(hover: hover)');
+  const [tip, setTip] = useState(false);
+  const firstName = childName.trim().split(/\s+/)[0] ?? childName;
+
+  // A tapped circle shows its ring for a moment, then opens (the prototype's `sel`).
+  const [selected, setSelected] = useState<string | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(openTimer.current), []);
+  const pick = (key: string, open: () => void) => () => {
+    if (selected) return;
+    setSelected(key);
+    setTip(false);
+    openTimer.current = setTimeout(() => {
+      open();
+      // Cleared once it's opening, so the hub is usable again if it's still there (a dialog,
+      // a failed open, or coming back to it).
+      setSelected(null);
+    }, SELECT_MS);
+  };
 
   // Exact match to HTML's watchRing: scale ring to fit available space.
   // Depends on isMobile (from the shared media-query hook) rather than
@@ -520,11 +614,14 @@ function DimensionCirclesScreen({
     const measure = () => {
       const el = ringAreaRef.current;
       if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      const s = isMobile
-        ? Math.min(r.width / 488, r.height / 560, 1)
-        : Math.min(r.width / 730, r.height / 730, 1);
+      // Layout size (not the rect, which the entrance animation scales). The ring is centred on
+      // the window's centre, not the area's, so it fits the room above and below that point.
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (!w || !h) return;
+      const c = window.innerHeight / 2 - ringPageTop;
+      const room = 2 * Math.max(0, Math.min(c, h - c));
+      const s = isMobile ? Math.min(w / 488, room / 560, 1) : Math.min(w / 730, room / 730, 1);
       setRingScale((prev) => (Math.abs(s - prev) > 0.005 ? s : prev));
     };
     measure();
@@ -534,7 +631,7 @@ function DimensionCirclesScreen({
       clearInterval(id);
       window.removeEventListener('resize', measure);
     };
-  }, [isMobile]);
+  }, [isMobile, ringPageTop]);
 
   const SK = isMobile ? 'spokeDrawSm' : 'spokeDraw';
   const SD = isMobile ? '200' : '260';
@@ -582,7 +679,7 @@ function DimensionCirclesScreen({
         justifyContent: 'space-between',
         minHeight: '100vh',
         padding: '0 0 18px',
-        transformOrigin: '50% 50%',
+        transformOrigin: `50% calc(${ringTop}px + 50vh - ${ringPageTop}px)`,
         animation: 'scopeFocus 2.4s cubic-bezier(.22,.9,.25,1) both',
         width: '100vw',
         marginLeft: 'calc(50% - 50vw)',
@@ -640,13 +737,30 @@ function DimensionCirclesScreen({
         }
       `}</style>
 
+      {childView && (
+        <div
+          className="font-rajdhani"
+          style={{
+            paddingTop: 18,
+            fontWeight: 700,
+            fontSize: 12,
+            letterSpacing: '.4em',
+            textTransform: 'uppercase',
+            color: 'rgb(var(--constellation-cyan-bright-rgb))',
+            animation: 'fadeUp .7s ease .5s both',
+          }}
+        >
+          Superpower
+        </div>
+      )}
+
       {/* Ring area */}
       <div ref={ringAreaRef} style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
         <div
           style={{
             position: 'absolute',
             left: '50%',
-            top: 'calc(50vh - 64px)',
+            top: `calc(50vh - ${ringPageTop}px)`,
             width: 700,
             height: 700,
             transform: `translate(-50%, -50%) scale(${ringScale})`,
@@ -922,7 +1036,8 @@ function DimensionCirclesScreen({
           <DimensionNode
             position={NP.connect}
             animationDelay=".55s"
-            onClick={onConnect}
+            onClick={pick('connect', onConnect)}
+            selected={selected === 'connect'}
             locked={!enabled.connect}
             highlighted={current === 'connect'}
             label="Connect"
@@ -933,13 +1048,19 @@ function DimensionCirclesScreen({
           <div
             role="button"
             tabIndex={0}
-            onClick={onDiscover}
+            // Named by its label ("Discover"); the "Start here" tag is hidden from the name.
+            aria-describedby={tip && canHover ? 'hub-discover-tip' : undefined}
+            onClick={pick('discover', onDiscover)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                onDiscover();
+                pick('discover', onDiscover)();
               }
             }}
+            onMouseEnter={() => setTip(true)}
+            onMouseLeave={() => setTip(false)}
+            onFocus={() => setTip(true)}
+            onBlur={() => setTip(false)}
             style={{
               ...NODE_STYLE,
               ...NP.discover,
@@ -966,6 +1087,8 @@ function DimensionCirclesScreen({
                 boxShadow: '0 0 14px rgb(var(--constellation-cyan-rgb) / .6)',
                 animation: 'tagBob 1.7s ease-in-out infinite',
               }}
+              // A visual cue: the circle's name stays "Discover" (and its tooltip says why).
+              aria-hidden="true"
             >
               Start here
             </div>
@@ -1002,13 +1125,16 @@ function DimensionCirclesScreen({
               }}
             />
             <div
+              className="hub-disc"
               style={
-                current === 'discover'
-                  ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
-                  : {
-                      ...ACTIVE_INNER,
-                      boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
-                    }
+                selected === 'discover'
+                  ? { ...ACTIVE_INNER, boxShadow: SELECTED_GLOW }
+                  : current === 'discover'
+                    ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
+                    : {
+                        ...ACTIVE_INNER,
+                        boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                      }
               }
             >
               <svg
@@ -1031,13 +1157,20 @@ function DimensionCirclesScreen({
             >
               Discover
             </div>
+            {/* The prototype's hover tip, naming the child (web, hover-capable devices). */}
+            {tip && canHover && (
+              <div id="hub-discover-tip" role="tooltip" className="hub-tip">
+                Explore {firstName}&apos;s personality analysis results
+              </div>
+            )}
           </div>
 
           {/* Transform — top-right */}
           <DimensionNode
             position={NP.transform}
             animationDelay=".65s"
-            onClick={onTransform}
+            onClick={pick('transform', onTransform)}
+            selected={selected === 'transform'}
             locked={!enabled.transform}
             highlighted={current === 'transform'}
             label="Transform"
@@ -1053,7 +1186,8 @@ function DimensionCirclesScreen({
           <DimensionNode
             position={NP.release}
             animationDelay=".75s"
-            onClick={onRelease}
+            onClick={pick('release', onRelease)}
+            selected={selected === 'release'}
             locked={!enabled.release}
             highlighted={current === 'release'}
             label="Release"
@@ -1069,73 +1203,172 @@ function DimensionCirclesScreen({
           <DimensionNode
             position={NP.grow}
             animationDelay=".8s"
-            onClick={onGrow}
+            onClick={pick('grow', onGrow)}
+            selected={selected === 'grow'}
             locked={!enabled.grow}
             highlighted={current === 'grow'}
             label="Grow"
             iconPaths={<path d="M4 20V10M11 20V4M18 20v-7" />}
           />
 
-          {/* Start Again — bottom-center (always enabled) */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={onStartAgain}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onStartAgain();
-              }
-            }}
-            style={{
-              ...NODE_STYLE,
-              ...NP.startAgain,
-              animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
-              cursor: 'pointer',
-            }}
-          >
+          {/* Start Again in child view: greyed out and "Completed" (only the parent starts over) */}
+          {childView && (
             <div
+              role="button"
+              tabIndex={-1}
+              aria-disabled="true"
               style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div
-              style={{
-                ...ACTIVE_INNER,
-                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                ...NODE_STYLE,
+                ...NP.startAgain,
+                animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
+                cursor: 'not-allowed',
               }}
             >
-              <svg
-                viewBox="0 0 24 24"
+              <div
                 style={{
-                  width: 23,
-                  height: 23,
-                  stroke: 'rgb(var(--constellation-navy-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.2,
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgb(var(--constellation-slate-deep-rgb))',
+                  opacity: 0.4,
+                }}
+              />
+              <div style={INACTIVE_INNER}>
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style={{
+                    width: 23,
+                    height: 23,
+                    stroke: LOCKED_ICON,
+                    fill: 'none',
+                    strokeWidth: 2.2,
+                  }}
+                >
+                  <path d="M4 4v6h6M20 20v-6h-6" />
+                  <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
+                </svg>
+              </div>
+              {/* The tick badge */}
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  background: 'rgb(var(--constellation-navy-deep-rgb))',
+                  border: '1.5px solid rgb(var(--constellation-slate-deep-rgb))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 3,
                 }}
               >
-                <path d="M4 4v6h6M20 20v-6h-6" />
-                <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
-              </svg>
+                <svg
+                  viewBox="0 0 24 24"
+                  style={{
+                    width: 12,
+                    height: 12,
+                    stroke: 'rgb(var(--constellation-text-frost-rgb))',
+                    fill: 'none',
+                    strokeWidth: 3,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                  }}
+                >
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div
+                className="font-rajdhani"
+                style={{
+                  ...NODE_LABEL,
+                  color: 'rgb(var(--constellation-slate-dark-rgb))',
+                  textAlign: 'center',
+                }}
+              >
+                Start Again
+                <span
+                  style={{
+                    display: 'block',
+                    fontWeight: 600,
+                    fontSize: 10.5,
+                    letterSpacing: '.15em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Completed
+                </span>
+              </div>
             </div>
-            <div className="font-rajdhani" style={NODE_LABEL}>
-              Start Again
+          )}
+
+          {/* Start Again — bottom-center (always enabled; not in child view) */}
+          {onStartAgain && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={onStartAgain}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onStartAgain();
+                }
+              }}
+              style={{
+                ...NODE_STYLE,
+                ...NP.startAgain,
+                animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
+                cursor: 'pointer',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
+                  opacity: 0.5,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
+                  animation: 'nodePulse 2.6s ease-out infinite',
+                }}
+              />
+              <div
+                className="hub-disc"
+                style={{
+                  ...ACTIVE_INNER,
+                  boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  style={{
+                    width: 23,
+                    height: 23,
+                    stroke: 'rgb(var(--constellation-navy-rgb))',
+                    fill: 'none',
+                    strokeWidth: 2.2,
+                  }}
+                >
+                  <path d="M4 4v6h6M20 20v-6h-6" />
+                  <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
+                </svg>
+              </div>
+              <div className="font-rajdhani" style={NODE_LABEL}>
+                Start Again
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1161,51 +1394,85 @@ function DimensionCirclesScreen({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+/** The journey's spinner ring, cyan on its navy. */
+const JOURNEY_SPINNER = {
+  borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+  borderTopColor: 'transparent',
+} as const;
+
 export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const location = useLocation();
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const phase: Phase = location.pathname.endsWith('/DimensionCircles') ? 2 : 1;
-  const [mergedData, setMergedData] = useState<Record<string, unknown>>({});
-  const [childName, setChildName] = useState('');
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [initError, setInitError] = useState(false);
   const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
-  const [discoverCompleted, setDiscoverCompleted] = useState(false);
-  const [growCompleted, setGrowCompleted] = useState(false);
-  const [transformVisited, setTransformVisited] = useState(false);
-  const [releaseVisited, setReleaseVisited] = useState(false);
-  const [connectVisited, setConnectVisited] = useState(false);
+  const [discoverViewed, setDiscoverViewed] = useState(false);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const { doStartOver, isStartingOver } = useStartOver(childId);
+  // Child view (docs/child-view-build-plan.md, 1.3): each circle opens the kids page.
+  const { view, exitChildView } = useViewMode();
+  const childView = view.mode === 'child';
 
+  // The child and its personality (build plan 7.5): discover generates the personality on
+  // its own once the chat is saved, so the hub only waits for it (or retries a failure).
+  const { journey, retry, refreshChild } = useJourney(childId, !isLoadingAuth && isAuthenticated);
+  // A circle's completion reaches the child's progress through an event, which can land
+  // just after the parent is back on the hub (e.g. Release, which unlocks Connect): read
+  // the progress once more a moment after the hub opens.
+  useEffect(() => {
+    const again = setTimeout(() => void refreshChild(), 2500);
+    return () => clearTimeout(again);
+  }, [refreshChild]);
+  const child = 'child' in journey ? journey.child : null;
+  const childName = child?.name ?? '';
+  const isAnalyzing = journey.status === 'analyzing';
+
+  // Each circle's state, set by the services when it's completed (build plan 7.4).
+  // In child view they follow what the child has done there instead (child view's own
+  // order, decided 2026-11-11): each circle opens once the one before is done in child view.
+  const kidDone = useKidActivity(childView ? childId : undefined).activity?.circles_done;
+  const done = (kid: boolean | undefined, parent: boolean) => (childView ? Boolean(kid) : parent);
+  const discoverCompleted = done(
+    kidDone?.discover,
+    discoverViewed || Boolean(child?.progress.discover),
+  );
+  const growCompleted = done(kidDone?.grow, Boolean(child?.progress.grow));
+  const transformCompleted = done(kidDone?.transform, Boolean(child?.progress.transform));
+  const releaseCompleted = done(kidDone?.release, Boolean(child?.progress.release));
+  const connectVisited = done(kidDone?.connect, Boolean(child?.progress.connect));
+
+  // The splash stays up (on its last frame) until the profile opens: hiding it first would
+  // show the hub's circles while `viewed` is recorded. That's awaited before navigating, so
+  // the profile's Grow button finds Discover done. Once only, however often onReady fires.
+  const leavingForProfileRef = useRef(false);
   const handleDiscoverSplashReady = useCallback(() => {
-    setShowDiscoverSplash(false);
-    if (childId && !discoverCompleted) {
-      setDiscoverCompleted(true);
-      api.entities.Child.markProgress(childId, 'discover_completed').catch(console.error);
-    }
-    void navigate(`/PersonalityProfile/${childId ?? ''}`);
-  }, [navigate, childId, discoverCompleted]);
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
-  const mergedDataRef = useRef<Record<string, unknown> | null>(null);
+    if (leavingForProfileRef.current) return;
+    leavingForProfileRef.current = true;
+    void (async () => {
+      if (childView) {
+        // The child's Discover: no `viewed`, so the parent still sees the reveal first.
+        if (childId) void navigate(kidsPath(childId, 'discover'));
+        return;
+      }
+      if (childId && !discoverCompleted) {
+        setDiscoverViewed(true);
+        // Passing the reveal makes Discover done; children then unlocks Grow.
+        await discover
+          .viewed(childId)
+          .catch((err: unknown) => console.warn('[PersonalityJourney] viewed failed:', err));
+      }
+      void navigate(`/PersonalityProfile/${childId ?? ''}`);
+    })();
+  }, [navigate, childId, discoverCompleted, childView]);
 
-  // Grow unlocks Transform once at least one of the six growth areas is completed.
-  // `growCompleted` (child.grow_completed) is itself computed live server-side
-  // from the growth_areas collection (backend/app/services/journey_progress.py) —
-  // it can no longer go stale or be forged. `hasCompletedGrowthArea` re-runs the
-  // same check client-side via completedGrowthAreas.list; the two are redundant
-  // today (kept as belt-and-suspenders) rather than each independently necessary.
-  const { data: completedGrowthAreasData } = useQuery({
-    queryKey: ['completedGrowthAreas', childId],
-    queryFn: () => api.completedGrowthAreas.list(childId!),
-    enabled: phase === 2 && Boolean(childId),
-  });
-  const hasCompletedGrowthArea =
-    completedGrowthAreasData?.areas?.some((a) => a.status === 'completed') ?? false;
-  const growUnlocksTransform = growCompleted && hasCompletedGrowthArea;
+  // A circle's page: the parent's, or in child view the kids page at that circle.
+  const circlePath = (area: KidsArea, parentPath: string) =>
+    childView && childId ? kidsPath(childId, area) : parentPath;
+
+  // Grow unlocks Transform once one of the six growth areas is completed: grow publishes
+  // `grow.completed` then, and children sets `progress.grow`, so the client can't forge it.
+  const growUnlocksTransform = growCompleted;
 
   // The frontier circle the hub's glow/dots should point to: the next step the
   // user hasn't reached yet in Discover → Grow → Transform → Release → Connect.
@@ -1214,9 +1481,9 @@ export default function PersonalityJourney() {
     ? 'discover'
     : !growUnlocksTransform
       ? 'grow'
-      : !transformVisited
+      : !transformCompleted
         ? 'transform'
-        : !releaseVisited
+        : !releaseCompleted
           ? 'release'
           : !connectVisited
             ? 'connect'
@@ -1225,9 +1492,17 @@ export default function PersonalityJourney() {
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
   const { ttsEnabled: soundOn } = useTts();
   const [isEntering, setIsEntering] = useState(false);
+  // No app bar during the warp: it comes back with the circles.
+  useHideAppBar(isEntering);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const warpCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const warpRafRef = useRef<number | null>(null);
+  // The zoom goes into the orb, at its centre (measured on tap).
+  const phase1Ref = useRef<HTMLDivElement | null>(null);
+  const phase2Ref = useRef<HTMLDivElement | null>(null);
+  const phase1Top = usePageTop(phase1Ref, 112);
+  const phase2Top = usePageTop(phase2Ref, 112);
+  const [dollyOrigin, setDollyOrigin] = useState('50% 50%');
   const enterTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Play intro voice when orb screen (phase 1) is active — mirrors HTML's playVoice()
@@ -1378,8 +1653,10 @@ export default function PersonalityJourney() {
     };
   }, [isEntering]);
 
-  const handleEnterNav = () => {
+  const handleEnterNav = (center: { x: number; y: number }) => {
     if (isEntering) return;
+    const box = phase1Ref.current?.getBoundingClientRect();
+    if (box) setDollyOrigin(`${center.x - box.left}px ${center.y - box.top}px`);
     setIsEntering(true);
     whoosh();
     duckAmbient(0.12, 1600);
@@ -1396,194 +1673,54 @@ export default function PersonalityJourney() {
   };
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const markJourneyComplete = useCallback(async () => {
-    if (!childId) return;
-    try {
-      await api.entities.Child.update(childId, { onboarding_phase: 3, onboarding_completed: true });
-    } catch {
-      /* non-fatal */
-    }
-  }, [childId]);
-
-  const finalizePersonality = useCallback(async () => {
-    if (!childId) return;
-    try {
-      const child = await api.entities.Child.get(childId);
-      const personality = child?.personality;
-      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as
-        | Record<string, unknown>
-        | undefined;
-      const merged = mergedDataRef.current;
-
-      let vm: Record<string, unknown> | null = null;
-      if (pendingVm && merged) {
-        const adapted = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
-        vm = sanitizeViewModelAvatars(adapted);
-        api.entities.Child.update(childId, {
-          personality: { source: 'llm', view_model: stripViewModelImages(adapted) },
-          onboarding_phase: 2,
-        }).catch((err) =>
-          console.error('[PersonalityJourney] Failed to persist personality:', err),
-        );
-      } else if (personality?.view_model?.profile?.name) {
-        vm = sanitizeViewModelAvatars(
-          maybeClampStoredPersonalityDescription(personality.view_model, {
-            analysisSource: personality?.source,
-          }),
-        );
-      }
-
-      void vm;
-      setIsAnalyzing(false);
-      await markJourneyComplete();
-    } catch (err) {
-      console.error('[PersonalityJourney] Failed to finalize personality:', err);
-      setIsAnalyzing(false);
-      setInitError(true);
-    }
-  }, [childId, markJourneyComplete]);
-
-  const job = useJob({
-    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
-    jobType: 'generate_personality_analysis',
-    onCompleted: finalizePersonality,
-  });
-
-  const { enqueue: enqueueJob } = job;
-
-  // Surface job failures as page error
-  useEffect(() => {
-    if (job.isFailed) {
-      setIsAnalyzing(false);
-      setInitError(true);
-    }
-  }, [job.isFailed]);
-
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
       void navigate('/Onboarding', { replace: true });
-      return;
-    }
-    if (!childId) {
+    } else if (!childId || journey.status === 'missing') {
+      // In child view Home would bounce straight back here: leave child view first.
+      if (childView) exitChildView();
       void navigate('/Home', { replace: true });
-      return;
+    } else if (journey.status === 'locked') {
+      // The chat isn't done yet: back to it. Child view can't open the chat (its guard would
+      // send it straight back here), so it ends first: the chat is the parent's to finish.
+      if (childView) exitChildView();
+      void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
     }
-    let cancelled = false;
+  }, [isLoadingAuth, isAuthenticated, childId, journey.status, navigate, childView, exitChildView]);
 
-    void (async () => {
-      try {
-        const child = await api.entities.Child.get(childId);
-        if (cancelled) return;
-        if (!child) {
-          void navigate('/Home', { replace: true });
-          return;
-        }
-
-        const personality = child.personality;
-        const vm = personality?.view_model;
-        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
-        mergedDataRef.current = merged;
-        setChildName(merged.name || '');
-        setMergedData(merged);
-        setDiscoverCompleted(Boolean(child.discover_completed));
-        setGrowCompleted(Boolean(child.grow_completed));
-        setTransformVisited(Boolean(child.transform_visited));
-        setReleaseVisited(Boolean(child.release_visited));
-        setConnectVisited(Boolean(child.connect_visited));
-
-        if (vm?.profile?.name) {
-          // Personality already analysed — show orb immediately, fully interactive
-          setIsInitializing(false);
-          if (!child.onboarding_completed) {
-            await markJourneyComplete();
-          }
-          return;
-        }
-
-        // No complete personality yet — need to run or resume analysis
-        if (!merged.name?.trim()) {
-          void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
-          return;
-        }
-
-        // Check for pending_personality_vm (LLM done but write-back not yet saved as view_model)
-        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as
-          | Record<string, unknown>
-          | undefined;
-        if (pendingVm) {
-          const adapted = adaptAiPersonalityToViewModel(pendingVm, merged.name);
-          if (cancelled) return;
-          setIsInitializing(false);
-          api.entities.Child.update(childId, {
-            personality: { source: 'llm', view_model: stripViewModelImages(adapted) },
-            onboarding_phase: 2,
-          }).catch(console.error);
-          await markJourneyComplete();
-          return;
-        }
-
-        // Show orb in analyzing state while job runs in background
-        setChildData(child);
-        setIsAnalyzing(true);
-        setIsInitializing(false);
-
-        // Only enqueue if no job is already running
-        const activeJobId = child.active_jobs?.generate_personality_analysis;
-        if (!activeJobId) {
-          await enqueueJob({
-            type: 'generate_personality_analysis',
-            child_id: childId,
-            payload: {
-              prompt: buildPersonalityAnalysisPrompt({
-                childData: merged,
-                personalityTypeKeys: PERSONALITY_TYPE_KEYS,
-              }),
-              response_json_schema: personalityLlmSchema(),
-            },
-            write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
-          });
-        }
-        // else: useJob picks up activeJobId from setChildData(child) and polls automatically
-      } catch (err) {
-        console.warn('[PersonalityJourney] Load failed:', err);
-        if (!cancelled) {
-          setInitError(true);
-          setIsInitializing(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate, markJourneyComplete, enqueueJob]);
-
-  const status = isLoadingAuth || isInitializing ? 'loading' : initError ? 'error' : 'ready';
+  const status =
+    journey.status === 'failed' ? 'error' : isLoadingAuth || !child ? 'loading' : 'ready';
 
   if (status === 'loading') {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center"
+      <PageLoader
         style={{ background: 'rgb(var(--constellation-navy-deep-rgb))' }}
-      >
-        <Spinner
-          style={{
-            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
-            borderTopColor: 'transparent',
-          }}
-        />
-      </div>
+        spinnerStyle={JOURNEY_SPINNER}
+      />
     );
   }
 
   if (status === 'error') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <p className="text-muted-foreground">Something went wrong. Please try again.</p>
-        <Button onClick={() => void navigate('/Home')} className="btn-primary rounded-2xl px-8">
-          Go Back
-        </Button>
+        <p className="text-muted-foreground">
+          {journey.status === 'failed'
+            ? journey.message
+            : 'Something went wrong. Please try again.'}
+        </p>
+        <div className="flex gap-3">
+          <Button onClick={retry} className="btn-primary rounded-2xl px-8">
+            Try again
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void navigate('/Home')}
+            className="rounded-2xl px-8"
+          >
+            Go Back
+          </Button>
+        </div>
       </div>
     );
   }
@@ -1678,13 +1815,21 @@ export default function PersonalityJourney() {
           {phase === 1 && (
             <motion.div
               key="phase-1"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              // The landing is CSS (.journey-screen-in, the prototype's landIn); framer only runs
+              // the exit.
+              initial={false}
               exit={{ opacity: 0, transition: { duration: 0.05 } }}
+              ref={phase1Ref}
               style={
-                isEntering ? { animation: 'scopeDolly 3.4s cubic-bezier(.35,0,.3,1) forwards' } : {}
+                isEntering
+                  ? {
+                      animation: 'scopeDolly 3.4s cubic-bezier(.35,0,.3,1) forwards',
+                      transformOrigin: dollyOrigin,
+                    }
+                  : // The landing settles onto the orb, on the window's centre.
+                    { transformOrigin: `50% calc(50vh - ${phase1Top}px)` }
               }
-              className="min-h-screen"
+              className="journey-screen-in min-h-screen"
             >
               <BuddyOrbScreen
                 childName={childName}
@@ -1697,27 +1842,34 @@ export default function PersonalityJourney() {
           {phase === 2 && (
             <motion.div
               key="phase-2"
-              initial={{ opacity: 0, scale: 1.06 }}
-              animate={{ opacity: 1, scale: 1 }}
+              // The entrance is CSS (.journey-hub-in); framer only runs the exit.
+              initial={false}
               exit={{ opacity: 0, scale: 0.94 }}
               transition={{ duration: 0.5 }}
-              className="min-h-screen"
+              // Scales about the hub's centre (the window's), not the page's.
+              ref={phase2Ref}
+              style={{ transformOrigin: `50% calc(50vh - ${phase2Top}px)` }}
+              className="journey-hub-in min-h-screen"
             >
               <DimensionCirclesScreen
                 childName={childName}
-                mergedData={mergedData}
-                onConnect={() => void navigate(`/Connect/${childId ?? ''}`)}
+                onConnect={() => void navigate(circlePath('connect', `/Connect/${childId ?? ''}`))}
                 onDiscover={() => setShowDiscoverSplash(true)}
                 onGoHome={() => void navigate(`/PersonalityJourney/${childId ?? ''}`)}
-                onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
-                onTransform={() => void navigate(`/LifePathway/${childId ?? ''}`)}
-                onRelease={() => void navigate(`/Observations/${childId ?? ''}`)}
-                onStartAgain={() => setConfirmingStartOver(true)}
+                onGrow={() => void navigate(circlePath('grow', `/GrowthAreas/${childId ?? ''}`))}
+                onTransform={() =>
+                  void navigate(circlePath('transform', `/LifePathway/${childId ?? ''}`))
+                }
+                onRelease={() =>
+                  void navigate(circlePath('release', `/Observations/${childId ?? ''}`))
+                }
+                {...(!childView && { onStartAgain: () => setConfirmingStartOver(true) })}
+                childView={childView}
                 enabled={{
                   grow: discoverCompleted,
                   transform: growUnlocksTransform,
-                  release: transformVisited,
-                  connect: transformVisited,
+                  release: transformCompleted,
+                  connect: releaseCompleted,
                 }}
                 current={currentDimension}
               />
@@ -1727,7 +1879,7 @@ export default function PersonalityJourney() {
       </div>
 
       <AnimatePresence>
-        {showDiscoverSplash && <StageSplash stage={2} onReady={handleDiscoverSplashReady} />}
+        {showDiscoverSplash && <StageSplash stage={2} portal onReady={handleDiscoverSplashReady} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -1739,6 +1891,7 @@ export default function PersonalityJourney() {
               void doStartOver();
             }}
             isStartingOver={isStartingOver}
+            {...startOverCopy(child?.name)}
           />
         )}
       </AnimatePresence>
