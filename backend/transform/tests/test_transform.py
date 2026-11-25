@@ -16,7 +16,6 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi.routing import APIRoute
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 from transform_testkit import (
@@ -41,7 +40,7 @@ from transform_testkit import (
 from common import upload_tracking
 from common.events import write_tombstone
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 from transform.app import generation, main
 from transform.app.runtime import Runtime
 from transform.app.store import PLANS
@@ -101,13 +100,13 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     assert_every_route_has_a_policy(main.app)
     assert_every_route_has_a_policy(main.internal_app)
     base = "/api/v1/children/{id}/transform"
-    public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    public = {r.path for r in api_routes(main.app)}
     assert public == {
         "/health", base, f"{base}/generation", f"{base}/generation/{{job_id}}",
         f"{base}/photos/presign", f"{base}/quests", f"{base}/quests/current",
         f"{base}/quests/log",
     }  # fmt: skip
-    internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
+    internal = {r.path for r in api_routes(main.internal_app)}
     assert internal == {"/internal/ping", "/internal/transform/children/{id}/status"}
 
 

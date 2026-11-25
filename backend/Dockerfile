@@ -15,7 +15,7 @@
 
 # ---- select: pick out what the chosen service needs ----------------------------------------
 # Throwaway stage: the whole backend/ tree is copied here, but only /out reaches the image.
-FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad AS select
+FROM python:3.13.18-slim-trixie@sha256:7249d5587b78209a006dc4a3b5340678f84ea729239193aa559962cd8c1fce50 AS select
 
 ARG SERVICE
 WORKDIR /src
@@ -45,17 +45,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip wheel --no-deps --wheel-dir /out/build ./common
 
 # ---- the image -----------------------------------------------------------------------------
-FROM python:3.13.18-slim-trixie@sha256:d0a9e379c0c588befb0e427db17ca9731751d281f32c6cb1a90a1277b680bdad
+FROM python:3.13.18-slim-trixie@sha256:7249d5587b78209a006dc4a3b5340678f84ea729239193aa559962cd8c1fce50
 
-# zlib1g from trixie-security (DSA-6613-1: CVE-2026-85091, CVE-2026-76844), which no
-# python:3.13-slim-trixie digest had yet. Pinned, so builds stay the same; once a base digest
-# ships this version or later, drop this step with that bump. Until then, if Debian
-# supersedes the version (its old one leaves the mirror), the build fails here: pin the new
-# one. Only the final stage: the select stage never reaches the image.
+# libzstd1 from trixie-security (CVE-2026-124851), which no python:3.13-slim-trixie digest
+# had yet. Pinned, so builds stay the same; once a base digest ships this version or later,
+# drop this step with that bump. Until then, if Debian supersedes the version (its old one
+# leaves the mirror), the build fails here: pin the new one. Only the final stage: the select
+# stage never reaches the image.
 RUN set -eu; \
     apt-get update; \
     apt-get install -y --no-install-recommends --only-upgrade \
-      zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1; \
+      libzstd1=1.5.7+dfsg-1+deb13u1; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

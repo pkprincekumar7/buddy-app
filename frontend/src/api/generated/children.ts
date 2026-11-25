@@ -226,8 +226,8 @@ export interface components {
          */
         FlipPower: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "flip_power";
             /** Power */
@@ -239,8 +239,8 @@ export interface components {
          */
         GameBest: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "game_best";
             /**
@@ -319,8 +319,8 @@ export interface components {
          */
         MoodIn: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "mood";
             /**
@@ -376,8 +376,8 @@ export interface components {
          */
         ShowWin: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "show_win";
             /** Key */
@@ -401,8 +401,8 @@ export interface components {
          */
         TryPower: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "try_power";
             /** Power */

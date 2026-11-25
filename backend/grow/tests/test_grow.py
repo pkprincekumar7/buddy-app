@@ -15,7 +15,6 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi.routing import APIRoute
 from grow_testkit import (
     ADMIN,
     GROW_PRIVATE,
@@ -37,7 +36,7 @@ from pymongo.errors import OperationFailure
 
 from common.generation.jobs import JobRefused, TargetRefused
 from common.models import CHILD_ACCESS, JOBS
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 from grow.app import generation, main
 from grow.app.runtime import Runtime
 from grow.app.store import GROWTH_AREAS, area_doc_id
@@ -110,13 +109,13 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     assert_every_route_has_a_policy(main.app)
     assert_every_route_has_a_policy(main.internal_app)
     base = "/api/v1/children/{id}/growth-areas"
-    public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    public = {r.path for r in api_routes(main.app)}
     assert public == {
         "/health", base, f"{base}/{{area_id}}", f"{base}/{{area_id}}/generation",
         f"{base}/{{area_id}}/generation/{{job_id}}", f"{base}/worlds",
         f"{base}/worlds/{{world}}/runs",
     }  # fmt: skip
-    internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
+    internal = {r.path for r in api_routes(main.internal_app)}
     assert internal == {
         "/internal/ping",
         "/internal/grow/children/{id}/status",

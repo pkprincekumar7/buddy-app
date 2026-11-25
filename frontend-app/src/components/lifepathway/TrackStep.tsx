@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
 
@@ -72,7 +72,7 @@ export default function TrackStep({
   const active = steps[activeIdx] ?? steps[0];
 
   // Web: activeRailBtn.scrollIntoView({ inline: 'center' }) on every change.
-  const railRef = useRef<ScrollView | null>(null);
+  const railRef = useRef<ScrollViewInstance | null>(null);
   const [railW, setRailW] = useState(0);
   useEffect(() => {
     if (!railW) return;

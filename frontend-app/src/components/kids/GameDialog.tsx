@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useReducedMotion,
@@ -102,7 +102,7 @@ export default function GameDialog({
 }: GameDialogProps) {
   const [round, setRound] = useState(0);
   // Drawing locks this scroll view too, as Grow's games lock the page (lib/scrollLock).
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<ScrollViewInstance>(null);
   const scrollLock = useScrollLockHost(scroll);
   const [result, setResult] = useState<{
     secs: number;

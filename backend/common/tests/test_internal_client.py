@@ -36,7 +36,7 @@ from common.internal_client import (
     checked_answer,
 )
 from common.logging import request_id_var
-from common.routers import PolicyRouter, route_policies
+from common.routers import PolicyRouter, api_routes, route_policies
 
 
 def _pair() -> tuple[str, str]:
@@ -252,9 +252,7 @@ def test_the_internal_policy_is_a_policy():
 
 
 def test_routes_see_the_policy(internal_app):
-    route = next(
-        r for r in internal_app.app.routes if getattr(r, "path", "") == "/internal/users/{user_id}"
-    )
+    route = next(r for r in api_routes(internal_app.app) if r.path == "/internal/users/{user_id}")
     assert route_policies(route) == ["internal:auth"]
 
 

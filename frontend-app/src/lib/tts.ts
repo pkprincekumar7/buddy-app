@@ -1,4 +1,4 @@
-import Speech from '@mhpdev/react-native-speech';
+import Speech, { type EventProps } from '@mhpdev/react-native-speech';
 
 /**
  * Native counterpart of the web's lib/tts.ts. The web picks a browser
@@ -23,10 +23,10 @@ export function speakText(
     id => {
       if (!onDone) return;
       // Like the web utterance's onend: fires when this utterance finishes or is cancelled.
-      const finish = Speech.onFinish(e => {
+      const finish = Speech.onFinish((e: EventProps) => {
         if (e.id === id) done();
       });
-      const stopped = Speech.onStopped(e => {
+      const stopped = Speech.onStopped((e: EventProps) => {
         if (e.id === id) done();
       });
       function done() {

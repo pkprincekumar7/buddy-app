@@ -1,5 +1,10 @@
 import React from 'react';
-import { TextInput, View, useWindowDimensions } from 'react-native';
+import {
+  TextInput,
+  View,
+  useWindowDimensions,
+  type TextInputInstance,
+} from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +22,7 @@ interface ChatInputBarProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
-  inputRef?: React.Ref<TextInput>;
+  inputRef?: React.Ref<TextInputInstance>;
 }
 
 // Waveform bar heights 12/18/24/18/12px, 3px wide, 4px gap — and the web's

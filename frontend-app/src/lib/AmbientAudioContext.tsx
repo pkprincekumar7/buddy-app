@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState } from 'react-native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { useLocation } from '@/lib/router';
 import { useAuth } from '@/lib/AuthContext';
@@ -40,7 +40,7 @@ interface AmbientAudioContextValue {
 
 // 'unknown' (possible on iOS during launch) counts as foreground, so the loop
 // isn't left silent waiting for a change event that may never come.
-function isForeground(state: AppStateStatus): boolean {
+function isForeground(state: string | null | undefined): boolean {
   return state !== 'background' && state !== 'inactive';
 }
 

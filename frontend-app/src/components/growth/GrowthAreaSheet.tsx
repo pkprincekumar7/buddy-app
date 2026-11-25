@@ -12,9 +12,9 @@ import {
   StyleSheet,
   Text,
   View,
-  type TextInput,
   type TextStyle,
   type ViewStyle,
+  type TextInputInstance,
 } from 'react-native';
 import { Portal } from '@/components/ui/portal';
 import { Pressable } from '@/components/ui/pressable';
@@ -696,7 +696,7 @@ export default function GrowthAreaSheet({
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [qIdx, setQIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const textareaRef = useRef<TextInput | null>(null);
+  const textareaRef = useRef<TextInputInstance | null>(null);
   const who = childName || 'Your child';
   const fill = (text: string) => fillTemplate(text, childName, childGender);
 

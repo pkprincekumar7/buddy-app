@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi.routing import APIRoute
 from users_testkit import (
     ADMIN,
     LOCATION,
@@ -20,7 +19,7 @@ from users_testkit import (
     running,
 )
 
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 from users.app import main
 from users.app.store import USERS
 
@@ -44,7 +43,7 @@ def test_every_route_on_both_apps_declares_a_policy():
 
 
 def _paths(app: Any) -> set[str]:
-    return {route.path for route in app.routes if isinstance(route, APIRoute)}
+    return {route.path for route in api_routes(app)}
 
 
 def test_internal_routes_stay_on_the_internal_app():

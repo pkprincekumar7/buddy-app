@@ -1,12 +1,11 @@
 import React, { useRef, useState } from 'react';
 import {
-  Platform,
   View,
   useWindowDimensions,
   type StyleProp,
   type ViewStyle,
+  type ViewInstance,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { cn } from '@/lib/utils';
 import Spinner from './Spinner';
@@ -44,11 +43,10 @@ export default function PageLoader({
   spinnerStyle,
   durationSeconds,
 }: PageLoaderProps) {
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   const { height } = useWindowDimensions();
-  // Android's measureInWindow leaves out the status bar (iOS's counts it), so it's added back.
-  const insets = useSafeAreaInsets();
-  const statusBar = Platform.OS === 'android' ? insets.top : 0;
+  // measureInWindow counts the status bar on both platforms: Android only leaves it out when
+  // the app isn't edge-to-edge (RootViewUtil.getViewportOffset), and this app is.
   const [top, setTop] = useState<number | null>(null);
   const reduced = useReducedMotion();
   return (
@@ -56,9 +54,7 @@ export default function PageLoader({
       ref={ref}
       className={cn('flex-1 bg-background', className)}
       style={style}
-      onLayout={() =>
-        ref.current?.measureInWindow((_x, y) => setTop(y + statusBar))
-      }
+      onLayout={() => ref.current?.measureInWindow((_x, y) => setTop(y))}
     >
       {/* A zero-height row on the window's centre line centres the spinner on it. It shows
           after .3s (web .page-loader-spin): a quick load goes straight to the page. */}
