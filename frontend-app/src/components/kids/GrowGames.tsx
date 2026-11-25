@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Text, View, type GestureResponderEvent } from 'react-native';
+import {
+  Text,
+  View,
+  type GestureResponderEvent,
+  type ViewInstance,
+} from 'react-native';
 import Animated, {
   useReducedMotion,
   type CSSAnimationKeyframes,
@@ -205,7 +210,7 @@ function useLater() {
 function CatchGame({ cfg, onDone }: GrowGameProps) {
   const done = useRef(false);
   const width = useRef(0);
-  const box = useRef<View>(null);
+  const box = useRef<ViewInstance>(null);
   useLockScroll(box);
   const basketRef = useRef(50);
   const [basket, setBasket] = useState(50);
@@ -919,7 +924,7 @@ function ReactGame({ cfg, onDone }: GrowGameProps) {
 function SparkGame({ cfg, onDone }: GrowGameProps) {
   const seconds = Number(cfg.time) || SPARK_SECONDS;
   const width = useRef(0);
-  const box = useRef<View>(null);
+  const box = useRef<ViewInstance>(null);
   useLockScroll(box);
   const ended = useRef(false);
   const cells = useRef(new Set<string>());

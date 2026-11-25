@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
-from fastapi.routing import APIRoute
 from shared_testkit import (
     ADMIN,
     BUCKET,
@@ -25,7 +24,7 @@ from shared_testkit import (
     running,
 )
 
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 from shared.app import main
 from shared.app.runtime import TRANSCRIPTION_TIMEOUT_SECONDS, Runtime
 
@@ -61,9 +60,9 @@ async def _speak(
 def test_every_route_declares_a_policy_and_stays_on_its_app():
     assert_every_route_has_a_policy(main.app)
     assert_every_route_has_a_policy(main.internal_app)
-    public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    public = {r.path for r in api_routes(main.app)}
     assert public == {"/health", "/api/health", SPEECH, APK}
-    internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
+    internal = {r.path for r in api_routes(main.internal_app)}
     assert internal == {"/internal/ping"}
 
 

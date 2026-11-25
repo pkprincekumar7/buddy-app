@@ -2,6 +2,18 @@ import '@testing-library/jest-native/extend-expect';
 
 // Gesture handler must be set up before tests that use react-navigation
 import 'react-native-gesture-handler/jestSetup';
+// Gesture handler 3.3 installs its UI-runtime bindings on a microtask, which asks Worklets for
+// the UI runtime — unavailable under Jest, so the test crashes. Its 3.5 jestSetup mocks this;
+// until Expo's expected version reaches 3.5, mock it here.
+// Both builds, like its own jestSetup: some imports resolve to src/, others to lib/module/.
+jest.mock(
+  'react-native-gesture-handler/src/handlers/gestures/installUIRuntimeBindings',
+  () => ({ installUIRuntimeBindings: jest.fn() }),
+);
+jest.mock(
+  'react-native-gesture-handler/lib/module/handlers/gestures/installUIRuntimeBindings',
+  () => ({ installUIRuntimeBindings: jest.fn() }),
+);
 
 // Silence non-critical RN warnings in tests. Everything else goes to the real warn,
 // kept before the spy replaces it (calling console.warn here would call the spy).

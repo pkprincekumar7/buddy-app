@@ -1,5 +1,5 @@
 import React, { forwardRef, useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { View, type TextInputInstance } from 'react-native';
 import { Textarea, type TextareaProps } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import VoiceInput from './VoiceInput';
@@ -13,7 +13,7 @@ type TextareaWithVoiceProps = Omit<
   onChange: (e: { target: { value: string } }) => void;
 };
 
-const TextareaWithVoice = forwardRef<TextInput, TextareaWithVoiceProps>(
+const TextareaWithVoice = forwardRef<TextInputInstance, TextareaWithVoiceProps>(
   ({ value, onChange, placeholder, className, ...props }, ref) => {
     const [isRecording, setIsRecording] = useState(false);
     return (

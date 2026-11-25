@@ -1,5 +1,9 @@
 import React from 'react';
-import { TextInput, type TextInputProps } from 'react-native';
+import {
+  TextInput,
+  type TextInputProps,
+  type TextInputInstance,
+} from 'react-native';
 import { cn } from '@/lib/utils';
 import { color } from '@/theme';
 
@@ -10,7 +14,7 @@ export interface TextareaProps extends TextInputProps {
 }
 
 /** RN port of the web's shadcn textarea. */
-const Textarea = React.forwardRef<TextInput, TextareaProps>(
+const Textarea = React.forwardRef<TextInputInstance, TextareaProps>(
   ({ className, rows, style, editable, ...props }, ref) => (
     <TextInput
       ref={ref}

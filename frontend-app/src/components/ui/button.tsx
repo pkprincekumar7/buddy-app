@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Text,
-  View,
+  type PressableInstance,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
@@ -77,7 +77,7 @@ export interface ButtonProps
   children?: React.ReactNode;
 }
 
-const Button = React.forwardRef<View, ButtonProps>(
+const Button = React.forwardRef<PressableInstance, ButtonProps>(
   (
     {
       className,

@@ -8,7 +8,7 @@ bcrypt==4.2.1
 boto3==1.35.49
 cryptography==50.0.0
 email-validator==2.2.0
-fastapi==0.136.1
+fastapi==0.165.0
 google-auth[requests]==2.62.0
 google-genai==2.32.0
 httpx==0.28.1
@@ -38,7 +38,8 @@ uvicorn[standard]==0.34.0
 # starlette: GHSA-7f5h-v6xp-fcq8 (Range header DoS) + GHSA-2c2j-9gv5-cj73 (upload event-loop
 # block) + PYSEC-2026-161 + CVE-2026-54283 (form limits ignored for
 # application/x-www-form-urlencoded, DoS). fastapi<0.133.0 capped starlette<0.51.0, so the fix
-# needed fastapi>=0.133.0; 0.136.1 is used.
+# needed fastapi>=0.133.0; 0.165.0 is used (from 0.137 include_router nests routers, which
+# common/routers.py walks).
 # urllib3: GHSA-qccp-gfcp-xxvc + GHSA-mf9v-mfxr-j63j (redirect header leak, Brotli
 # decompression bomb), CVE-2026-97687 (HTTPS proxy TLS config override), CVE-2026-97689 (chunk
 # parser memory DoS). Pulled in by the openai / anthropic / google-auth SDKs.

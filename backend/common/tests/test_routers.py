@@ -10,6 +10,7 @@ from common.authz import Caller, require, signed_in
 from common.routers import (
     MissingPolicyError,
     PolicyRouter,
+    api_routes,
     assert_every_route_has_a_policy,
     public,
     route_policies,
@@ -79,6 +80,58 @@ def test_including_a_plain_router_is_checked_too():
 
     with pytest.raises(MissingPolicyError, match="/sneaky"):
         PolicyRouter().include_router(plain)
+
+
+def test_a_route_two_routers_deep_without_a_policy_is_caught():
+    inner = APIRouter(prefix="/inner")
+    middle = APIRouter(prefix="/middle")
+
+    @inner.get("/deep")
+    async def deep() -> None:
+        return None  # pragma: no cover - not called
+
+    middle.include_router(inner)
+    with pytest.raises(MissingPolicyError, match="GET /outer/middle/inner/deep has no access"):
+        PolicyRouter(prefix="/outer").include_router(middle)
+
+    app = FastAPI()
+    app.include_router(middle)
+    assert routes_without_a_policy(app) == ["GET /middle/inner/deep"]
+
+
+def test_a_router_refused_by_include_router_adds_nothing():
+    plain = APIRouter()
+
+    @plain.get("/sneaky")
+    async def sneaky() -> None:
+        return None  # pragma: no cover - not called
+
+    router = PolicyRouter()
+    with pytest.raises(MissingPolicyError):
+        router.include_router(plain)
+    assert router.routes == []
+
+
+def test_a_policy_from_the_including_router_or_the_include_call_covers_included_routes():
+    plain = APIRouter()
+
+    @plain.get("/accounts")
+    async def accounts() -> None:
+        return None  # pragma: no cover - not called
+
+    guarded = PolicyRouter(prefix="/admin", dependencies=[Depends(require("accounts:list"))])
+    guarded.include_router(plain)
+    by_call = PolicyRouter()
+    by_call.include_router(plain, prefix="/open", dependencies=[Depends(public())])
+
+    app = FastAPI()
+    app.include_router(guarded)
+    app.include_router(by_call)
+    assert_every_route_has_a_policy(app)
+    assert {route.path: route_policies(route) for route in api_routes(app)} == {
+        "/admin/accounts": ["require:accounts:list"],
+        "/open/accounts": ["public"],
+    }
 
 
 def test_the_route_policy_test_catches_routes_added_on_the_app():

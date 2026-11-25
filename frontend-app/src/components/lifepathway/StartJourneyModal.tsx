@@ -10,6 +10,7 @@ import {
   type StyleProp,
   type TextStyle,
   type ViewStyle,
+  type ScrollViewInstance,
 } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import Animated, {
@@ -187,7 +188,7 @@ export default function StartJourneyModal({
   // (or the max-wait gives up), never on a fixed timer. See the effect below.
   const [barComplete, setBarComplete] = useState(false);
   const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollRef = useRef<ScrollViewInstance | null>(null);
 
   const t = (text: string) => fillTemplate(text, childName, childGender);
 

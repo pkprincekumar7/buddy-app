@@ -5,6 +5,7 @@ import {
   View,
   useWindowDimensions,
   type GestureResponderEvent,
+  type ViewInstance,
 } from 'react-native';
 import Animated, {
   useReducedMotion,
@@ -420,7 +421,7 @@ function DrawGame({ onWin }: GameProps) {
   const [state, setState] = useState<DrawState>(DRAW_START);
   const width = useFrameWidth();
   const size = useRef(0);
-  const box = useRef<View>(null);
+  const box = useRef<ViewInstance>(null);
   useLockScroll(box);
   useWinOnce(state.length >= DRAW_GOAL, onWin);
   const point = (e: GestureResponderEvent) => ({

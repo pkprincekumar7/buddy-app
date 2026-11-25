@@ -611,7 +611,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "anyOf": [
+                "oneOf": [
                   {
                     "$ref": "#/components/schemas/FlipPower"
                   },
@@ -628,6 +628,16 @@
                     "$ref": "#/components/schemas/ShowWin"
                   }
                 ],
+                "discriminator": {
+                  "propertyName": "type",
+                  "mapping": {
+                    "flip_power": "#/components/schemas/FlipPower",
+                    "try_power": "#/components/schemas/TryPower",
+                    "game_best": "#/components/schemas/GameBest",
+                    "mood": "#/components/schemas/MoodIn",
+                    "show_win": "#/components/schemas/ShowWin"
+                  }
+                },
                 "title": "Body"
               }
             }

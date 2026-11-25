@@ -21,14 +21,13 @@ from auth_testkit import (
     key,
     running,
 )
-from fastapi.routing import APIRoute
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.errors import PyMongoError
 
 from auth.app import main
 from auth.app.store import AUTH, EMAIL_INDEX, SESSIONS, new_credentials
 from auth.countries import BLOCKED_COUNTRIES
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 
 
 def live(mongo_uri: str, test: Callable[[Running], Awaitable[None]], **options: Any) -> None:
@@ -52,7 +51,7 @@ def test_every_route_on_both_apps_declares_a_policy():
 
 
 def test_the_routes_and_the_apps_they_live_on():
-    public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    public = {r.path for r in api_routes(main.app)}
     assert public == {
         "/health",
         *(f"/api/v1/auth/{p}" for p in ("register", "login", "google", "refresh", "logout")),
@@ -64,7 +63,7 @@ def test_the_routes_and_the_apps_they_live_on():
         "/api/v1/auth/allowed-emails/{key}",
         "/api/v1/auth/account",
     }
-    internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
+    internal = {r.path for r in api_routes(main.internal_app)}
     assert internal == {
         "/internal/ping",
         "/internal/authz/{user_id}",

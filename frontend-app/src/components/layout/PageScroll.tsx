@@ -1,5 +1,9 @@
 import React, { useImperativeHandle, useRef } from 'react';
-import { ScrollView, type ScrollViewProps } from 'react-native';
+import {
+  ScrollView,
+  type ScrollViewProps,
+  type ScrollViewInstance,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cn } from '@/lib/utils';
 import { ScrollLockProvider, useScrollLockHost } from '@/lib/scrollLock';
@@ -20,7 +24,7 @@ interface PageScrollProps extends ScrollViewProps {
  * scene (no document scroll) should render <PageBackRow /> themselves instead.
  * A game inside can stop it scrolling while it follows a finger (lib/scrollLock).
  */
-const PageScroll = React.forwardRef<ScrollView, PageScrollProps>(
+const PageScroll = React.forwardRef<ScrollViewInstance, PageScrollProps>(
   (
     {
       className,
@@ -34,8 +38,8 @@ const PageScroll = React.forwardRef<ScrollView, PageScrollProps>(
     ref,
   ) => {
     const insets = useSafeAreaInsets();
-    const scroll = useRef<ScrollView>(null);
-    useImperativeHandle(ref, () => scroll.current as ScrollView);
+    const scroll = useRef<ScrollViewInstance>(null);
+    useImperativeHandle(ref, () => scroll.current as ScrollViewInstance);
     const lock = useScrollLockHost(scroll, insets.bottom + 16);
     return (
       <ScrollLockProvider value={lock.value}>
