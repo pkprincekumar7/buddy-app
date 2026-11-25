@@ -1,5 +1,9 @@
 import React from 'react';
-import { TextInput, type TextInputProps } from 'react-native';
+import {
+  TextInput,
+  type TextInputProps,
+  type TextInputInstance,
+} from 'react-native';
 import { cn } from '@/lib/utils';
 import { color } from '@/theme';
 
@@ -14,7 +18,7 @@ export interface InputProps extends TextInputProps {
  * baseline and clips descenders (g, y, p). Don't put line-height classes on
  * single-line inputs.
  */
-const Input = React.forwardRef<TextInput, InputProps>(
+const Input = React.forwardRef<TextInputInstance, InputProps>(
   ({ className, editable, ...props }, ref) => (
     <TextInput
       ref={ref}

@@ -61,10 +61,8 @@ function App() {
     >
       <SafeAreaProvider>
         {/* The app is dark-only, like the web (forcedTheme="dark"). */}
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={color['sidebar-background']}
-        />
+        {/* Android is always edge-to-edge (RN 0.88): the bar is transparent over the app. */}
+        <StatusBar barStyle="light-content" />
         <QueryClientProvider client={queryClientInstance}>
           <AuthProvider>
             <ViewModeProvider>

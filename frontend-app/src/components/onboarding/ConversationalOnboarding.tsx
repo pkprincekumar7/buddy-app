@@ -12,7 +12,9 @@ import {
   ScrollView,
   Text,
   View,
-  type TextInput,
+  type ScrollViewInstance,
+  type TextInputInstance,
+  type ViewInstance,
 } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -139,7 +141,7 @@ const DOT_BOUNCE = {
 
 /** Keeps its children above the keyboard; the offset is this view's own window y (header + back row). */
 function KeyboardAvoider({ children }: { children: React.ReactNode }) {
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   const [offset, setOffset] = useState(0);
   return (
     <View
@@ -199,7 +201,7 @@ export default function ConversationalOnboarding({
   const { show: showAnalyzing, showingDots: showingLoadingDots } =
     analyzingState;
 
-  const inputRef = useRef<TextInput | null>(null);
+  const inputRef = useRef<TextInputInstance | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChildIdRef = useRef(activeChildId);
   const chatSessionStartedRef = useRef(false);
@@ -450,7 +452,7 @@ export default function ConversationalOnboarding({
   // by step) that starts at the top, keeping the question in view above the
   // options. Only the all-answered summary scrolls down to reveal its
   // "Continue to personality analysis" button.
-  const scrollContainerRef = useRef<ScrollView | null>(null);
+  const scrollContainerRef = useRef<ScrollViewInstance | null>(null);
   useEffect(() => {
     if (!allAnswered) return;
     const t = setTimeout(() => {

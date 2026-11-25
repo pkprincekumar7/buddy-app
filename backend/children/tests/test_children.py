@@ -26,13 +26,12 @@ from children_testkit import (
     running,
     service_header,
 )
-from fastapi.routing import APIRoute
 
 from children.app import main
 from children.app.runtime import Runtime
 from children.app.store import CHILDREN
 from common import upload_tracking
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 
 API = "/api/v1/children"
 
@@ -67,7 +66,7 @@ def _put_photo(r: Running, key: str, *, size: int = 1024, content_type: str = "i
 def test_every_route_declares_a_policy_and_stays_on_its_app():
     assert_every_route_has_a_policy(main.app)
     assert_every_route_has_a_policy(main.internal_app)
-    public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    public = {r.path for r in api_routes(main.app)}
     assert public == {
         "/health",
         API,
@@ -77,7 +76,7 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
         f"{API}/{{id}}/kids",
         f"{API}/{{id}}/kids/events",
     }
-    internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
+    internal = {r.path for r in api_routes(main.internal_app)}
     assert internal == {"/internal/ping", "/internal/children/{id}"}
 
 

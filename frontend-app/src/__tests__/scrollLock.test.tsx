@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, View, type ViewInstance } from 'react-native';
 import { render } from '@testing-library/react-native';
 import PageScroll from '@/components/layout/PageScroll';
 import GrowGame from '@/components/kids/GrowGames';
@@ -11,7 +11,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 function Locker() {
-  const box = useRef<View>(null);
+  const box = useRef<ViewInstance>(null);
   useLockScroll(box);
   return <View ref={box} />;
 }

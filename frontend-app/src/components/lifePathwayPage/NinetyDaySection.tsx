@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, type TextStyle } from 'react-native';
 import { Pressable } from '@/components/ui/pressable';
 import Animated, {
   type CSSTransitionProperties,
@@ -63,7 +63,7 @@ const TAB_TRANSITION: CSSTransitionProperties = {
   transitionDuration: '0.25s',
   transitionTimingFunction: 'ease',
 };
-const TEXT_TRANSITION: CSSTransitionProperties = {
+const TEXT_TRANSITION: CSSTransitionProperties<TextStyle> = {
   transitionProperty: 'color',
   transitionDuration: '0.25s',
   transitionTimingFunction: 'ease',

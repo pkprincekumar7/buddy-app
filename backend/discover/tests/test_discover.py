@@ -27,12 +27,11 @@ from discover_testkit import (
     running,
     service_header,
 )
-from fastapi.routing import APIRoute
 from pymongo.errors import OperationFailure
 
 from common.generation import jobs
 from common.models import CHILD_ACCESS, JOBS, ONBOARDING_INPUTS
-from common.routers import assert_every_route_has_a_policy
+from common.routers import api_routes, assert_every_route_has_a_policy
 from discover.app import generation, main
 from discover.app.personality import summary, view_model
 from discover.app.runtime import Runtime
@@ -72,12 +71,12 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     assert_every_route_has_a_policy(main.app)
     assert_every_route_has_a_policy(main.internal_app)
     base = "/api/v1/children/{id}/personality"
-    public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    public = {r.path for r in api_routes(main.app)}
     assert public == {
         "/health", base, f"{base}/generation", f"{base}/generation/{{job_id}}", f"{base}/viewed",
         f"{base}/powers",
     }  # fmt: skip
-    internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
+    internal = {r.path for r in api_routes(main.internal_app)}
     assert internal == {
         "/internal/ping",
         "/internal/discover/children/{id}/status",

@@ -1,8 +1,9 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: '@react-native/jest-preset',
-  // Worklets ships a resolver that skips its *.native.* files under Jest.
-  resolver: 'react-native-worklets/jest/resolver',
+  // Reanimated's + Worklets' resolvers (skip their *.native.* files under Jest) chained with the
+  // preset's own (see jest.resolver.js).
+  resolver: '<rootDir>/jest.resolver.js',
 
   // Path alias @/ → src/
   moduleNameMapper: {

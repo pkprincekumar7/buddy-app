@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { TextInput, type TextInputProps } from 'react-native';
+import {
+  TextInput,
+  type TextInputProps,
+  type TextInputInstance,
+} from 'react-native';
 import { cn } from '@/lib/utils';
 import { color, hsl } from '@/theme';
 
@@ -15,7 +19,7 @@ const FOCUS_BORDER = hsl('primary-medium', 0.5);
  * px-3 py-2 text-foreground ring-primary-medium focus:border-primary-medium/50
  * focus:ring-2`) as a TextInput, including the focus ring.
  */
-const FormInput = React.forwardRef<TextInput, FormInputProps>(
+const FormInput = React.forwardRef<TextInputInstance, FormInputProps>(
   ({ className, onFocus, onBlur, style, editable, ...props }, ref) => {
     const [focused, setFocused] = useState(false);
     return (

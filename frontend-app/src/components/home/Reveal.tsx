@@ -8,9 +8,9 @@ import React, {
 } from 'react';
 import {
   useWindowDimensions,
-  View,
   type StyleProp,
   type ViewStyle,
+  type ViewInstance,
 } from 'react-native';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 
@@ -78,7 +78,7 @@ export function Reveal({
   const { subscribe } = useContext(Ctx);
   const { height: windowHeight } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewInstance>(null);
   const [revealed, setRevealed] = useState(false);
 
   const check = useCallback(() => {

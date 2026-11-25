@@ -43,3 +43,14 @@ patch(
   /const isImageInput = assetInfo\.files\[0\]\.includes\("\.zip\/"\)\n\s+\? _fs\.default\.readFileSync\(assetInfo\.files\[0\]\)\n\s+: assetInfo\.files\[0\];/,
   'const isImageInput = _fs.default.readFileSync(assetInfo.files[0]);',
 );
+
+// expo-modules-jsi 58.0.23 captures a `nonisolated(unsafe) let` pointer in a
+// JavaScriptActor-isolated closure, which Swift 6.2 (Xcode 26) rejects with
+// "sending 'slot' risks causing data races". Capture it through the package's
+// own UncheckedSendable, as its other call sites do (see UncheckedSendable.swift).
+patch(
+  'expo-modules-jsi (Swift 6.2 sending slot)',
+  'node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptObject.swift',
+  /(\n(\s+)try runtime\._withUnsafeGuaranteedRef \{ runtime in\n\s+try JavaScriptActor\.assumeIsolated \{\n\s+try encode\(JavaScriptValue\.Slot\()slot(\), runtime\))/,
+  '\n$2let sendableSlot = UncheckedSendable(slot)$1sendableSlot.value$3',
+);

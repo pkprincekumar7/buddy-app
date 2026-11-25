@@ -14,12 +14,12 @@ from typing import Any
 import httpx
 import pytest
 from auth_testkit import LOCATION, OLD_PEPPER, PEPPER, Running, claims, running
-from fastapi.routing import APIRoute
 
 from auth.app import admin, main
 from auth.app.audit import AuditTrail
 from auth.app.store import ADMIN_COUNT, ALLOWED_EMAILS, AUDIT, AUTH, SESSIONS
 from common.audit import AuditEvent
+from common.routers import api_routes
 
 API = "/api/v1/auth"
 
@@ -63,10 +63,10 @@ async def _admins(r: Running) -> int:
 
 
 def test_no_route_takes_an_email_in_its_url():
-    paths = [route.path for route in main.app.routes if isinstance(route, APIRoute)]
+    paths = [route.path for route in api_routes(main.app)]
     assert not any("email}" in path for path in paths)
-    for route in main.app.routes:
-        if isinstance(route, APIRoute) and "search" in route.path:
+    for route in api_routes(main.app):
+        if "search" in route.path:
             assert route.methods == {"POST"}
 
 

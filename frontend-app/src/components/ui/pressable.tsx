@@ -5,7 +5,7 @@ import {
   type PressableProps as RNPressableProps,
   type PressableStateCallbackType,
   type StyleProp,
-  type View,
+  type PressableInstance,
   type ViewStyle,
 } from 'react-native';
 
@@ -25,7 +25,7 @@ export interface PressableProps extends Omit<RNPressableProps, 'style'> {
  * style is resolved to a plain object before it reaches the native Pressable.
  * Always import Pressable from here, not from 'react-native'.
  */
-export const Pressable = React.forwardRef<View, PressableProps>(
+export const Pressable = React.forwardRef<PressableInstance, PressableProps>(
   ({ style, onPressIn, onPressOut, ...props }, ref) => {
     const [pressed, setPressed] = useState(false);
     const resolved =

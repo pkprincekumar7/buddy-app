@@ -2,7 +2,7 @@
 # buddy-common line from the local source only.
 buddy-common==0.37.0
 # buddy-common's own dependencies, pinned to the same versions in every service.
-fastapi==0.136.1
+fastapi==0.165.0
 uvicorn[standard]==0.34.0
 PyJWT==2.15.1
 cryptography==50.0.0
