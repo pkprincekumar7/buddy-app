@@ -7104,10 +7104,10 @@ react-native-css-interop@0.2.7:
     lightningcss "~1.27.0"
     semver "^7.6.3"
 
-react-native-gesture-handler@~3.3.0:
-  version "3.3.0"
-  resolved "https://registry.yarnpkg.com/react-native-gesture-handler/-/react-native-gesture-handler-3.3.0.tgz#58817e551bab57e514fb6784003222d7d7f5738f"
-  integrity sha512-ZCTlJ09nE3GPbm7J74lvwpxmx1TQ/7MDlHZNLARVYTN82k21mJUJ7BmI9eWjEi8eevHiAudI5O1Cpnt0rJfoJA==
+react-native-gesture-handler@~3.5.0:
+  version "3.5.0"
+  resolved "https://registry.yarnpkg.com/react-native-gesture-handler/-/react-native-gesture-handler-3.5.0.tgz#beb7751c94bac424c45f444b009e1034b16e987d"
+  integrity sha512-bm8yepwMBUhEOSeU7WQbNNrstD0Hbv6i+XsApARBJSlb+WlRvyaQsobi+tZ5Uyr5kDVgXzg6kPb+CWY9zvyfEw==
   dependencies:
     "@types/react-test-renderer" "^19.1.0"
     invariant "^2.2.4"
