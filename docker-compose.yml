@@ -109,7 +109,7 @@ services:
   # blocks valkey/valkey, set VALKEY_IMAGE=redis:7-alpine in .env: same protocol for what the
   # services use (GET/SET with expiry, Lua, SET NX, ACL users).
   valkey:
-    image: ${VALKEY_IMAGE:-valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b}
+    image: ${VALKEY_IMAGE:-valkey/valkey:8.0.13-alpine@sha256:86d8804cfd5a637f120c950eb0069862ece5d9d00a80e30bb00a11adc9ebd2cd}
     restart: unless-stopped
     networks:
       - superpower_net
@@ -166,7 +166,7 @@ services:
   # service, and answers any other path with the ALB's 404. Generated from
   # shared/service-routes.json by scripts/sync-gateway.mjs.
   gateway:
-    image: nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
+    image: nginx:1.31.9-alpine@sha256:fb4658584bd9a916ffb6f6e365f97c25cfdb2923801f551ea08356e695f14ff7
     restart: unless-stopped
     networks:
       - superpower_net
