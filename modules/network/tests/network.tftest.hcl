@@ -5,7 +5,7 @@ mock_provider "aws" {
   override_data {
     target = data.aws_availability_zones.available
     values = {
-      names = ["ap-south-1a", "ap-south-1b", "ap-south-1c", "ap-south-1d"]
+      names = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
     }
   }
 }
