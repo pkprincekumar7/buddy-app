@@ -18,15 +18,30 @@
 # AZ 2's private subnet.
 # ---------------------------------------------------------------------------
 
-# Standard AZs only: opting the account into a Local or Wavelength Zone adds names that
-# would sort into this list, shift every subnet onto other AZs and replace the VPC's
-# subnets (production-readiness review, L20).
+# The three AZs by name, <region>a/b/c, so the list can't grow or shift. Before, this took
+# the first three standard AZs, sorted: an AZ AWS added, or a Local or Wavelength Zone the
+# account opted into, could sort into it, move every subnet onto other AZs and replace the
+# VPC's subnets (production-readiness review, L20; checkov CKV_AWS_394). In every region
+# of shared/routing.json (ap-south-1, eu-west-1, us-east-1) a/b/c are those same first
+# three, so no subnet moves. A new region without an a, b and c fails the check below.
 data "aws_availability_zones" "available" {
   state = "available"
 
   filter {
+    name   = "zone-name"
+    values = [for s in ["a", "b", "c"] : "${var.aws_region}${s}"]
+  }
+
+  filter {
     name   = "opt-in-status"
     values = ["opt-in-not-required"]
+  }
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.names) == 3
+      error_message = "${var.aws_region} has no available standard AZs named ${var.aws_region}a, b and c (found: ${join(", ", self.names)}). Pick this region's three AZs in modules/network/main.tf."
+    }
   }
 }
 

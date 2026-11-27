@@ -57,13 +57,6 @@ updates:
       # Built from backend/common in this repo, never from PyPI. A lookup there could
       # resolve an unrelated public package of the same name.
       - dependency-name: buddy-common
-      # Held below 0.137 until common/routers.py follows it: from 0.137.0, include_router
-      # nests the included router (one internal _IncludedRouter entry) instead of adding its
-      # routes through add_api_route, so PolicyRouter's missing-policy check and
-      # routes_without_a_policy no longer see them (test_routers.py and each service's
-      # route-policy test fail, 2026-11-24). 0.136.x patches still come.
-      - dependency-name: fastapi
-        versions: [">=0.137.0"]
 
   - package-ecosystem: npm
     directory: /frontend
