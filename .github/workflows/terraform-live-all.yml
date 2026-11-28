@@ -94,8 +94,11 @@ on:
 # Repo read for every job; actions: read for the called workflows' prod check that stg
 # applied the commit first. The OIDC token (id-token: write) is granted only on the jobs
 # that call a workflow using AWS, not to the whole run.
-# No secrets are passed to the called workflows (no `secrets: inherit`): every secret is an
-# environment secret, which each called job reads from its own `environment:`.
+# Every secret is an environment secret, read by each called job from its own
+# `environment:`. The calls still pass `secrets: inherit`: here, without it, a called job
+# got its environment's variables but every secret empty, though GitHub's docs say it
+# shouldn't need it (986b02e dropped it; Full Stack failed its secrets check until it was
+# back, 2026-11-28). See .github/zizmor.yml.
 permissions:
   contents: read
   actions: read
@@ -156,6 +159,7 @@ jobs:
       matrix:
         region: ${{ fromJson(needs.regions.outputs.regions) }}
     uses: ./.github/workflows/terraform-live-backend.yml
+    secrets: inherit
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
@@ -177,6 +181,7 @@ jobs:
     needs: [regions, tf-backend]
     if: inputs.action == 'plan' || inputs.action == 'apply'
     uses: ./.github/workflows/terraform-live-edge.yml
+    secrets: inherit
     with:
       action:           ${{ inputs.action }}
       environment:      ${{ inputs.environment }}
@@ -197,6 +202,7 @@ jobs:
     needs: tf-edge
     if: inputs.action == 'plan' || inputs.action == 'apply'
     uses: ./.github/workflows/terraform-live-frontend.yml
+    secrets: inherit
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
@@ -218,6 +224,7 @@ jobs:
     needs: [regions, tf-frontend]
     if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-backend.yml
+    secrets: inherit
     with:
       environment: ${{ inputs.environment }}
       aws_regions: ${{ needs.regions.outputs.regions }}
@@ -235,6 +242,7 @@ jobs:
     needs: deploy-backend
     if: inputs.action == 'apply' && inputs.deploy && inputs.environment != 'prod'
     uses: ./.github/workflows/deploy-live-frontend.yml
+    secrets: inherit
     with:
       environment: ${{ inputs.environment }}
 
@@ -270,6 +278,7 @@ jobs:
     needs: regions
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-frontend.yml
+    secrets: inherit
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
@@ -287,6 +296,7 @@ jobs:
     needs: [regions, destroy-tf-frontend]
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-edge.yml
+    secrets: inherit
     with:
       action:           ${{ inputs.action }}
       environment:      ${{ inputs.environment }}
@@ -310,6 +320,7 @@ jobs:
       matrix:
         region: ${{ fromJson(needs.regions.outputs.regions) }}
     uses: ./.github/workflows/terraform-live-backend.yml
+    secrets: inherit
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}

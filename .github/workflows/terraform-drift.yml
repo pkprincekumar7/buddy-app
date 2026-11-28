@@ -64,5 +64,6 @@ jobs:
       matrix:
         environment: ${{ fromJson(needs.environments.outputs.environments) }}
     uses: ./.github/workflows/terraform-drift-env.yml
+    secrets: inherit
     with:
       environment: ${{ matrix.environment }}
