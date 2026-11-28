@@ -14,13 +14,16 @@ export RUNNER_TEMP="$WORK/runner-temp" GITHUB_OUTPUT="$WORK/output" GITHUB_STEP_
 mkdir -p "$RUNNER_TEMP"
 
 # -- fake terraform --------------------------------------------------------------------
-# state list: $FAKE/state (FAKE_STATE_FAILS: an error). plan: logs its arguments to
+# state list: $FAKE/state (FAKE_STATE_FAILS: an error; FAKE_NO_STATE: no state file, as
+# Terraform says it for a stack never applied). plan: logs its arguments to
 # $FAKE/plan-args, writes its -out file, exits $FAKE_PLAN_RC. show -json: $FAKE/show.json.
 cat > "$FAKE/bin/terraform" <<'EOF'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
   "state list")
     [ -z "${FAKE_STATE_FAILS:-}" ] || { echo "Error: Failed to load state: AccessDenied" >&2; exit 1; }
+    [ -z "${FAKE_NO_STATE:-}" ] || { printf '%s\n' "No state file was found!" "" \
+      "State management commands require a state file. Run this command" >&2; exit 1; }
     cat "$FAKE/state" ;;
   plan*)
     shift
@@ -71,6 +74,13 @@ reset
 run drift_up_output && ok "an empty state passes (nothing to check)" || fail "an empty state passes" "$OUT"
 check "an empty state is up=false" "$(cat "$GITHUB_OUTPUT")" "up=false"
 [[ "$OUT" == *"::notice title=Not deployed::"* ]] && ok "an empty state says so in a notice" || fail "not-deployed notice" "$OUT"
+
+reset
+run env FAKE_NO_STATE=1 bash -c "source '$HERE/drift.sh'; drift_up_output" && ok "no state file passes (never applied)" \
+  || fail "no state file passes" "$OUT"
+check "no state file is up=false" "$(cat "$GITHUB_OUTPUT")" "up=false"
+[[ "$OUT" == *"::notice title=Not deployed::"* ]] && ok "no state file says so in a notice" || fail "no-state notice" "$OUT"
+[[ "$OUT" != *"::error::"* ]] && ok "no state file is no error" || fail "no-state error" "$OUT"
 
 reset
 run env FAKE_STATE_FAILS=1 bash -c "source '$HERE/drift.sh'; drift_up_output" && fail "an unreadable state fails" \
