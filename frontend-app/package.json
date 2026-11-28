@@ -16,7 +16,7 @@
     "@babel/runtime": "^7.25.0",
     "@mhpdev/react-native-speech": "^1.4.4",
     "@notifee/react-native": "^9.1.8",
-    "@react-native-async-storage/async-storage": "^3.1.0",
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-community/datetimepicker": "9.3.0",
     "@react-native-google-signin/google-signin": "^17.0.0",
     "@react-navigation/native": "^7.5.2",
