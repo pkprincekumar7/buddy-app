@@ -29,10 +29,14 @@ DRIFT_IGNORE="${DRIFT_IGNORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drif
 
 # drift_stack_up → 0 when the stack's state has resources, 1 when it has none (never
 # applied, or destroyed: the scheduler destroys dev, sbx and stg every night), 2 when the
-# state can't be read.
+# state can't be read. A stack never applied has no state file at all, and `state list`
+# fails with "No state file was found!": that's not deployed too, not an unreadable state
+# (stg's and prod's frontend, 2026-11-25). Any other failure (access denied, a lock error)
+# still fails the check.
 drift_stack_up() {
   local list
   if ! list=$("${TERRAFORM:-terraform}" state list 2>&1); then
+    [[ "$list" == *"No state file was found"* ]] && return 1
     echo "::error::Could not read the Terraform state: $list" >&2
     return 2
   fi
