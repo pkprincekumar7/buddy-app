@@ -95,7 +95,7 @@ jobs:
       # Health checks make GitHub wait until each service accepts connections
       # before the first step runs (it otherwise only waits for "started").
       valkey:
-        image: valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b
+        image: valkey/valkey:8.0.13-alpine@sha256:86d8804cfd5a637f120c950eb0069862ece5d9d00a80e30bb00a11adc9ebd2cd
         ports:
           - 6379:6379
         options: >-
@@ -185,7 +185,7 @@ jobs:
         working-directory: backend
     services:
       valkey:
-        image: valkey/valkey:8.0.11-alpine@sha256:fd348c9b6999ef15719a1d6b43b810ee1bf2068ded2d7ab6f6dd15943841f28b
+        image: valkey/valkey:8.0.13-alpine@sha256:86d8804cfd5a637f120c950eb0069862ece5d9d00a80e30bb00a11adc9ebd2cd
         ports:
           - 6379:6379
         options: >-
