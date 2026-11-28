@@ -18,5 +18,5 @@ import-linter==2.17
 # Local SNS, SQS and S3 (build plan 0.3): in-process in tests (mock_aws), and the compose
 # `moto` service, which installs this same pin (local/moto/Dockerfile reads this line).
 moto[server,sns,sqs,s3]==5.2.5
-pytest-cov==6.0.0
+pytest-cov==7.1.0
 httpx==0.28.1
