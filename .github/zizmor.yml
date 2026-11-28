@@ -7,3 +7,16 @@ rules:
   # Revisit once actionlint supports the new form.
   self-repository:
     disable: true
+  # `secrets: inherit` on the calls to this repository's own stack workflows. Each called
+  # job reads its environment's secrets (`environment:`), but here, without inherit, every
+  # secret reached it empty (though GitHub's docs say it shouldn't need it): Full Stack
+  # failed its secrets check, and drift's scheduler jobs saw no GIT_ACTIONS_PAT (986b02e,
+  # fixed 2026-11-28). The called workflows are this repository's, at the same commit,
+  # and every secret is an environment secret, so a called job gets only its own
+  # environment's. Revisit if repository-level secrets are added. Only these three
+  # callers; anywhere else the audit still applies.
+  secrets-inherit:
+    ignore:
+      - terraform-live-all.yml
+      - terraform-drift-env.yml
+      - terraform-drift.yml
