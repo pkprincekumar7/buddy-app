@@ -133,36 +133,32 @@ if [ "$VENV_PY_VERSION" != "$PYTHON_VERSION" ]; then
   echo "  rm -rf backend/.venv && ./check.sh"
   exit 1
 fi
-# semgrep gets its own venv: it pins OpenTelemetry ~=1.37, and the services pin 1.45.2 (a
-# security fix, GHSA-mf5v-w3w3-f6cg), which requirements-test.txt matches. CI already
-# installs requirements-security.txt in a job of its own. So backend/.venv gets every other
-# security tool, and backend/.venv-semgrep gets semgrep alone.
-SEMGREP_VENV="$BACKEND/.venv-semgrep"
-SECURITY_REQS="$(mktemp)"
-SEMGREP_REQS="$(mktemp)"
-grep -v '^semgrep==' "$BACKEND/requirements-security.txt" > "$SECURITY_REQS"
-grep '^semgrep==' "$BACKEND/requirements-security.txt" > "$SEMGREP_REQS"
+# The security tools (requirements-security.txt) get a venv of their own,
+# backend/.venv-security, as CI installs them in a job of their own (check.yml,
+# security-scan). They pin what the services can't share: semgrep OpenTelemetry ~=1.37
+# (the services and requirements-test.txt pin 1.45.2, GHSA-mf5v-w3w3-f6cg), checkov
+# boto3==1.35.49 (the services pin a newer boto3). So backend/.venv holds what CI's
+# backend jobs install (dev, lint, test) and nothing else.
+SECURITY_VENV="$BACKEND/.venv-security"
 
 echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 "$BACKEND/.venv/bin/pip" install -q \
   -r "$BACKEND/requirements-dev.txt" \
   -r "$BACKEND/requirements-lint.txt" \
-  -r "$SECURITY_REQS" \
   -r "$BACKEND/requirements-test.txt" \
   || { echo -e "${RED}pip install failed — check your network or the requirements files${RESET}"; exit 1; }
 
-# semgrep only runs in the security group.
+# The security tools only run in the security group.
 if selected security; then
-if [ ! -d "$SEMGREP_VENV" ]; then
-  echo -e "${CYAN}Creating backend/.venv-semgrep (Python $PYTHON_VERSION)...${RESET}"
-  "python$PYTHON_VERSION" -m venv "$SEMGREP_VENV" \
-    || { echo -e "${RED}Failed to create backend/.venv-semgrep${RESET}"; exit 1; }
+if [ ! -d "$SECURITY_VENV" ]; then
+  echo -e "${CYAN}Creating backend/.venv-security (Python $PYTHON_VERSION)...${RESET}"
+  "python$PYTHON_VERSION" -m venv "$SECURITY_VENV" \
+    || { echo -e "${RED}Failed to create backend/.venv-security${RESET}"; exit 1; }
 fi
-echo -e "${CYAN}Syncing backend/.venv-semgrep...${RESET}"
-"$SEMGREP_VENV/bin/pip" install -q -r "$SEMGREP_REQS" \
-  || { echo -e "${RED}pip install of semgrep failed — check your network${RESET}"; exit 1; }
+echo -e "${CYAN}Syncing backend/.venv-security...${RESET}"
+"$SECURITY_VENV/bin/pip" install -q -r "$BACKEND/requirements-security.txt" \
+  || { echo -e "${RED}pip install of the security tools failed — check your network or requirements-security.txt${RESET}"; exit 1; }
 fi
-rm -f "$SECURITY_REQS" "$SEMGREP_REQS"
 
 # node_modules only for the groups that use them.
 if selected frontend playwright security api; then
@@ -213,12 +209,15 @@ _tool() {
 RUFF="$(_tool ruff)"
 MYPY="$(_tool mypy)"
 PYTHON="$(_tool python)"
-BANDIT="$(_tool bandit)"
-PIP_AUDIT="$(_tool pip-audit)"
-# Its own venv (see the sync above); PATH in CI.
-if [ -x "$SEMGREP_VENV/bin/semgrep" ]; then SEMGREP="$SEMGREP_VENV/bin/semgrep"; else SEMGREP="semgrep"; fi
-CHECKOV="$(_tool checkov)"
-ZIZMOR="$(_tool zizmor)"
+# The security tools: from their own venv (see the sync above), else PATH.
+_security_tool() {
+  if [ -x "$SECURITY_VENV/bin/$1" ]; then echo "$SECURITY_VENV/bin/$1"; else echo "$1"; fi
+}
+BANDIT="$(_security_tool bandit)"
+PIP_AUDIT="$(_security_tool pip-audit)"
+SEMGREP="$(_security_tool semgrep)"
+CHECKOV="$(_security_tool checkov)"
+ZIZMOR="$(_security_tool zizmor)"
 PYTEST="$(_tool pytest)"
 
 # The services in the tree (backend/tools/services.py): several groups go over each one.
@@ -545,7 +544,7 @@ run "retire.js (frontend-app library CVE scan)" \
     bash -c "'$FRONTEND/node_modules/.bin/retire' --path '$FRONTEND_APP' --exitwith 1 --jsrepo '$FRONTEND/retire-jsrepo.json'"
 
 # ---- mandatory: external tools — check.sh fails if any are absent ----------------
-# semgrep and checkov are installed into .venv via requirements-security.txt above.
+# semgrep and checkov are installed into .venv-security via requirements-security.txt above.
 # The tools below must be installed on the host; see install hints on failure.
 # Docker must also be running — it is required for the trivy image scan.
 GITLEAKS=""; HADOLINT=""; TRIVY=""; DOCKER=""
