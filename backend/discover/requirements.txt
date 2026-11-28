@@ -30,7 +30,7 @@ starlette>=1.3.1
 # The LLM SDKs (common[generation]), pinned as in the other generating services. Only the worker
 # gets LLM keys; the HTTP runtime starts jobs and never calls an LLM.
 openai==1.68.2
-anthropic==0.49.0
+anthropic==2.12.0
 google-genai==2.32.0
 # CVE floors for what the SDKs pull in (reasons: backend/requirements-dev.txt).
 urllib3>=2.8.0
