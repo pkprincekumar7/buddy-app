@@ -1,4 +1,4 @@
-pytest==8.3.4
+pytest==9.2.0
 # common.events validates payloads against JSON Schema (common/events/schemas). 4.25.x is also
 # what semgrep needs.
 jsonschema==4.26.0
