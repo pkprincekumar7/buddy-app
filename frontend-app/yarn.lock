@@ -7170,10 +7170,10 @@ react-native-toast-message@^2.5.2:
   resolved "https://registry.yarnpkg.com/react-native-toast-message/-/react-native-toast-message-2.5.2.tgz#8eac4b28f40d69e1c2db991798ec2435d9fe0bc4"
   integrity sha512-jqCuWO3njXkdKn6Cs+3EI7Wdw1jvg9JCaSgeQ/hrRF83baeElZRicxv5suz3+igjnDPLFYnruUwpluCBYeWO8Q==
 
-react-native-worklets@0.13.0:
-  version "0.13.0"
-  resolved "https://registry.yarnpkg.com/react-native-worklets/-/react-native-worklets-0.13.0.tgz#57f2d3037a1aad338f666c8ac2b4f2327749b975"
-  integrity sha512-1OrhAeAKaZF4XrBa4YbPQbKzNOpjh52HDlId8e6ete1OCHNdAlrQHzG4gznJ225EAj3dgQXHViJvK51M9B52jQ==
+react-native-worklets@0.14.0:
+  version "0.14.0"
+  resolved "https://registry.yarnpkg.com/react-native-worklets/-/react-native-worklets-0.14.0.tgz#be8259367ed57a18053391727ca025157b306c11"
+  integrity sha512-FAMNVHF8ClJmC61V+2jDOCUDjaZPnda+PBK5QqMkGtn13D3itDkkJxrFb0pCSnIfRTuIS/muE338usqEcRbuSg==
   dependencies:
     "@babel/generator" "^7.27.1"
     "@babel/plugin-transform-arrow-functions" "^7.27.1"
